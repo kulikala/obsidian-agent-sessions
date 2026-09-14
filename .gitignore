@@ -1,0 +1,6 @@
+plugin/node_modules/
+plugin/main.js
+plugin/data.json
+__pycache__/
+*.pyc
+.superpowers/
