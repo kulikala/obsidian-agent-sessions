@@ -18,8 +18,12 @@ agent-sessions/
 │   │   ├── tree.ts            JSON → グループ木（純関数）
 │   │   ├── links.ts           出力中のパス検出と vault 内解決（純関数）
 │   │   ├── marks.ts           指示／応答のマーカー管理（純関数＋xterm 依存の薄い層）
-│   │   ├── views/list.ts      一覧ビュー
+│   │   ├── index.ts           SessionIndex：走査結果＋起動中＋タブの合成、購読
+│   │   ├── keybindings.ts     ~/.claude/keybindings.json の読解と書換（Enter の役割）
+│   │   ├── views/side.ts      サイドパネル
+│   │   ├── views/manager.ts   セッションマネージャー
 │   │   ├── views/terminal.ts  ターミナルビュー
+│   │   ├── views/rows.ts      行・行メニュー・詳細欄（共通部品）
 │   │   ├── modals.ts          新規セッション・名前変更のダイアログ
 │   │   └── theme.ts           Obsidian の CSS 変数 → xterm テーマ
 │   ├── test/                  vitest（純関数と daemon-client のフレーム）
@@ -31,7 +35,7 @@ agent-sessions/
 ├── agentsessions/             Python パッケージ（標準ライブラリのみ）
 │   ├── config.py              パス定数（VAULT, STORE_PATH, RUNTIME_DIR, SOCK_PATH, …）
 │   ├── model.py scan.py detail.py live.py items.py   走査・抽出（現 cslib から移設）
-│   ├── store.py               sessions.json（折畳・非表示・未適用の名前変更）
+│   ├── store.py               sessions.json（折畳・アーカイブ・未適用の名前変更）
 │   ├── cache.py               走査キャッシュ（path → mtime,size,結果）
 │   ├── jsonout.py             `json` サブコマンドの出力
 │   ├── protocol.py            ソケットのフレーム（デーモンとクライアント共通）
@@ -63,7 +67,7 @@ agent-sessions/
 
 | 場所 | 内容 | 書く者 |
 |---|---|---|
-| `<vault>/.agents/sessions/sessions.json` | 折畳・非表示・未適用の名前変更（下記） | プラグイン、`agent-sessions`（原子的に tmp→rename） |
+| `<vault>/.agents/sessions/sessions.json` | 折畳・アーカイブ・未適用の名前変更（下記） | プラグイン、`agent-sessions`（原子的に tmp→rename） |
 | `~/.agents/sessions/daemon.sock` | デーモンのソケット（vault 配下は macOS のパス長制限 104 バイトに掛かる） | デーモン |
 | `~/.agents/sessions/daemon.pid` / `daemon.log` | デーモンの pid とログ | デーモン |
 | `~/.agents/sessions/status/<session_id>.json` | `statusLine` が渡す JSON をそのまま | `agent-sessions status` |
@@ -78,15 +82,15 @@ agent-sessions/
 {
   "version": 1,
   "folded": ["RIM", "その他のセッション"],
-  "hidden": [{"id": "5778f81f-…", "name": "酔い酒鮨庵", "agent": "claude"}],
+  "archived": [{"id": "5778f81f-…", "name": "酔い酒鮨庵", "agent": "claude"}],
   "pendingRenames": {"68d25490-…": "スキル開発: セッション管理 v2"},
   "sessions": {"68d25490-…": {"agent": "claude", "cwd": "/Users/…/obsidian-projects"}}
 }
 ```
 
 - `sessions` はプラグインが起動したセッションの `agent` と `cwd`。走査で transcript が見つかれば transcript が優先。新規直後（transcript 未生成）の行を一覧に出すために持つ。
-- `hidden` の `name` は一覧に「非表示」区分で出すための控え。真実は transcript。
-- 旧 `claude-sessions.md` の frontmatter（`folded`・`hidden`）は初回起動時に取り込み、ファイルは残す（削除はユーザーが行う）。`~/.claude/cs/` は使わない。
+- `archived` の `name` はマネージャーの「アーカイブ」区分に出すための控え。真実は transcript。
+- 旧 `claude-sessions.md` の frontmatter（`folded`・`hidden` → `archived`）は初回起動時に取り込み、ファイルは残す（削除はユーザーが行う）。`~/.claude/cs/` は使わない。
 
 ## 4. デーモン
 
@@ -146,7 +150,7 @@ Unix ドメインソケット `~/.agents/sessions/daemon.sock`。両方向とも
 | `agent-sessions hook` | stdin の JSON を `events.log` に 1 行追記 |
 | `agent-sessions status` | stdin の JSON を `status/<session_id>.json` に書き、`モデル · ctx NN%` を 1 行出力（Claude Code のステータス行になる） |
 
-TUI：一覧（グループ→単独→その他、折畳、`/` 絞込、`h` で非表示を見せる）と ⏎。⏎ はデーモンに `id` があれば `attach`、無ければ `claude --resume ID` を `execvp`。管理操作は持たない。サイドパネル：`cols >= 60` なら幅 `clamp(cols×0.4, 30, 60)` で常に出す。`cols < 60` では `p` で「一覧」と「パネルのみ」を切り替える。
+TUI：一覧（グループ→単独→その他、折畳、`/` 絞込、`h` でアーカイブを見せる）と ⏎。⏎ はデーモンに `id` があれば `attach`、無ければ `claude --resume ID` を `execvp`。管理操作は持たない。サイドパネル：`cols >= 60` なら幅 `clamp(cols×0.4, 30, 60)` で常に出す。`cols < 60` では `p` で「一覧」と「パネルのみ」を切り替える。
 
 `json scan` の出力（1 セッション）：
 
@@ -162,16 +166,41 @@ TUI：一覧（グループ→単独→その他、折畳、`/` 絞込、`h` で
 
 ## 6. プラグイン
 
-### 6.1 一覧ビュー（`agent-sessions-list`）
+3 種のビュー。サイドパネルは右サイドバー、マネージャーとターミナルはメインエリアのタブ。位置の設定は持たない（Obsidian の標準操作で動かせる）。
 
-- 既定は右サイドバー。リボンアイコンとコマンド「Agent Sessions: 一覧を開く」で表示。
-- ツールバー：**新規セッション**・**再走査**・⋯（非表示を表示／設定）。
-- 木：**開いているタブ**（ターミナルビューがある順。タブが無ければ区分ごと出さない）→ グループ（見出し、折畳）→ 単独 → その他のセッション（既定で折畳）→ 非表示（既定で折畳、表示切替時のみ）。開いているタブの行はタブ側にも印（`▣`）を付け、`workspace` の `layout-change` で追従する。行は `● 名前  MM-DD HH:MM`（`●` 動作中＝アクセント色、`○` 待機中、無印＝停止中、`(未適用)` 名前変更待ち）。
-- 行クリック → `openSession(id)`。右クリック／⋯ → 名前を変更・圧縮・非表示⇄戻す・セッションを終了（起動中のみ）・フォルダを開く・ID をコピー。
-- 詳細欄：一覧の下に折り畳める領域。行にポインタが乗って 300 ms 経ったら `json detail` を呼び（キャッシュ）、直近の指示・直近のツール・直近の応答・フォルダ・ID を出す。
-- 再走査のタイミング：ビューを開いたとき、再走査ボタン、`events.log` の追記（該当 ID だけ `--only`）、`~/.claude/sessions/` の変化（状態の更新のみ、走査はしない）、ビューが見えている間 60 秒毎。
+| ビュー | type | 置き場 | 役割 |
+|---|---|---|---|
+| サイドパネル | `agent-sessions-side` | 右サイドバー | 一覧（開いているタブ・起動中・最近）・メニュー・ステータスバー |
+| セッションマネージャー | `agent-sessions-manager` | メインエリア。「新しいタブ」相当の既定ビュー | 全セッションの木と管理操作。開いても claude は起動しない |
+| ターミナル | `agent-sessions-terminal` | メインエリア。1 セッション＝1 タブ | claude そのもの |
 
-### 6.2 ターミナルビュー（`agent-sessions-terminal`）
+用語：**アーカイブ**＝一覧から外す（`sessions.json` の `archived`）。マネージャーの「アーカイブ」区分で戻せる。
+
+### 6.1 サイドパネル（`agent-sessions-side`）
+
+上から順に：
+
+1. **メニュー行**：`新規セッション`（ダイアログ）・`セッションマネージャー`（メインにマネージャーのタブを開く。あればそこへ）・`⋯`（設定を開く／再走査／アーカイブを表示）。セッションに対する操作はここに置かない。
+2. **一覧**（区分は見出し付き、空の区分は出さない）
+   - **開いているタブ**：ターミナルタブがあるセッション。タブの順。前面のタブの行は強調。クリックでそのタブを前面に。
+   - **起動中**：デーモンが持っていてタブが無いセッション。クリックで attach したタブを開く。
+   - **最近**：それ以外を最終更新順に N 件（設定、既定 10）。アーカイブ済みと名前の無い子セッションは出さない。クリックで `--resume` のタブを開く。
+   - 行：`状態の印  名前`。印は動作中＝アニメーション、指示待ち＝待機の印、停止中＝無印。`(未適用)` は名前変更待ち。
+   - **行を選択（クリックまたは矢印キー）するとその行に `⋯` が現れ**、`名前を変更`・`圧縮`・`アーカイブ`・（起動中なら）`セッションを終了`・`フォルダを開く`・`ID をコピー` を出す。右クリックでも同じメニュー。
+3. **詳細欄**（折畳可）：行にポインタが 300 ms 乗ったら `json detail`（キャッシュ）で直近の指示・直近のツール・直近の応答・フォルダ・ID。
+4. **ステータスバー**（最下段 1 行）：前面のターミナルタブのセッション（ターミナルが前面でなければ最後に前面だったもの）について `Opus 5 · high · ctx 42% · rc ● · 5h 37% · 7d 12%`。元は `status/<id>.json`（`model.display_name`・`context_window.used_percentage`・`rate_limits.five_hour/seven_day.used_percentage`・`effort` があれば）と `~/.claude/sessions/<pid>.json`（`bridgeSessionId` の有無 → rc）。`effort` が JSON に無ければ `~/.claude/settings.json` の `effortLevel`。取れない項目は `—`。
+
+サイドパネルは `workspace` の `layout-change`・`active-leaf-change` と `registry` の変化を購読して描き直す。
+
+### 6.2 セッションマネージャー（`agent-sessions-manager`）
+
+- 木：グループ（見出し、折畳）→ 単独 → その他のセッション（既定で折畳）→ アーカイブ（既定で折畳、ツールバーで表示切替）。各区分の中は最終更新順。行は `状態の印  名前  MM-DD HH:MM  ▣`（`▣` はタブが開いている印）。
+- ツールバー：`新規セッション`・`再走査`・`絞込`（名前の部分一致）・`アーカイブを表示`。
+- 行クリック → `openSession(id)`（タブがあればジャンプ）。行を選択すると `⋯`：`名前を変更`・`圧縮`・`アーカイブ`⇄`アーカイブ解除`・（起動中なら）`セッションを終了`・`フォルダを開く`・`ID をコピー`。右クリックも同じ。
+- 詳細欄：サイドパネルと同じ部品（一覧の下、折畳可）。
+- 再走査のタイミング：ビューを開いたとき、再走査ボタン、`events.log` の追記（該当 ID だけ `--only`）、`~/.claude/sessions/` の変化（状態の更新のみ、走査はしない）、ビューが見えている間 60 秒毎。サイドパネルも同じ走査結果を共有する（`main.ts` が 1 つの `SessionIndex` を持ち、両ビューが購読）。
+
+### 6.3 ターミナル（`agent-sessions-terminal`）
 
 状態（`getState`）：`{id, agent, cwd, fontSize?}`。Obsidian の workspace に保存され、再起動で戻る。
 
@@ -181,51 +210,65 @@ TUI：一覧（グループ→単独→その他、折畳、`/` 絞込、`h` で
 - 出力：`D` フレームを `terminal.write(Uint8Array)`。再生（`R`）中は `write` をまとめ、`replayed` で `scrollToBottom()`。
 - 入力：`onData` の文字列を UTF-8 で `D`。`onBinary` も同様。
 - サイズ：ResizeObserver → 50 ms デバウンス → `fit()` → `onResize` → `resize`。
-- キー：`attachCustomKeyEventHandler` で処理する。Esc は `keyup` の伝播を止める（Obsidian がフォーカスを奪うため）。**Enter に Shift／Option／Cmd のいずれかが付いていたら `\x1b\r` を PTY へ書き、既定動作と伝播を止める**（Claude Code の改行。`/terminal-setup` が iTerm2・VS Code に入れる割当と同じ列）。`Cmd + / − / 0` はフォントサイズ。それ以外は xterm に任せ、`keydown` の伝播を止めて Obsidian のホットキーに渡さない。
+- キー：`attachCustomKeyEventHandler` で処理する。Esc は `keyup` の伝播を止める（Obsidian がフォーカスを奪うため）。**Enter に Shift／Option／Cmd のいずれかが付いていたら ESC CR（`0x1b 0x0d`）を PTY へ書き**、既定動作と伝播を止める（Claude Code の meta+enter。`/terminal-setup` が VS Code に入れる shift+enter の送出列と同じ）。`Cmd + / − / 0` はフォントサイズ。それ以外は xterm に任せ、`keydown` の伝播を止めて Obsidian のホットキーに渡さない。
 - 終了（`exit` イベント）：出力の上に「セッションは終了しました（code）」と **再開**・**閉じる**。再開は `--resume` で `start` し直す。
 - タブを閉じる（`onClose`）：`detach` して接続を閉じ、xterm を `dispose`。セッションは残る。
-- ヘッダの操作（`addAction`）：`@`（現在のノートを挿入）・前の指示・次の指示・最後の応答・⋯（名前を変更／圧縮／セッションを終了／フォント 大・小・リセット／設定）。
-- ステータスバー（ビュー下部 1 行）：`Opus 5 · high · ctx 42% · rc ● · 5h 37% · 7d 12%`。元は `status/<id>.json`（`model.display_name`・`context_window.used_percentage`・`rate_limits.five_hour/seven_day.used_percentage`・`effort` があれば）と `~/.claude/sessions/<pid>.json`（`bridgeSessionId` の有無 → rc）。`effort` が JSON に無ければ `~/.claude/settings.json` の `effortLevel`。取れない項目は `—`。
+- ヘッダの操作（`addAction`）：`@`（現在のノートを挿入）・前の指示・次の指示・最後の応答。セッションへの操作（名前変更・圧縮・アーカイブ・終了）はサイドパネルとマネージャーの行メニューに集約する。
 - タブのアイコンと題名：題名はセッション名（無ければ `無題 ` + ID 先頭 8 桁）。アイコンは `bot`。状態 `busy`／`shell` の間は CSS でアニメーション（`.agent-sessions-busy` を `leaf.tabHeaderInnerIconEl` に付ける）。`busy → idle` に落ちたときにそのタブが前面でなければ `.agent-sessions-waiting`（アイコン `message-circle`）にし、前面になったら戻す。
 
-### 6.3 1 セッション＝1 タブ
+### 6.4 1 セッション＝1 タブ
 
-`openSession(id)`：`workspace.getLeavesOfType('agent-sessions-terminal')` から `view.state.id === id` の leaf を探し、あれば `revealLeaf` して終わり。無ければ設定の場所（右サイドバー／メイン領域）に leaf を作り `setViewState`。新規セッションも同じ経路（先に `sessions.json` の `sessions[id]` を書く）。
+`openSession(id)`：`workspace.getLeavesOfType('agent-sessions-terminal')` から `view.state.id === id` の leaf を探し、あれば `revealLeaf` して終わり。無ければメインエリアに `workspace.getLeaf('tab')` で leaf を作り `setViewState`。新規セッションも同じ経路（先に `sessions.json` の `sessions[id]` を書く）。
 
-### 6.4 状態と通知
+### 6.5 状態と通知
 
 - `registry.ts`：`fs.watch(~/.claude/sessions)` を 200 ms でまとめ、全 `*.json` を読み `sessionId → {status, pid, bridgeSessionId, updatedAt}`。pid が生きているか `process.kill(pid, 0)` で確かめ、死んでいる台帳は無視。
 - 状態の遷移 `busy|shell → idle` で、そのセッションのタブが前面でない（または Obsidian が非アクティブ）なら `Notice`（クリックで `openSession`）。設定で切れる。
-- 一覧ビューとターミナルビューは `registry` の変化イベントを購読して印を更新する。
+- 3 つのビューは `registry` の変化イベントを購読して印を更新する。
 
-### 6.5 名前変更・圧縮・終了
+### 6.6 名前変更・圧縮・終了・アーカイブ
 
-- `/rename NAME`・`/compact` は PTY へ `文字列 + "\r"` を書く。送る条件：デーモンにセッションがあり、状態が `idle`。満たさなければ名前変更は `pendingRenames` に入れ、次に attach して状態が `idle` になった 1 秒後に送る。圧縮は「待機中でないと送れない」と `Notice`。
+- `/rename NAME`・`/compact` は PTY へ `文字列 + CR` を書く。送る条件：デーモンにセッションがあり、状態が `idle`。満たさなければ名前変更は `pendingRenames` に入れ、次に attach して状態が `idle` になった 1 秒後に送る。圧縮は「待機中でないと送れない」と `Notice`。
 - 送った後 `events.log` の次の追記で `--only` 再走査し、名前が transcript に現れたら `pendingRenames` から消す。
 - 新規セッション：ダイアログ（名前・開始ボタン）。`id = crypto.randomUUID()`、`sessions[id] = {agent:'claude', cwd: vault}` を書き、名前があれば `pendingRenames[id]` に入れ、`openSession(id)`。タブが `start` し、最初の `idle` で `/rename` が送られる。
 - セッションを終了：確認 → `kill` → `exit` イベント → 終了画面。
+- アーカイブ：`sessions.json` の `archived` に入れる。起動中でもタブがあっても構わない（一覧から消えるだけ）。解除はマネージャーのアーカイブ区分から。
 
-### 6.6 リンクと `@` とジャンプ
+### 6.7 リンクと `@` とジャンプ
 
 - リンク（`links.ts`）：`registerLinkProvider`。行から `[\w./~\-]+(?:\.[A-Za-z0-9]+)(?::\d+(?::\d+)?)?` を候補にし、絶対パスは vault 配下なら相対に、相対はセッションの `cwd` から vault 相対に直し、`vault.getAbstractFileByPath` で実在するものだけリンクにする。クリックで `openLinkText`（メイン領域）、行番号があれば `editor.setCursor`。
 - `@` 挿入：コマンド「Agent Sessions: 現在のノートを @ で挿入」とヘッダの `@`。対象はアクティブな Markdown ビューのファイル。パスはセッションの `cwd` からの相対（`cwd` の外なら絶対）。エディタの選択が複数行なら `#L{from}-{to}`。空白を含むパスは引用符で囲む。PTY へ `@path ` を書き、ターミナルにフォーカスを移す。
-- ジャンプ（`marks.ts`）：`onData` に `\r` が含まれ、かつ括弧付きペースト中でないとき `registerMarker(0)` を「指示」として記録。`registry` の `idle → busy` で `registerMarker(0)` を「応答の先頭」として記録（最後の 1 つを保持）。前の指示＝現在の表示先頭より上で最も近いマーカー、次の指示＝表示先頭より下で最も近いマーカー、最後の応答＝応答マーカー。`scrollToLine(marker.line)`。破棄済みマーカーは捨てる。
+- ジャンプ（`marks.ts`）：`onData` に CR が含まれ、かつ括弧付きペースト中でないとき `registerMarker(0)` を「指示」として記録。`registry` の `idle → busy` で `registerMarker(0)` を「応答の先頭」として記録（最後の 1 つを保持）。前の指示＝現在の表示先頭より上で最も近いマーカー、次の指示＝表示先頭より下で最も近いマーカー、最後の応答＝応答マーカー。`scrollToLine(marker.line)`。破棄済みマーカーは捨てる。
 
-### 6.7 設定
+### 6.8 Enter の役割（送信／改行）
+
+Claude Code は `~/.claude/keybindings.json`（`$CLAUDE_CONFIG_DIR` 配下。vault の `.claude/` は読まない）の `Chat` コンテキストで `enter → chat:submit`、`ctrl+j → chat:newline` を既定とし、キーはコンテキスト毎に付け替えられる。プラグインはこのファイルで「Enter の役割」を切り替える。Claude Code 全体の設定なので、iTerm など他の端末の claude にも効く。
+
+- **設定画面の表示**：開くたびに `keybindings.json` を読み、`Chat` の `enter` を解釈して現在値を出す。
+  - `enter` が無い、または `chat:submit` → **送信**
+  - `enter` が `chat:newline` → **改行**
+  - それ以外（`null` や別のアクション）→ **カスタム**（`enter → <値>` をそのまま表示。プラグインからは変更しない）
+  - ファイルが無い → 送信。JSON が壊れている → 「読めない」と表示し変更を受け付けない。
+- **改行に切り替える**：確認（「Claude Code 全体に効く」旨）→ 読み込み → `Chat` ブロック（無ければ作る）に `enter: chat:newline`、`shift+enter: chat:submit`、`meta+enter: chat:submit` を入れ、他の鍵は触らずに書く（`$schema`・`$docs` が無ければ足す）。
+- **送信に戻す**：`Chat` の `enter`・`shift+enter`・`meta+enter` が上の値と一致するものだけ消す。空になった `Chat` ブロックは消す。一致しない鍵は残して「手で直す必要がある」と `Notice`。
+- 改行モードのときの Shift／Option／Cmd+Enter は、ターミナルが ESC CR（meta+enter）を送るので Claude Code 側で `chat:submit` になる。
+
+### 6.9 設定
 
 | 項目 | 既定 |
 |---|---|
 | フォント | `Menlo, "Hiragino Sans", monospace` |
 | フォントサイズ | 13 |
-| 余白 | ゆったり |
-| ターミナルを開く場所 | 右サイドバー |
+| 余白 | ゆったり（`comfortable`／`compact`／`none`） |
+| Enter の役割 | 送信（§6.8。実体は `keybindings.json`） |
+| 最近の件数（サイドパネル） | 10 |
 | 指示待ちの通知 | オン |
 | `claude` のパス | 空＝ログインシェルで `command -v claude` |
 | `agent-sessions` のパス | 空＝`~/bin/agent-sessions` |
 | Python のパス | `/usr/bin/python3` |
 | スクロールバック行数 | 5000 |
 
-### 6.8 テーマ
+### 6.10 テーマ
 
 `theme.ts` が Obsidian の CSS 変数（`--background-primary`・`--text-normal`・`--text-accent`・`--text-selection`）から `background`・`foreground`・`cursor`・`selectionBackground` を作る。ANSI 16 色は明暗それぞれの固定表。`css-change` で再適用。
 
@@ -238,12 +281,13 @@ TUI：一覧（グループ→単独→その他、折畳、`/` 絞込、`h` で
 | `--resume` が失敗（transcript 消失） | claude の出力をそのまま見せ、終了画面に「新規として開始」を足す |
 | `json scan` が失敗 | 一覧に前回の結果を残し、`Notice` に stderr の先頭行 |
 | `sessions.json` が壊れている | `.broken-<時刻>` に退避して初期化 |
+| `keybindings.json` が読めない | 設定画面に「読めない」と出し、Enter の役割は変更不可 |
 | WebGL が使えない | canvas に落ちる（ログのみ） |
 
 ## 8. テスト
 
 - Python（unittest、`-W error`）：既存 90 件を移設。追加：`protocol`（フレームの分割・結合）、`daemon`（`cat` を子にした start/attach/replay/resize/kill、バッファ上限、複数接続）、`store`（sessions.json、旧 md の取り込み）、`cache`、`jsonout`、`tui` のパネル幅。
-- TypeScript（vitest）：`tree`、`links`、`marks`、`daemon-client` のフレーム、`statusline` の整形、`store` の読み書き（tmp dir）。
+- TypeScript（vitest）：`tree`、`index`（開いているタブ／起動中／最近の区分け）、`links`、`marks`、`keybindings`（読解・書換・戻し）、`daemon-client` のフレーム、`statusline` の整形、`store` の読み書き（tmp dir）。
 - 手動：`requirements.md` の「受け入れの確認」。
 
 ## 9. 段 2 以降への接続
