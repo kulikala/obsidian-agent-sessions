@@ -37,6 +37,8 @@ export interface SessionIndexDeps {
 const RESCAN_INTERVAL_MS = 60000;
 /** 未適用の名前変更（§6.6）の送信タイミングを見るための周期。 */
 const PENDING_TICK_MS = 250;
+/** `registry` の変化から `refreshLive()` までのデバウンス（§6.1・§6.3）。 */
+const LIVE_DEBOUNCE_MS = 1000;
 
 function rowFromScan(s: ScanSession, openTabIds: Set<string>, store: Store): Row {
 	const archivedEntry = store.archived.find((a) => a.id === s.id);
@@ -73,6 +75,7 @@ export class SessionIndex extends EventEmitter {
 	/** 未適用の名前変更（§6.6）の状態機械。`pendingRenames` の内容と `registry` の状態を映す。 */
 	private pending = new PendingRenamer();
 	private pendingTimer: ReturnType<typeof setInterval> | null = null;
+	private liveDebounce: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(private deps: SessionIndexDeps) {
 		super();
@@ -82,6 +85,7 @@ export class SessionIndex extends EventEmitter {
 			this.applyRegistry();
 			this.refreshPendingStatus();
 			this.drainPending();
+			this.scheduleLiveRefresh();
 			this.emit("change");
 		});
 		this.eventsOffset = this.currentEventsLogSize();
@@ -169,20 +173,26 @@ export class SessionIndex extends EventEmitter {
 		}
 		this.applyScanResult(result, only);
 		this.applyRegistry();
+		await this.refreshLive();
 		this.emit("change");
 	}
 
-	/** `json live` の `daemon.sessions` から行ごとの `daemon`／`exited` を導く。 */
+	/**
+	 * `json live` の `daemon.sessions` から行ごとの `daemon`／`exited` を導く（§6.1・§6.3）。
+	 * 失敗（デーモン未起動など）は静かに無視し、`daemon:false` として扱う——`json scan` の
+	 * 失敗と違って `Notice` は出さない。呼出：`start()` の初回走査の後・`registry` の変化
+	 * のたび（1 秒デバウンス）・60 秒タイマー・`rescan()` の後。
+	 */
 	async refreshLive(): Promise<void> {
 		let result: LiveResult;
 		try {
 			result = await this.deps.live();
-		} catch (err) {
-			this.emit("scanError", messageOf(err));
-			return;
+		} catch {
+			result = { live: {}, daemon: { running: false, sessions: [] } };
 		}
-		this.applyLive(result);
-		this.emit("change");
+		if (this.applyLive(result)) {
+			this.emit("change");
+		}
 	}
 
 	/** `events.log` の追記を検知したら呼ぶ（手動でも、`fs.watch` からでも）。 */
@@ -264,6 +274,10 @@ export class SessionIndex extends EventEmitter {
 			clearInterval(this.timer);
 			this.timer = null;
 		}
+		if (this.liveDebounce) {
+			clearTimeout(this.liveDebounce);
+			this.liveDebounce = null;
+		}
 	}
 
 	private scheduleEventsCheck(): void {
@@ -274,6 +288,16 @@ export class SessionIndex extends EventEmitter {
 			this.eventsDebounce = null;
 			this.checkEventsLog();
 		}, 200);
+	}
+
+	private scheduleLiveRefresh(): void {
+		if (this.liveDebounce) {
+			clearTimeout(this.liveDebounce);
+		}
+		this.liveDebounce = setTimeout(() => {
+			this.liveDebounce = null;
+			void this.refreshLive();
+		}, LIVE_DEBOUNCE_MS);
 	}
 
 	private currentEventsLogSize(): number {
@@ -369,14 +393,22 @@ export class SessionIndex extends EventEmitter {
 		};
 	}
 
-	private applyLive(result: LiveResult): void {
+	/** 行を書き換え、1 件でも `daemon`／`exited` が変わったら真を返す。 */
+	private applyLive(result: LiveResult): boolean {
 		const running = result.daemon.running;
 		const byId = new Map(result.daemon.sessions.map((s) => [s.id, s]));
+		let changed = false;
 		for (const row of this.sessions.values()) {
 			const d = running ? byId.get(row.id) : undefined;
-			row.daemon = !!d;
-			row.exited = d ? d.exited : null;
+			const daemon = !!d;
+			const exited = d ? d.exited : null;
+			if (row.daemon !== daemon || row.exited !== exited) {
+				changed = true;
+			}
+			row.daemon = daemon;
+			row.exited = exited;
 		}
+		return changed;
 	}
 
 	private applyRegistry(): void {

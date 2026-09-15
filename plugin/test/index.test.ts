@@ -111,6 +111,52 @@ describe("SessionIndex", () => {
 		expect(index.sessions.get("a")?.exited).toBeNull();
 	});
 
+	it("scan のたびに live も反映し、daemon.sessions に含まれる id は daemon: true になる（§6.1・§6.3）", async () => {
+		scanImpl = async () => ({
+			sessions: [scanSession({ id: "a" }), scanSession({ id: "b" })],
+			store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+		});
+		liveImpl = async () => ({
+			live: {},
+			daemon: {
+				running: true,
+				sessions: [{ id: "a", agent: "claude", cwd: "/v", pid: 1, startedAt: 0, clients: 1, exited: null, exitedAt: null }],
+			},
+		});
+		const index = new SessionIndex(deps);
+		await index.scan();
+
+		expect(index.sessions.get("a")?.daemon).toBe(true);
+		expect(index.sessions.get("b")?.daemon).toBe(false);
+	});
+
+	it("live が失敗しても静かに無視する（scanError は出さず daemon: false のまま）", async () => {
+		scanImpl = async () => ({
+			sessions: [scanSession({ id: "a" })],
+			store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+		});
+		liveImpl = async () => ({
+			live: {},
+			daemon: {
+				running: true,
+				sessions: [{ id: "a", agent: "claude", cwd: "/v", pid: 1, startedAt: 0, clients: 1, exited: null, exitedAt: null }],
+			},
+		});
+		const index = new SessionIndex(deps);
+		await index.scan();
+		expect(index.sessions.get("a")?.daemon).toBe(true);
+
+		const errors: string[] = [];
+		index.onError((message) => errors.push(message));
+		liveImpl = async () => {
+			throw new Error("daemon 未起動");
+		};
+		await index.refreshLive();
+
+		expect(errors).toEqual([]);
+		expect(index.sessions.get("a")?.daemon).toBe(false);
+	});
+
 	it("setOpenTabs が hasTab を更新する", async () => {
 		scanImpl = async () => ({
 			sessions: [scanSession({ id: "a" }), scanSession({ id: "b" })],
