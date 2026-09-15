@@ -679,16 +679,23 @@ export class TerminalView extends ItemView {
 		return headerEl?.querySelector<HTMLElement>(".workspace-tab-header-inner-icon") ?? null;
 	}
 
-	/** タブ見出しの題名とアイコンを描き直す。`updateHeader` は公開型に無い。 */
+	/**
+	 * タブ見出しとビュー上部の見出し（`.view-header-title`）の題名・アイコンを描き直す。
+	 * `updateHeader` は公開型に無い。ビュー上部の見出しは `updateHeader` が触らない。
+	 */
 	private updateHeader(): void {
 		const leaf = this.leaf as unknown as { updateHeader?: () => void };
 		if (typeof leaf.updateHeader === "function") {
 			leaf.updateHeader();
-			return;
+		} else {
+			const iconEl = this.headerIconEl();
+			if (iconEl) {
+				setIcon(iconEl, this.getIcon());
+			}
 		}
-		const iconEl = this.headerIconEl();
-		if (iconEl) {
-			setIcon(iconEl, this.getIcon());
+		const titleEl = this.containerEl.querySelector<HTMLElement>(".view-header-title");
+		if (titleEl) {
+			titleEl.setText(this.getDisplayText());
 		}
 	}
 }
