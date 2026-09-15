@@ -146,7 +146,7 @@ Unix ドメインソケット `~/.agents/sessions/daemon.sock`。両方向とも
 - 終了の検知：master fd の読みが EOF か `EIO` になったら `waitpid(pid, WNOHANG)`。加えて `SIGCHLD` を self-pipe で `select` に流し、孫プロセスが PTY を掴んでいて EOF が来ない場合も拾う。検知したら全接続に `exit` を送る。
 - 終了済みセッションは **`forget` されるまで保持**する（記録とバッファ）。裏のタブが後から attach しても再生と `exit` が届き、終了画面になる。`forget` はプラグインの「再開」「閉じる」と TUI が送る。
 - `kill`：プロセスグループへ `SIGTERM`、10 秒で `SIGKILL`。
-- デーモン自身：動作中セッション 0 かつ接続 0 の状態が 10 分続いたら終了。終了するとき（アイドル・`shutdown`・`SIGTERM`）は、**その時点で既に終了済み**の記録（`id`・`code`・`exitedAt`）だけを `~/.agents/sessions/exited.json` に書き、次に起動したときに読み込んで `forget` されるまで保持する（バッファは持ち越さない）。デーモンの終了に伴って `kill` した動作中セッションは外からの停止なので記録しない（再起動後は `--resume` で続く）。裏タブがデーモンの再起動をまたいで attach しても `exit` が届き、終了画面になる。`exited.json` は 200 件・30 日を上限に古いものから捨てる。`SIGTERM` で全セッションを `kill` して終了。単一実体は `daemon.pid` と `flock` で保証。二重に起動された側は `flock` に失敗して即終了し、呼び出し側（プラグイン）は 1 秒待って再接続する。
+- デーモン自身：動作中セッション 0 かつ接続 0 の状態が 10 分続いたら終了。終了するとき（アイドル・`shutdown`・`SIGTERM`）は、**その時点で既に終了済み**の記録（`id`・`code`・`exitedAt`）だけを `~/.agents/sessions/exited.json` に書き、次に起動したときに読み込んで `forget` されるまで保持する（バッファは持ち越さない）。デーモンの終了に伴って `kill` した動作中セッションは外からの停止なので記録しない（再起動後は `--resume` で続く）。裏タブがデーモンの再起動をまたいで attach しても `exit` が届き、終了画面になる。`exited.json` に上限は設けない。増えないのは、プラグインが `onLayoutReady` と `layout-change` のたびに、終了済みでターミナルタブの無い `id` へ `forget` を送るから（タブが残っている `id` は捨てない）。`SIGTERM` で全セッションを `kill` して終了。単一実体は `daemon.pid` と `flock` で保証。二重に起動された側は `flock` に失敗して即終了し、呼び出し側（プラグイン）は 1 秒待って再接続する。
 - 起動時に `~/.agents/sessions/` を 0700 で作り、ソケットは `umask 0077` の下で bind する。
 - 1 スレッド `select` ループ。ブロッキング I/O なし。
 
@@ -243,6 +243,7 @@ TUI：一覧（グループ→単独→その他、折畳、`/` 絞込、`h` で
 - `registry.ts`：`fs.watch(~/.claude/sessions)` を 200 ms でまとめ、全 `*.json` を読み `sessionId → {status, pid, bridgeSessionId, updatedAt}`。pid が生きているか `process.kill(pid, 0)` で確かめ、死んでいる台帳は無視。
 - 状態の遷移 `busy|shell → idle` で、そのセッションのタブが前面でない（または Obsidian が非アクティブ）なら `Notice`（クリックで `openSession`）。設定で切れる。
 - 3 つのビューは `registry` の変化イベントを購読して印を更新する。
+- 終了済みの後始末：`onLayoutReady` と `layout-change` で、デーモンの `list` の `exited` のうちターミナルタブが無い `id` に `forget` を送る。タブがある `id` は、そのタブが「再開」「閉じる」で `forget` するまで残す。
 
 ### 6.6 名前変更・圧縮・終了・アーカイブ
 
