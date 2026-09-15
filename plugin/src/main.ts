@@ -9,7 +9,7 @@ import { ConfirmModal, NewSessionModal, RenameSessionModal } from "./modals";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./open-session";
 import { AgentSessionsSettings, DEFAULT_SETTINGS } from "./settings";
 import { migrateFromMarkdown, StoreLockError, updateStore } from "./store";
-import type { ArchivedSession } from "./types";
+import type { ArchivedSession, DaemonSession } from "./types";
 import { ManagerView, VIEW_TYPE_MANAGER } from "./views/manager";
 import { SideView, VIEW_TYPE_SIDE } from "./views/side";
 import { TerminalView } from "./views/terminal";
@@ -30,6 +30,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	index!: SessionIndex;
 	private stopIndex: (() => void) | null = null;
 	private opener!: SessionOpener<WorkspaceLeaf>;
+	/** 終了済みセッションの後始末（§6.5）のデバウンス。 */
+	private cleanupExitedTimer: ReturnType<typeof setTimeout> | null = null;
 	/** `openSession` の進行中の呼出（§6.4）。 */
 	get opening(): Map<string, Promise<WorkspaceLeaf>> {
 		return this.opener.opening;
@@ -58,6 +60,22 @@ export default class AgentSessionsPlugin extends Plugin {
 			this.stopIndex = this.index.start();
 		});
 		this.opener = new SessionOpener<WorkspaceLeaf>(this.app.workspace);
+
+		this.register(this.index.registry.onIdle((id) => this.notifyIdle(id)));
+		this.register(
+			this.index.onPendingRenameSend((items) => {
+				for (const { id, name } of items) {
+					void this.sendToPty(id, `/rename ${name}\r`).catch((err) => {
+						new Notice(`名前の変更に失敗しました: ${messageOf(err)}`);
+					});
+				}
+			})
+		);
+		this.register(this.index.onPendingRenameConfirmed((ids) => this.confirmPendingRenames(ids)));
+
+		// 終了済みの後始末（§6.5）：タブの無い終了済みセッションに `forget` を送る。
+		this.app.workspace.onLayoutReady(() => this.scheduleCleanupExited());
+		this.registerEvent(this.app.workspace.on("layout-change", () => this.scheduleCleanupExited()));
 
 		this.registerView(VIEW_TYPE_SIDE, (leaf) => new SideView(leaf, this));
 		this.registerView(VIEW_TYPE_MANAGER, (leaf) => new ManagerView(leaf, this));
@@ -107,6 +125,10 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.stopIndex?.();
 		this.stopIndex = null;
 		this.index.dispose();
+		if (this.cleanupExitedTimer) {
+			clearTimeout(this.cleanupExitedTimer);
+			this.cleanupExitedTimer = null;
+		}
 	}
 
 	async loadSettings(): Promise<void> {
@@ -348,6 +370,80 @@ export default class AgentSessionsPlugin extends Plugin {
 			.map((leaf) => leaf.view)
 			.filter((view): view is TerminalView => view instanceof TerminalView)
 			.find((view) => view.sessionId === id);
+	}
+
+	// ---- 通知・後始末（§6.5） -----------------------------------------------------
+
+	/** `busy|shell → idle` で、そのタブが前面でないか Obsidian が非アクティブなら通知する。 */
+	private notifyIdle(id: string): void {
+		if (!this.settings.notifyOnIdle) {
+			return;
+		}
+		const front = this.app.workspace.getActiveViewOfType(TerminalView);
+		if (front?.sessionId === id && document.hasFocus()) {
+			return;
+		}
+		const name = this.index.sessions.get(id)?.name ?? `無題 ${id.slice(0, 8)}`;
+		const notice = new Notice(`${name}：指示待ち`, 8000);
+		notice.noticeEl.addEventListener("click", () => void this.openSession(id));
+	}
+
+	/** 走査結果の名前が一致した未適用の名前変更を `pendingRenames` から消す（§6.6）。 */
+	private confirmPendingRenames(ids: string[]): void {
+		try {
+			updateStore(this.storePath(), (store) => {
+				for (const id of ids) {
+					delete store.pendingRenames[id];
+				}
+			});
+			this.index.refreshStore();
+		} catch (err) {
+			this.notifyLockError(err);
+		}
+	}
+
+	private scheduleCleanupExited(): void {
+		if (this.cleanupExitedTimer) {
+			clearTimeout(this.cleanupExitedTimer);
+		}
+		this.cleanupExitedTimer = setTimeout(() => {
+			this.cleanupExitedTimer = null;
+			void this.cleanupExited();
+		}, 500);
+	}
+
+	/**
+	 * 終了済み（`exited !== null`）のうちターミナルタブが無いセッションに `forget` を送る。
+	 * デーモンに繋がらなければ何もしない（起動しない。§6.5）。
+	 */
+	private async cleanupExited(): Promise<void> {
+		const client = new DaemonClient(this.sockPath());
+		try {
+			await client.connect();
+		} catch {
+			return;
+		}
+		try {
+			await client.hello("plugin");
+			const list = await client.list();
+			const sessions = (list.sessions as DaemonSession[] | undefined) ?? [];
+			const openIds = new Set(
+				this.app.workspace
+					.getLeavesOfType(VIEW_TYPE_TERMINAL)
+					.map((leaf) => leaf.view)
+					.filter((view): view is TerminalView => view instanceof TerminalView)
+					.map((view) => view.sessionId)
+			);
+			for (const s of sessions) {
+				if (s.exited !== null && !openIds.has(s.id)) {
+					await client.forget(s.id).catch(() => undefined);
+				}
+			}
+		} catch (err) {
+			console.warn("agent-sessions: 終了済みの後始末に失敗", err);
+		} finally {
+			client.close();
+		}
 	}
 
 	private notifyLockError(err: unknown): void {

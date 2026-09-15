@@ -139,6 +139,36 @@ describe("SessionIndex", () => {
 		expect(index.sessions.get("b")?.archived).toBe(false);
 	});
 
+	it("走査結果の名前が pendingRename と一致したら onPendingRenameConfirmed で通知する（§6.6）", async () => {
+		updateStore(deps.storePath, (s) => {
+			s.pendingRenames["a"] = "太郎";
+		});
+		scanImpl = async () => ({
+			sessions: [scanSession({ id: "a", name: null })],
+			store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+		});
+		const index = new SessionIndex(deps);
+		await index.scan();
+		expect(index.sessions.get("a")?.pendingRename).toBe("太郎");
+
+		const confirmed: string[][] = [];
+		index.onPendingRenameConfirmed((ids) => confirmed.push(ids));
+
+		scanImpl = async () => ({
+			sessions: [scanSession({ id: "a", name: "違う名前" })],
+			store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+		});
+		await index.scan();
+		expect(confirmed).toEqual([]);
+
+		scanImpl = async () => ({
+			sessions: [scanSession({ id: "a", name: "太郎" })],
+			store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+		});
+		await index.scan();
+		expect(confirmed).toEqual([["a"]]);
+	});
+
 	it("getDetail はキャッシュする", async () => {
 		const index = new SessionIndex(deps);
 		await index.getDetail("a");
