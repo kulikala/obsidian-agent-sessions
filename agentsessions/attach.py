@@ -71,10 +71,19 @@ class _Client:
             data = self.sock.recv(READ_SIZE)
             if not data:
                 raise ConnectionError('daemon closed the connection')
+            # 応答が見つかっても即座に返さない：同じ recv／feed に含まれる
+            # 後続のフレーム（`R`・`replayed` など）を捨てないよう、この feed
+            # 分は最後まで見てから返す。
+            result = None
             for kind, payload in self.decoder.feed(data):
-                if kind == protocol.FRAME_J and protocol.decode_json(payload).get('seq') == seq:
-                    return protocol.decode_json(payload)
+                if result is None and kind == protocol.FRAME_J:
+                    obj2 = protocol.decode_json(payload)
+                    if obj2.get('seq') == seq:
+                        result = obj2
+                        continue
                 self.pending.append((kind, payload))
+            if result is not None:
+                return result
 
     def notify(self, op: str, **extra) -> None:
         self._seq += 1
