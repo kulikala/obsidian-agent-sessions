@@ -12,6 +12,8 @@ export interface AgentSessionsSettings {
 	agentSessionsPath: string;
 	pythonPath: string;
 	scrollback: number;
+	/** 編集領域の高さ（本体に対する %）。 */
+	editorHeight: number;
 }
 
 export const DEFAULT_SETTINGS: AgentSessionsSettings = {
@@ -24,4 +26,5 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	agentSessionsPath: "",
 	pythonPath: "/usr/bin/python3",
 	scrollback: 5000,
+	editorHeight: 40,
 };

@@ -1,8 +1,9 @@
 import { Events, Notice, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, type FileSystemAdapter } from "obsidian";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { detail, live, resolveAgentSessionsPath, scan } from "./backend";
 import { DaemonClient, defaultSockPath, ensureDaemon } from "./daemon-client";
+import { EditServer, type EditReply, type EditRequest } from "./edit-server";
 import { SessionIndex } from "./index";
 import { defaultKeybindingsPath, readEnterMode, setEnterMode } from "./keybindings";
 import { buildAtToken, selectionLineRange } from "./links";
@@ -31,6 +32,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	index!: SessionIndex;
 	private stopIndex: (() => void) | null = null;
 	private opener!: SessionOpener<WorkspaceLeaf>;
+	/** `agent-sessions edit` からの要求を受けるソケット（D-21）。 */
+	private editServer = new EditServer();
 	/** 終了済みセッションの後始末（§6.5）のデバウンス。 */
 	private cleanupExitedTimer: ReturnType<typeof setTimeout> | null = null;
 	/** `openSession` の進行中の呼出（§6.4）。 */
@@ -78,6 +81,11 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.app.workspace.onLayoutReady(() => this.scheduleCleanupExited());
 		this.registerEvent(this.app.workspace.on("layout-change", () => this.scheduleCleanupExited()));
 
+		this.editServer.onEdit((req, reply) => this.handleEdit(req, reply));
+		this.editServer.start(this.pluginSockPath()).catch((err) => {
+			console.warn("agent-sessions: plugin.sock を開けない", err);
+		});
+
 		this.registerView(VIEW_TYPE_SIDE, (leaf) => new SideView(leaf, this));
 		this.registerView(VIEW_TYPE_MANAGER, (leaf) => new ManagerView(leaf, this));
 		this.registerView(VIEW_TYPE_TERMINAL, (leaf) => new TerminalView(leaf, this));
@@ -122,6 +130,11 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	onunload(): void {
+		// 進行中の編集は元の内容に戻して `cancel` を返し、それからソケットを閉じる（D-21）。
+		for (const view of this.terminalViews()) {
+			view.cancelEditor();
+		}
+		this.editServer.stop();
 		// registerView の leaf は Obsidian が畳む。
 		this.stopIndex?.();
 		this.stopIndex = null;
@@ -180,6 +193,55 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	sockPath(): string {
 		return defaultSockPath();
+	}
+
+	/** `agent-sessions edit` が繋ぐソケット（D-20）。 */
+	pluginSockPath(): string {
+		return join(RUNTIME_DIR, "plugin.sock");
+	}
+
+	/**
+	 * `start` の `env` に入れる `VISUAL`（D-20）：設定 `agentSessionsPath` が空なら
+	 * `~/bin/agent-sessions-code`、指定があればその隣の `agent-sessions-code`。
+	 */
+	visualPath(): string {
+		const configured = this.settings.agentSessionsPath;
+		return configured ? join(dirname(configured), "agent-sessions-code") : join(homedir(), "bin", "agent-sessions-code");
+	}
+
+	/**
+	 * `edit` 要求（D-21）：セッションのターミナルビューを探し（無ければ `no-tab`）、編集領域を
+	 * 開いて結果で応答する。claude 側が切れたら（`onAbort`）編集領域を閉じ、応答は返さない。
+	 */
+	private handleEdit(req: EditRequest, reply: EditReply): void {
+		const view = this.findTerminalView(req.session);
+		if (!view) {
+			reply(false, "no-tab");
+			return;
+		}
+		let aborted = false;
+		req.onAbort = () => {
+			aborted = true;
+			view.abortEditor();
+		};
+		void view
+			.openEditor(req.file, req.cwd)
+			.then((result) => {
+				if (aborted) {
+					return;
+				}
+				if (result === "send") {
+					reply(true);
+				} else {
+					reply(false, result);
+				}
+			})
+			.catch((err) => {
+				console.warn("agent-sessions: 編集領域を開けない", err);
+				if (!aborted) {
+					reply(false, "no-tab");
+				}
+			});
 	}
 
 	agentSessionsPath(): string {
@@ -365,12 +427,15 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 	}
 
-	private findTerminalView(id: string): TerminalView | undefined {
+	private terminalViews(): TerminalView[] {
 		return this.app.workspace
 			.getLeavesOfType(VIEW_TYPE_TERMINAL)
 			.map((leaf) => leaf.view)
-			.filter((view): view is TerminalView => view instanceof TerminalView)
-			.find((view) => view.sessionId === id);
+			.filter((view): view is TerminalView => view instanceof TerminalView);
+	}
+
+	private findTerminalView(id: string): TerminalView | undefined {
+		return this.terminalViews().find((view) => view.sessionId === id);
 	}
 
 	// ---- 通知・後始末（§6.5） -----------------------------------------------------
@@ -551,6 +616,19 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 				text.setValue(this.plugin.settings.pythonPath).onChange(async (value) => {
 					this.plugin.settings.pythonPath = value;
 					await this.plugin.saveSettings();
+				})
+			);
+
+		new Setting(containerEl)
+			.setName("編集領域の高さ（%）")
+			.setDesc("Ctrl+G で開く内蔵エディタの高さ")
+			.addText((text) =>
+				text.setValue(String(this.plugin.settings.editorHeight)).onChange(async (value) => {
+					const n = Number(value);
+					if (Number.isFinite(n) && n >= 10 && n <= 90) {
+						this.plugin.settings.editorHeight = n;
+						await this.plugin.saveSettings();
+					}
 				})
 			);
 

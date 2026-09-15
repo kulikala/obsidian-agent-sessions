@@ -2,6 +2,7 @@
 // エラー処理（§7）。xterm 5.x を `DaemonClient` に繋ぐ。
 
 import { ItemView, Notice, setIcon, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
+import * as fs from "node:fs";
 import { join } from "node:path";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -16,6 +17,7 @@ import { VIEW_TYPE_TERMINAL } from "../open-session";
 import type { Padding } from "../settings";
 import { readObsidianTheme } from "../theme";
 import type { DaemonSession } from "../types";
+import { EditorPane, type EditResult } from "./editor-pane";
 
 export { VIEW_TYPE_TERMINAL };
 
@@ -35,6 +37,9 @@ const EARLY_EXIT_MS = 3000;
 const RESUME_FAILURE_PATTERNS = ["No conversation found", "not found"];
 const FONT_SIZE_MIN = 6;
 const FONT_SIZE_MAX = 40;
+/** 編集領域の高さ（%）の下限・上限。最小 6 行は CSS の min-height で守る。 */
+const EDITOR_HEIGHT_MIN = 10;
+const EDITOR_HEIGHT_MAX = 90;
 
 type ExitReason =
 	| { kind: "exited"; code: number; resumeFailed: boolean }
@@ -59,7 +64,13 @@ export class TerminalView extends ItemView {
 	private terminal: Terminal;
 	private fit = new FitAddon();
 	private bodyEl!: HTMLElement;
+	/** xterm を載せる要素。編集領域が開くと縮む。 */
+	private termEl!: HTMLElement;
+	/** 編集領域（D-22）。閉じている間は隠す。 */
+	private editorEl!: HTMLElement;
 	private exitEl!: HTMLElement;
+	/** 進行中の編集。閉じる経路すべてがこれを解決する（D-21）。 */
+	private pendingEdit: EditorPane | null = null;
 	private opened = false;
 	private closed = false;
 	private lastSize = { width: 0, height: 0 };
@@ -197,6 +208,9 @@ export class TerminalView extends ItemView {
 	async onOpen(): Promise<void> {
 		this.contentEl.addClass("agent-sessions-terminal");
 		this.bodyEl = this.contentEl.createDiv({ cls: "agent-sessions-terminal-body" });
+		this.termEl = this.bodyEl.createDiv({ cls: "agent-sessions-terminal-term" });
+		this.editorEl = this.bodyEl.createDiv({ cls: "agent-sessions-terminal-editor" });
+		this.editorEl.hide();
 		this.exitEl = this.contentEl.createDiv({ cls: "agent-sessions-exit" });
 		this.exitEl.hide();
 
@@ -228,7 +242,7 @@ export class TerminalView extends ItemView {
 			this.lastSize = { width: rect.width, height: rect.height };
 			this.scheduleFit();
 		});
-		ro.observe(this.bodyEl);
+		ro.observe(this.termEl);
 		this.register(() => ro.disconnect());
 
 		this.register(this.plugin.index.onChange(() => this.onIndexChange()));
@@ -260,6 +274,7 @@ export class TerminalView extends ItemView {
 
 	async onClose(): Promise<void> {
 		this.closed = true;
+		this.cancelEditor();
 		if (this.resizeTimer) {
 			clearTimeout(this.resizeTimer);
 			this.resizeTimer = null;
@@ -278,6 +293,10 @@ export class TerminalView extends ItemView {
 		this.terminal.options.scrollback = s.scrollback;
 		if (this.bodyEl) {
 			this.bodyEl.style.setProperty("--as-pad", `${PADDING_PX[s.padding] ?? PADDING_PX.comfortable}px`);
+		}
+		if (this.editorEl) {
+			const pct = Math.min(EDITOR_HEIGHT_MAX, Math.max(EDITOR_HEIGHT_MIN, s.editorHeight));
+			this.editorEl.style.setProperty("--as-editor-height", `${pct}%`);
 		}
 		this.applyTheme();
 		this.scheduleFit();
@@ -326,7 +345,7 @@ export class TerminalView extends ItemView {
 
 	/** 大きさが 0 でなくなってから xterm を DOM に載せる（隠れたまま開くと文字幅が測れない）。 */
 	private openTerminal(): void {
-		this.terminal.open(this.bodyEl);
+		this.terminal.open(this.termEl);
 		this.opened = true;
 		try {
 			const webgl = new WebglAddon();
@@ -414,7 +433,8 @@ export class TerminalView extends ItemView {
 
 	private async startSession(client: DaemonClient, fresh: boolean): Promise<void> {
 		const claude = await resolveClaude(this.plugin.settings.claudePath);
-		const env = await loginEnv();
+		// `VISUAL` は内蔵エディタ（D-20）。`EDITOR` は触らない。
+		const env = { ...(await loginEnv()), VISUAL: this.plugin.visualPath() };
 		const argv = fresh ? [claude, "--session-id", this.id] : [claude, "--resume", this.id];
 		const cwd = this.cwd || this.plugin.vaultPath();
 		const res = await client.start({
@@ -510,6 +530,51 @@ export class TerminalView extends ItemView {
 		const resumeFailed =
 			early && RESUME_FAILURE_PATTERNS.some((p) => this.earlyOutput.includes(p));
 		this.showExit({ kind: "exited", code, resumeFailed });
+	}
+
+	// ---- 編集領域（D-21・D-22） -----------------------------------------------------
+
+	/**
+	 * `agent-sessions edit` からの要求。本体を上下に割って下に編集領域を開き、送る／取消で
+	 * 解決する。編集中に 2 つ目が来たら `busy`。
+	 */
+	async openEditor(file: string, cwd: string): Promise<EditResult | "busy"> {
+		if (this.pendingEdit || this.closed) {
+			return this.closed ? "cancel" : "busy";
+		}
+		const initial = fs.readFileSync(file, "utf8");
+		const s = this.plugin.settings;
+		const pane = new EditorPane(this.editorEl, {
+			app: this.app,
+			vaultPath: this.plugin.vaultPath(),
+			fontFamily: s.fontFamily,
+			fontSize: this.fontSize ?? s.fontSize,
+		});
+		this.pendingEdit = pane;
+		this.editorEl.show();
+		this.scheduleFit();
+		try {
+			return await pane.open(file, cwd, initial);
+		} finally {
+			if (this.pendingEdit === pane) {
+				this.pendingEdit = null;
+			}
+			this.editorEl.hide();
+			if (!this.closed) {
+				this.scheduleFit();
+				this.terminal.focus();
+			}
+		}
+	}
+
+	/** claude 側が切れた：編集領域を閉じ、`pendingEdit` を `cancel` で解決する（応答は返さない）。 */
+	abortEditor(): void {
+		this.pendingEdit?.abort();
+	}
+
+	/** タブ側が閉じる：元の内容を書き戻して `cancel` で解決する（応答は `main.ts` が返す）。 */
+	cancelEditor(): void {
+		this.pendingEdit?.cancel();
 	}
 
 	// ---- リンク・`@`・ジャンプ（§6.7） --------------------------------------------

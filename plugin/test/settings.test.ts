@@ -13,6 +13,7 @@ describe("DEFAULT_SETTINGS", () => {
 			agentSessionsPath: "",
 			pythonPath: "/usr/bin/python3",
 			scrollback: 5000,
+			editorHeight: 40,
 		});
 	});
 });

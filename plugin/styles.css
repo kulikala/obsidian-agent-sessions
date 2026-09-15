@@ -195,10 +195,84 @@
 	box-sizing: content-box;
 	padding: var(--as-pad, 12px);
 	background-color: var(--background-primary);
+	display: flex;
+	flex-direction: column;
 }
 
-.agent-sessions-terminal-body .xterm {
+/* xterm を載せる要素。fit はこの要素の計算済み高さで行数を決める。 */
+.agent-sessions-terminal-term {
+	flex: 1 1 auto;
+	min-height: 0;
+	position: relative;
+}
+
+.agent-sessions-terminal-term .xterm {
 	height: 100%;
+}
+
+/* ---- 編集領域（D-22）：本体を上下に割って下に置く ---- */
+
+.agent-sessions-terminal-editor {
+	flex: 0 0 var(--as-editor-height, 40%);
+	min-height: calc(6 * 1.5em + 2.4em);
+	display: flex;
+	flex-direction: column;
+	margin-top: var(--size-4-2);
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: var(--size-4-2);
+}
+
+.agent-sessions-editor-bar {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	flex: 0 0 auto;
+	margin-bottom: var(--size-4-1);
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+
+.agent-sessions-editor-file {
+	flex: 1 1 auto;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.agent-sessions-editor-text {
+	flex: 1 1 auto;
+	min-height: 0;
+	width: 100%;
+	resize: none;
+	line-height: 1.5;
+	background-color: var(--background-primary);
+	color: var(--text-normal);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+}
+
+.agent-sessions-suggest {
+	flex: 0 0 auto;
+	max-height: 12em;
+	overflow-y: auto;
+	margin-top: var(--size-4-1);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background-color: var(--background-secondary);
+	font-size: var(--font-ui-small);
+}
+
+.agent-sessions-suggest-item {
+	padding: var(--size-4-1) var(--size-4-2);
+	cursor: pointer;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.agent-sessions-suggest-item.is-selected,
+.agent-sessions-suggest-item:hover {
+	background-color: var(--background-modifier-hover);
 }
 
 /* タブ見出しのアイコン：busy の間は点滅 */
