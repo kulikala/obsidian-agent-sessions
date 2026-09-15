@@ -73,6 +73,7 @@ agent-sessions/
 | `<vault>/.agents/sessions/sessions.json.lock/` | 書込みの排他（§3.1） | 書く者 |
 | `~/.agents/sessions/daemon.sock` | デーモンのソケット（vault 配下は macOS のパス長制限 104 バイトに掛かる）。ディレクトリ 0700・ソケット 0600 | デーモン |
 | `~/.agents/sessions/daemon.pid` / `daemon.log` | デーモンの pid とログ | デーモン |
+| `~/.agents/sessions/exited.json` | 終了済みで未 `forget` のセッション（`id → {code, exitedAt}`）。デーモンが終了時に書き、起動時に読む | デーモン |
 | `~/.agents/sessions/status/<session_id>.json` | `statusLine` が渡す JSON をそのまま | `agent-sessions status` |
 | `~/.agents/sessions/events.log` | フック 1 件 1 行 `{"event","session_id","transcript_path","ts"}` | `agent-sessions hook` |
 | `~/.agents/sessions/scan-cache.json` | 走査キャッシュ | `agent-sessions json` |
@@ -145,7 +146,7 @@ Unix ドメインソケット `~/.agents/sessions/daemon.sock`。両方向とも
 - 終了の検知：master fd の読みが EOF か `EIO` になったら `waitpid(pid, WNOHANG)`。加えて `SIGCHLD` を self-pipe で `select` に流し、孫プロセスが PTY を掴んでいて EOF が来ない場合も拾う。検知したら全接続に `exit` を送る。
 - 終了済みセッションは **`forget` されるまで保持**する（記録とバッファ）。裏のタブが後から attach しても再生と `exit` が届き、終了画面になる。`forget` はプラグインの「再開」「閉じる」と TUI が送る。
 - `kill`：プロセスグループへ `SIGTERM`、10 秒で `SIGKILL`。
-- デーモン自身：動作中セッション 0 かつ接続 0 の状態が 10 分続いたら終了（終了済みの記録は捨てる）。`SIGTERM` で全セッションを `kill` して終了。単一実体は `daemon.pid` と `flock` で保証。二重に起動された側は `flock` に失敗して即終了し、呼び出し側（プラグイン）は 1 秒待って再接続する。
+- デーモン自身：動作中セッション 0 かつ接続 0 の状態が 10 分続いたら終了。終了するとき（アイドル・`shutdown`・`SIGTERM`）は終了済みの記録（`id`・`code`・`exitedAt`）を `~/.agents/sessions/exited.json` に書き、次に起動したときに読み込んで `forget` されるまで保持する（バッファは持ち越さない）。裏タブがデーモンの再起動をまたいで attach しても `exit` が届き、終了画面になる。`SIGTERM` で全セッションを `kill` して終了。単一実体は `daemon.pid` と `flock` で保証。二重に起動された側は `flock` に失敗して即終了し、呼び出し側（プラグイン）は 1 秒待って再接続する。
 - 起動時に `~/.agents/sessions/` を 0700 で作り、ソケットは `umask 0077` の下で bind する。
 - 1 スレッド `select` ループ。ブロッキング I/O なし。
 
@@ -305,7 +306,7 @@ Claude Code は `~/.claude/keybindings.json`（`$CLAUDE_CONFIG_DIR` 配下。vau
 
 ## 8. テスト
 
-- Python（unittest、`-W error`）：既存 90 件を移設。追加：`protocol`（フレームの分割・結合）、`daemon`（`cat` を子にした start/attach/replay/resize/kill/forget、バッファ上限、複数接続と最小サイズ、切断の後始末、終了済みへの attach）、`store` のロック（2 プロセスで同時に書く）、`setup`（settings.json の置換と backup）、`store`（sessions.json、旧 md の取り込み）、`cache`、`jsonout`、`tui` のパネル幅。
+- Python（unittest、`-W error`）：既存 90 件を移設。追加：`protocol`（フレームの分割・結合）、`daemon`（`cat` を子にした start/attach/replay/resize/kill/forget、バッファ上限、複数接続と最小サイズ、切断の後始末、終了済みへの attach、`exited.json` の書き出しと読み込み）、`store` のロック（2 プロセスで同時に書く）、`setup`（settings.json の置換と backup）、`store`（sessions.json、旧 md の取り込み）、`cache`、`jsonout`、`tui` のパネル幅。
 - TypeScript（vitest）：`tree`、`index`（開いているタブ／起動中／最近の区分け）、`links`、`marks`、`keybindings`（読解・書換・戻し）、`daemon-client` のフレーム、`statusline` の整形、`store` の読み書きとロック（tmp dir）、旧 md の取り込み、`openSession` の多重呼出（モックの workspace）。
 - 手動：`requirements.md` の「受け入れの確認」。
 
