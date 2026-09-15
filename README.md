@@ -28,12 +28,13 @@ Obsidian の「コミュニティプラグイン」で Agent Sessions を有効�
 | セッションマネージャー | グループ → 単独 → その他 → アーカイブ の木。折畳・絞込・詳細欄。開いても claude は起動しない |
 | ターミナル | 1 セッション＝1 タブ。ヘッダに `@`（現在のノートを挿入）・前の指示・次の指示・最後の応答。Shift／Option／Cmd+Enter で改行。Cmd +/−/0 でフォントサイズ。出力中の vault 内パスはクリックで開く |
 | Ctrl+G | プロンプト入力中に Ctrl+G で、同じタブの下に編集領域が開く（`$VISUAL` は `~/bin/agent-sessions-code`）。ペースト・IME・Undo はそのまま、`@` でファイル補完、Cmd+Enter で送る、Esc で取消。ターミナルは上に見えたまま。タブが無いときは `vi`（`AGENT_SESSIONS_FALLBACK_EDITOR`）に倒れる |
+| トークン集計 | 行メニュー「トークン集計」でセッションのターン一覧と合計。から／までで区間を選び、Markdown でコピー |
 | 設定 | フォント・サイズ・余白（ゆったり／小さめ／なし）・Enter の役割（送信／改行。実体は `~/.claude/keybindings.json` の `Chat`）・最近の件数・指示待ちの通知・パス |
 
 ```sh
 agent-sessions                 # TUI。⏎ で起動中なら attach、そうでなければ claude --resume
 agent-sessions attach ID       # 端末から attach（Ctrl+\ で detach）
-agent-sessions json scan|live|detail ID
+agent-sessions json scan|live|detail ID|usage ID [--from ISO --to ISO]
 agent-sessions daemon --detach
 agent-sessions setup --dry-run # settings.json に入れる変更を見る
 ```

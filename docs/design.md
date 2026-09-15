@@ -368,3 +368,17 @@ Claude Code は `~/.claude/keybindings.json`（`$CLAUDE_CONFIG_DIR` 配下。vau
 | Obsidian の Markdown エディタで開く | vault 外の一時ファイルを `TFile` として開けない |
 | 代替スクリーンの制御列をプラグインで削る | 実行ファイル名で GUI 扱いにする方が確実。判定が変わったときの予備 |
 | 別 leaf に編集領域を開く | ターミナルを隠さないという要件は同じタブの上下分割が最も確実 |
+
+## 11. トークン集計（段 4）
+
+### 11.1 事実
+
+`assistant` 行の `message.usage`（`input_tokens`・`cache_creation_input_tokens`・`cache_read_input_tokens`・`output_tokens`、`output_tokens_details.thinking_tokens`）は同じ `message.id` が複数行に現れ、内容は同一。`message.model` が `<synthetic>` の行は API 呼出ではない。`isSidechain`（サブエージェント）・`isMeta` の行は数えない。
+
+### 11.2 `agent-sessions json usage ID [--from ISO] [--to ISO]`
+
+`agentsessions/usage.py`：transcript を先頭から読み、人の指示（`detail.is_human_prompt`）でターンを切る。以後の `assistant` 行の usage を `message.id` で重複排除してターンに足す。最初の指示より前の usage は「（開始前）」のターン（index −1）。出力 `{"turns":[{index, ts, prompt, calls, input, cache_create, cache_read, output, thinking, models}], "total":{…}, "from", "to"}`。`--from`／`--to` はターン開始時刻に当てる（両端含む）。`turns` は常に全部返し、`total` だけが区間の合計。
+
+### 11.3 プラグイン
+
+行メニュー「トークン集計」→ モーダル（`src/usage-modal.ts`）。上に区間の合計、「から」「まで」のドロップダウン（ターン #）、「全体」「コピー」、下にターンの表。合計の計算と Markdown 化は `src/usage.ts` の純関数（`sumRange`・`toMarkdown`。表は区間のターンだけ）。
