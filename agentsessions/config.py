@@ -10,6 +10,7 @@ LOCK_DIR = STORE_PATH + '.lock'
 
 RUNTIME_DIR = os.path.expanduser('~/.agents/sessions')
 SOCK_PATH = os.path.join(RUNTIME_DIR, 'daemon.sock')
+PLUGIN_SOCK_PATH = os.path.join(RUNTIME_DIR, 'plugin.sock')
 PID_PATH = os.path.join(RUNTIME_DIR, 'daemon.pid')
 LOG_PATH = os.path.join(RUNTIME_DIR, 'daemon.log')
 EXITED_PATH = os.path.join(RUNTIME_DIR, 'exited.json')

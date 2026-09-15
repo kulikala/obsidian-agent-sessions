@@ -7,6 +7,8 @@ VAULT="${AGENT_SESSIONS_VAULT:-/path/to/vault}"
 mkdir -p "$HOME/bin"
 ln -fns "$HERE/bin/agent-sessions" "$HOME/bin/agent-sessions"
 echo "linked: $HOME/bin/agent-sessions"
+ln -fns "$HERE/bin/agent-sessions-code" "$HOME/bin/agent-sessions-code"
+echo "linked: $HOME/bin/agent-sessions-code"
 
 mkdir -p "$VAULT/.obsidian/plugins"
 ln -fns "$HERE/plugin" "$VAULT/.obsidian/plugins/agent-sessions"

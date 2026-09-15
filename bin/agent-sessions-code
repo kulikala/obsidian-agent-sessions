@@ -1,0 +1,17 @@
+#!/bin/sh
+# `agent-sessions edit` を basename に "code" を含む名前で呼ぶ（D-20）。
+# Claude Code は外部エディタの実行ファイルの basename に code／cursor／…を
+# 含むかで GUI エディタと判定し、含めば代替スクリーンに切り替えない。
+# symlink 経由（~/bin/agent-sessions-code）で呼ばれても、実体の隣にある
+# agent-sessions を呼ぶ。macOS の古い環境に `readlink -f` は無いので、
+# 1 段だけ readlink で辿ってから `cd … && pwd -P` で絶対パス化する。
+SELF="$0"
+if [ -L "$SELF" ]; then
+  LINK="$(readlink "$SELF")"
+  case "$LINK" in
+    /*) SELF="$LINK" ;;
+    *) SELF="$(dirname "$SELF")/$LINK" ;;
+  esac
+fi
+HERE="$(cd "$(dirname "$SELF")" && pwd -P)"
+exec "$HERE/agent-sessions" edit "$@"

@@ -4,7 +4,7 @@ from typing import List
 
 # サブコマンドは agentsessions.cmd_<name> モジュールの main(args) -> int。
 # モジュールが無いサブコマンドは「未実装」。
-SUBCOMMANDS = ('daemon', 'json', 'attach', 'hook', 'status', 'setup')
+SUBCOMMANDS = ('daemon', 'json', 'attach', 'edit', 'hook', 'status', 'setup')
 
 
 def main(argv: List[str]) -> int:
