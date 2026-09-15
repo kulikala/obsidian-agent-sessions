@@ -41,7 +41,7 @@ function readStatus(statusDir: string, id: string): StatusInfo | null {
 	}
 	return {
 		model: str(raw.model?.display_name),
-		effort: str(raw.effort),
+		effort: str(effortOf(raw.effort)),
 		ctxPercent: num(raw.context_window?.used_percentage),
 		fiveHour: num(raw.rate_limits?.five_hour?.used_percentage),
 		sevenDay: num(raw.rate_limits?.seven_day?.used_percentage),
@@ -111,6 +111,14 @@ export class StatusLine extends EventEmitter {
  * `rc` は `~/.claude/sessions` の `bridgeSessionId` の有無（`registry.ts` の
  * `RegistryEntry.rc`）。台帳自体が無ければ `null` を渡し `rc —` になる。
  */
+/** `effort` は文字列（`high`）でも `{level: "high"}` でも来る。 */
+function effortOf(v: unknown): unknown {
+	if (v && typeof v === "object" && "level" in (v as Record<string, unknown>)) {
+		return (v as Record<string, unknown>).level;
+	}
+	return v;
+}
+
 export function formatStatus(info: StatusInfo | null, rc: boolean | null): string {
 	const model = info?.model ?? "デフォルト";
 	const effort = info?.effort ?? "デフォルト";

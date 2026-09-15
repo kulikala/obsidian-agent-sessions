@@ -15,6 +15,12 @@ describe("StatusLine.get", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
+	it("effort が {level} の形でも読む", () => {
+		writeFileSync(join(dir, "s1.json"), JSON.stringify({ model: { display_name: "Opus 5" }, effort: { level: "high" } }));
+		const status = new StatusLine(dir);
+		expect(status.get("s1")?.effort).toBe("high");
+	});
+
 	it("ファイルが無ければ null", () => {
 		const status = new StatusLine(dir);
 		expect(status.get("missing")).toBeNull();
