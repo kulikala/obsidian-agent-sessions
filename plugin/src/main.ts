@@ -7,7 +7,7 @@ import { SessionIndex } from "./index";
 import { ConfirmModal, NewSessionModal, RenameSessionModal } from "./modals";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./open-session";
 import { AgentSessionsSettings, DEFAULT_SETTINGS } from "./settings";
-import { StoreLockError, updateStore } from "./store";
+import { migrateFromMarkdown, StoreLockError, updateStore } from "./store";
 import type { ArchivedSession } from "./types";
 import { ManagerView, VIEW_TYPE_MANAGER } from "./views/manager";
 import { SideView, VIEW_TYPE_SIDE } from "./views/side";
@@ -37,11 +37,18 @@ export default class AgentSessionsPlugin extends Plugin {
 	async onload(): Promise<void> {
 		await this.loadSettings();
 
+		// 旧 `claude-sessions.md` の取り込み（§3）。`sessions.json` が既にあれば何もしない。
+		try {
+			migrateFromMarkdown(join(this.vaultPath(), "claude-sessions.md"), this.storePath());
+		} catch (err) {
+			console.warn("agent-sessions: claude-sessions.md の取り込みに失敗", err);
+		}
+
 		this.index = new SessionIndex({
 			scan: (only) => scan(this.agentSessionsPath(), only),
 			live: () => live(this.agentSessionsPath()),
 			detail: (id) => detail(this.agentSessionsPath(), id),
-			storePath: join(this.vaultPath(), ".agents", "sessions", "sessions.json"),
+			storePath: this.storePath(),
 			eventsLogPath: join(RUNTIME_DIR, "events.log"),
 			sessionsDir: join(homedir(), ".claude", "sessions"),
 			statusDir: join(RUNTIME_DIR, "status"),

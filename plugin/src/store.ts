@@ -162,6 +162,9 @@ function clearIfStale(lockPath: string, staleAfterMs: number): void {
 
 /** `mkdir` で排他を取る。`EEXIST` なら再試行し、`timeoutMs` で `StoreLockError`。 */
 function acquireLock(lockPath: string, opts: Required<LockOptions>): void {
+	// ロックの親ディレクトリ（= sessions.json の置き場）がまだ無ければ作る。
+	// 無いまま `mkdirSync(lockPath)` を呼ぶと ENOENT になる。
+	fs.mkdirSync(path.dirname(lockPath), { recursive: true });
 	const deadline = Date.now() + opts.timeoutMs;
 	for (;;) {
 		try {

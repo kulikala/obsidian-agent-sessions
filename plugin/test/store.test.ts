@@ -61,6 +61,17 @@ describe("loadStore / updateStore 往復", () => {
 		expect(loadStore(join(dir, "missing.json"))).toEqual(emptyStore());
 	});
 
+	it("親ディレクトリが無い状態から update できる（.agents/sessions/ がまだ無い vault）", () => {
+		const nested = join(dir, ".agents", "sessions", "sessions.json");
+		expect(existsSync(join(dir, ".agents"))).toBe(false);
+
+		updateStore(nested, (store) => {
+			store.folded.push("RIM");
+		});
+
+		expect(loadStore(nested).folded).toEqual(["RIM"]);
+	});
+
 	it("壊れた JSON は退避して空の Store を返す", () => {
 		writeFileSync(storePath, "{not json", "utf8");
 
