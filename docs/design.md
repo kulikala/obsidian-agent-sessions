@@ -157,7 +157,7 @@ Unix ドメインソケット `~/.agents/sessions/daemon.sock`。両方向とも
 | `agent-sessions` | TUI |
 | `agent-sessions daemon [--detach]` | デーモン。`--detach` は `setsid` して pid を出力し戻る |
 | `agent-sessions json scan [--only ID …]` | 走査結果 `{"sessions":[…],"groups":…}`（§6）。`--only` は指定 transcript だけ再走査してキャッシュを更新 |
-| `agent-sessions json live` | 起動中の台帳（`~/.claude/sessions`）と デーモンの `list` を併せて `{"live":{id:{status,pid,rc,daemon:bool}}}` |
+| `agent-sessions json live` | 起動中の台帳（`~/.claude/sessions`）とデーモンの `list` を併せて `{"live":{id:{status,pid,rc,updated_at}},"daemon":{"running":bool,"sessions":[list の要素]}}`。デーモンが無ければ `running:false`（起動はしない）。プラグインは `daemon.sessions` から行ごとの `daemon`／`exited` を導く |
 | `agent-sessions json detail ID` | `{"last_user","last_assistant","tools"}` |
 | `agent-sessions attach ID` | 端末を raw mode にしてデーモンの PTY へ接続。`Ctrl+\` で detach |
 | `agent-sessions hook` | stdin の JSON を `events.log` に 1 行追記 |
