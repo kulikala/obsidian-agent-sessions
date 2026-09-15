@@ -35,31 +35,33 @@ agent-sessions/
 ├── agentsessions/             Python パッケージ（標準ライブラリのみ）
 │   ├── config.py              パス定数（VAULT, STORE_PATH, RUNTIME_DIR, SOCK_PATH, …）
 │   ├── model.py scan.py detail.py live.py items.py   走査・抽出（現 cslib から移設）
-│   ├── store.py               sessions.json（折畳・アーカイブ・未適用の名前変更）
+│   ├── store.py               sessions.json（折畳・アーカイブ・未適用の名前変更）。mkdir ロック付き
 │   ├── cache.py               走査キャッシュ（path → mtime,size,結果）
 │   ├── jsonout.py             `json` サブコマンドの出力
 │   ├── protocol.py            ソケットのフレーム（デーモンとクライアント共通）
 │   ├── daemon.py              PTY デーモン
 │   ├── attach.py              端末からの attach クライアント（raw mode）
 │   ├── hooks.py               `hook`・`status` の受け口
+│   ├── setup.py               `setup`（settings.json のフックと statusLine を整える）
 │   ├── cli.py                 サブコマンドの振り分け
 │   └── tui.py                 TUI（選んで起動するだけ）
 ├── tests/                     Python unittest
 ├── docs/
-└── install.sh                 symlink と settings.json の案内
+└── install.sh                 symlink を張り、`agent-sessions setup` を呼ぶ
 ```
 
-`~/.config/dotfiles` は `bin/cs`・`cslib/`・`tests/`・`docs/2026-09-11-claude-sessions-design.md` を削除し、`bin/agent-sessions` → `~/work/agent-sessions/bin/agent-sessions` の symlink を置く。
+`~/.config/dotfiles` は `bin/cs`・`cslib/`・`tests/`・`docs/2026-09-11-claude-sessions-design.md` を削除し、`bin/agent-sessions` → `~/work/agent-sessions/bin/agent-sessions` の symlink を置く。この削除は実行計画の 1 タスク（dotfiles で 1 コミット）として行う。
 
 ## 2. プロセスと責務
 
 | プロセス | 起動 | 責務 |
 |---|---|---|
 | プラグイン | Obsidian | 一覧・ターミナル描画・タブ管理・復元・通知・`sessions.json` の書込 |
-| `agent-sessions daemon` | プラグイン（ソケット不応答時に `--detach` で起動）／手動 | PTY の保持、出力バッファ、attach/detach、claude の起動と終了検知 |
+| `agent-sessions daemon` | プラグインだけが起動する（ソケット不応答時に `--detach`）。CLI・TUI は起動しない | PTY の保持、出力バッファ、attach/detach、claude の起動と終了検知 |
 | `agent-sessions json …` | プラグインが必要時に spawn | 走査・最終更新・子判定・起動中・直近の指示／応答 |
 | `agent-sessions`（TUI）| ユーザー | 選んで attach／起動 |
 | `agent-sessions hook` / `status` | Claude Code（settings.json） | フック・statusLine の受け口 |
+| `agent-sessions setup` | `install.sh`／手動 | `~/.claude/settings.json` のフックと `statusLine` を整える |
 
 走査と判定のロジックは Python 側にだけ置く。プラグインは JSON を表示し、`sessions.json` を書き、PTY を描く。
 
@@ -67,8 +69,9 @@ agent-sessions/
 
 | 場所 | 内容 | 書く者 |
 |---|---|---|
-| `<vault>/.agents/sessions/sessions.json` | 折畳・アーカイブ・未適用の名前変更（下記） | プラグイン、`agent-sessions`（原子的に tmp→rename） |
-| `~/.agents/sessions/daemon.sock` | デーモンのソケット（vault 配下は macOS のパス長制限 104 バイトに掛かる） | デーモン |
+| `<vault>/.agents/sessions/sessions.json` | 折畳・アーカイブ・未適用の名前変更（下記） | プラグイン、`agent-sessions`（TUI の折畳）。§3.1 のロックの中で読み→更新→tmp→rename |
+| `<vault>/.agents/sessions/sessions.json.lock/` | 書込みの排他（§3.1） | 書く者 |
+| `~/.agents/sessions/daemon.sock` | デーモンのソケット（vault 配下は macOS のパス長制限 104 バイトに掛かる）。ディレクトリ 0700・ソケット 0600 | デーモン |
 | `~/.agents/sessions/daemon.pid` / `daemon.log` | デーモンの pid とログ | デーモン |
 | `~/.agents/sessions/status/<session_id>.json` | `statusLine` が渡す JSON をそのまま | `agent-sessions status` |
 | `~/.agents/sessions/events.log` | フック 1 件 1 行 `{"event","session_id","transcript_path","ts"}` | `agent-sessions hook` |
@@ -90,7 +93,11 @@ agent-sessions/
 
 - `sessions` はプラグインが起動したセッションの `agent` と `cwd`。走査で transcript が見つかれば transcript が優先。新規直後（transcript 未生成）の行を一覧に出すために持つ。
 - `archived` の `name` はマネージャーの「アーカイブ」区分に出すための控え。真実は transcript。
-- 旧 `claude-sessions.md` の frontmatter（`folded`・`hidden` → `archived`）は初回起動時に取り込み、ファイルは残す（削除はユーザーが行う）。`~/.claude/cs/` は使わない。
+- 旧 `claude-sessions.md` の取り込みはプラグインの `onload` が行う：`sessions.json` が無く `<vault>/claude-sessions.md` があれば、frontmatter の `folded` → `folded`、`hidden` → `archived` に写し、`migratedFrom: {path, at}` を書く。`sessions.json` が既にあれば何もしない。md は残す（削除はユーザーが行う）。`~/.claude/cs/` は使わない。
+
+### 3.1 `sessions.json` の排他
+
+書く者はプラグイン（名前変更・アーカイブ・折畳・新規）と `agent-sessions` TUI（折畳）で、同時に動きうる。書込みは `sessions.json.lock/` ディレクトリを `mkdir` で取ってから行う（Python `os.mkdir`、Node `fs.mkdirSync`。作れた者がロックを持つ）。`EEXIST` なら 50 ms 待って再試行、2 秒で諦めてエラー（プラグインは `Notice`）。ロックの mtime が 10 秒より古ければ壊れたものとして `rmdir` して取り直す。ロックの中で読み→更新→tmp に書き→rename→`rmdir`。読むだけの者はロックを取らない。
 
 ## 4. デーモン
 
@@ -116,15 +123,18 @@ Unix ドメインソケット `~/.agents/sessions/daemon.sock`。両方向とも
 | op | 引数 | 応答 |
 |---|---|---|
 | `hello` | `client`（`plugin`／`tui`） | `{"ok":true,"version":1,"pid":…}` |
-| `list` | — | `{"ok":true,"sessions":[{"id","agent","cwd","pid","startedAt","clients","exited":null or code}]}` |
+| `list` | — | `{"ok":true,"sessions":[{"id","agent","cwd","pid","startedAt","clients","exited":null or code,"exitedAt"}]}`。終了済みも `forget` されるまで載る |
 | `start` | `id`,`agent`,`cwd`,`argv`,`env`,`cols`,`rows` | `{"ok":true}`。既に同じ `id` があれば `{"ok":false,"error":"exists"}` |
-| `attach` | `id`,`cols`,`rows` | `{"ok":true}` → `R`… → `{"ev":"replayed"}` → 以後 `D`。無ければ `{"ok":false,"error":"no-session"}` |
+| `attach` | `id`,`cols`,`rows` | `{"ok":true,"exited":null or code}` → `R`… → `{"ev":"replayed"}` → 以後 `D`。終了済みなら `replayed` の直後に `{"ev":"exit",…}` を送る。無ければ `{"ok":false,"error":"no-session"}` |
 | `detach` | — | `{"ok":true}` |
 | `resize` | `cols`,`rows` | `{"ok":true}` |
 | `kill` | `id`,`signal`（既定 `TERM`） | `{"ok":true}` |
+| `forget` | `id` | 終了済みセッションの記録とバッファを捨てる `{"ok":true}`。動作中なら `{"ok":false,"error":"running"}` |
 | `shutdown` | — | `{"ok":true}` 後にデーモン終了 |
 
-イベント（デーモン→、`"ev"`）：`exit`（`id`,`code`）・`replayed`。1 接続は同時に 1 セッションにしか attach しない。同じセッションに複数の接続が attach してよい（プラグインと TUI）。出力は全接続へ、入力はどこからでも、サイズは最後の `resize` が勝つ。
+イベント（デーモン→、`"ev"`）：`exit`（`id`,`code`）・`replayed`。1 接続は同時に 1 セッションにしか attach しない。同じセッションに複数の接続が attach してよい（プラグインと TUI）。出力は全接続へ、入力はどこからでも。**PTY のサイズは attach 中の全接続の最小 cols・最小 rows**（tmux と同じ）で、`resize`・`detach`・切断のたびに再計算する。
+
+接続の切断：`select` で読めるのに `recv` が空、または `ECONNRESET`／`EPIPE` なら切断とみなし、その接続を attach から外して `clients` を減らし、サイズを再計算する。明示の `detach` と同じ後始末を通る。
 
 ### 4.2 セッションの保持
 
@@ -132,9 +142,11 @@ Unix ドメインソケット `~/.agents/sessions/daemon.sock`。両方向とも
 - 環境は要求の `env` に `TERM=xterm-256color`・`COLORTERM=truecolor`・`AGENT_SESSIONS_ID=<id>` を足す。プラグインはログインシェル（`$SHELL -l -c 'env'`）から取った `PATH`・`LANG`・`HOME` などを `env` に渡す（Dock から起動した Obsidian の環境は貧弱なため）。
 - 出力バッファ：セッション毎に `deque` のチャンク列、合計 1 MiB を上限に古いものから捨てる。再生はチャンク境界から。
 - attach 時：`resize` を適用してから `R` で再生、`replayed` の後に **行数を 1 減らして戻す**（Claude Code が SIGWINCH で画面下部を描き直す）。
-- 終了：`waitpid` で検知 → 全接続に `exit` → セッションは `exited` 付きで 60 秒残し、その後破棄。
+- 終了の検知：master fd の読みが EOF か `EIO` になったら `waitpid(pid, WNOHANG)`。加えて `SIGCHLD` を self-pipe で `select` に流し、孫プロセスが PTY を掴んでいて EOF が来ない場合も拾う。検知したら全接続に `exit` を送る。
+- 終了済みセッションは **`forget` されるまで保持**する（記録とバッファ）。裏のタブが後から attach しても再生と `exit` が届き、終了画面になる。`forget` はプラグインの「再開」「閉じる」と TUI が送る。
 - `kill`：プロセスグループへ `SIGTERM`、10 秒で `SIGKILL`。
-- デーモン自身：セッション 0 かつ接続 0 の状態が 10 分続いたら終了。`SIGTERM` で全セッションを `kill` して終了。単一実体は `daemon.pid` と `flock` で保証。
+- デーモン自身：動作中セッション 0 かつ接続 0 の状態が 10 分続いたら終了（終了済みの記録は捨てる）。`SIGTERM` で全セッションを `kill` して終了。単一実体は `daemon.pid` と `flock` で保証。二重に起動された側は `flock` に失敗して即終了し、呼び出し側（プラグイン）は 1 秒待って再接続する。
+- 起動時に `~/.agents/sessions/` を 0700 で作り、ソケットは `umask 0077` の下で bind する。
 - 1 スレッド `select` ループ。ブロッキング I/O なし。
 
 ## 5. `agent-sessions` CLI
@@ -149,8 +161,9 @@ Unix ドメインソケット `~/.agents/sessions/daemon.sock`。両方向とも
 | `agent-sessions attach ID` | 端末を raw mode にしてデーモンの PTY へ接続。`Ctrl+\` で detach |
 | `agent-sessions hook` | stdin の JSON を `events.log` に 1 行追記 |
 | `agent-sessions status` | stdin の JSON を `status/<session_id>.json` に書き、`モデル · ctx NN%` を 1 行出力（Claude Code のステータス行になる） |
+| `agent-sessions setup` | `~/.claude/settings.json` を読み、`settings.json.bak-<時刻>` を残してから、`hooks.Stop`・`hooks.SessionEnd` の `"$HOME/bin/cs" hook` を `"$HOME/bin/agent-sessions" hook` に置換（無ければ追加、他のフックは触らない）、`statusLine` が null か旧 `cs` なら `{"type":"command","command":"$HOME/bin/agent-sessions status"}` を設定。結果を表示する |
 
-TUI：一覧（グループ→単独→その他、折畳、`/` 絞込、`h` でアーカイブを見せる）と ⏎。⏎ はデーモンに `id` があれば `attach`、無ければ `claude --resume ID` を `execvp`。管理操作は持たない。サイドパネル：`cols >= 60` なら幅 `clamp(cols×0.4, 30, 60)` で常に出す。`cols < 60` では `p` で「一覧」と「パネルのみ」を切り替える。
+TUI：一覧（グループ→単独→その他、折畳、`/` 絞込、`h` でアーカイブを見せる）と ⏎。「その他」に載るのは名前が無く `child` でないセッションだけ（`json scan` と同じ `items.py` の判定）。⏎ はデーモンに `id` があれば `attach`（終了済みなら `forget` して `--resume`）、無ければ `claude --resume ID` を `execvp`。デーモンを起動することはない。折畳の保存は §3.1 のロックの中で書く。管理操作は持たない。サイドパネル：`cols >= 60` なら幅 `clamp(cols×0.4, 30, 60)` で常に出す。`cols < 60` では `p` で「一覧」と「パネルのみ」を切り替える。
 
 `json scan` の出力（1 セッション）：
 
@@ -162,7 +175,7 @@ TUI：一覧（グループ→単独→その他、折畳、`/` 絞込、`h` で
 
 キャッシュ：`scan-cache.json` に `path → {mtime,size,head,last_activity}`。`mtime`・`size` が一致すれば再読しない。全走査の 2 回目以降は 0.1 秒以下。
 
-`install.sh`：`~/bin/agent-sessions` の symlink、`<vault>/.obsidian/plugins/agent-sessions` → `plugin/` の symlink、`~/.claude/settings.json` に入れる `hooks`（Stop・SessionEnd → `agent-sessions hook`）と `statusLine`（`agent-sessions status`）の JSON を表示する（書き換えはしない）。
+`install.sh`：`~/bin/agent-sessions` の symlink、`<vault>/.obsidian/plugins/agent-sessions` → `plugin/` の symlink を張り、`agent-sessions setup` を呼ぶ。
 
 ## 6. プラグイン
 
@@ -194,7 +207,7 @@ TUI：一覧（グループ→単独→その他、折畳、`/` 絞込、`h` で
 
 ### 6.2 セッションマネージャー（`agent-sessions-manager`）
 
-- 木：グループ（見出し、折畳）→ 単独 → その他のセッション（既定で折畳）→ アーカイブ（既定で折畳、ツールバーで表示切替）。各区分の中は最終更新順。行は `状態の印  名前  MM-DD HH:MM  ▣`（`▣` はタブが開いている印）。
+- 木：グループ（見出し、折畳）→ 単独 → その他のセッション（既定で折畳）→ アーカイブ（既定で折畳、ツールバーで表示切替）。各区分の中は最終更新順。「その他のセッション」に載るのは名前が無く `json scan` の `child` が偽のものだけ（無名の子セッションは出さない）。行は `状態の印  名前  MM-DD HH:MM  ▣`（`▣` はタブが開いている印）。
 - ツールバー：`新規セッション`・`再走査`・`絞込`（名前の部分一致）・`アーカイブを表示`。
 - 行クリック → `openSession(id)`（タブがあればジャンプ）。行を選択すると `⋯`：`名前を変更`・`圧縮`・`アーカイブ`⇄`アーカイブ解除`・（起動中なら）`セッションを終了`・`フォルダを開く`・`ID をコピー`。右クリックも同じ。
 - 詳細欄：サイドパネルと同じ部品（一覧の下、折畳可）。
@@ -206,19 +219,23 @@ TUI：一覧（グループ→単独→その他、折畳、`/` 絞込、`h` で
 
 - xterm 5.x：`fontFamily`・`fontSize` は設定（タブ毎の `fontSize` があれば優先）、`lineHeight: 1.0`、`letterSpacing: 0`、`scrollback: 5000`、`allowProposedApi: true`、`macOptionIsMeta: true`、`cursorBlink: true`。アドオン：fit・webgl（失敗時は既定の canvas）・unicode11。
 - 余白：設定 `padding`（`comfortable`＝12px／`compact`＝4px／`none`＝0）をコンテナの CSS 変数に流し、`fit()` は余白を除いた領域で計る。
-- 接続：初回に ResizeObserver が 0 でない大きさを報告したとき `ensureAttached()`。デーモンに `id` があれば `attach`、無ければ `start`（`argv = [claudePath, '--resume', id]`、新規は `['--session-id', id]`）。デーモンに繋がらなければ起動を試み、1 秒待って再接続、3 回失敗で終了画面にエラー。
+- 接続：初回に ResizeObserver が 0 でない大きさを報告したとき `ensureAttached()`。デーモンに `id` があれば `attach`（終了済みなら再生の後に `exit` が届き終了画面になる）、無ければ `start`（`argv = [claudePath, '--resume', id]`、新規は `['--session-id', id]`）。デーモンに繋がらなければ起動を試み、1 秒待って再接続、3 回失敗で終了画面にエラー。
 - 出力：`D` フレームを `terminal.write(Uint8Array)`。再生（`R`）中は `write` をまとめ、`replayed` で `scrollToBottom()`。
 - 入力：`onData` の文字列を UTF-8 で `D`。`onBinary` も同様。
 - サイズ：ResizeObserver → 50 ms デバウンス → `fit()` → `onResize` → `resize`。
 - キー：`attachCustomKeyEventHandler` で処理する。Esc は `keyup` の伝播を止める（Obsidian がフォーカスを奪うため）。**Enter に Shift／Option／Cmd のいずれかが付いていたら ESC CR（`0x1b 0x0d`）を PTY へ書き**、既定動作と伝播を止める（Claude Code の meta+enter。`/terminal-setup` が VS Code に入れる shift+enter の送出列と同じ）。`Cmd + / − / 0` はフォントサイズ。それ以外は xterm に任せ、`keydown` の伝播を止めて Obsidian のホットキーに渡さない。
-- 終了（`exit` イベント）：出力の上に「セッションは終了しました（code）」と **再開**・**閉じる**。再開は `--resume` で `start` し直す。
-- タブを閉じる（`onClose`）：`detach` して接続を閉じ、xterm を `dispose`。セッションは残る。
+- 終了（`exit` イベント）：出力の上に「セッションは終了しました（code）」と **再開**・**閉じる**。再開は `forget` → `--resume` で `start`。閉じるは `forget` してタブを閉じる。
+- タブを閉じる（`onClose`）：`detach` して接続を閉じ、xterm を `dispose`。セッションは残る。`SessionIndex`・`registry`・`statusline`・`settings-changed` の購読は `this.register(unsubscribe)` で登録してあり、Obsidian が `onClose` で解く。
+- 設定の反映：`main.ts` が設定保存時に `settings-changed` を発火し、全ターミナルビューが `applySettings()` でフォント・サイズ（タブ毎の値があればそれ）・余白・スクロールバックを xterm に当てて `fit()` する。
 - ヘッダの操作（`addAction`）：`@`（現在のノートを挿入）・前の指示・次の指示・最後の応答。セッションへの操作（名前変更・圧縮・アーカイブ・終了）はサイドパネルとマネージャーの行メニューに集約する。
-- タブのアイコンと題名：題名はセッション名（無ければ `無題 ` + ID 先頭 8 桁）。アイコンは `bot`。状態 `busy`／`shell` の間は CSS でアニメーション（`.agent-sessions-busy` を `leaf.tabHeaderInnerIconEl` に付ける）。`busy → idle` に落ちたときにそのタブが前面でなければ `.agent-sessions-waiting`（アイコン `message-circle`）にし、前面になったら戻す。
+- タブのアイコンと題名：題名はセッション名（無ければ `無題 ` + ID 先頭 8 桁）。アイコンは `bot`。状態 `busy`／`shell` の間は CSS でアニメーション（`.agent-sessions-busy` をタブ見出しのアイコン要素に付ける。要素は `leaf.tabHeaderEl.querySelector('.workspace-tab-header-inner-icon')` で取り、無ければクラスは付けずアイコンの差し替えだけにする）。終了済み（デーモンの `list` の `exited`）は `circle-off`。`busy → idle` に落ちたときにそのタブが前面でなければ `.agent-sessions-waiting`（アイコン `message-circle`）にし、前面になったら戻す。
 
 ### 6.4 1 セッション＝1 タブ
 
 `openSession(id)`：`workspace.getLeavesOfType('agent-sessions-terminal')` から `view.state.id === id` の leaf を探し、あれば `revealLeaf` して終わり。無ければメインエリアに `workspace.getLeaf('tab')` で leaf を作り `setViewState`。新規セッションも同じ経路（先に `sessions.json` の `sessions[id]` を書く）。
+
+- 多重呼出：`opening: Map<id, Promise<WorkspaceLeaf>>` を持ち、同じ `id` の呼出が進行中ならその Promise を返す。`setViewState` が終わってから Map から消す。
+- `openSession` を通らない経路（タブの「右に分割」「複製」「新しいウィンドウへ」は同じ state で leaf を作る）：`TerminalView.setState` で、同じ `id` を持つ別の leaf が既にあれば、自分の leaf を `detach()` してその leaf を `revealLeaf` する。これで同じ `id` のターミナルは常に 1 つ。
 
 ### 6.5 状態と通知
 
@@ -282,12 +299,14 @@ Claude Code は `~/.claude/keybindings.json`（`$CLAUDE_CONFIG_DIR` 配下。vau
 | `json scan` が失敗 | 一覧に前回の結果を残し、`Notice` に stderr の先頭行 |
 | `sessions.json` が壊れている | `.broken-<時刻>` に退避して初期化 |
 | `keybindings.json` が読めない | 設定画面に「読めない」と出し、Enter の役割は変更不可 |
+| `sessions.json.lock` が 2 秒取れない | 書込みを諦めて `Notice`。10 秒より古いロックは壊れたものとして消す |
+| デーモンの二重起動 | 後発が `flock` に失敗して即終了。プラグインは 1 秒待って再接続 |
 | WebGL が使えない | canvas に落ちる（ログのみ） |
 
 ## 8. テスト
 
-- Python（unittest、`-W error`）：既存 90 件を移設。追加：`protocol`（フレームの分割・結合）、`daemon`（`cat` を子にした start/attach/replay/resize/kill、バッファ上限、複数接続）、`store`（sessions.json、旧 md の取り込み）、`cache`、`jsonout`、`tui` のパネル幅。
-- TypeScript（vitest）：`tree`、`index`（開いているタブ／起動中／最近の区分け）、`links`、`marks`、`keybindings`（読解・書換・戻し）、`daemon-client` のフレーム、`statusline` の整形、`store` の読み書き（tmp dir）。
+- Python（unittest、`-W error`）：既存 90 件を移設。追加：`protocol`（フレームの分割・結合）、`daemon`（`cat` を子にした start/attach/replay/resize/kill/forget、バッファ上限、複数接続と最小サイズ、切断の後始末、終了済みへの attach）、`store` のロック（2 プロセスで同時に書く）、`setup`（settings.json の置換と backup）、`store`（sessions.json、旧 md の取り込み）、`cache`、`jsonout`、`tui` のパネル幅。
+- TypeScript（vitest）：`tree`、`index`（開いているタブ／起動中／最近の区分け）、`links`、`marks`、`keybindings`（読解・書換・戻し）、`daemon-client` のフレーム、`statusline` の整形、`store` の読み書きとロック（tmp dir）、旧 md の取り込み、`openSession` の多重呼出（モックの workspace）。
 - 手動：`requirements.md` の「受け入れの確認」。
 
 ## 9. 段 2 以降への接続
