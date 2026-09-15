@@ -317,3 +317,54 @@ Claude Code は `~/.claude/keybindings.json`（`$CLAUDE_CONFIG_DIR` 配下。vau
 - 外部エディタ：デーモンが `env` に `VISUAL=agent-sessions edit` を足せるよう `start` の `env` はプラグインが組む。`agent-sessions edit` はソケット（デーモンとは別、`~/.agents/sessions/plugin.sock`、プラグインが待ち受け）へ依頼し、プラグインはターミナルビューの中に編集領域を割って開く（ターミナルは残る）。
 - Codex：`agent` フィールド、`argv` の組み立て、走査元（`~/.codex/sessions`）を `agentsessions/agents/<name>.py` に分ける。段 1 では `claude.py` のみ。
 - トークン集計：transcript の `usage` を区間で集計する `json usage ID [--from TS --to TS]` を足す。
+
+## 10. 内蔵エディタ（段 2）
+
+### 10.0 Claude Code 側の事実（binary 2.1.270 で確認）
+
+- 外部エディタは `$VISUAL` → `$EDITOR` の順。文字列を空白で分割し、`spawnSync(cmd, [...args, tmpfile], {stdio:'inherit'})` で**終了を待つ**。終了コード 0 でファイルを読み戻す。非 0・シグナルなら「quit unexpectedly」と出て元の内容のまま。
+- 実行ファイルの basename に `code`／`cursor`／`windsurf`／`codium`／`subl`／`atom`／`gedit`／`notepad` を含むと GUI エディタ扱いで、代替スクリーンに**切り替えない**（`prepareTerminalForHandoff`）。含まなければ代替スクリーンに切り替える（編集中はターミナルの表示が消える）。
+- `/memory` も同じ経路。
+
+### 10.1 実行ファイルと環境
+
+- `bin/agent-sessions-code`（sh、`exec "$(dirname "$0")/agent-sessions" edit "$@"`）。`install.sh` が `~/bin/agent-sessions-code` に symlink。名前に `code` を含めるのは上の判定に乗るため。
+- プラグインはデーモンの `start` の `env` に `VISUAL=<~/bin/agent-sessions-code の絶対パス>` を足す（`EDITOR` は触らない）。パスに空白があってはならない（`~/bin` は空白なし）。
+- `agent-sessions edit FILE`（`agentsessions/cmd_edit.py`）：
+  1. `~/.agents/sessions/plugin.sock` に接続し、`J {"op":"edit","seq":1,"file":FILE,"session":$AGENT_SESSIONS_ID,"cwd":os.getcwd()}` を送る。
+  2. 応答 `{"ok":true}` で 0。`{"ok":false,"error":"cancel"}` は **1 で終わる（vi は開かない。Claude は元の内容を使う）**。`error` が `no-tab`／`busy` なら 3 へ。応答が来るまで待つ（タイムアウト無し。Ctrl+C／`SIGTERM` で `{"op":"cancel"}` を送って 1）。**接続が確立した後に相手が消えた（`recv` が空・`ECONNRESET`）ときも 3 へ倒す**（Obsidian のクラッシュ）。
+  3. 接続できない・EOF・`no-tab`／`busy` なら**従来のエディタに倒す**：`$AGENT_SESSIONS_FALLBACK_EDITOR`、無ければ `vi` を `execvp`（同じ端末で開く）。
+- `AGENT_SESSIONS_ID` はデーモンが `start` で環境に入れる（段 1 のとおり）。
+
+### 10.2 プラグイン側ソケット
+
+- `src/edit-server.ts`：`net.createServer` を `~/.agents/sessions/plugin.sock` で listen（`onload` で古いソケットを unlink、`onunload` で close と unlink、`umask` 相当として作成後 `chmod 0600`）。フレームは `daemon-client.ts` の `encodeFrame`／`FrameDecoder` を共用（J のみ）。
+- 要求 `edit`：`session` に対応するターミナルビューを探す。無ければ `{"ok":false,"error":"no-tab"}`。あれば `view.openEditor(file, cwd)` を呼び、送る／取消の結果で `{"ok":true}`／`{"ok":false,"error":"cancel"}` を返して接続を閉じる。同じタブで編集中に 2 つ目が来たら `{"ok":false,"error":"busy"}`。
+- 接続が先に切れたら（claude 側の中断）編集領域を閉じる。
+- **タブ側が先に閉じるとき**（`onClose`、プラグインの `onunload`、`plugin.sock` の close）は、進行中の編集に対して元の内容を一時ファイルへ書き戻し `{"ok":false,"error":"cancel"}` を返してから閉じる。`agent-sessions edit` は 1 で終わり、Claude Code は固まらず元の内容を使う。編集中の状態はビューの `pendingEdit` 1 つに集約し、閉じる経路すべてがそれを解決する。
+
+### 10.3 編集領域
+
+- ターミナルビューの本体を上下に割る：上＝xterm（残り全部）、下＝編集領域（高さは設定 `editorHeight`、既定 40%、最小 6 行）。開くときに `fit()` を呼び直し、閉じたら戻す。
+- 編集領域は `<textarea>`（ネイティブのペースト・IME・Undo を使う。Markdown の扱いは最小限）。等幅フォント（ターミナルと同じ設定）。開いたら一時ファイルの内容を入れてフォーカス、末尾にカーソル。
+- 上部に 1 行のバー：ファイル名（basename）・「送る（⌘⏎）」・「取消（Esc）」。
+- 自動保存：`input` を 300 ms でデバウンスし、一時ファイルへ tmp→rename で書く。
+- 送る：最後の内容を書いてから `{"ok":true}`。取消：**元の内容を書き戻して**から `{"ok":false,"error":"cancel"}`（Claude は非 0 で元の内容を使うが、念のためファイルも戻す）。どちらも編集領域を閉じてターミナルに focus。
+- キー：`Cmd+Enter`＝送る、`Esc`＝取消。どちらも IME 変換中（`isComposing`／`keyCode 229`）は無視する。他は textarea の既定。`keydown` の伝播は止める（Obsidian のホットキーに渡さない。Cmd+V／C／X／Z／A は textarea のネイティブ動作）。
+- `@` 補完：検索語の更新は `input` イベントのうち `isComposing` でないものと `compositionend` で行う（IME の変換中の断片では候補を更新しない）。`@` を打った直後から次の空白までを検索語にし、textarea の直下に候補リスト（最大 8 件）を出す。候補は `app.vault.getFiles()` を `prepareFuzzySearch` で絞り、表示は vault 相対パス。↑↓ で選び、Enter／Tab で確定（`@` から検索語までを、`cwd` から見た相対パス（`path.relative(cwd, vaultPath/…)`、空白があれば `"…"`）＋空白に置き換える）。Esc で候補を閉じる（編集は続く）。候補が開いている間の Enter は確定であって送信ではない。
+- `bracketed paste` は関係しない（textarea へのペースト）。
+
+### 10.4 テストと受け入れ
+
+- Python：`tests/test_edit.py` — 偽ソケットサーバーで `ok:true`→0、`cancel`→1（`execvp` を呼ばない）、`no-tab`／`busy`→fallback（`execvp` をモック）、接続不可→fallback、EOF→fallback。
+- TS：`test/edit-server.test.ts`（フレームの往復とハンドラの分岐：no-tab／busy／ok／cancel）、`test/at-complete.test.ts`（検索語の切り出し、置換結果、空白の引用）。
+- Obsidian：実機で Ctrl+G → 編集領域 → `@` 補完 → 送る／取消。編集中にタブを閉じて Claude Code が固まらず元の内容のまま戻る（`vi` は開かない）。段 1 のテスト全通し。
+
+### 10.9 採らなかった案
+
+| 案 | 理由 |
+|---|---|
+| CodeMirror 6 の編集領域 | ペースト・IME・Undo はネイティブの textarea で足りる。Obsidian が公開する CM パッケージの範囲が不確かで、要件は「Markdown は暫定で良い」 |
+| Obsidian の Markdown エディタで開く | vault 外の一時ファイルを `TFile` として開けない |
+| 代替スクリーンの制御列をプラグインで削る | 実行ファイル名で GUI 扱いにする方が確実。判定が変わったときの予備 |
+| 別 leaf に編集領域を開く | ターミナルを隠さないという要件は同じタブの上下分割が最も確実 |
