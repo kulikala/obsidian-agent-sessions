@@ -37,9 +37,11 @@ const EARLY_EXIT_MS = 3000;
 const RESUME_FAILURE_PATTERNS = ["No conversation found", "not found"];
 const FONT_SIZE_MIN = 6;
 const FONT_SIZE_MAX = 40;
-/** 編集領域の高さ（%）の下限・上限。最小 6 行は CSS の min-height で守る。 */
+/** 編集領域の高さ（%）の下限・上限。上限として効き、ターミナルの最小行数が優先する。 */
 const EDITOR_HEIGHT_MIN = 10;
 const EDITOR_HEIGHT_MAX = 90;
+/** 編集領域を開いている間にターミナルへ残す最小行数。 */
+const TERMINAL_MIN_ROWS = 8;
 
 type ExitReason =
 	| { kind: "exited"; code: number; resumeFailed: boolean }
@@ -298,8 +300,31 @@ export class TerminalView extends ItemView {
 			const pct = Math.min(EDITOR_HEIGHT_MAX, Math.max(EDITOR_HEIGHT_MIN, s.editorHeight));
 			this.editorEl.style.setProperty("--as-editor-height", `${pct}%`);
 		}
+		this.applyTerminalMinHeight();
 		this.applyTheme();
 		this.scheduleFit();
+	}
+
+	/** xterm のセル高さ（描画サービスの実測。未測なら fontSize から概算）。 */
+	private cellHeight(): number {
+		const core = (this.terminal as unknown as { _core?: { _renderService?: { dimensions?: { css?: { cell?: { height?: number } } } } } })._core;
+		const measured = core?._renderService?.dimensions?.css?.cell?.height;
+		if (measured && measured > 0) {
+			return measured;
+		}
+		return Math.ceil((this.fontSize ?? this.plugin.settings.fontSize) * 1.3);
+	}
+
+	/** 編集領域を開いている間、ターミナルに最小 8 行を確保する。 */
+	private applyTerminalMinHeight(): void {
+		if (!this.termEl) {
+			return;
+		}
+		if (this.pendingEdit) {
+			this.termEl.style.minHeight = `${TERMINAL_MIN_ROWS * this.cellHeight()}px`;
+		} else {
+			this.termEl.style.removeProperty("min-height");
+		}
 	}
 
 	private applyTheme(): void {
@@ -551,6 +576,7 @@ export class TerminalView extends ItemView {
 			fontSize: this.fontSize ?? s.fontSize,
 		});
 		this.pendingEdit = pane;
+		this.applyTerminalMinHeight();
 		this.editorEl.show();
 		this.scheduleFit();
 		try {
@@ -559,6 +585,7 @@ export class TerminalView extends ItemView {
 			if (this.pendingEdit === pane) {
 				this.pendingEdit = null;
 			}
+			this.applyTerminalMinHeight();
 			this.editorEl.hide();
 			if (!this.closed) {
 				this.scheduleFit();

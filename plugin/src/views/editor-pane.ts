@@ -49,6 +49,12 @@ export class EditorPane {
 	private at: AtQuery | null = null;
 	private candidates: TFile[] = [];
 	private selected = 0;
+	/** window の capture で受けるキー処理（Obsidian の keydown より先に取る）。 */
+	private captureKeyDown = (ev: KeyboardEvent): void => {
+		if (ev.target === this.textarea) {
+			this.onKeyDown(ev);
+		}
+	};
 
 	constructor(
 		private containerEl: HTMLElement,
@@ -130,7 +136,7 @@ export class EditorPane {
 		textarea.spellcheck = false;
 		textarea.style.fontFamily = this.deps.fontFamily;
 		textarea.style.fontSize = `${this.deps.fontSize}px`;
-		textarea.addEventListener("keydown", (ev) => this.onKeyDown(ev));
+		window.addEventListener("keydown", this.captureKeyDown, true);
 		textarea.addEventListener("keyup", (ev) => {
 			if (ev.key === "Escape") {
 				ev.stopPropagation();
@@ -151,6 +157,7 @@ export class EditorPane {
 	}
 
 	private teardown(): void {
+		window.removeEventListener("keydown", this.captureKeyDown, true);
 		this.closeSuggestions();
 		this.textarea = null;
 		this.listEl = null;
@@ -201,10 +208,20 @@ export class EditorPane {
 
 	// ---- キー -------------------------------------------------------------------
 
+	/**
+	 * `Cmd+Enter`／`Ctrl+Enter`＝送る、`Esc`＝取消（候補が開いていれば候補を閉じる）。候補が開いている
+	 * 間の修飾なし Enter／Tab は確定、↑↓は選択。IME 変換中（`isComposing`／`keyCode 229`）は何もしない。
+	 * 他のキーは textarea のネイティブ動作に任せ、伝播だけ止めて Obsidian のホットキーに渡さない
+	 * （Cmd+V／C／X／Z／A は既定動作のまま）。
+	 */
 	private onKeyDown(ev: KeyboardEvent): void {
-		// Obsidian のホットキーに渡さない（Cmd+V／C／X／Z／A は textarea のネイティブ動作）。
-		ev.stopPropagation();
+		ev.stopImmediatePropagation();
 		if (ev.isComposing || ev.keyCode === 229) {
+			return;
+		}
+		if (ev.key === "Enter" && (ev.metaKey || ev.ctrlKey)) {
+			ev.preventDefault();
+			this.send();
 			return;
 		}
 		if (this.candidates.length > 0) {
@@ -215,7 +232,7 @@ export class EditorPane {
 				this.renderSuggestions();
 				return;
 			}
-			if (ev.key === "Enter" || ev.key === "Tab") {
+			if ((ev.key === "Enter" || ev.key === "Tab") && !ev.shiftKey && !ev.altKey) {
 				ev.preventDefault();
 				this.confirmSuggestion(this.candidates[this.selected]);
 				return;
@@ -225,11 +242,6 @@ export class EditorPane {
 				this.closeSuggestions();
 				return;
 			}
-		}
-		if (ev.key === "Enter" && ev.metaKey) {
-			ev.preventDefault();
-			this.send();
-			return;
 		}
 		if (ev.key === "Escape") {
 			ev.preventDefault();
@@ -261,14 +273,24 @@ export class EditorPane {
 			return [...files].sort((a, b) => b.stat.mtime - a.stat.mtime).slice(0, MAX_CANDIDATES);
 		}
 		const match = prepareFuzzySearch(query);
-		const scored: { file: TFile; score: number }[] = [];
+		const q = query.toLowerCase();
+		const scored: { file: TFile; score: number; exact: number }[] = [];
 		for (const file of files) {
 			const result = match(file.path);
 			if (result) {
-				scored.push({ file, score: result.score });
+				const base = file.name.toLowerCase();
+				const stem = file.basename.toLowerCase();
+				scored.push({ file, score: result.score, exact: base === q || stem === q ? 1 : 0 });
 			}
 		}
-		scored.sort((a, b) => b.score - a.score || a.file.path.localeCompare(b.file.path));
+		// スコア降順 → basename が検索語と一致 → パスが短い → 辞書順。
+		scored.sort(
+			(a, b) =>
+				b.score - a.score ||
+				b.exact - a.exact ||
+				a.file.path.length - b.file.path.length ||
+				a.file.path.localeCompare(b.file.path)
+		);
 		return scored.slice(0, MAX_CANDIDATES).map((s) => s.file);
 	}
 
