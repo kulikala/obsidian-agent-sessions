@@ -102,6 +102,16 @@ export class TerminalView extends ItemView {
 		return this.icon || "bot";
 	}
 
+	/** サイドパネル・マネージャーが名前変更や圧縮の対象を探すのに使う。 */
+	get sessionId(): string {
+		return this.id;
+	}
+
+	/** サイドパネル・マネージャーからの `/rename`・`/compact` の送信用（§6.6）。 */
+	sendCommand(text: string): void {
+		this.sendInput(Buffer.from(text, "utf8"));
+	}
+
 	getState(): Record<string, unknown> {
 		const state: Record<string, unknown> = { id: this.id, agent: this.agent, cwd: this.cwd };
 		if (this.fontSize !== undefined) {

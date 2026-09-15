@@ -106,6 +106,19 @@ export class SessionIndex extends EventEmitter {
 		this.emit("change");
 	}
 
+	/**
+	 * `sessions.json` を読み直し、`archived`／`pendingRename` だけを再適用する。
+	 * 走査をやり直さなくても、アーカイブ・折畳・名前変更の控えをすぐ画面に反映できる。
+	 */
+	refreshStore(): void {
+		const store = loadStore(this.deps.storePath);
+		for (const row of this.sessions.values()) {
+			row.archived = store.archived.some((a) => a.id === row.id);
+			row.pendingRename = store.pendingRenames[row.id];
+		}
+		this.emit("change");
+	}
+
 	async getDetail(id: string): Promise<Detail> {
 		const cached = this.detailCache.get(id);
 		if (cached) {
@@ -189,8 +202,12 @@ export class SessionIndex extends EventEmitter {
 		}
 	}
 
-	/** `registry.watch()` と `events.log` の監視を始める。停止用の関数を返す。 */
+	/**
+	 * `registry.watch()` と `events.log` の監視を始め、最初の 1 回を走査する。
+	 * 停止用の関数を返す。
+	 */
 	start(): () => void {
+		void this.rescan();
 		const stopRegistry = this.registry.watch();
 		if (!this.eventsWatcher) {
 			try {

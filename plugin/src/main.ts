@@ -1,57 +1,24 @@
-import { Events, ItemView, Notice, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, type FileSystemAdapter } from "obsidian";
+import { Events, Notice, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, type FileSystemAdapter } from "obsidian";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { detail, live, resolveAgentSessionsPath, scan } from "./backend";
-import { defaultSockPath } from "./daemon-client";
+import { DaemonClient, defaultSockPath, ensureDaemon } from "./daemon-client";
 import { SessionIndex } from "./index";
+import { ConfirmModal, NewSessionModal, RenameSessionModal } from "./modals";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./open-session";
 import { AgentSessionsSettings, DEFAULT_SETTINGS } from "./settings";
+import { StoreLockError, updateStore } from "./store";
+import type { ArchivedSession } from "./types";
+import { ManagerView, VIEW_TYPE_MANAGER } from "./views/manager";
+import { SideView, VIEW_TYPE_SIDE } from "./views/side";
 import { TerminalView } from "./views/terminal";
 
-export const VIEW_TYPE_SIDE = "agent-sessions-side";
-export const VIEW_TYPE_MANAGER = "agent-sessions-manager";
-export { VIEW_TYPE_TERMINAL };
+export { VIEW_TYPE_SIDE, VIEW_TYPE_MANAGER, VIEW_TYPE_TERMINAL };
 
 const RUNTIME_DIR = join(homedir(), ".agents", "sessions");
 
-/** サイドパネル（§6.1）。中身は後続タスクで組む。 */
-class SideView extends ItemView {
-	getViewType(): string {
-		return VIEW_TYPE_SIDE;
-	}
-
-	getDisplayText(): string {
-		return "Agent Sessions";
-	}
-
-	getIcon(): string {
-		return "bot";
-	}
-
-	async onOpen(): Promise<void> {
-		this.contentEl.addClass("agent-sessions-side");
-		this.contentEl.setText("準備中");
-	}
-}
-
-/** セッションマネージャー（§6.2）。中身は後続タスクで組む。 */
-class ManagerView extends ItemView {
-	getViewType(): string {
-		return VIEW_TYPE_MANAGER;
-	}
-
-	getDisplayText(): string {
-		return "セッションマネージャー";
-	}
-
-	getIcon(): string {
-		return "bot";
-	}
-
-	async onOpen(): Promise<void> {
-		this.contentEl.addClass("agent-sessions-manager");
-		this.contentEl.setText("準備中");
-	}
+function messageOf(err: unknown): string {
+	return err instanceof Error ? err.message : String(err);
 }
 
 export default class AgentSessionsPlugin extends Plugin {
@@ -79,11 +46,13 @@ export default class AgentSessionsPlugin extends Plugin {
 			sessionsDir: join(homedir(), ".claude", "sessions"),
 			statusDir: join(RUNTIME_DIR, "status"),
 		});
-		this.stopIndex = this.index.start();
+		this.app.workspace.onLayoutReady(() => {
+			this.stopIndex = this.index.start();
+		});
 		this.opener = new SessionOpener<WorkspaceLeaf>(this.app.workspace);
 
-		this.registerView(VIEW_TYPE_SIDE, (leaf) => new SideView(leaf));
-		this.registerView(VIEW_TYPE_MANAGER, (leaf) => new ManagerView(leaf));
+		this.registerView(VIEW_TYPE_SIDE, (leaf) => new SideView(leaf, this));
+		this.registerView(VIEW_TYPE_MANAGER, (leaf) => new ManagerView(leaf, this));
 		this.registerView(VIEW_TYPE_TERMINAL, (leaf) => new TerminalView(leaf, this));
 
 		this.addRibbonIcon("bot", "Agent Sessions", () => {
@@ -102,7 +71,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			id: "open-manager",
 			name: "セッションマネージャーを開く",
 			callback: () => {
-				void this.openManager();
+				void this.openManagerTab();
 			},
 		});
 
@@ -110,7 +79,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			id: "new-session",
 			name: "新規セッション",
 			callback: () => {
-				new Notice("準備中");
+				new NewSessionModal(this.app, (name) => this.newSession(name || undefined)).open();
 			},
 		});
 
@@ -165,6 +134,24 @@ export default class AgentSessionsPlugin extends Plugin {
 		setting?.openTabById(this.manifest.id);
 	}
 
+	storePath(): string {
+		return join(this.vaultPath(), ".agents", "sessions", "sessions.json");
+	}
+
+	/** マネージャーのタブを開く（無ければメインエリアに作る。あれば前面へ）。 */
+	async openManagerTab(): Promise<WorkspaceLeaf> {
+		const { workspace } = this.app;
+		const existing = workspace.getLeavesOfType(VIEW_TYPE_MANAGER)[0];
+		if (existing) {
+			await workspace.revealLeaf(existing);
+			return existing;
+		}
+		const leaf = workspace.getLeaf("tab");
+		await leaf.setViewState({ type: VIEW_TYPE_MANAGER, active: true });
+		await workspace.revealLeaf(leaf);
+		return leaf;
+	}
+
 	private async openSidePanel(): Promise<void> {
 		const { workspace } = this.app;
 		const existing = workspace.getLeavesOfType(VIEW_TYPE_SIDE)[0];
@@ -180,16 +167,155 @@ export default class AgentSessionsPlugin extends Plugin {
 		workspace.revealLeaf(leaf);
 	}
 
-	private async openManager(): Promise<void> {
-		const { workspace } = this.app;
-		const existing = workspace.getLeavesOfType(VIEW_TYPE_MANAGER)[0];
-		if (existing) {
-			workspace.revealLeaf(existing);
+	// ---- セッションの操作（§6.6）。`updateStore` の `StoreLockError` はここで Notice にする（§7）。 --------
+
+	/** 新規セッション：uuid を作り `sessions.json` に控えてからタブを開く。 */
+	newSession(name?: string): void {
+		const id = crypto.randomUUID();
+		const cwd = this.vaultPath();
+		try {
+			updateStore(this.storePath(), (store) => {
+				store.sessions[id] = { agent: "claude", cwd };
+				if (name) {
+					store.pendingRenames[id] = name;
+				}
+			});
+		} catch (err) {
+			this.notifyLockError(err);
 			return;
 		}
-		const leaf = workspace.getLeaf("tab");
-		await leaf.setViewState({ type: VIEW_TYPE_MANAGER, active: true });
-		workspace.revealLeaf(leaf);
+		this.index.refreshStore();
+		void this.openSession(id, { agent: "claude", cwd, fresh: true });
+	}
+
+	/** 名前を変更：待機中なら PTY へ `/rename`、そうでなければ `pendingRenames`（§6.6）。 */
+	async renameSession(id: string, name: string): Promise<void> {
+		const row = this.index.sessions.get(id);
+		if (row && row.daemon && row.status === "idle") {
+			try {
+				await this.sendToPty(id, `/rename ${name}\r`);
+			} catch (err) {
+				new Notice(`名前の変更に失敗しました: ${messageOf(err)}`);
+			}
+			return;
+		}
+		try {
+			updateStore(this.storePath(), (store) => {
+				store.pendingRenames[id] = name;
+			});
+			this.index.refreshStore();
+		} catch (err) {
+			this.notifyLockError(err);
+		}
+	}
+
+	/** 圧縮：待機中でなければ送らず `Notice`（§6.6）。 */
+	async compactSession(id: string): Promise<void> {
+		const row = this.index.sessions.get(id);
+		if (!row || !row.daemon || row.status !== "idle") {
+			new Notice("圧縮は待機中でないと送れません");
+			return;
+		}
+		try {
+			await this.sendToPty(id, "/compact\r");
+		} catch (err) {
+			new Notice(`圧縮に失敗しました: ${messageOf(err)}`);
+		}
+	}
+
+	/** セッションを終了：確認 → `kill`。 */
+	endSession(id: string): void {
+		new ConfirmModal(this.app, "このセッションを終了しますか？", "終了する", () => {
+			void (async () => {
+				let client: DaemonClient | null = null;
+				try {
+					client = await ensureDaemon(this.sockPath(), this.agentSessionsPath());
+					await client.hello("plugin");
+					await client.kill(id);
+				} catch (err) {
+					new Notice(`終了に失敗しました: ${messageOf(err)}`);
+				} finally {
+					client?.close();
+				}
+			})();
+		}).open();
+	}
+
+	archive(id: string, name: string, agent: string): void {
+		try {
+			updateStore(this.storePath(), (store) => {
+				if (!store.archived.some((a) => a.id === id)) {
+					const entry: ArchivedSession = { id, name, agent };
+					store.archived.push(entry);
+				}
+			});
+			this.index.refreshStore();
+		} catch (err) {
+			this.notifyLockError(err);
+		}
+	}
+
+	unarchive(id: string): void {
+		try {
+			updateStore(this.storePath(), (store) => {
+				store.archived = store.archived.filter((a) => a.id !== id);
+			});
+			this.index.refreshStore();
+		} catch (err) {
+			this.notifyLockError(err);
+		}
+	}
+
+	setFolded(group: string, folded: boolean): void {
+		try {
+			updateStore(this.storePath(), (store) => {
+				const has = store.folded.includes(group);
+				if (folded && !has) {
+					store.folded.push(group);
+				} else if (!folded && has) {
+					store.folded = store.folded.filter((g) => g !== group);
+				}
+			});
+		} catch (err) {
+			this.notifyLockError(err);
+		}
+	}
+
+	/** そのセッションのターミナルビューがあればその `sendCommand`、無ければ一時的に attach して書く（§6.6）。 */
+	private async sendToPty(id: string, text: string): Promise<void> {
+		const view = this.findTerminalView(id);
+		if (view) {
+			view.sendCommand(text);
+			return;
+		}
+		const client = await ensureDaemon(this.sockPath(), this.agentSessionsPath());
+		try {
+			await client.hello("plugin");
+			const res = await client.attach(id, 80, 24);
+			if (!res.ok) {
+				throw new Error(`attach に失敗: ${res.error ?? "unknown"}`);
+			}
+			client.writeInput(Buffer.from(text, "utf8"));
+			await client.detach();
+		} finally {
+			client.close();
+		}
+	}
+
+	private findTerminalView(id: string): TerminalView | undefined {
+		return this.app.workspace
+			.getLeavesOfType(VIEW_TYPE_TERMINAL)
+			.map((leaf) => leaf.view)
+			.filter((view): view is TerminalView => view instanceof TerminalView)
+			.find((view) => view.sessionId === id);
+	}
+
+	private notifyLockError(err: unknown): void {
+		if (err instanceof StoreLockError) {
+			new Notice("sessions.json のロックが取れません。少し待って再試行してください");
+			return;
+		}
+		new Notice(`sessions.json の更新に失敗しました: ${messageOf(err)}`);
 	}
 }
 
