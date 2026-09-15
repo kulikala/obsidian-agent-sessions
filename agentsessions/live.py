@@ -23,6 +23,7 @@ class Live:
     updated_at: float = 0.0     # epoch 秒
     entrypoint: str = ''
     kind: str = ''
+    rc: bool = False            # リモート制御（bridgeSessionId）下にあるか
 
     @property
     def label(self) -> str:
@@ -97,7 +98,8 @@ def live_sessions(sessions_dir: Optional[str] = None,
         updated = d.get('statusUpdatedAt') or d.get('updatedAt') or d.get('startedAt') or 0
         live = Live(session_id=sid, pid=pid, status=d.get('status') or '',
                     updated_at=float(updated) / 1000.0,
-                    entrypoint=d.get('entrypoint') or '', kind=d.get('kind') or '')
+                    entrypoint=d.get('entrypoint') or '', kind=d.get('kind') or '',
+                    rc=bool(d.get('bridgeSessionId')))
         prev = out.get(sid)
         if prev is None or live.updated_at >= prev.updated_at:
             out[sid] = live

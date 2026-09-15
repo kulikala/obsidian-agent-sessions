@@ -179,14 +179,33 @@ def read_last_activity(path: str, chunk: int = TAIL_CHUNK, limit: int = TAIL_LIM
     return None
 
 
-def scan(paths: List[str]) -> Dict[str, Session]:
+def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None) -> Dict[str, Session]:
+    """`cache` を渡すと `path → 前回の結果`（mtime・size・head・last_activity）を見て、
+    一致すれば `read_head_info`・`read_last_activity` を呼ばずに使い回す。`cache` は
+    その場で更新される（呼び出し側が `cache.save` するまで書き込まれない）。"""
     names = scan_names(paths)
     out: Dict[str, Session] = {}
     for p in paths:
         sid = session_id_of(p)
         try:
-            mtime = read_last_activity(p) or os.stat(p).st_mtime
-            h = read_head_info(p)
+            st = os.stat(p)
+            cached = cache.get(p) if cache is not None else None
+            if cached and cached.get('mtime') == st.st_mtime and cached.get('size') == st.st_size:
+                head = cached.get('head') or {}
+                h = Head(cwd=head.get('cwd', ''), prompt=head.get('prompt', ''),
+                         child=bool(head.get('child')))
+                last_activity = cached.get('last_activity')
+            else:
+                last_activity = read_last_activity(p)
+                h = read_head_info(p)
+                if cache is not None:
+                    cache[p] = {
+                        'mtime': st.st_mtime,
+                        'size': st.st_size,
+                        'head': {'cwd': h.cwd, 'prompt': h.prompt, 'child': h.child},
+                        'last_activity': last_activity,
+                    }
+            mtime = last_activity or st.st_mtime
         except OSError:
             continue
         name = names.get(sid)
