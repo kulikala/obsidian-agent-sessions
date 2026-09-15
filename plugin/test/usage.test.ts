@@ -111,15 +111,15 @@ describe("formatEpoch（§D-31 MM-DD HH:MM）", () => {
 });
 
 describe("toMarkdown（§D-31 コピー用）", () => {
-	it("表は常に全ターンを出し、合計は選んだ区間のものを見出しに付ける", () => {
+	it("表は選んだ区間のターンだけを出し、合計は区間のものを見出しに付ける", () => {
 		const total = sumRange(TURNS, 1, 2);
 		const md = toMarkdown(TURNS, 1, 2, total);
 
 		expect(md).toContain("| # | 時刻 | 指示 | 入力 | 出力 | cache 作成 | cache 読出 |");
-		expect(md).toContain("| 0 |");
+		expect(md).not.toContain("| 0 |");
 		expect(md).toContain("| 1 |");
 		expect(md).toContain("| 2 |");
-		expect(md).toContain("（開始前）");
+		expect(md).not.toContain("（開始前）");
 		expect(md).toContain(`合計（#1〜#2）：呼出 ${formatNumber(5)}・入力 ${formatNumber(300)}`);
 	});
 
