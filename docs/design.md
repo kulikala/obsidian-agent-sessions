@@ -94,7 +94,7 @@ agent-sessions/
 
 - `sessions` はプラグインが起動したセッションの `agent` と `cwd`。走査で transcript が見つかれば transcript が優先。新規直後（transcript 未生成）の行を一覧に出すために持つ。
 - `archived` の `name` はマネージャーの「アーカイブ」区分に出すための控え。真実は transcript。
-- 旧 `claude-sessions.md` の取り込みはプラグインの `onload` が行う：`sessions.json` が無く `<vault>/claude-sessions.md` があれば、frontmatter の `folded` → `folded`、`hidden` → `archived` に写し、`migratedFrom: {path, at}` を書く。`sessions.json` が既にあれば何もしない。md は残す（削除はユーザーが行う）。`~/.claude/cs/` は使わない。
+- 旧 `claude-sessions.md` の取り込みはプラグインの `onload` が行う：`sessions.json` が無く `<vault>/claude-sessions.md` があれば、frontmatter の `folded` → `folded`、`hidden` → `archived` に写し、`migratedFrom: {path, at}` を書く。`sessions.json` が既にあれば何もしない。md は完走判定の後に削除する（T-19）。`~/.claude/cs/` は使わない。
 
 ### 3.1 `sessions.json` の排他
 
@@ -202,7 +202,7 @@ TUI：一覧（グループ→単独→その他、折畳、`/` 絞込、`h` で
    - 行：`状態の印  名前`。印は動作中＝アニメーション、指示待ち＝待機の印、停止中＝無印。`(未適用)` は名前変更待ち。
    - **行を選択（クリックまたは矢印キー）するとその行に `⋯` が現れ**、`名前を変更`・`圧縮`・`アーカイブ`・（起動中なら）`セッションを終了`・`フォルダを開く`・`ID をコピー` を出す。右クリックでも同じメニュー。
 3. **詳細欄**（折畳可）：行にポインタが 300 ms 乗ったら `json detail`（キャッシュ）で直近の指示・直近のツール・直近の応答・フォルダ・ID。
-4. **ステータスバー**（最下段 1 行）：前面のターミナルタブのセッション（ターミナルが前面でなければ最後に前面だったもの）について `Opus 5 · high · ctx 42% · rc ● · 5h 37% · 7d 12%`。元は `status/<id>.json`（`model.display_name`・`context_window.used_percentage`・`rate_limits.five_hour/seven_day.used_percentage`・`effort` があれば）と `~/.claude/sessions/<pid>.json`（`bridgeSessionId` の有無 → rc）。`effort` が JSON に無ければ `~/.claude/settings.json` の `effortLevel`。取れない項目は `—`。
+4. **ステータスバー**（最下段 1 行）：前面のターミナルタブのセッション（ターミナルが前面でなければ最後に前面だったもの）について `Opus 5 · high · ctx 42% · rc ● · 5h 37% · 7d 12%`。元は `status/<id>.json`（`model.display_name`・`context_window.used_percentage`・`rate_limits.five_hour/seven_day.used_percentage`・`effort` があれば）と `~/.claude/sessions/<pid>.json`（`bridgeSessionId` の有無 → rc）。モデルとエフォートは JSON に無ければ「デフォルト」と出す。コンテキスト・rc・利用率が取れなければ `—`。
 
 サイドパネルは `workspace` の `layout-change`・`active-leaf-change` と `registry` の変化を購読して描き直す。
 
