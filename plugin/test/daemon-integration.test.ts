@@ -1,9 +1,11 @@
 // 実デーモンとの往復。`AGENT_SESSIONS_BIN`（`agent-sessions` 本体へのパス）が
-// 環境変数に無ければ丸ごと skip する（受け入れは T-14 で行う）。
+// 環境変数に無ければ丸ごと skip する。
+// ソケットは `/tmp/as-<pid>/` に置く（Unix ソケットのパスは 104 バイト未満）。
+// 実行時ディレクトリも同じ場所にし、本物の `~/.agents/sessions` に触れない。
 
 import { randomBytes } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
-import { tmpdir } from "node:os";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { DaemonClient } from "../src/daemon-client";
@@ -30,17 +32,34 @@ function waitForSocket(sockPath: string, timeoutMs = 3000): Promise<void> {
 
 describe.skipIf(!BIN)("daemon（実プロセス）", () => {
 	let daemonProc: ChildProcess | undefined;
+	let runtimeDir: string;
 	let sockPath: string;
 
-	afterEach(() => {
-		daemonProc?.kill();
+	afterEach(async () => {
+		const proc = daemonProc;
 		daemonProc = undefined;
+		if (proc && proc.exitCode === null) {
+			// shutdown 後の後始末（exited.json・ソケットの削除）が済むのを待ってから消す。
+			await new Promise<void>((resolve) => {
+				const timer = setTimeout(() => {
+					proc.kill("SIGKILL");
+					resolve();
+				}, 2000);
+				proc.once("exit", () => {
+					clearTimeout(timer);
+					resolve();
+				});
+			});
+		}
+		rmSync(runtimeDir, { recursive: true, force: true });
 	});
 
 	it("hello → start(cat) → attach → 入出力の往復 → shutdown", async () => {
-		sockPath = join(tmpdir(), `agent-sessions-it-${randomBytes(6).toString("hex")}.sock`);
-		daemonProc = spawn(BIN as string, ["daemon"], {
-			env: { ...process.env, AGENT_SESSIONS_SOCK: sockPath },
+		runtimeDir = `/tmp/as-${process.pid}-${randomBytes(3).toString("hex")}`;
+		mkdirSync(runtimeDir, { recursive: true });
+		sockPath = join(runtimeDir, "d.sock");
+		daemonProc = spawn(BIN as string, ["daemon", "--sock", sockPath, "--runtime-dir", runtimeDir], {
+			env: { ...process.env, AGENT_SESSIONS_SOCK: sockPath, AGENT_SESSIONS_RUNTIME_DIR: runtimeDir },
 			stdio: "ignore",
 		});
 
