@@ -15,10 +15,31 @@ export interface ScanSession {
 	transcript: string | null;
 }
 
-/** `json scan` の出力全体。 */
+/** `sessions.json` のアーカイブ 1 件（§3）。 */
+export interface ArchivedSession {
+	id: string;
+	name: string;
+	agent: string;
+}
+
+/** `sessions.json` の `sessions` の 1 件（§3）。プラグインが起動したセッションの控え。 */
+export interface StoreSessionEntry {
+	agent: string;
+	cwd: string;
+}
+
+/** `sessions.json` の内容（§3）。 */
+export interface SessionStore {
+	folded: string[];
+	archived: ArchivedSession[];
+	pendingRenames: Record<string, string>;
+	sessions: Record<string, StoreSessionEntry>;
+}
+
+/** `json scan` の出力全体（§5）。 */
 export interface ScanResult {
 	sessions: ScanSession[];
-	groups: Record<string, string[]>;
+	store: SessionStore;
 }
 
 /** デーモンの `list` が返す 1 セッション（§4.1）。 */
