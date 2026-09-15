@@ -116,9 +116,9 @@ describe("toMarkdown（§D-31 コピー用）", () => {
 		const md = toMarkdown(TURNS, 1, 2, total);
 
 		expect(md).toContain("| # | 時刻 | 指示 | 入力 | 出力 | cache 作成 | cache 読出 |");
-		expect(md).not.toContain("| 0 |");
-		expect(md).toContain("| 1 |");
-		expect(md).toContain("| 2 |");
+		expect(md).not.toMatch(/^\| 0 \|/m);
+		expect(md).toMatch(/^\| 1 \|/m);
+		expect(md).toMatch(/^\| 2 \|/m);
 		expect(md).not.toContain("（開始前）");
 		expect(md).toContain(`合計（#1〜#2）：呼出 ${formatNumber(5)}・入力 ${formatNumber(300)}`);
 	});
