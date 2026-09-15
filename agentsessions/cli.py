@@ -1,7 +1,9 @@
+import importlib
 import sys
 from typing import List
 
-# 中身は後のタスクで足す（json: T-6, attach: T-7, hook/status: T-6, setup: T-9）。
+# サブコマンドは agentsessions.cmd_<name> モジュールの main(args) -> int。
+# モジュールが無いサブコマンドは「未実装」。
 SUBCOMMANDS = ('daemon', 'json', 'attach', 'hook', 'status', 'setup')
 
 
@@ -14,11 +16,12 @@ def main(argv: List[str]) -> int:
     if cmd in ('-h', '--help', 'help'):
         sys.stdout.write('usage: agent-sessions [%s]\n' % '|'.join(SUBCOMMANDS))
         return 0
-    if cmd == 'daemon':
-        from .daemon import main as daemon_main
-        return daemon_main(args[1:])
     if cmd in SUBCOMMANDS:
-        sys.stderr.write('未実装: %s\n' % cmd)
-        return 2
+        try:
+            mod = importlib.import_module('agentsessions.cmd_%s' % cmd)
+        except ImportError:
+            sys.stderr.write('未実装: %s\n' % cmd)
+            return 2
+        return mod.main(args[1:])
     sys.stderr.write('unknown command: %s\n' % cmd)
     return 2
