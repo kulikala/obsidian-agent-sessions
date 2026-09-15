@@ -50,7 +50,7 @@ function escapeCell(text: string): string {
 export function toMarkdown(turns: UsageTurn[], from: number, to: number, total: UsageTotal): string {
 	const lo = Math.min(from, to);
 	const hi = Math.max(from, to);
-	const rows = [...turns].sort((a, b) => a.index - b.index);
+	const rows = [...turns].filter((t) => t.index >= lo && t.index <= hi).sort((a, b) => a.index - b.index);
 
 	const lines: string[] = [];
 	lines.push(
