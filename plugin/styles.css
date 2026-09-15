@@ -328,6 +328,38 @@
 	gap: var(--size-4-2);
 }
 
+/* ---- トークン集計モーダル（D-31） ---- */
+.agent-sessions-usage-controls {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--size-4-2);
+	margin-bottom: var(--size-4-3);
+}
+
+.agent-sessions-usage-total {
+	margin-bottom: var(--size-4-2);
+	font-weight: var(--font-medium);
+}
+
+.agent-sessions-usage-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: var(--font-ui-small);
+}
+
+.agent-sessions-usage-table th,
+.agent-sessions-usage-table td {
+	padding: var(--size-2-1) var(--size-4-2);
+	border-bottom: 1px solid var(--background-modifier-border);
+	text-align: left;
+}
+
+.agent-sessions-usage-table td:nth-child(n + 4) {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+
 /* ---- 以下は @xterm/xterm/css/xterm.css（esbuild は css を束ねないためここに置く） ---- */
 
 /**

@@ -77,3 +77,35 @@ export interface Detail {
 	last_assistant: string | null;
 	tools: string[];
 }
+
+/** `json usage ID` の 1 ターン（D-30）。`ts` は epoch 秒。 */
+export interface UsageTurn {
+	index: number;
+	ts: number;
+	prompt: string;
+	calls: number;
+	input: number;
+	cache_create: number;
+	cache_read: number;
+	output: number;
+	thinking: number;
+	models: Record<string, number>;
+}
+
+/** `json usage ID` の合計（D-30）。 */
+export interface UsageTotal {
+	calls: number;
+	input: number;
+	cache_create: number;
+	cache_read: number;
+	output: number;
+	thinking: number;
+}
+
+/** `json usage ID` の出力全体（D-30）。`from`／`to` は epoch 秒（指定が無ければ `null`）。 */
+export interface UsageResult {
+	turns: UsageTurn[];
+	total: UsageTotal;
+	from: number | null;
+	to: number | null;
+}

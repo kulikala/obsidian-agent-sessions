@@ -12,6 +12,7 @@ import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./op
 import { AgentSessionsSettings, DEFAULT_SETTINGS } from "./settings";
 import { migrateFromMarkdown, StoreLockError, updateStore } from "./store";
 import type { ArchivedSession, DaemonSession } from "./types";
+import { UsageModal } from "./usage-modal";
 import { ManagerView, VIEW_TYPE_MANAGER } from "./views/manager";
 import { SideView, VIEW_TYPE_SIDE } from "./views/side";
 import { TerminalView } from "./views/terminal";
@@ -364,6 +365,13 @@ export default class AgentSessionsPlugin extends Plugin {
 				}
 			})();
 		}).open();
+	}
+
+	/** トークン集計のモーダルを開く（D-31）。 */
+	showUsage(id: string): void {
+		const row = this.index.sessions.get(id);
+		const name = row?.pendingRename || row?.name || row?.label || `無題 ${id.slice(0, 8)}`;
+		new UsageModal(this.app, this.agentSessionsPath(), id, name).open();
 	}
 
 	archive(id: string, name: string, agent: string): void {

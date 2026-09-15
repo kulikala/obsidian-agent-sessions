@@ -4,7 +4,7 @@
 import { execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Detail, LiveResult, ScanResult } from "./types";
+import type { Detail, LiveResult, ScanResult, UsageResult } from "./types";
 
 /** `json` サブコマンドが失敗したときの例外。stderr の先頭行を message に持つ。 */
 export class BackendError extends Error {}
@@ -56,6 +56,18 @@ export async function live(agentSessionsPath: string): Promise<LiveResult> {
 
 export async function detail(agentSessionsPath: string, id: string): Promise<Detail> {
 	return runJson(agentSessionsPath, ["detail", id]) as Promise<Detail>;
+}
+
+/** `json usage ID [--from ISO] [--to ISO]`（D-30）。`from`／`to` は ISO8601（UTC）。 */
+export async function usage(agentSessionsPath: string, id: string, from?: string, to?: string): Promise<UsageResult> {
+	const args = ["usage", id];
+	if (from) {
+		args.push("--from", from);
+	}
+	if (to) {
+		args.push("--to", to);
+	}
+	return runJson(agentSessionsPath, args) as Promise<UsageResult>;
 }
 
 const LOGIN_ENV_KEYS = ["PATH", "LANG", "HOME", "USER", "TMPDIR", "CLAUDE_CONFIG_DIR"] as const;

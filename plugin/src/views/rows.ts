@@ -16,6 +16,8 @@ export interface RowActions {
 	copyId(id: string): void;
 	/** 300 ms ホバーで呼ばれる。 */
 	showDetail(id: string): void;
+	/** トークン集計のモーダルを開く（D-31）。 */
+	showUsage(id: string): void;
 }
 
 export interface RenderRowOptions {
@@ -103,6 +105,12 @@ function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): void {
 				.onClick(() => actions.endSession(row.id))
 		);
 	}
+	menu.addItem((item) =>
+		item
+			.setTitle("トークン集計")
+			.setIcon("bar-chart-2")
+			.onClick(() => actions.showUsage(row.id))
+	);
 	menu.addItem((item) =>
 		item
 			.setTitle("フォルダを開く")
@@ -238,6 +246,7 @@ export function createRowActions(app: App, plugin: AgentSessionsPlugin, onShowDe
 			void navigator.clipboard.writeText(id);
 		},
 		showDetail: onShowDetail,
+		showUsage: (id) => plugin.showUsage(id),
 	};
 }
 
