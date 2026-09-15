@@ -1,0 +1,9 @@
+{
+	"id": "agent-sessions",
+	"name": "Agent Sessions",
+	"version": "0.1.0",
+	"minAppVersion": "1.7.2",
+	"description": "claude のセッションを一覧・管理し、ターミナルとして開く。",
+	"author": "kulikala",
+	"isDesktopOnly": true
+}

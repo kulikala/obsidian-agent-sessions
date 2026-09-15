@@ -1,0 +1,27 @@
+{
+  "name": "agent-sessions",
+  "version": "0.1.0",
+  "description": "Obsidian プラグイン：agent-sessions のサイドパネル・セッションマネージャー・ターミナル",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "build": "node esbuild.config.mjs production",
+    "dev": "node esbuild.config.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -noEmit -skipLibCheck"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "^0.10.0",
+    "@xterm/addon-unicode11": "^0.8.0",
+    "@xterm/addon-webgl": "^0.18.0",
+    "@xterm/xterm": "^5.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "builtin-modules": "^4.0.0",
+    "esbuild": "^0.24.0",
+    "obsidian": "latest",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}
