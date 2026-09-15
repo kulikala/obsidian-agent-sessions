@@ -606,7 +606,9 @@ class Daemon:
         conn.cols, conn.rows = cols, rows
         conn.attached = s
         s.clients.add(conn)
+        size_before = (s.cols, s.rows)
         self._apply_size(s)
+        size_changed = (s.cols, s.rows) != size_before
         self._reply(conn, seq, {'ok': True, 'exited': s.exited})
         pending = bytearray()
         for chunk in s.chunks:
@@ -620,8 +622,10 @@ class Daemon:
         if not s.running:
             self._send_json(conn, {'ev': 'exit', 'id': s.id, 'code': s.exited})
             return
-        # 再生の後、行数を 1 減らしてから戻す（SIGWINCH で画面下部を描き直させる）。
-        if s.master_fd is not None and s.rows > 1:
+        # attach でサイズが変わったときだけ、再生の後に行数を 1 減らしてから戻す
+        # （SIGWINCH で画面下部を描き直させる）。同じサイズなら SIGWINCH を出さない
+        # ——Claude Code は SIGWINCH で画面を丸ごと描き直し、再生した直前の画面が消える。
+        if size_changed and s.master_fd is not None and s.rows > 1:
             try:
                 _set_winsize(s.master_fd, s.cols, s.rows - 1)
             except OSError:

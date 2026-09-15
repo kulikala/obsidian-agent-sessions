@@ -85,6 +85,23 @@ class Client:
                 got.extend(payload)
         raise TimeoutError('output: %r' % bytes(got[:200]))
 
+    def collect(self, seconds):
+        """`seconds` のあいだに届いた `D` を集める（届かなくても例外にしない）。"""
+        got = bytearray()
+        deadline = time.monotonic() + seconds
+        self.sock.settimeout(0.05)
+        try:
+            while time.monotonic() < deadline:
+                try:
+                    kind, payload = self.frame()
+                except socket.timeout:
+                    continue
+                if kind == protocol.FRAME_D:
+                    got.extend(payload)
+        finally:
+            self.sock.settimeout(TIMEOUT)
+        return bytes(got)
+
     def replay(self):
         """attach の直後の `R`… → `replayed` を集めて再生バイト列を返す。"""
         got = bytearray()
@@ -265,6 +282,27 @@ class TestSessions(DaemonTestCase):
         a.request('resize', cols=90, rows=20)
         self.assertEqual((self.h.daemon.sessions['sz'].cols, self.h.daemon.sessions['sz'].rows), (90, 20))
         a.request('kill', id='sz')
+
+    def test_attach_with_same_size_sends_no_sigwinch(self):
+        a = self.h.client()
+        res = a.request('start', id='w', agent='test', cwd=self.tmpdir,
+                        argv=['/bin/sh', '-c', 'trap "echo WINCH" WINCH; while :; do sleep 0.1; done'],
+                        env={'PATH': '/usr/bin:/bin'}, cols=80, rows=24)
+        self.assertTrue(res['ok'])
+        time.sleep(0.2)   # trap が置かれるのを待つ
+        a.request('attach', id='w', cols=80, rows=24)
+        a.replay()
+        self.assertNotIn(b'WINCH', a.collect(0.4))
+        a.request('detach')
+        a.request('attach', id='w', cols=80, rows=24)   # 同じサイズで再 attach
+        a.replay()
+        self.assertNotIn(b'WINCH', a.collect(0.4))
+        b = self.h.client()
+        b.request('attach', id='w', cols=80, rows=20)   # サイズが変わる attach では再描画する
+        b.replay()
+        self.assertIn(b'WINCH', a.collect(0.6))
+        self.assertEqual((self.h.daemon.sessions['w'].cols, self.h.daemon.sessions['w'].rows), (80, 20))
+        a.request('kill', id='w')
 
     def test_detach_then_reattach_replays(self):
         c = self.h.client()
