@@ -92,7 +92,7 @@ def collect(path: str) -> List[dict]:
                 text, _tools = detail._texts_and_tools(message.get('content'))
                 if text.strip() and detail.is_human_prompt(rec, text):
                     current = Turn(index=len(turns), ts=_parse_ts(rec.get('timestamp')),
-                                   prompt=text.strip()[:PROMPT_HEAD_LEN])
+                                   prompt=detail.clean_text(text).strip()[:PROMPT_HEAD_LEN])
                     turns.append(current)
                 continue
 
