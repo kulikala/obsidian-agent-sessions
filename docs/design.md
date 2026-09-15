@@ -142,8 +142,8 @@ Unix ドメインソケット `~/.agents/sessions/daemon.sock`。両方向とも
 - `start`：`pty.fork()` → 子で `os.chdir(cwd)`、`os.execvpe(argv[0], argv, env)`。親は `TIOCSWINSZ` でサイズを設定。
 - 環境は要求の `env` に `TERM=xterm-256color`・`COLORTERM=truecolor`・`AGENT_SESSIONS_ID=<id>` を足す。プラグインはログインシェル（`$SHELL -l -c 'env'`）から取った `PATH`・`LANG`・`HOME` などを `env` に渡す（Dock から起動した Obsidian の環境は貧弱なため）。
 - 出力バッファ：セッション毎に `deque` のチャンク列、合計 1 MiB を上限に古いものから捨てる。再生はチャンク境界から。
-- attach 時：`resize` を適用してから `R` で再生、`replayed` の後に **行数を 1 減らして戻す**（Claude Code が SIGWINCH で画面下部を描き直す）。
-- 終了の検知：master fd の読みが EOF か `EIO` になったら `waitpid(pid, WNOHANG)`。加えて `SIGCHLD` を self-pipe で `select` に流し、孫プロセスが PTY を掴んでいて EOF が来ない場合も拾う。検知したら全接続に `exit` を送る。
+- attach 時：`resize` を適用してから `R` で再生。attach で PTY のサイズが**変わったときだけ**、`replayed` の後に行数を 1 減らして戻す（Claude Code が SIGWINCH で画面下部を描き直す。サイズが同じなら再生した画面がそのまま正しい）。
+- 終了の検知：master fd の読みが EOF か `EIO` になったら `waitpid(pid, WNOHANG)`。加えて `SIGCHLD` を self-pipe で `select` に流し、孫プロセスが PTY を掴んでいて EOF が来ない場合も拾う。検知したらそのセッションに attach 中の接続に `exit` を送る。
 - 終了済みセッションは **`forget` されるまで保持**する（記録とバッファ）。裏のタブが後から attach しても再生と `exit` が届き、終了画面になる。`forget` はプラグインの「再開」「閉じる」と TUI が送る。
 - `kill`：プロセスグループへ `SIGTERM`、10 秒で `SIGKILL`。
 - デーモン自身：動作中セッション 0 かつ接続 0 の状態が 10 分続いたら終了。終了するとき（アイドル・`shutdown`・`SIGTERM`）は、**その時点で既に終了済み**の記録（`id`・`code`・`exitedAt`）だけを `~/.agents/sessions/exited.json` に書き、次に起動したときに読み込んで `forget` されるまで保持する（バッファは持ち越さない）。デーモンの終了に伴って `kill` した動作中セッションは外からの停止なので記録しない（再起動後は `--resume` で続く）。裏タブがデーモンの再起動をまたいで attach しても `exit` が届き、終了画面になる。`exited.json` に上限は設けない。増えないのは、プラグインが `onLayoutReady` と `layout-change` のたびに、終了済みでターミナルタブの無い `id` へ `forget` を送るから（タブが残っている `id` は捨てない）。`SIGTERM` で全セッションを `kill` して終了。単一実体は `daemon.pid` と `flock` で保証。二重に起動された側は `flock` に失敗して即終了し、呼び出し側（プラグイン）は 1 秒待って再接続する。
@@ -216,7 +216,7 @@ TUI：一覧（グループ→単独→その他、折畳、`/` 絞込、`h` で
 
 ### 6.3 ターミナル（`agent-sessions-terminal`）
 
-状態（`getState`）：`{id, agent, cwd, fontSize?}`。Obsidian の workspace に保存され、再起動で戻る。
+状態（`getState`）：`{id, agent, cwd, fontSize?, fresh?}`（`fresh` は新規で未起動のときだけ真。最初の `start` で消える）。Obsidian の workspace に保存され、再起動で戻る。
 
 - xterm 5.x：`fontFamily`・`fontSize` は設定（タブ毎の `fontSize` があれば優先）、`lineHeight: 1.0`、`letterSpacing: 0`、`scrollback: 5000`、`allowProposedApi: true`、`macOptionIsMeta: true`、`cursorBlink: true`。アドオン：fit・webgl（失敗時は既定の canvas）・unicode11。
 - 余白：設定 `padding`（`comfortable`＝12px／`compact`＝4px／`none`＝0）をコンテナの CSS 変数に流し、`fit()` は余白を除いた領域で計る。
@@ -224,7 +224,7 @@ TUI：一覧（グループ→単独→その他、折畳、`/` 絞込、`h` で
 - 出力：`D` フレームを `terminal.write(Uint8Array)`。再生（`R`）中は `write` をまとめ、`replayed` で `scrollToBottom()`。
 - 入力：`onData` の文字列を UTF-8 で `D`。`onBinary` も同様。
 - サイズ：ResizeObserver → 50 ms デバウンス → `fit()` → `onResize` → `resize`。
-- キー：`attachCustomKeyEventHandler` で処理する。Esc は `keyup` の伝播を止める（Obsidian がフォーカスを奪うため）。**Enter に Shift／Option／Cmd のいずれかが付いていたら ESC CR（`0x1b 0x0d`）を PTY へ書き**、既定動作と伝播を止める（Claude Code の meta+enter。`/terminal-setup` が VS Code に入れる shift+enter の送出列と同じ）。`Cmd + / − / 0` はフォントサイズ。それ以外は xterm に任せ、`keydown` の伝播を止めて Obsidian のホットキーに渡さない。
+- キー：`attachCustomKeyEventHandler` で処理する。Esc は `keyup` の伝播を止める（Obsidian がフォーカスを奪うため）。**Enter に Shift／Option／Cmd のいずれかが付いていたら ESC CR（`0x1b 0x0d`）を PTY へ書き**、既定動作と伝播を止める（Claude Code の meta+enter。`/terminal-setup` が VS Code に入れる shift+enter の送出列と同じ）。`Cmd + / − / 0` はフォントサイズ。**それ以外の Cmd 付きキーは伝播を止めず Obsidian に渡す**（xterm は Cmd の組合せに何も送らないため、止めると Cmd+W・Cmd+P が効かなくなる）。Ctrl・Option 付きと無修飾のキーは xterm に任せ、`keydown` の伝播を止めて Obsidian のホットキーに渡さない。
 - 終了（`exit` イベント）：出力の上に「セッションは終了しました（code）」と **再開**・**閉じる**。再開は `forget` → `--resume` で `start`。閉じるは `forget` してタブを閉じる。
 - タブを閉じる（`onClose`）：`detach` して接続を閉じ、xterm を `dispose`。セッションは残る。`SessionIndex`・`registry`・`statusline`・`settings-changed` の購読は `this.register(unsubscribe)` で登録してあり、Obsidian が `onClose` で解く。
 - 設定の反映：`main.ts` が設定保存時に `settings-changed` を発火し、全ターミナルビューが `applySettings()` でフォント・サイズ（タブ毎の値があればそれ）・余白・スクロールバックを xterm に当てて `fit()` する。
