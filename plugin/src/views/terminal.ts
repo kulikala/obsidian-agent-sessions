@@ -1,14 +1,17 @@
 // ターミナル（§6.3）・1 セッション＝1 タブ（§6.4）・アイコンの状態（§6.5）・
 // エラー処理（§7）。xterm 5.x を `DaemonClient` に繋ぐ。
 
-import { ItemView, setIcon, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, setIcon, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
+import { join } from "node:path";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { BackendError, loginEnv, resolveClaude } from "../backend";
 import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../daemon-client";
+import { buildAtToken, selectionLineRange, VaultLinkProvider } from "../links";
 import type AgentSessionsPlugin from "../main";
+import { MarkTracker, type MarkerHandle, type MarkerSource } from "../marks";
 import { VIEW_TYPE_TERMINAL } from "../open-session";
 import type { Padding } from "../settings";
 import { readObsidianTheme } from "../theme";
@@ -73,6 +76,11 @@ export class TerminalView extends ItemView {
 	private waiting = false;
 	private displayName = "";
 
+	/** ジャンプ（§6.7）：指示・応答の先頭を覚える。xterm のマーカーは `markerSource()` で包む。 */
+	private marks: MarkTracker;
+	/** `\x1b[200~`…`\x1b[201~` の間かどうか（§6.7。ペースト内の改行を指示と数えない）。 */
+	private pasting = false;
+
 	constructor(
 		leaf: WorkspaceLeaf,
 		private plugin: AgentSessionsPlugin
@@ -88,6 +96,27 @@ export class TerminalView extends ItemView {
 			macOptionIsMeta: true,
 			cursorBlink: true,
 		});
+		this.marks = new MarkTracker(this.markerSource());
+	}
+
+	/** xterm の `registerMarker` を `MarkerSource` に包む（`marks.ts` は xterm に依存しない）。 */
+	private markerSource(): MarkerSource {
+		return {
+			registerMarker: (): MarkerHandle | undefined => {
+				const marker = this.terminal.registerMarker(0);
+				if (!marker) {
+					return undefined;
+				}
+				return {
+					get line() {
+						return marker.line;
+					},
+					get isDisposed() {
+						return marker.line === -1;
+					},
+				};
+			},
+		};
 	}
 
 	getViewType(): string {
@@ -175,7 +204,10 @@ export class TerminalView extends ItemView {
 		this.terminal.loadAddon(new Unicode11Addon());
 		this.terminal.unicode.activeVersion = "11";
 		this.terminal.attachCustomKeyEventHandler((ev) => this.handleKey(ev));
-		const onData = this.terminal.onData((data) => this.sendInput(Buffer.from(data, "utf8")));
+		const onData = this.terminal.onData((data) => {
+			this.sendInput(Buffer.from(data, "utf8"));
+			this.marks.onInput(data, this.consumePasteMarkers(data));
+		});
 		const onBinary = this.terminal.onBinary((data) => this.sendInput(Buffer.from(data, "binary")));
 		const onResize = this.terminal.onResize(({ cols, rows }) => {
 			if (this.client && this.attached) {
@@ -202,10 +234,26 @@ export class TerminalView extends ItemView {
 		this.register(this.plugin.index.onChange(() => this.onIndexChange()));
 		this.register(this.plugin.index.registry.onChange(() => this.updateIcon()));
 		this.register(this.plugin.index.registry.onIdle((id) => this.onIdle(id)));
+		this.register(this.plugin.index.registry.onBusy((id) => this.onBusyMark(id)));
 		this.registerEvent(this.plugin.events.on("settings-changed", () => this.applySettings()));
 		this.registerEvent(this.app.workspace.on("css-change", () => this.applyTheme()));
 		this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.onFrontChange()));
 		this.registerEvent(this.app.workspace.on("layout-change", () => this.onFrontChange()));
+
+		const linkProvider = this.terminal.registerLinkProvider(
+			new VaultLinkProvider({
+				app: this.app,
+				terminal: this.terminal,
+				cwd: () => this.cwd,
+				vaultPath: this.plugin.vaultPath(),
+			})
+		);
+		this.register(() => linkProvider.dispose());
+
+		this.addAction("at-sign", "現在のノートを @ で挿入", () => this.insertActiveNoteAt());
+		this.addAction("arrow-up", "前の指示", () => this.jumpTo(this.marks.prev(this.viewportY())));
+		this.addAction("arrow-down", "次の指示", () => this.jumpTo(this.marks.next(this.viewportY())));
+		this.addAction("corner-right-down", "最後の応答", () => this.jumpTo(this.marks.lastResponse()));
 
 		this.applySettings();
 	}
@@ -462,6 +510,77 @@ export class TerminalView extends ItemView {
 		const resumeFailed =
 			early && RESUME_FAILURE_PATTERNS.some((p) => this.earlyOutput.includes(p));
 		this.showExit({ kind: "exited", code, resumeFailed });
+	}
+
+	// ---- リンク・`@`・ジャンプ（§6.7） --------------------------------------------
+
+	/** `@` 挿入・`sendCommand` で書き込む（`main.ts` が別のターミナルへ書くときにも使う）。 */
+	getCwd(): string {
+		return this.cwd;
+	}
+
+	/** ヘッダの `@` や `main.ts` のコマンドから、このターミナルへ入力フォーカスを移す。 */
+	focusTerminal(): void {
+		this.terminal.focus();
+	}
+
+	/** アクティブなノートを `@path[#Lx-y] ` としてこのターミナルへ書き、フォーカスを移す。 */
+	private insertActiveNoteAt(): void {
+		const info = this.app.workspace.activeEditor;
+		if (!info || !info.file) {
+			new Notice("開いているノートがありません");
+			return;
+		}
+		const file = info.file;
+		const abs = join(this.plugin.vaultPath(), file.path);
+		const range = info.editor ? selectionLineRange(info.editor) : undefined;
+		const token = buildAtToken(abs, this.cwd, range);
+		this.sendCommand(`@${token} `);
+		this.focusTerminal();
+	}
+
+	/** `\x1b[200~`…`\x1b[201~` を跨いで括弧付きペースト中かどうかを追う。この chunk の間に
+	 * ペースト中だった（またはペーストが始まった）ら真を返す。 */
+	private consumePasteMarkers(data: string): boolean {
+		const START = "\x1b[200~";
+		const END = "\x1b[201~";
+		let pasting = this.pasting;
+		let sawPaste = pasting;
+		let i = 0;
+		while (i < data.length) {
+			const start = data.indexOf(START, i);
+			const end = data.indexOf(END, i);
+			if (start !== -1 && (end === -1 || start <= end)) {
+				pasting = true;
+				sawPaste = true;
+				i = start + START.length;
+				continue;
+			}
+			if (end !== -1) {
+				pasting = false;
+				i = end + END.length;
+				continue;
+			}
+			break;
+		}
+		this.pasting = pasting;
+		return sawPaste;
+	}
+
+	private onBusyMark(id: string): void {
+		if (id === this.id) {
+			this.marks.onBusy();
+		}
+	}
+
+	private viewportY(): number {
+		return this.terminal.buffer.active.viewportY;
+	}
+
+	private jumpTo(line: number | null): void {
+		if (line !== null) {
+			this.terminal.scrollToLine(line);
+		}
 	}
 
 	// ---- キー -------------------------------------------------------------------

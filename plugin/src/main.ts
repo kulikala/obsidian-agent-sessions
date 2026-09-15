@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { detail, live, resolveAgentSessionsPath, scan } from "./backend";
 import { DaemonClient, defaultSockPath, ensureDaemon } from "./daemon-client";
 import { SessionIndex } from "./index";
+import { buildAtToken, selectionLineRange } from "./links";
 import { ConfirmModal, NewSessionModal, RenameSessionModal } from "./modals";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./open-session";
 import { AgentSessionsSettings, DEFAULT_SETTINGS } from "./settings";
@@ -94,7 +95,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			id: "insert-note-at",
 			name: "現在のノートを @ で挿入",
 			callback: () => {
-				new Notice("準備中");
+				this.insertNoteAt();
 			},
 		});
 
@@ -120,6 +121,38 @@ export default class AgentSessionsPlugin extends Plugin {
 	/** セッションのタブを開く（§6.4）。既にあれば前面に出すだけ。 */
 	openSession(id: string, opts: OpenSessionOptions = {}): Promise<WorkspaceLeaf> {
 		return this.opener.open(id, opts);
+	}
+
+	/**
+	 * アクティブなノートを `@path[#Lx-y] ` として、対象のターミナルへ書く（§6.7）。
+	 * 対象は前面のターミナルビュー、無ければ開いているタブの最初。
+	 */
+	insertNoteAt(): void {
+		const info = this.app.workspace.activeEditor;
+		if (!info || !info.file) {
+			new Notice("開いているノートがありません");
+			return;
+		}
+		const file = info.file;
+		const view = this.frontTerminalView();
+		if (!view) {
+			new Notice("開いているターミナルがありません");
+			return;
+		}
+		const abs = join(this.vaultPath(), file.path);
+		const range = info.editor ? selectionLineRange(info.editor) : undefined;
+		const token = buildAtToken(abs, view.getCwd(), range);
+		view.sendCommand(`@${token} `);
+		view.focusTerminal();
+	}
+
+	/** 前面のターミナルビュー（タブが見えているもの）。無ければ開いているタブの最初。 */
+	private frontTerminalView(): TerminalView | undefined {
+		const views = this.app.workspace
+			.getLeavesOfType(VIEW_TYPE_TERMINAL)
+			.map((leaf) => leaf.view)
+			.filter((view): view is TerminalView => view instanceof TerminalView);
+		return views.find((view) => view.containerEl.isShown()) ?? views[0];
 	}
 
 	sockPath(): string {

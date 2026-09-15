@@ -64,6 +64,20 @@ describe("Registry", () => {
 		expect(registry.get("a")?.status).toBe("idle");
 	});
 
+	it("refresh で読み直し、idle → busy/shell を onBusy で通知する", () => {
+		writeSession(dir, "a.json", { pid: process.pid, sessionId: "a", status: "idle" });
+		const registry = new Registry(dir);
+
+		const busied: string[] = [];
+		registry.onBusy((id) => busied.push(id));
+
+		writeSession(dir, "a.json", { pid: process.pid, sessionId: "a", status: "busy" });
+		registry.refresh();
+
+		expect(busied).toEqual(["a"]);
+		expect(registry.get("a")?.status).toBe("busy");
+	});
+
 	it("refresh のたびに onChange が呼ばれる", () => {
 		const registry = new Registry(dir);
 		let calls = 0;

@@ -110,6 +110,12 @@ export class Registry extends EventEmitter {
 		return () => this.off("idle", cb);
 	}
 
+	/** `idle` → `busy`/`shell` の遷移を通知する（§6.7 応答の先頭マーカー）。 */
+	onBusy(cb: (id: string) => void): () => void {
+		this.on("busy", cb);
+		return () => this.off("busy", cb);
+	}
+
 	/** ディレクトリを読み直す。`fs.watch` が使えない環境向けに手動でも呼べる。 */
 	refresh(): void {
 		const next = readEntries(this.sessionsDir);
@@ -119,6 +125,9 @@ export class Registry extends EventEmitter {
 			const before = prev.get(id);
 			if (before && isBusyLike(before.status) && entry.status === "idle") {
 				this.emit("idle", id);
+			}
+			if (before && !isBusyLike(before.status) && isBusyLike(entry.status)) {
+				this.emit("busy", id);
 			}
 		}
 		this.emit("change");
