@@ -132,6 +132,7 @@ def update(fn: Callable[[Store], None], path: str = config.STORE_PATH,
     """ロックの中で読み→`fn(store)` で書き換え→保存。書き換えた Store を返す。"""
     if lock_path is None:
         lock_path = path + '.lock'
+    os.makedirs(os.path.dirname(lock_path) or '.', exist_ok=True)
     with Lock(lock_path):
         store = load(path)
         fn(store)
