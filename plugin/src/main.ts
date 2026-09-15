@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { detail, live, resolveAgentSessionsPath, scan } from "./backend";
 import { DaemonClient, defaultSockPath, ensureDaemon } from "./daemon-client";
 import { SessionIndex } from "./index";
+import { defaultKeybindingsPath, readEnterMode, setEnterMode } from "./keybindings";
 import { buildAtToken, selectionLineRange } from "./links";
 import { ConfirmModal, NewSessionModal, RenameSessionModal } from "./modals";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./open-session";
@@ -501,6 +502,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 					})
 			);
 
+		this.renderEnterModeSetting(containerEl);
+
 		new Setting(containerEl)
 			.setName("最近の件数（サイドパネル）")
 			.addText((text) =>
@@ -562,5 +565,49 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 					}
 				})
 			);
+	}
+
+	private keybindingsPath(): string {
+		return defaultKeybindingsPath(homedir(), process.env.CLAUDE_CONFIG_DIR);
+	}
+
+	/** Enter の役割（§6.8）。開くたびに `keybindings.json` を読んで現在値を出す。 */
+	private renderEnterModeSetting(containerEl: HTMLElement): void {
+		const keybindingsPath = this.keybindingsPath();
+		const info = readEnterMode(keybindingsPath);
+		const setting = new Setting(containerEl).setName("Enter の役割");
+
+		if (info.mode === "unreadable") {
+			setting.setDesc(`${keybindingsPath} が読めません。ここからは変更できません`);
+			return;
+		}
+		if (info.mode === "custom") {
+			setting.setDesc(`カスタム（${info.raw}）。ここからは変更できません`);
+			return;
+		}
+
+		setting.setDesc("実体は keybindings.json。Claude Code 全体（他の端末の claude にも）に効きます。");
+		setting.addDropdown((dropdown) => {
+			dropdown.addOptions({ submit: "送信", newline: "改行" });
+			dropdown.setValue(info.mode);
+			dropdown.onChange((value) => {
+				const next = value as "submit" | "newline";
+				if (next === info.mode) {
+					return;
+				}
+				new ConfirmModal(
+					this.app,
+					"Claude Code 全体に効きます（iTerm など他の端末の claude にも）。切り替えますか？",
+					"切り替える",
+					() => {
+						const result = setEnterMode(keybindingsPath, next);
+						new Notice(result.warning ?? "Enter の役割を切り替えました");
+						this.display();
+					}
+				).open();
+				// 確認が済むまでは見た目を戻しておく（確定したら display() で組み直す）。
+				dropdown.setValue(info.mode);
+			});
+		});
 	}
 }
