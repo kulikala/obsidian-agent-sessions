@@ -5,10 +5,9 @@ import os
 import tempfile
 import time
 from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional
 
 from . import config
-from .model import Doc, Session
 
 
 @dataclass
@@ -160,36 +159,3 @@ def set_folded(store: Store, group: str, folded: bool) -> None:
         store.folded.append(group)
     elif not folded and has:
         store.folded.remove(group)
-
-
-# --- tui.py（T-8 で書き換わる）向けの一時的な橋渡し ---
-#
-# 現在の tui.py は旧 md 形式の Doc（rows・hidden）を State に持つ。ここでは
-# scan() の結果に sessions.json の archived を当てるだけの簡易実装を置く。
-# pendingRenames・sessions（起動直後の控え）は見ない。
-
-
-def sessions_for_tui() -> Tuple[Doc, Dict[str, Session]]:
-    from .model import row_from, sort_rows
-    from .scan import list_transcripts, scan
-
-    scanned = scan(list_transcripts(config.PROJECTS_DIR))
-    st = load()
-    hidden = {a['id']: a.get('name', '') for a in st.archived}
-    rows = [row_from(s) for s in scanned.values() if s.name and s.id not in hidden]
-    doc = Doc(folded=list(st.folded), hidden=hidden, rows=sort_rows(rows))
-    return doc, scanned
-
-
-def persist(doc: Doc) -> None:
-    want = dict(doc.hidden)
-
-    def _apply(st: Store) -> None:
-        st.folded = list(doc.folded)
-        st.archived = [a for a in st.archived if a.get('id') in want]
-        have = {a.get('id') for a in st.archived}
-        for sid, name in want.items():
-            if sid not in have:
-                st.archived.append({'id': sid, 'name': name, 'agent': 'claude'})
-
-    update(_apply)

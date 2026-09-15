@@ -93,9 +93,17 @@ def _recv_json(sock: socket.socket, decoder: protocol.Decoder, deadline: float) 
                 return protocol.decode_json(payload)
 
 
-def _daemon_list() -> dict:
-    """デーモンの `list` を引く。動いていなければ（起動はせず）`running:false`。"""
-    sock_path = os.environ.get('AGENT_SESSIONS_SOCK') or config.SOCK_PATH
+def daemon_sock_path() -> str:
+    return os.environ.get('AGENT_SESSIONS_SOCK') or config.SOCK_PATH
+
+
+def send_daemon_op(op: str, client: str = 'json', sock_path: Optional[str] = None,
+                    **kw) -> Optional[dict]:
+    """デーモンへ `hello` → `op` を送り、応答を返す。繋がらなければ `None`
+    （デーモンは起動しない）。`json live` の `daemon` 判定とデーモン向けの
+    単発の要求（`tui.py` の `forget` など）で使う。"""
+    if sock_path is None:
+        sock_path = daemon_sock_path()
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
         sock.settimeout(DAEMON_TIMEOUT)
@@ -103,23 +111,30 @@ def _daemon_list() -> dict:
         decoder = protocol.Decoder()
         deadline = time.monotonic() + DAEMON_TIMEOUT
 
-        sock.sendall(protocol.encode_json({'op': 'hello', 'client': 'json', 'seq': 1}))
+        sock.sendall(protocol.encode_json({'op': 'hello', 'client': client, 'seq': 1}))
         hello = _recv_json(sock, decoder, deadline)
         if not hello.get('ok'):
-            return {'running': False, 'sessions': []}
+            return None
 
-        sock.sendall(protocol.encode_json({'op': 'list', 'seq': 2}))
-        resp = _recv_json(sock, decoder, deadline)
-        if not resp.get('ok'):
-            return {'running': False, 'sessions': []}
-        return {'running': True, 'sessions': resp.get('sessions', [])}
+        req = {'op': op, 'seq': 2}
+        req.update(kw)
+        sock.sendall(protocol.encode_json(req))
+        return _recv_json(sock, decoder, deadline)
     except (OSError, TimeoutError, ConnectionError, ValueError):
-        return {'running': False, 'sessions': []}
+        return None
     finally:
         try:
             sock.close()
         except OSError:
             pass
+
+
+def _daemon_list() -> dict:
+    """デーモンの `list` を引く。動いていなければ（起動はせず）`running:false`。"""
+    resp = send_daemon_op('list')
+    if resp is None or not resp.get('ok'):
+        return {'running': False, 'sessions': []}
+    return {'running': True, 'sessions': resp.get('sessions', [])}
 
 
 def live_output() -> dict:

@@ -3,35 +3,50 @@ import os
 import time
 from typing import Dict, List, Optional, Tuple
 
-from . import config
+from . import config, jsonout, store
 from .detail import Detail, read_detail
 from .items import Item, build_items, dw, fit, wrap
 from .live import Live, live_sessions
 from .model import Doc, Session, fmt_time, folder_of, row_from, sort_rows
-from .store import persist, sessions_for_tui
+from .scan import list_transcripts, scan
 
-HELP = ('↑↓/jk 移動  ⏎ 起動  ← 親へ/畳む  → 開く  h 非表示⇄戻す  H 非表示  '
+HELP = ('↑↓/jk 移動  ⏎ 起動  ← 親へ/畳む  → 開く  h アーカイブ表示  '
         '/ 絞込  p パネル  r 再走査  q 終了')
 DATE_W = 11      # MM-DD HH:MM
 FOLDER_W = 18
-PANEL_W = 44     # サイドパネルの幅
-PANEL_MIN_COLS = 92   # これより狭い端末ではパネルを畳む
+PANEL_MIN_COLS = 60   # これより狭い端末では一覧とパネルを p で切り替える
 LIVE_TTL = 1.0   # 起動中セッションの台帳を読み直す間隔（秒）
 MARK_BUSY = '●'
 MARK_IDLE = '○'
 CP_BUSY, CP_IDLE, CP_HEAD = 1, 2, 3
 
 
+def panel_width(cols: int) -> int:
+    """サイドパネルの幅。`cols < PANEL_MIN_COLS` では 0（一覧⇄パネルの切替モード）。"""
+    if cols < PANEL_MIN_COLS:
+        return 0
+    return max(30, min(60, int(cols * 0.4)))
+
+
+def _doc_from_store(st: store.Store, scanned: Dict[str, Session]) -> Doc:
+    """`items.build_items` が読む形（`Doc`）に、`Store` と走査結果を合わせる。
+    `archived` が非表示、それ以外の名前付きセッションが管理中の行になる。"""
+    hidden = {a['id']: a.get('name', '') for a in st.archived}
+    rows = [row_from(s) for s in scanned.values() if s.name and s.id not in hidden]
+    return Doc(folded=list(st.folded), hidden=hidden, rows=sort_rows(rows))
+
+
 class State:
-    def __init__(self, doc: Doc, scanned: Dict[str, Session]):
-        self.doc = doc
+    def __init__(self, store_snapshot: store.Store, scanned: Dict[str, Session]):
+        self.store = store_snapshot
         self.scanned = scanned
-        self.show_hidden = False
+        self.doc = _doc_from_store(self.store, self.scanned)
+        self.show_hidden = False   # 'h' でアーカイブを見せる
         self.other_folded = True
         self.filt = ''
         self.cursor = 0
         self.top = 0
-        self.panel = True
+        self.panel_only = False    # cols < PANEL_MIN_COLS のときだけ効く（'p' で切替）
         self.live: Dict[str, Live] = {}
         self.live_at = 0.0
         self.details: Dict[str, Detail] = {}
@@ -81,13 +96,12 @@ class State:
         if item.label == config.OTHER_GROUP:
             self.other_folded = folded
         else:
-            in_folded = item.label in self.doc.folded
-            if folded and not in_folded:
-                self.doc.folded.append(item.label)
-                persist(self.doc)
-            elif not folded and in_folded:
-                self.doc.folded.remove(item.label)
-                persist(self.doc)
+            group = item.label
+            in_folded = group in self.doc.folded
+            if folded != in_folded:
+                self.store = store.update(
+                    lambda st, group=group, folded=folded: store.set_folded(st, group, folded))
+                self.doc.folded = list(self.store.folded)
         self.rebuild()
 
     def jump_to_group(self) -> None:
@@ -96,23 +110,10 @@ class State:
                 self.cursor = i
                 return
 
-    def toggle_hidden(self, item: Item) -> None:
-        if item.kind != 'session' or item.session is None:
-            return
-        s = item.session
-        if item.hidden:
-            self.doc.hidden.pop(s.id, None)
-            if s.name:
-                self.doc.rows.append(row_from(s))
-                self.doc.rows = sort_rows(self.doc.rows)
-        else:
-            self.doc.rows = [r for r in self.doc.rows if r.id != s.id]
-            self.doc.hidden[s.id] = s.name or ''
-        persist(self.doc)
-        self.rebuild()
-
     def rescan(self) -> None:
-        self.doc, self.scanned = sessions_for_tui()
+        self.store = store.load()
+        self.scanned = scan(list_transcripts(config.PROJECTS_DIR))
+        self.doc = _doc_from_store(self.store, self.scanned)
         self.details.clear()
         self.refresh_live(force=True)
         self.rebuild()
@@ -123,7 +124,7 @@ class State:
         other = sum(1 for s in self.scanned.values()
                     if not s.name and not s.child and s.id not in self.doc.hidden)
         running = sum(1 for sid in self.live if sid in self.scanned)
-        return '管理中 %d ／ 非表示 %d ／ その他 %d ／ 起動中 %d' % (managed, hidden, other, running)
+        return '管理中 %d ／ アーカイブ %d ／ その他 %d ／ 起動中 %d' % (managed, hidden, other, running)
 
 
 def _put(stdscr, y: int, x: int, s: str, attr: int = curses.A_NORMAL) -> None:
@@ -203,7 +204,7 @@ def _panel_lines(st: State, it: Optional[Item], width: int, height: int) -> List
         add('フォルダ  %s' % fit(folder_of(s.cwd), width - 10))
         add('ID        %s' % s.id[:18], curses.A_DIM)
     if it.hidden:
-        add('（非表示）', curses.A_DIM)
+        add('（アーカイブ）', curses.A_DIM)
 
     d = st.detail_of(s)
     rest = max(0, height - len(out) - 6)
@@ -218,12 +219,14 @@ def _panel_lines(st: State, it: Optional[Item], width: int, height: int) -> List
     return out
 
 
-def _draw_panel(stdscr, st: State, x0: int, top: int, height: int) -> None:
-    width = stdscr.getmaxyx()[1] - x0 - 1
+def _draw_panel(stdscr, st: State, x0: int, top: int, height: int, border: bool = True) -> None:
+    cols = stdscr.getmaxyx()[1]
+    width = cols - x0 - (1 if border else 0)
     if width <= 4:
         return
-    for i in range(height):
-        _put(stdscr, top + i, x0 - 1, '│')
+    if border:
+        for i in range(height):
+            _put(stdscr, top + i, x0 - 1, '│')
     lines = _panel_lines(st, st.current(), width, height)
     for i, (text, attr) in enumerate(lines[:height]):
         _put(stdscr, top + i, x0, fit(text, width, pad=True), attr)
@@ -238,42 +241,51 @@ def _draw(stdscr, st: State) -> None:
     if st.cursor >= st.top + body_h:
         st.top = st.cursor - body_h + 1
 
-    panel_w = PANEL_W if st.panel and cols >= PANEL_MIN_COLS else 0
-    list_w = cols - (panel_w + 2 if panel_w else 1)
+    pw = panel_width(cols)
+    toggle_mode = pw == 0
+    show_panel_only = toggle_mode and st.panel_only
+    show_list = not show_panel_only
+    show_panel = pw > 0 or show_panel_only
 
     title = 'Claude sessions'
     right = st.counts()
     _put(stdscr, 0, 0, fit(' ' + title, cols - dw(right) - 2, pad=True) + right, curses.A_BOLD)
     _put(stdscr, 1, 0, '─' * (cols - 1))
 
-    label_w = list_w - 4 - DATE_W - 2 - FOLDER_W - 1
-    for i in range(body_h):
-        idx = st.top + i
-        if idx >= len(st.items):
-            break
-        it = st.items[idx]
-        attr = curses.A_REVERSE if idx == st.cursor else curses.A_NORMAL
-        if it.kind == 'group':
-            folded = (st.other_folded if it.label == config.OTHER_GROUP else it.label in st.doc.folded) and not st.filt
-            mark = '▸' if folded else '▾'
-            line = fit(' %s %s (%d)' % (mark, it.label, it.count), list_w, pad=True)
-            _put(stdscr, 2 + i, 0, line, attr | curses.A_BOLD)
-            continue
-        s = it.session
-        indent = '   ' if it.depth else ' '
-        live_mark, live_attr = _mark_of(st.live_of(s))
-        label = it.label + (' (非表示)' if it.hidden else '')
-        left = fit(indent + label, label_w, pad=True)
-        date = fmt_time(s.mtime)[5:] if s else ''
-        folder = fit(folder_of(s.cwd) if s else '', FOLDER_W, pad=True)
-        line = fit('%s  %s  %s' % (left, date, folder), list_w - 2, pad=True)
-        if it.hidden:
-            attr |= curses.A_DIM
-        _put(stdscr, 2 + i, 0, live_mark, attr if idx == st.cursor else live_attr)
-        _put(stdscr, 2 + i, 2, line, attr)
+    if show_list:
+        list_w = cols - (pw + 2) if pw else cols - 1
+        label_w = list_w - 4 - DATE_W - 2 - FOLDER_W - 1
+        for i in range(body_h):
+            idx = st.top + i
+            if idx >= len(st.items):
+                break
+            it = st.items[idx]
+            attr = curses.A_REVERSE if idx == st.cursor else curses.A_NORMAL
+            if it.kind == 'group':
+                folded = (st.other_folded if it.label == config.OTHER_GROUP
+                          else it.label in st.doc.folded) and not st.filt
+                mark = '▸' if folded else '▾'
+                line = fit(' %s %s (%d)' % (mark, it.label, it.count), list_w, pad=True)
+                _put(stdscr, 2 + i, 0, line, attr | curses.A_BOLD)
+                continue
+            s = it.session
+            indent = '   ' if it.depth else ' '
+            live_mark, live_attr = _mark_of(st.live_of(s))
+            label = it.label + (' (アーカイブ)' if it.hidden else '')
+            left = fit(indent + label, label_w, pad=True)
+            date = fmt_time(s.mtime)[5:] if s else ''
+            folder = fit(folder_of(s.cwd) if s else '', FOLDER_W, pad=True)
+            line = fit('%s  %s  %s' % (left, date, folder), list_w - 2, pad=True)
+            if it.hidden:
+                attr |= curses.A_DIM
+            _put(stdscr, 2 + i, 0, live_mark, attr if idx == st.cursor else live_attr)
+            _put(stdscr, 2 + i, 2, line, attr)
 
-    if panel_w:
-        _draw_panel(stdscr, st, cols - panel_w, 2, body_h)
+    if show_panel:
+        if pw:
+            _draw_panel(stdscr, st, cols - pw, 2, body_h, border=True)
+        else:
+            _draw_panel(stdscr, st, 0, 2, body_h, border=False)
 
     _put(stdscr, rows - 2, 0, '─' * (cols - 1))
     foot = ('絞込: %s  (Esc で解除)' % st.filt) if st.filt else HELP
@@ -358,13 +370,10 @@ def _loop(stdscr, st: State) -> Optional[Session]:
             if it is not None and it.kind == 'group':
                 st.set_fold(it, False)
         elif ch == 'h':
-            if it is not None:
-                st.toggle_hidden(it)
-        elif ch == 'p':
-            st.panel = not st.panel
-        elif ch == 'H':
             st.show_hidden = not st.show_hidden
             st.rebuild()
+        elif ch == 'p':
+            st.panel_only = not st.panel_only
         elif ch == '/':
             _read_filter(stdscr, st)
         elif ch == 'r':
@@ -373,21 +382,43 @@ def _loop(stdscr, st: State) -> Optional[Session]:
             pass
 
 
-def run(doc: Doc, scanned: Dict[str, Session]) -> Optional[Session]:
-    st = State(doc, scanned)
+def run(store_snapshot: store.Store, scanned: Dict[str, Session]) -> Optional[Session]:
+    st = State(store_snapshot, scanned)
     try:
         return curses.wrapper(lambda scr: _loop(scr, st))
     except KeyboardInterrupt:
         return None
 
 
-def main() -> int:
-    """引数なしの `agent-sessions` の入口。デーモンへの attach は T-8 で
-    差し替える。それまでは選んだセッションへ直接 `claude --resume` する。"""
-    doc, scanned = sessions_for_tui()
-    s = run(doc, scanned)
-    if s is None:
-        return 0
+def _launch(s: Session) -> int:
+    """⏎ で選んだセッションを起動する。デーモンに乗っていれば attach、
+    終了済みなら forget してから、それ以外はそのまま `claude --resume` する。
+    デーモンを起動することはない。"""
+    sock_path = jsonout.daemon_sock_path()
+    daemon = jsonout.live_output().get('daemon') or {}
+    if daemon.get('running'):
+        entry = next((d for d in daemon.get('sessions', []) if d.get('id') == s.id), None)
+        if entry is not None:
+            if entry.get('exited') is not None:
+                jsonout.send_daemon_op('forget', id=s.id, sock_path=sock_path)
+            else:
+                try:
+                    from . import attach
+                except ImportError:
+                    attach = None
+                if attach is not None:
+                    return attach.run(s.id, sock_path)
+
     cwd = s.cwd if s.cwd and os.path.isdir(s.cwd) else config.VAULT
     os.chdir(cwd)
     os.execvp('claude', ['claude', '--resume', s.id])
+
+
+def main() -> int:
+    """引数なしの `agent-sessions` の入口。"""
+    st = store.load()
+    scanned = scan(list_transcripts(config.PROJECTS_DIR))
+    s = run(st, scanned)
+    if s is None:
+        return 0
+    return _launch(s)
