@@ -1,4 +1,5 @@
-"""`json scan`・`json live`・`json detail` の出力を組み立てる（D-6 §5）。"""
+"""`json scan`・`json live`・`json detail`・`json usage` の出力を組み立てる
+（D-6 §5・D-30）。"""
 
 import glob
 import os
@@ -12,6 +13,8 @@ from .items import OTHER_LABEL_LEN
 from .live import live_sessions
 from .model import Session, folder_of, split_name
 from .scan import list_transcripts, scan
+from .usage import collect as collect_usage
+from .usage import summarize as summarize_usage
 
 DAEMON_TIMEOUT = 1.0
 
@@ -155,3 +158,10 @@ def detail_output(session_id: str) -> dict:
     paths = _find_transcripts([session_id])
     d = read_detail_for(paths[0] if paths else None)
     return {'last_user': d.last_user, 'last_assistant': d.last_assistant, 'tools': d.tools}
+
+
+def usage_output(session_id: str, from_ts: Optional[float] = None,
+                  to_ts: Optional[float] = None) -> dict:
+    paths = _find_transcripts([session_id])
+    turns = collect_usage(paths[0]) if paths else []
+    return summarize_usage(turns, from_ts=from_ts, to_ts=to_ts)
