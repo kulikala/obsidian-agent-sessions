@@ -28,6 +28,14 @@ def panel_width(cols: int) -> int:
     return max(30, min(60, int(cols * 0.4)))
 
 
+def list_columns(list_w: int) -> Tuple[bool, bool]:
+    """一覧のうち日付・フォルダ列を出すか（`show_date`, `show_folder`）。
+    名前の列は幅がどれだけ狭くても常に残す。"""
+    show_folder = list_w >= 56
+    show_date = list_w >= 40
+    return show_date, show_folder
+
+
 def _doc_from_store(st: store.Store, scanned: Dict[str, Session]) -> Doc:
     """`items.build_items` が読む形（`Doc`）に、`Store` と走査結果を合わせる。
     `archived` が非表示、それ以外の名前付きセッションが管理中の行になる。"""
@@ -247,14 +255,20 @@ def _draw(stdscr, st: State) -> None:
     show_list = not show_panel_only
     show_panel = pw > 0 or show_panel_only
 
-    title = 'Claude sessions'
+    title = 'Agent Sessions'
     right = st.counts()
     _put(stdscr, 0, 0, fit(' ' + title, cols - dw(right) - 2, pad=True) + right, curses.A_BOLD)
     _put(stdscr, 1, 0, '─' * (cols - 1))
 
     if show_list:
         list_w = cols - (pw + 2) if pw else cols - 1
-        label_w = list_w - 4 - DATE_W - 2 - FOLDER_W - 1
+        show_date, show_folder = list_columns(list_w)
+        if show_folder:
+            label_w = list_w - 4 - DATE_W - 2 - FOLDER_W
+        elif show_date:
+            label_w = list_w - 4 - DATE_W
+        else:
+            label_w = list_w - 2
         for i in range(body_h):
             idx = st.top + i
             if idx >= len(st.items):
@@ -273,9 +287,12 @@ def _draw(stdscr, st: State) -> None:
             live_mark, live_attr = _mark_of(st.live_of(s))
             label = it.label + (' (アーカイブ)' if it.hidden else '')
             left = fit(indent + label, label_w, pad=True)
-            date = fmt_time(s.mtime)[5:] if s else ''
-            folder = fit(folder_of(s.cwd) if s else '', FOLDER_W, pad=True)
-            line = fit('%s  %s  %s' % (left, date, folder), list_w - 2, pad=True)
+            parts = [left]
+            if show_date:
+                parts.append(fmt_time(s.mtime)[5:] if s else '')
+            if show_folder:
+                parts.append(fit(folder_of(s.cwd) if s else '', FOLDER_W, pad=True))
+            line = fit('  '.join(parts), list_w - 2, pad=True)
             if it.hidden:
                 attr |= curses.A_DIM
             _put(stdscr, 2 + i, 0, live_mark, attr if idx == st.cursor else live_attr)

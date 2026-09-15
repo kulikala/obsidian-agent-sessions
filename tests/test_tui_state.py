@@ -4,7 +4,7 @@ from unittest import mock
 from agentsessions import store as store_mod
 from agentsessions.config import OTHER_GROUP
 from agentsessions.model import Session
-from agentsessions.tui import State, panel_width
+from agentsessions.tui import State, list_columns, panel_width
 
 A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
@@ -88,6 +88,27 @@ class TestPanelWidth(unittest.TestCase):
 
     def test_120_is_48(self):
         self.assertEqual(panel_width(120), 48)
+
+
+class TestListColumns(unittest.TestCase):
+    """名前の列は常に残す。日付・フォルダ列は幅が足りなければ落とす。"""
+
+    def test_narrow_drops_both_date_and_folder(self):
+        self.assertEqual(list_columns(39), (False, False))
+
+    def test_cols_60_with_panel_leaves_list_too_narrow_for_either_column(self):
+        # cols=60 のとき panel_width(60)=30 で list_w は 28。
+        # 名前の列が 0 桁になっていた回帰（受け入れ不合格）の再現。
+        list_w = 60 - (panel_width(60) + 2)
+        self.assertEqual(list_w, 28)
+        self.assertEqual(list_columns(list_w), (False, False))
+
+    def test_date_shown_once_wide_enough(self):
+        self.assertEqual(list_columns(40), (True, False))
+        self.assertEqual(list_columns(55), (True, False))
+
+    def test_folder_shown_once_wide_enough(self):
+        self.assertEqual(list_columns(56), (True, True))
 
 
 if __name__ == '__main__':
