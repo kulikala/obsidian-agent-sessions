@@ -112,10 +112,12 @@ class TestDetailOutput(JsonoutTestBase):
         self.assertEqual(out['last_user'], 'こんにちは')
         self.assertEqual(out['last_assistant'], 'はい')
         self.assertEqual(out['tools'], [])
+        self.assertIsNone(out['last_command'])
 
     def test_unknown_id_returns_empty_detail(self):
         out = jsonout.detail_output('does-not-exist')
-        self.assertEqual(out, {'last_user': '', 'last_assistant': '', 'tools': []})
+        self.assertEqual(out, {'last_user': '', 'last_assistant': '', 'tools': [],
+                                'last_command': None})
 
 
 class TestLiveOutput(JsonoutTestBase):

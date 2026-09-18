@@ -21,6 +21,14 @@ def assistant(blocks, **kw):
     return d
 
 
+def command(name, message='', args=''):
+    """スラッシュコマンドの起動行（`<command-name>` タグ入りの user 行）。"""
+    return user(
+        '<command-name>%s</command-name>\n'
+        '          <command-message>%s</command-message>\n'
+        '          <command-args>%s</command-args>' % (name, message, args))
+
+
 class TestCleanText(unittest.TestCase):
     def test_strips_system_reminder(self):
         s = clean_text('本文\n<system-reminder>内部の注意</system-reminder>\n続き')
@@ -92,3 +100,53 @@ class TestReadDetail(unittest.TestCase):
         ] + [{'type': 'cost-state', 'note': big} for _ in range(20)])
         d = read_detail(self.path, chunk=64)
         self.assertEqual(d.last_user, '遠くの指示')
+
+    def test_last_command_without_a_following_human_prompt(self):
+        write_jsonl(self.path, [
+            user('本命の指示', origin={'kind': 'human'}),
+            assistant([{'type': 'text', 'text': '本命の応答'}]),
+            command('/compact'),
+        ])
+        d = read_detail(self.path)
+        self.assertEqual(d.last_command, '/compact')
+        self.assertEqual(d.last_user, '本命の指示')
+        self.assertEqual(d.last_assistant, '本命の応答')
+
+    def test_last_command_after_a_human_prompt(self):
+        write_jsonl(self.path, [
+            user('遠い指示', origin={'kind': 'human'}),
+            assistant([{'type': 'text', 'text': '遠い応答'}]),
+            user('近い指示', origin={'kind': 'human'}),
+            assistant([{'type': 'text', 'text': '近い応答'}]),
+            command('/compact'),
+        ])
+        d = read_detail(self.path)
+        self.assertEqual(d.last_command, '/compact')
+        # コマンド行は last_user/last_assistant には混ざらない（直近の人の指示のまま）
+        self.assertEqual(d.last_user, '近い指示')
+        self.assertEqual(d.last_assistant, '近い応答')
+
+    def test_last_command_is_none_when_no_command_was_run(self):
+        write_jsonl(self.path, [
+            user('指示', origin={'kind': 'human'}),
+            assistant([{'type': 'text', 'text': '応答'}]),
+        ])
+        d = read_detail(self.path)
+        self.assertIsNone(d.last_command)
+
+    def test_last_command_picks_the_most_recent_one(self):
+        write_jsonl(self.path, [
+            command('/rename', args='古い名前'),
+            user('指示', origin={'kind': 'human'}),
+            assistant([{'type': 'text', 'text': '応答'}]),
+            command('/compact'),
+        ])
+        d = read_detail(self.path)
+        self.assertEqual(d.last_command, '/compact')
+
+    def test_last_command_from_plain_slash_text_without_tags(self):
+        write_jsonl(self.path, [
+            user('/rename New Name', origin={'kind': 'human'}),
+        ])
+        d = read_detail(self.path)
+        self.assertEqual(d.last_command, '/rename')

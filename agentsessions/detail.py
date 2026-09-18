@@ -13,6 +13,7 @@ _TAG_RE = re.compile(r'[ \t]*<(system-reminder|local-command-stdout|local-comman
                      r'.*?</\1>[ \t]*\n?', re.S)
 _BOLD_RE = re.compile(r'\*\*(.+?)\*\*', re.S)
 _LONE_TAG_RE = re.compile(r'</?[a-z][a-z0-9-]*(?:\s[^>]*)?>')
+_COMMAND_NAME_RE = re.compile(r'<command-name>\s*(/\S+)\s*</command-name>')
 # origin の無い古い transcript 向け。人間が打っていない user 行の出だし
 NOT_HUMAN_PREFIXES = (
     'Another Claude session sent a message:',
@@ -29,6 +30,7 @@ class Detail:
     last_user: str = ''         # 直近のユーザーの指示
     last_assistant: str = ''    # 直近の Claude の応答（テキストのあるもの）
     tools: List[str] = None     # 直近の応答で呼んだツール名
+    last_command: Optional[str] = None   # 直近のスラッシュコマンド名（引数は含めない）
 
     def __post_init__(self):
         if self.tools is None:
@@ -77,8 +79,25 @@ def _texts_and_tools(content):
     return '\n'.join(texts), tools
 
 
+def _extract_command(raw_text: str) -> Optional[str]:
+    """`raw_text`（`clean_text` を通す前の本文）からスラッシュコマンド名だけを
+    取り出す（引数は含めない）。`<command-name>/xxx</command-name>` があれば
+    それを、無ければ `clean_text` した本文が `/` で始まるときの先頭の語を使う。
+    どちらも無ければ None。"""
+    m = _COMMAND_NAME_RE.search(raw_text)
+    if m:
+        return m.group(1)
+    stripped = clean_text(raw_text).strip()
+    if stripped.startswith('/'):
+        return stripped.split(None, 1)[0]
+    return None
+
+
 def read_detail(path: str, chunk: int = TAIL_CHUNK, limit: int = DETAIL_LIMIT) -> Detail:
-    """末尾から遡って直近のユーザー発言と Claude の応答を 1 本ずつ拾う。"""
+    """末尾から遡って直近のユーザー発言と Claude の応答を 1 本ずつ、直近の
+    スラッシュコマンド名（`last_command`）を 1 つ拾う。`last_user`・
+    `last_assistant` が両方見つかった後も、`last_command` がまだなら
+    `limit` まで遡り続ける。"""
     d = Detail()
     tools: List[str] = []
     seen: set = set()
@@ -108,14 +127,13 @@ def read_detail(path: str, chunk: int = TAIL_CHUNK, limit: int = DETAIL_LIMIT) -
                 seen.update(fresh)
                 tools = fresh + tools
         elif kind == 'user':
-            if not text.strip() or not is_human_prompt(rec, text):
-                continue
-            text = clean_text(text)
-            if not text:
-                continue
-            if not d.last_user:
-                d.last_user = text
-        if d.last_user and d.last_assistant:
+            if d.last_command is None and text.strip():
+                d.last_command = _extract_command(text)
+            if not d.last_user and text.strip() and is_human_prompt(rec, text):
+                cleaned = clean_text(text)
+                if cleaned:
+                    d.last_user = cleaned
+        if d.last_user and d.last_assistant and d.last_command is not None:
             break
     return d
 

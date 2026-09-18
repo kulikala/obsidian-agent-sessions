@@ -157,7 +157,8 @@ def live_output() -> dict:
 def detail_output(session_id: str) -> dict:
     paths = _find_transcripts([session_id])
     d = read_detail_for(paths[0] if paths else None)
-    return {'last_user': d.last_user, 'last_assistant': d.last_assistant, 'tools': d.tools}
+    return {'last_user': d.last_user, 'last_assistant': d.last_assistant, 'tools': d.tools,
+            'last_command': d.last_command}
 
 
 def usage_output(session_id: str, from_ts: Optional[float] = None,
