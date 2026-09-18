@@ -1,29 +1,34 @@
-// セッションマネージャー（D-8・§6.2）：木・折畳・ツールバー・絞込・アーカイブ表示。
+// セッションマネージャー（D-8・D-44・§6.2）：表・折畳・絞込・アーカイブ表示・詳細パネル。
+// サイドパネルとは見た目を変える（罫線のある表、等幅の日時列）。行の描画ロジック
+// （状態の印・名前・時刻の整形、⋯ の行メニュー）は `rows.ts` を再利用する。
 
-import { ItemView, Notice, type WorkspaceLeaf } from "obsidian";
-import type { Row } from "../index";
+import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
 import type AgentSessionsPlugin from "../main";
+import { usage } from "../backend";
 import { NewSessionModal } from "../modals";
 import { loadStore } from "../store";
-import { buildManagerTree, OTHER_GROUP, type ArchivedEntry } from "../tree";
-import { usage } from "../backend";
+import { buildManagerTree } from "../tree";
 import { renderDetail, type DetailContext } from "./detail";
-import { createRowActions, renderGroupHeader, renderRow, RowSelection, type RowActions } from "./rows";
+import { ARCHIVED_GROUP, flattenTree, moveSelection, type ManagerRow } from "./manager-model";
+import { createRowActions, displayName, formatTime, showRowMenu, statusMark, type RowActions } from "./rows";
 
 export const VIEW_TYPE_MANAGER = "agent-sessions-manager";
 
 export class ManagerView extends ItemView {
 	private plugin: AgentSessionsPlugin;
 
-	private treeEl!: HTMLElement;
+	private wrapEl!: HTMLElement;
+	private tableBodyEl!: HTMLTableSectionElement;
 	private detailEl!: HTMLElement;
 	private filterEl!: HTMLInputElement;
-	private archiveToggleEl!: HTMLElement;
-	private selection = new RowSelection();
 
 	private filterText = "";
 	private showArchived = false;
+	private rows: ManagerRow[] = [];
+	private rowEls: HTMLTableRowElement[] = [];
+	private cursor = -1;
 	private detailId: string | null = null;
+	private actions!: RowActions;
 
 	constructor(leaf: WorkspaceLeaf, plugin: AgentSessionsPlugin) {
 		super(leaf);
@@ -49,99 +54,257 @@ export class ManagerView extends ItemView {
 		this.register(this.plugin.index.onChange(() => this.render()));
 		this.register(this.plugin.index.onError((message) => new Notice(`一覧の走査に失敗しました: ${message}`)));
 		this.register(this.plugin.index.registry.onChange(() => this.render()));
+		this.register(this.plugin.index.statusline.onChange(() => this.refreshDetail()));
 		this.register(this.plugin.index.addVisible());
 
 		void this.plugin.index.rescan();
 		this.render();
+		this.wrapEl.focus();
 	}
 
 	// ---- 骨組み -----------------------------------------------------------------
 
 	private buildSkeleton(): void {
-		const toolbarEl = this.contentEl.createDiv({ cls: "agent-sessions-toolbar" });
-		const newBtn = toolbarEl.createEl("button", { text: "新規セッション" });
-		this.registerDomEvent(newBtn, "click", () => this.openNewSessionModal());
-		const rescanBtn = toolbarEl.createEl("button", { text: "再走査" });
-		this.registerDomEvent(rescanBtn, "click", () => void this.plugin.index.rescan());
-		this.filterEl = toolbarEl.createEl("input", { type: "text", placeholder: "絞込" });
+		this.buildToolbar();
+
+		const body = this.contentEl.createDiv({ cls: "agent-sessions-manager-body" });
+		this.wrapEl = body.createDiv({ cls: "agent-sessions-manager-table-wrap" });
+		this.wrapEl.tabIndex = 0;
+		this.registerDomEvent(this.wrapEl, "keydown", (evt) => this.onListKeydown(evt));
+
+		const table = this.wrapEl.createEl("table", { cls: "agent-sessions-manager-table" });
+		this.tableBodyEl = table.createEl("tbody");
+
+		this.detailEl = body.createDiv({ cls: "agent-sessions-manager-detail" });
+	}
+
+	private buildToolbar(): void {
+		const toolbarEl = this.contentEl.createDiv({ cls: "agent-sessions-manager-toolbar" });
+		this.iconButton(toolbarEl, "plus", "新規セッション", () => this.openNewSessionModal());
+		this.iconButton(toolbarEl, "rotate-cw", "再走査", () => void this.plugin.index.rescan());
+
+		this.filterEl = toolbarEl.createEl("input", {
+			type: "text",
+			placeholder: "絞込",
+			cls: "agent-sessions-manager-filter",
+		});
 		this.registerDomEvent(this.filterEl, "input", () => {
 			this.filterText = this.filterEl.value;
 			this.render();
 		});
-		this.archiveToggleEl = toolbarEl.createEl("button", { text: "アーカイブを表示" });
-		this.registerDomEvent(this.archiveToggleEl, "click", () => {
-			this.showArchived = !this.showArchived;
-			this.archiveToggleEl.toggleClass("is-active", this.showArchived);
-			this.render();
+		this.registerDomEvent(this.filterEl, "keydown", (evt) => {
+			if (evt.key === "Escape") {
+				evt.preventDefault();
+				this.filterEl.value = "";
+				this.filterText = "";
+				this.render();
+				this.wrapEl.focus();
+			}
 		});
 
-		this.treeEl = this.contentEl.createDiv({ cls: "agent-sessions-tree" });
-		this.detailEl = this.contentEl.createDiv({ cls: "agent-sessions-detail" });
+		const moreBtn = this.iconButton(toolbarEl, "more-horizontal", "その他", (evt) => this.showMoreMenu(evt));
+		moreBtn.addClass("agent-sessions-nav-more");
+	}
+
+	private iconButton(
+		container: HTMLElement,
+		icon: string,
+		tooltip: string,
+		onClick: (evt: MouseEvent) => void
+	): HTMLElement {
+		const btn = container.createDiv({ cls: "agent-sessions-nav-btn clickable-icon" });
+		setIcon(btn, icon);
+		setTooltip(btn, tooltip);
+		this.registerDomEvent(btn, "click", (evt) => onClick(evt));
+		return btn;
 	}
 
 	private openNewSessionModal(): void {
 		new NewSessionModal(this.app, (name) => this.plugin.newSession(name || undefined)).open();
 	}
 
-	// ---- 木 ---------------------------------------------------------------------
+	private showMoreMenu(evt: MouseEvent): void {
+		const menu = new Menu();
+		menu.addItem((item) =>
+			item
+				.setTitle("アーカイブを表示")
+				.setChecked(this.showArchived)
+				.onClick(() => {
+					this.showArchived = !this.showArchived;
+					this.render();
+				})
+		);
+		menu.showAtMouseEvent(evt);
+	}
+
+	// ---- 表 ---------------------------------------------------------------------
 
 	private render(): void {
-		this.treeEl.empty();
-		this.selection.clear();
 		const store = loadStore(this.plugin.storePath());
-		let rows = [...this.plugin.index.sessions.values()];
+		let sessionRows = [...this.plugin.index.sessions.values()];
 		if (this.filterText.trim()) {
 			const needle = this.filterText.trim().toLowerCase();
-			rows = rows.filter((r) => (r.name || r.label || r.id).toLowerCase().includes(needle));
+			sessionRows = sessionRows.filter((r) => (r.name || r.label || r.id).toLowerCase().includes(needle));
 		}
-		const tree = buildManagerTree(rows, store);
-		const actions = createRowActions(this.app, this.plugin, (id) => void this.showDetail(id));
+		const tree = buildManagerTree(sessionRows, store);
+		this.rows = flattenTree(tree, this.showArchived);
+		this.cursor = moveSelection(this.rows, this.cursor, 0);
+		this.actions = createRowActions(this.app, this.plugin, (id) => this.selectById(id));
 
-		for (const group of tree.groups) {
-			this.renderGroup(group.name, group.rows, group.folded, actions);
-		}
-		for (const row of tree.singles) {
-			renderRow(this.treeEl, row, { indent: false, selection: this.selection, actions });
-		}
-		if (tree.others.rows.length > 0) {
-			this.renderGroup(OTHER_GROUP, tree.others.rows, tree.others.folded, actions);
-		}
-		if (this.showArchived && tree.archived.length > 0) {
-			this.renderArchived(tree.archived, actions);
-		}
+		this.tableBodyEl.empty();
+		this.rowEls = this.rows.map((mrow, index) => this.renderRow(mrow, index));
+		this.applySelectionHighlight();
+		this.refreshDetail();
 	}
 
-	private renderGroup(name: string, rows: Row[], folded: boolean, actions: RowActions): void {
-		renderGroupHeader(this.treeEl, name, rows.length, folded, () => {
-			this.plugin.setFolded(name, !folded);
-			this.render();
+	private renderRow(mrow: ManagerRow, index: number): HTMLTableRowElement {
+		if (mrow.kind === "group") {
+			const tr = this.tableBodyEl.createEl("tr", { cls: "agent-sessions-manager-row is-group" });
+			const td = tr.createEl("td", { attr: { colspan: "5" } });
+			const head = td.createDiv({ cls: "agent-sessions-manager-group-head" });
+			head.createSpan({ cls: "agent-sessions-manager-caret", text: mrow.folded ? "▸" : "▾" });
+			head.createSpan({ cls: "agent-sessions-manager-group-label", text: mrow.label });
+			head.createSpan({ cls: "agent-sessions-manager-group-count", text: String(mrow.count) });
+			tr.addEventListener("click", () => {
+				this.cursor = index;
+				this.wrapEl.focus();
+				this.toggleFold(mrow);
+			});
+			return tr;
+		}
+
+		if (mrow.kind === "archived-orphan") {
+			const tr = this.tableBodyEl.createEl("tr", { cls: "agent-sessions-manager-row is-indented is-archived" });
+			tr.createEl("td", { cls: "agent-sessions-manager-col-mark" });
+			tr.createEl("td", { cls: "agent-sessions-manager-col-name", text: mrow.name || `無題 ${mrow.id.slice(0, 8)}` });
+			tr.createEl("td", { cls: "agent-sessions-manager-col-time" });
+			tr.createEl("td", { cls: "agent-sessions-manager-col-folder" });
+			tr.createEl("td", { cls: "agent-sessions-manager-col-menu" });
+			tr.addEventListener("click", () => {
+				this.cursor = index;
+				this.wrapEl.focus();
+				this.applySelectionHighlight();
+				this.refreshDetail();
+			});
+			return tr;
+		}
+
+		const row = mrow.row;
+		const tr = this.tableBodyEl.createEl("tr", { cls: "agent-sessions-manager-row" });
+		if (mrow.indent) {
+			tr.addClass("is-indented");
+		}
+		if (row.archived) {
+			tr.addClass("is-archived");
+		}
+
+		const markTd = tr.createEl("td", { cls: "agent-sessions-manager-col-mark" });
+		markTd.createSpan({ cls: `agent-sessions-row-mark ${statusMark(row)}` });
+		tr.createEl("td", { cls: "agent-sessions-manager-col-name", text: displayName(row) });
+		tr.createEl("td", { cls: "agent-sessions-manager-col-time", text: formatTime(row.last_activity) });
+		tr.createEl("td", { cls: "agent-sessions-manager-col-folder", text: row.folder });
+
+		const menuTd = tr.createEl("td", { cls: "agent-sessions-manager-col-menu" });
+		const menuBtn = menuTd.createSpan({ cls: "agent-sessions-row-menu-btn", text: "⋯" });
+		menuBtn.addEventListener("click", (evt) => {
+			evt.stopPropagation();
+			this.selectIndex(index);
+			showRowMenu(evt, row, this.actions);
 		});
-		if (folded) {
+
+		tr.addEventListener("click", () => this.selectIndex(index));
+		tr.addEventListener("dblclick", () => this.actions.openSession(row.id));
+		tr.addEventListener("contextmenu", (evt) => {
+			evt.preventDefault();
+			this.selectIndex(index);
+			showRowMenu(evt, row, this.actions);
+		});
+
+		return tr;
+	}
+
+	private toggleFold(group: Extract<ManagerRow, { kind: "group" }>): void {
+		if (group.key === ARCHIVED_GROUP) {
+			// アーカイブの見出しは折畳まない——「アーカイブを表示」の on/off で開閉する。
 			return;
 		}
-		for (const row of rows) {
-			renderRow(this.treeEl, row, { indent: true, selection: this.selection, actions });
+		this.plugin.setFolded(group.key, !group.folded);
+		this.render();
+	}
+
+	// ---- 選択・キーボード操作（D-44：TUI と同じ ↑↓／Enter／`/`） -------------------------
+
+	private selectIndex(index: number): void {
+		this.cursor = index;
+		this.wrapEl.focus();
+		this.applySelectionHighlight();
+		this.refreshDetail();
+	}
+
+	private selectById(id: string): void {
+		const index = this.rows.findIndex((r) => r.kind === "session" && r.row.id === id);
+		if (index >= 0) {
+			this.selectIndex(index);
 		}
 	}
 
-	private renderArchived(entries: ArchivedEntry[], actions: RowActions): void {
-		this.treeEl.createDiv({ cls: "agent-sessions-group-header", text: `アーカイブ（${entries.length}）` });
-		for (const entry of entries) {
-			if (entry.row) {
-				renderRow(this.treeEl, entry.row, { indent: true, selection: this.selection, actions });
-				continue;
-			}
-			const el = this.treeEl.createDiv({ cls: "agent-sessions-row is-indented is-archived" });
-			el.createSpan({ cls: "agent-sessions-row-name", text: entry.name || `無題 ${entry.id.slice(0, 8)}` });
+	private applySelectionHighlight(): void {
+		this.rowEls.forEach((tr, i) => tr.toggleClass("is-selected", i === this.cursor));
+		this.rowEls[this.cursor]?.scrollIntoView({ block: "nearest" });
+	}
+
+	private onListKeydown(evt: KeyboardEvent): void {
+		if (evt.key === "/") {
+			evt.preventDefault();
+			this.filterEl.focus();
+			this.filterEl.select();
+			return;
+		}
+		if (evt.key === "ArrowDown") {
+			evt.preventDefault();
+			this.cursor = moveSelection(this.rows, this.cursor, 1);
+			this.applySelectionHighlight();
+			this.refreshDetail();
+			return;
+		}
+		if (evt.key === "ArrowUp") {
+			evt.preventDefault();
+			this.cursor = moveSelection(this.rows, this.cursor, -1);
+			this.applySelectionHighlight();
+			this.refreshDetail();
+			return;
+		}
+		if (evt.key === "Enter") {
+			evt.preventDefault();
+			this.activateCursor();
 		}
 	}
 
-	// ---- 詳細欄 -----------------------------------------------------------------
-
-	private async showDetail(id: string): Promise<void> {
-		if (this.detailId === id) {
+	private activateCursor(): void {
+		const mrow = this.rows[this.cursor];
+		if (!mrow) {
 			return;
 		}
+		if (mrow.kind === "group") {
+			this.toggleFold(mrow);
+		} else if (mrow.kind === "session") {
+			this.actions.openSession(mrow.row.id);
+		}
+	}
+
+	// ---- 詳細パネル -----------------------------------------------------------------
+
+	private refreshDetail(): void {
+		const mrow = this.rows[this.cursor];
+		if (mrow?.kind === "session") {
+			void this.showDetailFor(mrow.row.id);
+		} else {
+			this.detailId = null;
+			renderDetail(this.detailEl, null);
+		}
+	}
+
+	private async showDetailFor(id: string): Promise<void> {
 		this.detailId = id;
 		const row = this.plugin.index.sessions.get(id);
 		if (!row) {

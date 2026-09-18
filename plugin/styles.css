@@ -8,8 +8,131 @@
 }
 
 .agent-sessions-manager {
-	padding: var(--size-4-3);
-	overflow-y: auto;
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	min-height: 0;
+}
+
+/* ---- マネージャー：ツールバー・本体・表（D-44） ---- */
+
+.agent-sessions-manager-toolbar {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	padding: var(--size-4-2) var(--size-4-3);
+	flex: 0 0 auto;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.agent-sessions-manager-filter {
+	flex: 1 1 auto;
+	min-width: 6em;
+	margin-left: var(--size-4-2);
+}
+
+.agent-sessions-manager-body {
+	display: flex;
+	flex: 1 1 auto;
+	min-height: 0;
+}
+
+.agent-sessions-manager-table-wrap {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: auto;
+}
+
+.agent-sessions-manager-table-wrap:focus {
+	outline: none;
+}
+
+.agent-sessions-manager-table {
+	width: 100%;
+	border-collapse: collapse;
+	font-size: var(--font-ui-small);
+}
+
+.agent-sessions-manager-row td {
+	padding: var(--size-2-1) var(--size-4-2);
+	border-bottom: 1px solid var(--background-modifier-border);
+	white-space: nowrap;
+}
+
+.agent-sessions-manager-row:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.agent-sessions-manager-row.is-selected {
+	background-color: var(--background-modifier-hover);
+	box-shadow: inset 2px 0 0 var(--text-accent);
+}
+
+.agent-sessions-manager-row.is-archived {
+	opacity: 0.6;
+}
+
+.agent-sessions-manager-row.is-indented .agent-sessions-manager-col-name {
+	padding-left: var(--size-4-4);
+}
+
+.agent-sessions-manager-col-mark {
+	width: 1.2em;
+}
+
+.agent-sessions-manager-col-name {
+	width: 100%;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.agent-sessions-manager-col-time {
+	font-family: var(--font-monospace);
+	color: var(--text-muted);
+}
+
+.agent-sessions-manager-col-folder {
+	color: var(--text-muted);
+	max-width: 16em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.agent-sessions-manager-col-menu {
+	width: 1.4em;
+	text-align: right;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.agent-sessions-manager-col-menu:hover {
+	color: var(--text-normal);
+}
+
+.agent-sessions-manager-row.is-group td {
+	background-color: var(--background-secondary);
+	cursor: pointer;
+}
+
+.agent-sessions-manager-group-head {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	font-weight: var(--font-semibold);
+}
+
+.agent-sessions-manager-group-count {
+	color: var(--text-faint);
+	font-weight: var(--font-normal);
+}
+
+.agent-sessions-manager-detail {
+	flex: 0 0 320px;
+	width: 320px;
+	overflow: auto;
+	padding: var(--size-4-2) var(--size-4-3);
+	font-size: var(--font-ui-smaller);
+	border-left: 1px solid var(--background-modifier-border);
 }
 
 /* ---- ナビ・ツールバー（§6.1・§6.2・D-43） ---- */

@@ -53,7 +53,7 @@ export class RowSelection {
 	}
 }
 
-function statusMark(row: Row): string {
+export function statusMark(row: Row): string {
 	if (row.exited != null) {
 		return "circle-off";
 	}
@@ -66,11 +66,11 @@ function statusMark(row: Row): string {
 	return "agent-sessions-mark-none";
 }
 
-function displayName(row: Row): string {
+export function displayName(row: Row): string {
 	return row.name || row.label || `無題 ${row.id.slice(0, 8)}`;
 }
 
-function formatTime(epochSeconds: number): string {
+export function formatTime(epochSeconds: number): string {
 	if (!epochSeconds) {
 		return "";
 	}
@@ -79,7 +79,9 @@ function formatTime(epochSeconds: number): string {
 	return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): void {
+/** 行メニュー（名前を変更・セッションを圧縮・アーカイブ・終了・セッション解析結果・ID をコピー）。
+ * `manager.ts` の表からも同じものを開く（D-44：⋯・右クリック共通）。 */
+export function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): void {
 	const menu = new Menu();
 	menu.addItem((item) =>
 		item
