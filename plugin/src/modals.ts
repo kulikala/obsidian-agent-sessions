@@ -43,7 +43,10 @@ export class NewSessionModal extends Modal {
 	}
 }
 
-/** 名前を変更：現在の名前を入れた 1 行。Enter でも変更。 */
+/**
+ * 名前を変更（§6.6・D-42）：現在の名前を入れた広い入力欄と「変更」「キャンセル」。
+ * Enter では確定しない（入力欄の `keydown` は既定のまま。ボタンだけが確定する）。
+ */
 export class RenameSessionModal extends Modal {
 	private textComponent!: TextComponent;
 
@@ -57,22 +60,19 @@ export class RenameSessionModal extends Modal {
 
 	onOpen(): void {
 		this.setTitle("名前を変更");
-		new Setting(this.contentEl).setName("名前").addText((text) => {
-			this.textComponent = text;
-			text.setValue(this.currentName);
-			text.inputEl.addEventListener("keydown", (evt) => {
-				if (evt.key === "Enter") {
-					evt.preventDefault();
-					this.submit();
-				}
-			});
-		});
-		new Setting(this.contentEl).addButton((button) =>
-			button
-				.setButtonText("変更")
-				.setCta()
-				.onClick(() => this.submit())
-		);
+		this.modalEl.addClass("agent-sessions-rename-modal");
+		const field = this.contentEl.createDiv({ cls: "agent-sessions-rename-field" });
+		this.textComponent = new TextComponent(field);
+		this.textComponent.setValue(this.currentName);
+		this.textComponent.inputEl.addClass("agent-sessions-rename-input");
+		new Setting(this.contentEl)
+			.addButton((button) => button.setButtonText("キャンセル").onClick(() => this.close()))
+			.addButton((button) =>
+				button
+					.setButtonText("変更")
+					.setCta()
+					.onClick(() => this.submit())
+			);
 		window.setTimeout(() => {
 			this.textComponent.inputEl.focus();
 			this.textComponent.inputEl.select();

@@ -15,6 +15,7 @@ export interface Store {
 	version: number;
 	folded: string[];
 	archived: ArchivedSession[];
+	/** 旧「未適用の名前変更」の控え。読んでそのまま書き戻すだけで、プラグインは使わない（D-42）。 */
 	pendingRenames: Record<string, string>;
 	sessions: Record<string, StoreSessionEntry>;
 	migratedFrom?: MigratedFrom;

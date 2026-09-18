@@ -4,13 +4,10 @@
 
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
-import { PendingRenamer, type RenameToSend } from "./pending";
 import { Registry } from "./registry";
 import { StatusLine } from "./statusline";
 import { loadStore, type Store } from "./store";
 import type { Detail, LiveResult, ScanResult, ScanSession } from "./types";
-
-export type { RenameToSend };
 
 /** 走査結果（Python）に、起動中の台帳とタブの状態を合成した 1 行。 */
 export interface Row extends ScanSession {
@@ -20,7 +17,6 @@ export interface Row extends ScanSession {
 	daemon: boolean;
 	exited: number | null;
 	hasTab: boolean;
-	pendingRename?: string;
 	archived: boolean;
 }
 
@@ -35,8 +31,6 @@ export interface SessionIndexDeps {
 }
 
 const RESCAN_INTERVAL_MS = 60000;
-/** 未適用の名前変更（§6.6）の送信タイミングを見るための周期。 */
-const PENDING_TICK_MS = 250;
 /** `registry` の変化から `refreshLive()` までのデバウンス（§6.1・§6.3）。 */
 const LIVE_DEBOUNCE_MS = 1000;
 
@@ -50,7 +44,6 @@ function rowFromScan(s: ScanSession, openTabIds: Set<string>, store: Store): Row
 		daemon: false,
 		exited: null,
 		hasTab: openTabIds.has(s.id),
-		pendingRename: store.pendingRenames[s.id],
 		archived: !!archivedEntry,
 	};
 }
@@ -72,9 +65,6 @@ export class SessionIndex extends EventEmitter {
 	private eventsWatcher: fs.FSWatcher | null = null;
 	private eventsDebounce: ReturnType<typeof setTimeout> | null = null;
 	private registryUnsubscribe: () => void;
-	/** 未適用の名前変更（§6.6）の状態機械。`pendingRenames` の内容と `registry` の状態を映す。 */
-	private pending = new PendingRenamer();
-	private pendingTimer: ReturnType<typeof setInterval> | null = null;
 	private liveDebounce: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(private deps: SessionIndexDeps) {
@@ -83,8 +73,6 @@ export class SessionIndex extends EventEmitter {
 		this.statusline = new StatusLine(deps.statusDir);
 		this.registryUnsubscribe = this.registry.onChange(() => {
 			this.applyRegistry();
-			this.refreshPendingStatus();
-			this.drainPending();
 			this.scheduleLiveRefresh();
 			this.emit("change");
 		});
@@ -100,18 +88,6 @@ export class SessionIndex extends EventEmitter {
 	onError(cb: (message: string) => void): () => void {
 		this.on("scanError", cb);
 		return () => this.off("scanError", cb);
-	}
-
-	/** 未適用の名前変更（§6.6）が「今すぐ送るべき」になったとき。呼出側が PTY へ書く。 */
-	onPendingRenameSend(cb: (items: RenameToSend[]) => void): () => void {
-		this.on("pendingRenameSend", cb);
-		return () => this.off("pendingRenameSend", cb);
-	}
-
-	/** 走査結果の名前が一致し、`pendingRenames` から消してよくなった id。呼出側が `updateStore` する。 */
-	onPendingRenameConfirmed(cb: (ids: string[]) => void): () => void {
-		this.on("pendingRenameConfirmed", cb);
-		return () => this.off("pendingRenameConfirmed", cb);
 	}
 
 	/** ビューが見えている間だけ 60 秒毎に再走査する。停止用の関数を返す。 */
@@ -133,17 +109,14 @@ export class SessionIndex extends EventEmitter {
 	}
 
 	/**
-	 * `sessions.json` を読み直し、`archived`／`pendingRename` だけを再適用する。
-	 * 走査をやり直さなくても、アーカイブ・折畳・名前変更の控えをすぐ画面に反映できる。
+	 * `sessions.json` を読み直し、`archived` だけを再適用する。
+	 * 走査をやり直さなくても、アーカイブ・折畳をすぐ画面に反映できる。
 	 */
 	refreshStore(): void {
 		const store = loadStore(this.deps.storePath);
 		for (const row of this.sessions.values()) {
 			row.archived = store.archived.some((a) => a.id === row.id);
-			row.pendingRename = store.pendingRenames[row.id];
 		}
-		this.syncPending();
-		this.drainPending();
 		this.emit("change");
 	}
 
@@ -250,9 +223,6 @@ export class SessionIndex extends EventEmitter {
 				this.eventsWatcher = null;
 			}
 		}
-		if (!this.pendingTimer) {
-			this.pendingTimer = setInterval(() => this.drainPending(), PENDING_TICK_MS);
-		}
 		return () => {
 			stopRegistry();
 			this.eventsWatcher?.close();
@@ -260,10 +230,6 @@ export class SessionIndex extends EventEmitter {
 			if (this.eventsDebounce) {
 				clearTimeout(this.eventsDebounce);
 				this.eventsDebounce = null;
-			}
-			if (this.pendingTimer) {
-				clearInterval(this.pendingTimer);
-				this.pendingTimer = null;
 			}
 		};
 	}
@@ -335,46 +301,6 @@ export class SessionIndex extends EventEmitter {
 			for (const [id, row] of next) {
 				this.sessions.set(id, row);
 			}
-		}
-		this.syncPending();
-		for (const s of result.sessions) {
-			this.pending.onScanned(s.id, s.name);
-		}
-		this.drainPending();
-	}
-
-	/** `pendingRenames` のある行を `PendingRenamer` に、無くなった行は外す（§6.6）。 */
-	private syncPending(): void {
-		for (const row of this.sessions.values()) {
-			if (row.pendingRename) {
-				this.pending.track(row.id, row.pendingRename);
-			} else {
-				this.pending.untrack(row.id);
-			}
-		}
-	}
-
-	/** 追っている id の `registry` の現在値を `PendingRenamer` へ流す。 */
-	private refreshPendingStatus(): void {
-		for (const row of this.sessions.values()) {
-			if (!row.pendingRename) {
-				continue;
-			}
-			const status = this.registry.get(row.id)?.status;
-			if (status) {
-				this.pending.onAttached(row.id);
-				this.pending.onStatus(row.id, status);
-			}
-		}
-	}
-
-	private drainPending(now = Date.now()): void {
-		const { sends, removals } = this.pending.tick(now);
-		if (sends.length > 0) {
-			this.emit("pendingRenameSend", sends);
-		}
-		if (removals.length > 0) {
-			this.emit("pendingRenameConfirmed", removals);
 		}
 	}
 

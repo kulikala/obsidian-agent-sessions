@@ -1,11 +1,21 @@
-import { Events, Notice, Plugin, PluginSettingTab, Setting, WorkspaceLeaf, type FileSystemAdapter } from "obsidian";
+import {
+	Events,
+	MarkdownView,
+	Notice,
+	Plugin,
+	PluginSettingTab,
+	Setting,
+	WorkspaceLeaf,
+	type FileSystemAdapter,
+} from "obsidian";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { detail, live, resolveAgentSessionsPath, scan } from "./backend";
+import { detail, live, loginEnv, resolveAgentSessionsPath, resolveClaude, scan } from "./backend";
 import { DaemonClient, defaultSockPath, ensureDaemon } from "./daemon-client";
 import { EditServer, type EditReply, type EditRequest } from "./edit-server";
 import { SessionIndex } from "./index";
 import { applyNewlineKey, defaultKeybindingsPath, readEnterMode } from "./keybindings";
+import { lastInstructionIsCompact, readTailLines } from "./last-instruction";
 import { buildAtToken, selectionLineRange } from "./links";
 import { ConfirmModal, NewSessionModal, RenameSessionModal } from "./modals";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./open-session";
@@ -20,6 +30,17 @@ import { TerminalView } from "./views/terminal";
 export { VIEW_TYPE_SIDE, VIEW_TYPE_MANAGER, VIEW_TYPE_TERMINAL };
 
 const RUNTIME_DIR = join(homedir(), ".agents", "sessions");
+/** Ctrl+S＝Claude Code の `chat:stash`（下書きの退避・復元。D-42）。 */
+const STASH = "\x13";
+/** `registry` の状態を待つ上限（D-42）。 */
+const WAIT_IDLE_MS = 60000;
+/** 送信後に `busy` を経るのを待つ上限。`/rename` のように busy にならないコマンドはここで諦める。 */
+const WAIT_BUSY_MS = 10000;
+/** 裏で起動したセッションの `/exit` から `exit` イベントまでの上限。 */
+const WAIT_EXIT_MS = 30000;
+/** 裏で起動するときの端末の大きさ（画面は無い）。 */
+const HEADLESS_COLS = 120;
+const HEADLESS_ROWS = 40;
 
 function messageOf(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
@@ -46,6 +67,10 @@ export default class AgentSessionsPlugin extends Plugin {
 	private editServer = new EditServer();
 	/** 終了済みセッションの後始末（§6.5）のデバウンス。 */
 	private cleanupExitedTimer: ReturnType<typeof setTimeout> | null = null;
+	/** 最後に前面だった Markdown ビュー（§6.7・D-42）。ターミナルにフォーカスがあると `activeEditor` は null になるため。 */
+	private lastMarkdown: MarkdownView | null = null;
+	/** 裏で起動中のセッション（D-42 経路③）。`notifyIdle` の対象から外す。 */
+	private headless = new Set<string>();
 	/** `openSession` の進行中の呼出（§6.4）。 */
 	get opening(): Map<string, Promise<WorkspaceLeaf>> {
 		return this.opener.opening;
@@ -76,16 +101,15 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.opener = new SessionOpener<WorkspaceLeaf>(this.app.workspace);
 
 		this.register(this.index.registry.onIdle((id) => this.notifyIdle(id)));
-		this.register(
-			this.index.onPendingRenameSend((items) => {
-				for (const { id, name } of items) {
-					void this.sendToPty(id, `/rename ${name}\r`).catch((err) => {
-						new Notice(`名前の変更に失敗しました: ${messageOf(err)}`);
-					});
+
+		// 最後に前面だった Markdown ビューを覚える（`@` 挿入の対象。§6.7・D-42）。
+		this.registerEvent(
+			this.app.workspace.on("active-leaf-change", (leaf) => {
+				if (leaf?.view instanceof MarkdownView) {
+					this.lastMarkdown = leaf.view;
 				}
 			})
 		);
-		this.register(this.index.onPendingRenameConfirmed((ids) => this.confirmPendingRenames(ids)));
 
 		// 終了済みの後始末（§6.5）：タブの無い終了済みセッションに `forget` を送る。
 		this.app.workspace.onLayoutReady(() => this.scheduleCleanupExited());
@@ -170,23 +194,37 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * アクティブなノートを `@path[#Lx-y] ` として、対象のターミナルへ書く（§6.7）。
+	 * 最後に前面だった Markdown ビュー（§6.7・D-42）。閉じられていれば `null`。
+	 * まだ何も前面になっていなければ、今アクティブな Markdown ビュー。
+	 */
+	lastMarkdownView(): MarkdownView | null {
+		const alive = (view: MarkdownView | null): view is MarkdownView =>
+			!!view && this.app.workspace.getLeavesOfType("markdown").some((leaf) => leaf.view === view);
+		if (alive(this.lastMarkdown)) {
+			return this.lastMarkdown;
+		}
+		this.lastMarkdown = this.app.workspace.getActiveViewOfType(MarkdownView);
+		return this.lastMarkdown;
+	}
+
+	/**
+	 * 最後に前面だったノートを `@path[#Lx-y] ` として、対象のターミナルへ書く（§6.7）。
 	 * 対象は前面のターミナルビュー、無ければ開いているタブの最初。
 	 */
 	insertNoteAt(): void {
-		const info = this.app.workspace.activeEditor;
-		if (!info || !info.file) {
+		const md = this.lastMarkdownView();
+		if (!md || !md.file) {
 			new Notice("開いているノートがありません");
 			return;
 		}
-		const file = info.file;
+		const file = md.file;
 		const view = this.frontTerminalView();
 		if (!view) {
 			new Notice("開いているターミナルがありません");
 			return;
 		}
 		const abs = join(this.vaultPath(), file.path);
-		const range = info.editor ? selectionLineRange(info.editor) : undefined;
+		const range = selectionLineRange(md.editor);
 		const token = buildAtToken(abs, view.getCwd(), range);
 		view.sendCommand(`@${token} `);
 		view.focusTerminal();
@@ -304,57 +342,195 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	// ---- セッションの操作（§6.6）。`updateStore` の `StoreLockError` はここで Notice にする（§7）。 --------
 
-	/** 新規セッション：uuid を作り `sessions.json` に控えてからタブを開く。 */
+	/**
+	 * 新規セッション：uuid を作り `sessions.json` に控えてからタブを開く。名前があれば、
+	 * タブの `start` で claude が `idle` になってから `/rename` を送る（D-42。未適用の控えは持たない）。
+	 */
 	newSession(name?: string): void {
 		const id = crypto.randomUUID();
 		const cwd = this.vaultPath();
 		try {
 			updateStore(this.storePath(), (store) => {
 				store.sessions[id] = { agent: "claude", cwd };
-				if (name) {
-					store.pendingRenames[id] = name;
-				}
 			});
 		} catch (err) {
 			this.notifyLockError(err);
 			return;
 		}
 		this.index.refreshStore();
-		void this.openSession(id, { agent: "claude", cwd, fresh: true });
-	}
-
-	/** 名前を変更：待機中なら PTY へ `/rename`、そうでなければ `pendingRenames`（§6.6）。 */
-	async renameSession(id: string, name: string): Promise<void> {
-		const row = this.index.sessions.get(id);
-		if (row && row.daemon && row.status === "idle") {
-			try {
-				await this.sendToPty(id, `/rename ${name}\r`);
-			} catch (err) {
+		const opened = this.openSession(id, { agent: "claude", cwd, fresh: true });
+		if (!name) {
+			return;
+		}
+		void opened
+			.then(async () => {
+				if (!(await this.index.registry.waitFor(id, "idle", WAIT_IDLE_MS))) {
+					new Notice("セッションの起動を待てなかったため、名前を付けられませんでした");
+					return;
+				}
+				await this.sendCommand(id, `/rename ${name}`);
+			})
+			.catch((err) => {
 				new Notice(`名前の変更に失敗しました: ${messageOf(err)}`);
-			}
-			return;
-		}
-		try {
-			updateStore(this.storePath(), (store) => {
-				store.pendingRenames[id] = name;
 			});
-			this.index.refreshStore();
+	}
+
+	/** 名前を変更：`/rename` を今すぐ送る（タブが無くても。§6.6・D-42）。 */
+	async renameSession(id: string, name: string): Promise<void> {
+		try {
+			await this.sendCommand(id, `/rename ${name}`, "名前を変更しています…");
 		} catch (err) {
-			this.notifyLockError(err);
+			new Notice(`名前の変更に失敗しました: ${messageOf(err)}`);
 		}
 	}
 
-	/** 圧縮：待機中でなければ送らず `Notice`（§6.6）。 */
+	/** 直近の指示が `/compact` か（transcript の末尾で見る。D-42）。 */
+	lastInstructionIsCompact(id: string): boolean {
+		const transcript = this.index.sessions.get(id)?.transcript;
+		return !!transcript && lastInstructionIsCompact(readTailLines(transcript));
+	}
+
+	/** 圧縮：直近の指示が `/compact` なら何もしない。それ以外は `/compact` を送る（タブが無くても。D-42）。 */
 	async compactSession(id: string): Promise<void> {
-		const row = this.index.sessions.get(id);
-		if (!row || !row.daemon || row.status !== "idle") {
-			new Notice("圧縮は待機中でないと送れません");
+		if (this.lastInstructionIsCompact(id)) {
+			new Notice("直近の指示が /compact のため、圧縮は送りません");
 			return;
 		}
 		try {
-			await this.sendToPty(id, "/compact\r");
+			await this.sendCommand(id, "/compact", "セッションを圧縮しています…");
 		} catch (err) {
 			new Notice(`圧縮に失敗しました: ${messageOf(err)}`);
+		}
+	}
+
+	// ---- コマンドの送信（D-42） ------------------------------------------------------
+	//
+	// `text`（`/rename NAME`・`/compact`）を、セッションの置かれ方に応じて 3 経路で送る。
+	// ① タブがあり attach 済み：画面の入力行が空ならそのまま送る。入力中なら Ctrl+S（`chat:stash`）で
+	//    下書きを退避してから送り、`idle` に戻ったら Ctrl+S で復元する。
+	// ② タブは無いがデーモンにある：一時的に attach して、退避→送信→復元。
+	// ③ デーモンに無い：裏で `start`（`--resume`）→ `idle` を待って送信 → 応答が済んだら `/exit` → `forget`。
+
+	/**
+	 * コマンドを送る。`progress` は経路③（裏で起動）のときだけ `Notice` に出す。
+	 * 失敗は例外（呼出側が `Notice` にする）。
+	 */
+	async sendCommand(id: string, text: string, progress = "送信しています…"): Promise<void> {
+		const view = this.findTerminalView(id);
+		if (view?.isAttached()) {
+			await this.sendViaView(view, id, text);
+			return;
+		}
+		const client = await ensureDaemon(this.sockPath(), this.agentSessionsPath());
+		client.on("error", (err: Error) => console.warn("agent-sessions: socket", err));
+		try {
+			await client.hello("plugin");
+			const list = await client.list();
+			const sessions = (list.sessions as DaemonSession[] | undefined) ?? [];
+			const existing = sessions.find((s) => s.id === id);
+			if (existing && existing.exited === null) {
+				await this.sendViaAttach(client, id, text);
+			} else {
+				if (existing) {
+					await client.forget(id).catch(() => undefined);
+				}
+				await this.sendHeadless(client, id, text, progress);
+			}
+		} finally {
+			client.close();
+		}
+	}
+
+	/** 送信列（`\r`、`newlineKey === 'enter'` なら `\x1b\r`）を付けた 1 行。 */
+	private line(text: string): string {
+		return text + submitSequence(this.settings);
+	}
+
+	/** 経路①：タブの xterm から入力行を見る。 */
+	private async sendViaView(view: TerminalView, id: string, text: string): Promise<void> {
+		if (view.isPromptEmpty()) {
+			view.sendCommand(this.line(text));
+			return;
+		}
+		view.sendCommand(STASH + this.line(text));
+		await this.index.registry.waitFor(id, "idle", WAIT_IDLE_MS);
+		view.sendCommand(STASH);
+	}
+
+	/** 経路②：画面が無いので入力行は見られない。退避→送信→復元で統一する。 */
+	private async sendViaAttach(client: DaemonClient, id: string, text: string): Promise<void> {
+		const res = await client.attach(id, HEADLESS_COLS, HEADLESS_ROWS);
+		if (!res.ok) {
+			throw new Error(`attach に失敗: ${res.error ?? "unknown"}`);
+		}
+		try {
+			client.writeInput(Buffer.from(STASH + this.line(text), "utf8"));
+			await this.index.registry.waitFor(id, "idle", WAIT_IDLE_MS);
+			client.writeInput(Buffer.from(STASH, "utf8"));
+		} finally {
+			await client.detach().catch(() => undefined);
+		}
+	}
+
+	/**
+	 * 経路③：裏で起動して送り、済んだら終了する。進行は `Notice`。
+	 * `idle` → 送信 → `busy` を経て `idle`（busy にならないコマンドは `WAIT_BUSY_MS` で見切る）
+	 * → `/exit` → `exit` イベント → `forget`。
+	 */
+	private async sendHeadless(client: DaemonClient, id: string, text: string, progress: string): Promise<void> {
+		const row = this.index.sessions.get(id);
+		if (!row) {
+			throw new Error("セッションが見つかりません");
+		}
+		const notice = new Notice(progress, 0);
+		this.headless.add(id);
+		const exited = new Promise<void>((resolve) => {
+			client.on("exit", (exitedId: string) => {
+				if (exitedId === id) {
+					resolve();
+				}
+			});
+		});
+		try {
+			const claude = await resolveClaude(this.settings.claudePath);
+			const env = { ...(await loginEnv()), VISUAL: this.visualPath() };
+			const res = await client.start({
+				id,
+				agent: row.agent || "claude",
+				cwd: row.cwd || this.vaultPath(),
+				argv: [claude, "--resume", id],
+				env,
+				cols: HEADLESS_COLS,
+				rows: HEADLESS_ROWS,
+			});
+			if (!res.ok) {
+				throw new Error(`start に失敗: ${res.error ?? "unknown"}`);
+			}
+			const attached = await client.attach(id, HEADLESS_COLS, HEADLESS_ROWS);
+			if (!attached.ok) {
+				throw new Error(`attach に失敗: ${attached.error ?? "unknown"}`);
+			}
+			const registry = this.index.registry;
+			if (!(await registry.waitFor(id, "idle", WAIT_IDLE_MS))) {
+				throw new Error("claude の起動を待てませんでした");
+			}
+			client.writeInput(Buffer.from(this.line(text), "utf8"));
+			await registry.waitFor(id, "busy", WAIT_BUSY_MS);
+			if (!(await registry.waitFor(id, "idle", WAIT_IDLE_MS))) {
+				throw new Error("応答を待てませんでした");
+			}
+			client.writeInput(Buffer.from(this.line("/exit"), "utf8"));
+			const timeout = new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), WAIT_EXIT_MS));
+			if ((await Promise.race([exited, timeout])) === "timeout") {
+				await client.kill(id).catch(() => undefined);
+				await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 3000))]);
+			}
+			await client.detach().catch(() => undefined);
+			await client.forget(id).catch(() => undefined);
+			void this.index.rescan([id]);
+		} finally {
+			this.headless.delete(id);
+			notice.hide();
 		}
 	}
 
@@ -376,10 +552,10 @@ export default class AgentSessionsPlugin extends Plugin {
 		}).open();
 	}
 
-	/** トークン集計のモーダルを開く（D-31）。 */
+	/** セッション解析結果のモーダルを開く（D-31）。 */
 	showUsage(id: string): void {
 		const row = this.index.sessions.get(id);
-		const name = row?.pendingRename || row?.name || row?.label || `無題 ${id.slice(0, 8)}`;
+		const name = row?.name || row?.label || `無題 ${id.slice(0, 8)}`;
 		new UsageModal(this.app, this.agentSessionsPath(), id, name).open();
 	}
 
@@ -423,27 +599,6 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 	}
 
-	/** そのセッションのターミナルビューがあればその `sendCommand`、無ければ一時的に attach して書く（§6.6）。 */
-	private async sendToPty(id: string, text: string): Promise<void> {
-		const view = this.findTerminalView(id);
-		if (view) {
-			view.sendCommand(text);
-			return;
-		}
-		const client = await ensureDaemon(this.sockPath(), this.agentSessionsPath());
-		try {
-			await client.hello("plugin");
-			const res = await client.attach(id, 80, 24);
-			if (!res.ok) {
-				throw new Error(`attach に失敗: ${res.error ?? "unknown"}`);
-			}
-			client.writeInput(Buffer.from(text, "utf8"));
-			await client.detach();
-		} finally {
-			client.close();
-		}
-	}
-
 	private terminalViews(): TerminalView[] {
 		return this.app.workspace
 			.getLeavesOfType(VIEW_TYPE_TERMINAL)
@@ -459,7 +614,7 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	/** `busy|shell → idle` で、そのタブが前面でないか Obsidian が非アクティブなら通知する。 */
 	private notifyIdle(id: string): void {
-		if (!this.settings.notifyOnIdle) {
+		if (!this.settings.notifyOnIdle || this.headless.has(id)) {
 			return;
 		}
 		const front = this.app.workspace.getActiveViewOfType(TerminalView);
@@ -469,20 +624,6 @@ export default class AgentSessionsPlugin extends Plugin {
 		const name = this.index.sessions.get(id)?.name ?? `無題 ${id.slice(0, 8)}`;
 		const notice = new Notice(`${name}：指示待ち`, 8000);
 		notice.noticeEl.addEventListener("click", () => void this.openSession(id));
-	}
-
-	/** 走査結果の名前が一致した未適用の名前変更を `pendingRenames` から消す（§6.6）。 */
-	private confirmPendingRenames(ids: string[]): void {
-		try {
-			updateStore(this.storePath(), (store) => {
-				for (const id of ids) {
-					delete store.pendingRenames[id];
-				}
-			});
-			this.index.refreshStore();
-		} catch (err) {
-			this.notifyLockError(err);
-		}
 	}
 
 	private scheduleCleanupExited(): void {

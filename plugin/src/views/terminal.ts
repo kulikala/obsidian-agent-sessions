@@ -1,7 +1,7 @@
 // ターミナル（§6.3）・1 セッション＝1 タブ（§6.4）・アイコンの状態（§6.5）・
 // エラー処理（§7）。xterm 5.x を `DaemonClient` に繋ぐ。
 
-import { ItemView, Notice, setIcon, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, setIcon, type Menu, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import * as fs from "node:fs";
 import { join } from "node:path";
 import { Terminal } from "@xterm/xterm";
@@ -15,7 +15,9 @@ import { buildAtToken, selectionLineRange, VaultLinkProvider } from "../links";
 import { submitSequence } from "../main";
 import type AgentSessionsPlugin from "../main";
 import { MarkTracker, type MarkerHandle, type MarkerSource } from "../marks";
+import { RenameSessionModal } from "../modals";
 import { VIEW_TYPE_TERMINAL } from "../open-session";
+import { isPromptEmpty } from "../prompt-line";
 import type { Padding } from "../settings";
 import { readObsidianTheme } from "../theme";
 import type { DaemonSession } from "../types";
@@ -149,9 +151,27 @@ export class TerminalView extends ItemView {
 		return this.id;
 	}
 
-	/** サイドパネル・マネージャーからの `/rename`・`/compact` の送信用（§6.6）。 */
+	/** `main.ts` の `sendCommand`（D-42）や `@` 挿入から、そのまま PTY へ書く。 */
 	sendCommand(text: string): void {
 		this.sendInput(Buffer.from(text, "utf8"));
+	}
+
+	/** デーモンに attach 済みか（`main.ts` の `sendCommand` が経路①を選ぶ条件）。 */
+	isAttached(): boolean {
+		return !!this.client && this.attached;
+	}
+
+	/**
+	 * 画面（現在の行の範囲）の最後の `❯` の行が空か（D-42）。入力行が見えなければ `false`
+	 * （空と断定しない）。
+	 */
+	isPromptEmpty(): boolean {
+		const buffer = this.terminal.buffer.active;
+		const lines: string[] = [];
+		for (let y = buffer.baseY; y < buffer.length; y++) {
+			lines.push(buffer.getLine(y)?.translateToString(true) ?? "");
+		}
+		return isPromptEmpty(lines);
 	}
 
 	getState(): Record<string, unknown> {
@@ -183,28 +203,15 @@ export class TerminalView extends ItemView {
 		await super.setState(state, result);
 		this.refreshName();
 		this.applySettings();
+		// 同じ `id` の別 leaf があっても自分を畳まない（D-42）：右／下に分割・タブの複製で
+		// 複数のビューが同じセッションに attach する。`openSession` は既存タブへ移動するので
+		// 重複は分割からしか生まれない。
 		this.app.workspace.onLayoutReady(() => {
-			if (this.closed || this.dedupe()) {
+			if (this.closed) {
 				return;
 			}
 			this.maybeAttach();
 		});
-	}
-
-	/** 同じ `id` の別 leaf があれば自分を畳んで相手を前面に出す（§6.4）。畳んだら true。 */
-	private dedupe(): boolean {
-		if (!this.id) {
-			return false;
-		}
-		const other = this.app.workspace
-			.getLeavesOfType(VIEW_TYPE_TERMINAL)
-			.find((leaf) => leaf !== this.leaf && leaf.getViewState().state?.id === this.id);
-		if (!other) {
-			return false;
-		}
-		this.leaf.detach();
-		void this.app.workspace.revealLeaf(other);
-		return true;
 	}
 
 	async onOpen(): Promise<void> {
@@ -220,10 +227,19 @@ export class TerminalView extends ItemView {
 		this.terminal.loadAddon(new Unicode11Addon());
 		this.terminal.unicode.activeVersion = "11";
 		this.terminal.attachCustomKeyEventHandler((ev) => this.handleKey(ev));
+		// 編集領域（D-21）を開いている間は、IME の確定文字やペーストも PTY へ流さない。
 		const onData = this.terminal.onData((data) => {
+			if (this.pendingEdit) {
+				return;
+			}
 			this.sendInput(Buffer.from(data, "utf8"));
 		});
-		const onBinary = this.terminal.onBinary((data) => this.sendInput(Buffer.from(data, "binary")));
+		const onBinary = this.terminal.onBinary((data) => {
+			if (this.pendingEdit) {
+				return;
+			}
+			this.sendInput(Buffer.from(data, "binary"));
+		});
 		const onResize = this.terminal.onResize(({ cols, rows }) => {
 			if (this.client && this.attached) {
 				void this.client.resize(cols, rows).catch(() => undefined);
@@ -622,40 +638,106 @@ export class TerminalView extends ItemView {
 		this.terminal.focus();
 	}
 
-	/** アクティブなノートを `@path[#Lx-y] ` としてこのターミナルへ書き、フォーカスを移す。 */
+	/**
+	 * 最後に前面だったノートを `@path[#Lx-y] ` としてこのターミナルへ書き、フォーカスを移す。
+	 * `workspace.activeEditor` はターミナルにフォーカスがあると null なので、`main.ts` が
+	 * 覚えている Markdown ビューを使う（§6.7・D-42）。
+	 */
 	private insertActiveNoteAt(): void {
-		const info = this.app.workspace.activeEditor;
-		if (!info || !info.file) {
+		const md = this.plugin.lastMarkdownView();
+		if (!md || !md.file) {
 			new Notice("開いているノートがありません");
 			return;
 		}
-		const file = info.file;
-		const abs = join(this.plugin.vaultPath(), file.path);
-		const range = info.editor ? selectionLineRange(info.editor) : undefined;
+		const abs = join(this.plugin.vaultPath(), md.file.path);
+		const range = selectionLineRange(md.editor);
 		const token = buildAtToken(abs, this.cwd, range);
 		this.sendCommand(`@${token} `);
 		this.focusTerminal();
 	}
 
+	/** 応答マーカー（§6.7）：`registry` の `busy`（初回観測を含む）でカーソル行に打つ。 */
 	private onBusyMark(id: string): void {
 		if (id === this.id) {
 			this.marks.onBusy();
 		}
 	}
 
+	/**
+	 * 表示の先頭行（バッファ内の絶対行）。`marks.prev/next` はこれより上／下の指示マーカーを返す。
+	 * マーカーの `line` も絶対行なので、`scrollToLine` にそのまま渡せる。
+	 */
 	private viewportY(): number {
 		return this.terminal.buffer.active.viewportY;
 	}
 
+	/** `line`（絶対行）を表示の先頭にする。`null`（該当なし）なら何もしない。 */
 	private jumpTo(line: number | null): void {
-		if (line !== null) {
-			this.terminal.scrollToLine(line);
+		if (line === null) {
+			return;
 		}
+		this.terminal.scrollToLine(line);
+		this.focusTerminal();
+	}
+
+	// ---- ⋯ メニュー（D-42） ---------------------------------------------------------
+
+	/** Obsidian 標準の項目の後に、セッションの操作と分割を足す。 */
+	onPaneMenu(menu: Menu, source: "more-options" | "tab-header" | string): void {
+		super.onPaneMenu(menu, source);
+		const id = this.id;
+		menu.addSeparator();
+		menu.addItem((item) =>
+			item
+				.setTitle("名前を変更")
+				.setIcon("pencil")
+				.onClick(() => {
+					new RenameSessionModal(this.app, this.getDisplayText(), (name) => void this.plugin.renameSession(id, name)).open();
+				})
+		);
+		menu.addItem((item) =>
+			item
+				.setTitle("セッションを圧縮")
+				.setIcon("fold-vertical")
+				.setDisabled(this.plugin.lastInstructionIsCompact(id))
+				.onClick(() => void this.plugin.compactSession(id))
+		);
+		menu.addItem((item) =>
+			item
+				.setTitle("セッション解析結果を表示")
+				.setIcon("bar-chart-2")
+				.onClick(() => this.plugin.showUsage(id))
+		);
+		menu.addItem((item) =>
+			item
+				.setTitle("ID をコピー")
+				.setIcon("copy")
+				.onClick(() => {
+					void navigator.clipboard.writeText(id).then(() => new Notice("ID をコピーしました"));
+				})
+		);
+		menu.addSeparator();
+		menu.addItem((item) =>
+			item
+				.setTitle("右に分割")
+				.setIcon("separator-vertical")
+				.onClick(() => void this.app.workspace.duplicateLeaf(this.leaf, "vertical"))
+		);
+		menu.addItem((item) =>
+			item
+				.setTitle("下に分割")
+				.setIcon("separator-horizontal")
+				.onClick(() => void this.app.workspace.duplicateLeaf(this.leaf, "horizontal"))
+		);
 	}
 
 	// ---- キー -------------------------------------------------------------------
 
 	private handleKey(ev: KeyboardEvent): boolean {
+		// 編集領域を開いている間は、何も xterm に渡さない（IME を含む。D-21・D-42）。
+		if (this.pendingEdit) {
+			return false;
+		}
 		if (ev.key === "Escape") {
 			ev.stopPropagation();
 			if (ev.type === "keyup") {
@@ -818,7 +900,7 @@ export class TerminalView extends ItemView {
 
 	private refreshName(): void {
 		const row = this.plugin.index.sessions.get(this.id);
-		const next = row?.name || row?.pendingRename || "";
+		const next = row?.name || "";
 		if (next !== this.displayName) {
 			this.displayName = next;
 			this.updateHeader();

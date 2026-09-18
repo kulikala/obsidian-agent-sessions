@@ -110,10 +110,45 @@ export class Registry extends EventEmitter {
 		return () => this.off("idle", cb);
 	}
 
-	/** `idle` → `busy`/`shell` の遷移を通知する（§6.7 応答の先頭マーカー）。 */
+	/**
+	 * `idle` → `busy`/`shell` の遷移を通知する（§6.7 応答の先頭マーカー）。初めて観測した
+	 * id が `busy`/`shell` のときも発火する（新規セッションの最初の応答にもマーカーが付く）。
+	 */
 	onBusy(cb: (id: string) => void): () => void {
 		this.on("busy", cb);
 		return () => this.off("busy", cb);
+	}
+
+	/**
+	 * `id` の状態が `status` になるまで待つ（D-42）。遷移ではなく現在値を見る——既にその状態なら
+	 * 即 `true`。以後は `refresh` のたびに見直し、`timeoutMs` で諦めて `false`。
+	 * 初めて観測する id でも成り立つ。`busy` は `shell` も含む。
+	 */
+	waitFor(id: string, status: "idle" | "busy", timeoutMs: number): Promise<boolean> {
+		const matches = (): boolean => {
+			const entry = this.entries.get(id);
+			if (!entry) {
+				return false;
+			}
+			return status === "busy" ? isBusyLike(entry.status) : entry.status === "idle";
+		};
+		if (matches()) {
+			return Promise.resolve(true);
+		}
+		return new Promise((resolve) => {
+			const timer = setTimeout(() => {
+				this.off("change", check);
+				resolve(false);
+			}, timeoutMs);
+			const check = () => {
+				if (matches()) {
+					clearTimeout(timer);
+					this.off("change", check);
+					resolve(true);
+				}
+			};
+			this.on("change", check);
+		});
 	}
 
 	/** ディレクトリを読み直す。`fs.watch` が使えない環境向けに手動でも呼べる。 */
@@ -126,7 +161,7 @@ export class Registry extends EventEmitter {
 			if (before && isBusyLike(before.status) && entry.status === "idle") {
 				this.emit("idle", id);
 			}
-			if (before && !isBusyLike(before.status) && isBusyLike(entry.status)) {
+			if ((!before || !isBusyLike(before.status)) && isBusyLike(entry.status)) {
 				this.emit("busy", id);
 			}
 		}
