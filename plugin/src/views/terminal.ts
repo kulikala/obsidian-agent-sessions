@@ -95,6 +95,8 @@ export class TerminalView extends ItemView {
 
 	/** ジャンプ（§6.7）：指示・応答の先頭を覚える。xterm のマーカーは `markerSource()` で包む。 */
 	private marks: MarkTracker;
+	/** ヘッダのジャンプ 3 つ。fullscreen のときは tooltip を差し替える（D-42）。 */
+	private jumpActions: { prev?: HTMLElement; next?: HTMLElement; last?: HTMLElement } = {};
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -175,7 +177,7 @@ export class TerminalView extends ItemView {
 	}
 
 	getState(): Record<string, unknown> {
-		const state: Record<string, unknown> = { id: this.id, agent: this.agent, cwd: this.cwd };
+		const state: Record<string, unknown> = { id: this.id, agent: this.agent, cwd: this.getCwd() };
 		if (this.fontSize !== undefined) {
 			state.fontSize = this.fontSize;
 		}
@@ -282,9 +284,9 @@ export class TerminalView extends ItemView {
 		this.register(() => linkProvider.dispose());
 
 		this.addAction("at-sign", "現在のノートを @ で挿入", () => this.insertActiveNoteAt());
-		this.addAction("arrow-up", "前の指示", () => this.jumpTo(this.marks.prev(this.viewportY())));
-		this.addAction("arrow-down", "次の指示", () => this.jumpTo(this.marks.next(this.viewportY())));
-		this.addAction("corner-right-down", "最後の応答", () => this.jumpTo(this.marks.lastResponse()));
+		this.jumpActions.prev = this.addAction("arrow-up", "前の指示", () => this.jumpPrev());
+		this.jumpActions.next = this.addAction("arrow-down", "次の指示", () => this.jumpNext());
+		this.jumpActions.last = this.addAction("corner-right-down", "最後の応答", () => this.jumpLast());
 
 		this.applySettings();
 	}
@@ -317,7 +319,19 @@ export class TerminalView extends ItemView {
 		}
 		this.applyTerminalMinHeight();
 		this.applyTheme();
+		this.applyJumpTooltips();
 		this.scheduleFit();
+	}
+
+	/** fullscreen（Claude が自分でスクロールを持つ）なら、ジャンプの説明を画面送りの言葉にする。 */
+	private applyJumpTooltips(): void {
+		const full = this.plugin.isFullscreenTui();
+		const labels = full
+			? { prev: "1 画面上へ", next: "1 画面下へ", last: "最下部へ" }
+			: { prev: "前の指示", next: "次の指示", last: "最後の応答" };
+		for (const key of ["prev", "next", "last"] as const) {
+			this.jumpActions[key]?.setAttribute("aria-label", labels[key]);
+		}
 	}
 
 	/** xterm のセル高さ（描画サービスの実測。未測なら fontSize から概算）。 */
@@ -628,9 +642,9 @@ export class TerminalView extends ItemView {
 
 	// ---- リンク・`@`・ジャンプ（§6.7） --------------------------------------------
 
-	/** `@` 挿入・`sendCommand` で書き込む（`main.ts` が別のターミナルへ書くときにも使う）。 */
+	/** `@` の相対パスの基準・`start` の cwd。state の `cwd` が空なら vault（D-42）。 */
 	getCwd(): string {
-		return this.cwd;
+		return this.cwd || this.plugin.vaultPath();
 	}
 
 	/** ヘッダの `@` や `main.ts` のコマンドから、このターミナルへ入力フォーカスを移す。 */
@@ -651,7 +665,7 @@ export class TerminalView extends ItemView {
 		}
 		const abs = join(this.plugin.vaultPath(), md.file.path);
 		const range = selectionLineRange(md.editor);
-		const token = buildAtToken(abs, this.cwd, range);
+		const token = buildAtToken(abs, this.getCwd(), range);
 		this.sendCommand(`@${token} `);
 		this.focusTerminal();
 	}
@@ -678,6 +692,37 @@ export class TerminalView extends ItemView {
 		}
 		this.terminal.scrollToLine(line);
 		this.focusTerminal();
+	}
+
+	// fullscreen（`tui: "fullscreen"`）では Claude が全面を描き直してスクロールを自分で持ち、
+	// xterm のスクロールバックに何も溜まらない（`buffer.length === rows`）。マーカー方式は成り立たない
+	// ので、Claude の `Scroll` コンテキストのキー（PageUp／PageDown／End）を送る。
+
+	private jumpPrev(): void {
+		if (this.plugin.isFullscreenTui()) {
+			this.sendInput(Buffer.from("\x1b[5~", "binary"));
+			this.focusTerminal();
+			return;
+		}
+		this.jumpTo(this.marks.prev(this.viewportY()));
+	}
+
+	private jumpNext(): void {
+		if (this.plugin.isFullscreenTui()) {
+			this.sendInput(Buffer.from("\x1b[6~", "binary"));
+			this.focusTerminal();
+			return;
+		}
+		this.jumpTo(this.marks.next(this.viewportY()));
+	}
+
+	private jumpLast(): void {
+		if (this.plugin.isFullscreenTui()) {
+			this.sendInput(Buffer.from("\x1b[F", "binary"));
+			this.focusTerminal();
+			return;
+		}
+		this.jumpTo(this.marks.lastResponse());
 	}
 
 	// ---- ⋯ メニュー（D-42） ---------------------------------------------------------

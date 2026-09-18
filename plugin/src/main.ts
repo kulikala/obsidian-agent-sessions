@@ -14,13 +14,15 @@ import { detail, live, loginEnv, resolveAgentSessionsPath, resolveClaude, scan }
 import { DaemonClient, defaultSockPath, ensureDaemon } from "./daemon-client";
 import { EditServer, type EditReply, type EditRequest } from "./edit-server";
 import { SessionIndex } from "./index";
-import { applyNewlineKey, defaultKeybindingsPath, readEnterMode } from "./keybindings";
+import { applyNewlineKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./keybindings";
+import { deriveKeysFromKeybindings } from "./keys";
 import { lastInstructionIsCompact, readTailLines } from "./last-instruction";
 import { buildAtToken, selectionLineRange } from "./links";
 import { ConfirmModal, NewSessionModal, RenameSessionModal } from "./modals";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./open-session";
 import { AgentSessionsSettings, DEFAULT_SETTINGS, type NewlineKey, type SubmitKey } from "./settings";
 import { migrateFromMarkdown, StoreLockError, updateStore } from "./store";
+import { claudeSettingsPath, readFullscreenTui } from "./tui-mode";
 import type { ArchivedSession, DaemonSession } from "./types";
 import { UsageModal } from "./usage-modal";
 import { ManagerView, VIEW_TYPE_MANAGER } from "./views/manager";
@@ -71,6 +73,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	private lastMarkdown: MarkdownView | null = null;
 	/** 裏で起動中のセッション（D-42 経路③）。`notifyIdle` の対象から外す。 */
 	private headless = new Set<string>();
+	/** Claude Code の `tui` が `fullscreen` か（起動時と `settings-changed` のたびに読み直す）。 */
+	private fullscreenTui = false;
 	/** `openSession` の進行中の呼出（§6.4）。 */
 	get opening(): Map<string, Promise<WorkspaceLeaf>> {
 		return this.opener.opening;
@@ -78,6 +82,11 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+		this.refreshTuiMode();
+		this.registerEvent(this.events.on("settings-changed", () => this.refreshTuiMode()));
+		// keybindings.json が既に改行キーを持っていれば（他のツール・ユーザーが手で書いた場合を
+		// 含む）、プラグインの設定をそれに合わせる（§6.8・D-41 追補。keybindings.json 自体は書かない）。
+		await this.syncNewlineKeyFromKeybindings();
 
 		// 旧 `claude-sessions.md` の取り込み（§3）。`sessions.json` が既にあれば何もしない。
 		try {
@@ -188,9 +197,46 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.events.trigger("settings-changed");
 	}
 
+	/** `keybindings.json` の置き場（§6.8）。`AgentSessionsSettingTab` もここを使う。 */
+	keybindingsPath(): string {
+		return defaultKeybindingsPath(homedir(), process.env.CLAUDE_CONFIG_DIR);
+	}
+
+	/**
+	 * `keybindings.json` の `Chat` を読んで、設定の `newlineKey`／`submitKey` をそれに合わせる
+	 * （§6.8・D-41 追補）。`keybindings.json` 自体は書かない。変更したら `true` を返す
+	 * （設定タブの「ファイルに合わせる」ボタンからも呼ぶ）。
+	 */
+	async syncNewlineKeyFromKeybindings(): Promise<boolean> {
+		const chatBindings = readChatBindings(this.keybindingsPath());
+		const derived = deriveKeysFromKeybindings(chatBindings, {
+			newlineKey: this.settings.newlineKey,
+			submitKey: this.settings.submitKey,
+		});
+		if (!derived) {
+			return false;
+		}
+		this.settings.newlineKey = derived.newlineKey;
+		this.settings.submitKey = derived.submitKey;
+		await this.saveSettings();
+		return true;
+	}
+
 	/** セッションのタブを開く（§6.4）。既にあれば前面に出すだけ。 */
 	openSession(id: string, opts: OpenSessionOptions = {}): Promise<WorkspaceLeaf> {
 		return this.opener.open(id, opts);
+	}
+
+	/**
+	 * Claude Code が全画面レイアウト（`~/.claude/settings.json` の `tui: "fullscreen"`）か。
+	 * ターミナルのジャンプは、これが真ならマーカーではなく Claude のスクロールキーで動く（D-42）。
+	 */
+	isFullscreenTui(): boolean {
+		return this.fullscreenTui;
+	}
+
+	private refreshTuiMode(): void {
+		this.fullscreenTui = readFullscreenTui(claudeSettingsPath(homedir(), process.env.CLAUDE_CONFIG_DIR));
 	}
 
 	/**
@@ -804,10 +850,6 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			);
 	}
 
-	private keybindingsPath(): string {
-		return defaultKeybindingsPath(homedir(), process.env.CLAUDE_CONFIG_DIR);
-	}
-
 	private static readonly NEWLINE_KEY_LABELS: Record<NewlineKey, string> = {
 		enter: "Enter",
 		"meta+enter": "Meta+Enter（Option+Enter）",
@@ -840,7 +882,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 
 	/** 改行キー・送信キー（§6.8・D-41）。開くたびに `keybindings.json` を読んで現在値を出す。 */
 	private renderNewlineKeySetting(containerEl: HTMLElement): void {
-		const keybindingsPath = this.keybindingsPath();
+		const keybindingsPath = this.plugin.keybindingsPath();
 
 		const applyAndSave = (next: NewlineKey) => {
 			const result = applyNewlineKey(keybindingsPath, next);
@@ -881,6 +923,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			});
 		});
 
+		this.renderNewlineKeyMismatch(containerEl, keybindingsPath);
+
 		if (this.plugin.settings.newlineKey === "enter") {
 			new Setting(containerEl).setName("送信キー").addDropdown((dropdown) => {
 				dropdown.addOptions(AgentSessionsSettingTab.SUBMIT_KEY_LABELS);
@@ -891,5 +935,34 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 				});
 			});
 		}
+	}
+
+	/**
+	 * `keybindings.json` の `Chat.enter` と設定の `newlineKey` が食い違っているとき
+	 * （例：ファイルは `chat:newline` なのに設定は `enter` 以外のまま）に警告を出す
+	 * （§6.8・D-41 追補）。「ファイルに合わせる」で `syncNewlineKeyFromKeybindings()` を実行する。
+	 */
+	private renderNewlineKeyMismatch(containerEl: HTMLElement, keybindingsPath: string): void {
+		const info = readEnterMode(keybindingsPath);
+		const newlineKey = this.plugin.settings.newlineKey;
+		const mismatched = (info.mode === "newline" && newlineKey !== "enter") || (info.mode === "submit" && newlineKey === "enter");
+		if (!mismatched) {
+			return;
+		}
+
+		const setting = new Setting(containerEl).setName("keybindings.json と食い違っています");
+		setting.descEl.createSpan({
+			text: "Claude Code の keybindings.json と一致していません",
+			cls: "agent-sessions-settings-mismatch",
+		});
+		setting.addButton((button) =>
+			button.setButtonText("ファイルに合わせる").onClick(async () => {
+				const changed = await this.plugin.syncNewlineKeyFromKeybindings();
+				if (changed) {
+					new Notice("keybindings.json に合わせました");
+				}
+				this.display();
+			})
+		);
 	}
 }
