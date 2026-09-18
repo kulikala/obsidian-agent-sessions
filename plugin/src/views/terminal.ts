@@ -17,7 +17,6 @@ import type AgentSessionsPlugin from "../main";
 import { MarkTracker, type MarkerHandle, type MarkerSource } from "../marks";
 import { RenameSessionModal } from "../modals";
 import { VIEW_TYPE_TERMINAL } from "../open-session";
-import { isPromptEmpty } from "../prompt-line";
 import type { Padding } from "../settings";
 import { readObsidianTheme } from "../theme";
 import type { DaemonSession } from "../types";
@@ -153,27 +152,19 @@ export class TerminalView extends ItemView {
 		return this.id;
 	}
 
-	/** `main.ts` の `sendCommand`（D-42）や `@` 挿入から、そのまま PTY へ書く。 */
+	/** `@` 挿入から、そのまま PTY へ書く。 */
 	sendCommand(text: string): void {
 		this.sendInput(Buffer.from(text, "utf8"));
+	}
+
+	/** `main.ts` の `sendCommand`（D-42）から、組み立て済みのバイト列を PTY へ書く。 */
+	sendBytes(bytes: Buffer): void {
+		this.sendInput(bytes);
 	}
 
 	/** デーモンに attach 済みか（`main.ts` の `sendCommand` が経路①を選ぶ条件）。 */
 	isAttached(): boolean {
 		return !!this.client && this.attached;
-	}
-
-	/**
-	 * 画面（現在の行の範囲）の最後の `❯` の行が空か（D-42）。入力行が見えなければ `false`
-	 * （空と断定しない）。
-	 */
-	isPromptEmpty(): boolean {
-		const buffer = this.terminal.buffer.active;
-		const lines: string[] = [];
-		for (let y = buffer.baseY; y < buffer.length; y++) {
-			lines.push(buffer.getLine(y)?.translateToString(true) ?? "");
-		}
-		return isPromptEmpty(lines);
 	}
 
 	getState(): Record<string, unknown> {
@@ -727,7 +718,7 @@ export class TerminalView extends ItemView {
 
 	// ---- ⋯ メニュー（D-42） ---------------------------------------------------------
 
-	/** Obsidian 標準の項目の後に、セッションの操作と分割を足す。 */
+	/** Obsidian 標準の項目（右／下に分割を含む）の後に、区切り線とセッションの操作を足す。 */
 	onPaneMenu(menu: Menu, source: "more-options" | "tab-header" | string): void {
 		super.onPaneMenu(menu, source);
 		const id = this.id;
@@ -760,19 +751,6 @@ export class TerminalView extends ItemView {
 				.onClick(() => {
 					void navigator.clipboard.writeText(id).then(() => new Notice("ID をコピーしました"));
 				})
-		);
-		menu.addSeparator();
-		menu.addItem((item) =>
-			item
-				.setTitle("右に分割")
-				.setIcon("separator-vertical")
-				.onClick(() => void this.app.workspace.duplicateLeaf(this.leaf, "vertical"))
-		);
-		menu.addItem((item) =>
-			item
-				.setTitle("下に分割")
-				.setIcon("separator-horizontal")
-				.onClick(() => void this.app.workspace.duplicateLeaf(this.leaf, "horizontal"))
 		);
 	}
 

@@ -32,8 +32,11 @@ import { TerminalView } from "./views/terminal";
 export { VIEW_TYPE_SIDE, VIEW_TYPE_MANAGER, VIEW_TYPE_TERMINAL };
 
 const RUNTIME_DIR = join(homedir(), ".agents", "sessions");
-/** Ctrl+S＝Claude Code の `chat:stash`（下書きの退避・復元。D-42）。 */
+/** Ctrl+S＝Claude Code の `chat:stash`（下書きの退避。次の送信の後に Claude が自動で戻す。D-42）。 */
 const STASH = "\x13";
+/** bracketed paste の囲み。コマンドをこれで入れると `/` の補完が開かず一括で入る。 */
+const PASTE_BEGIN = "\x1b[200~";
+const PASTE_END = "\x1b[201~";
 /** `registry` の状態を待つ上限（D-42）。 */
 const WAIT_IDLE_MS = 60000;
 /** 送信後に `busy` を経るのを待つ上限。`/rename` のように busy にならないコマンドはここで諦める。 */
@@ -452,10 +455,13 @@ export default class AgentSessionsPlugin extends Plugin {
 	// ---- コマンドの送信（D-42） ------------------------------------------------------
 	//
 	// `text`（`/rename NAME`・`/compact`）を、セッションの置かれ方に応じて 3 経路で送る。
-	// ① タブがあり attach 済み：画面の入力行が空ならそのまま送る。入力中なら Ctrl+S（`chat:stash`）で
-	//    下書きを退避してから送り、`idle` に戻ったら Ctrl+S で復元する。
-	// ② タブは無いがデーモンにある：一時的に attach して、退避→送信→復元。
-	// ③ デーモンに無い：裏で `start`（`--resume`）→ `idle` を待って送信 → 応答が済んだら `/exit` → `forget`。
+	// 送り方はどの経路も同じ 1 列（`commandBytes`）：Ctrl+S（`chat:stash`。下書きがあれば退避、
+	// 空なら何も起きない）→ bracketed paste でコマンド（`/` の補完を開かせず一括で入れる）→ 送信列。
+	// 退避した下書きは、次の送信の後に Claude Code が自動で戻す（「Draft restored」）ので復元は送らない
+	// ——送るとまた退避されてしまう。
+	// ① タブがあり attach 済み：そのタブへ書く。
+	// ② タブは無いがデーモンにある：一時的に attach して書く。
+	// ③ デーモンに無い：裏で `start`（`--resume`）→ `idle` を待って書く → 応答が済んだら `/exit` → `forget`。
 
 	/**
 	 * コマンドを送る。`progress` は経路③（裏で起動）のときだけ `Notice` に出す。
@@ -464,7 +470,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	async sendCommand(id: string, text: string, progress = "送信しています…"): Promise<void> {
 		const view = this.findTerminalView(id);
 		if (view?.isAttached()) {
-			await this.sendViaView(view, id, text);
+			this.sendViaView(view, text);
 			return;
 		}
 		const client = await ensureDaemon(this.sockPath(), this.agentSessionsPath());
@@ -487,32 +493,24 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 	}
 
-	/** 送信列（`\r`、`newlineKey === 'enter'` なら `\x1b\r`）を付けた 1 行。 */
-	private line(text: string): string {
-		return text + submitSequence(this.settings);
+	/** 退避 → bracketed paste でコマンド → 送信列（`\r`、`newlineKey === 'enter'` なら `\x1b\r`）。 */
+	private commandBytes(text: string): Buffer {
+		return Buffer.from(STASH + PASTE_BEGIN + text + PASTE_END + submitSequence(this.settings), "utf8");
 	}
 
-	/** 経路①：タブの xterm から入力行を見る。 */
-	private async sendViaView(view: TerminalView, id: string, text: string): Promise<void> {
-		if (view.isPromptEmpty()) {
-			view.sendCommand(this.line(text));
-			return;
-		}
-		view.sendCommand(STASH + this.line(text));
-		await this.index.registry.waitFor(id, "idle", WAIT_IDLE_MS);
-		view.sendCommand(STASH);
+	/** 経路①：そのタブへ書く。 */
+	private sendViaView(view: TerminalView, text: string): void {
+		view.sendBytes(this.commandBytes(text));
 	}
 
-	/** 経路②：画面が無いので入力行は見られない。退避→送信→復元で統一する。 */
+	/** 経路②：一時的に attach して書く。 */
 	private async sendViaAttach(client: DaemonClient, id: string, text: string): Promise<void> {
 		const res = await client.attach(id, HEADLESS_COLS, HEADLESS_ROWS);
 		if (!res.ok) {
 			throw new Error(`attach に失敗: ${res.error ?? "unknown"}`);
 		}
 		try {
-			client.writeInput(Buffer.from(STASH + this.line(text), "utf8"));
-			await this.index.registry.waitFor(id, "idle", WAIT_IDLE_MS);
-			client.writeInput(Buffer.from(STASH, "utf8"));
+			client.writeInput(this.commandBytes(text));
 		} finally {
 			await client.detach().catch(() => undefined);
 		}
@@ -560,12 +558,12 @@ export default class AgentSessionsPlugin extends Plugin {
 			if (!(await registry.waitFor(id, "idle", WAIT_IDLE_MS))) {
 				throw new Error("claude の起動を待てませんでした");
 			}
-			client.writeInput(Buffer.from(this.line(text), "utf8"));
+			client.writeInput(this.commandBytes(text));
 			await registry.waitFor(id, "busy", WAIT_BUSY_MS);
 			if (!(await registry.waitFor(id, "idle", WAIT_IDLE_MS))) {
 				throw new Error("応答を待てませんでした");
 			}
-			client.writeInput(Buffer.from(this.line("/exit"), "utf8"));
+			client.writeInput(this.commandBytes("/exit"));
 			const timeout = new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), WAIT_EXIT_MS));
 			if ((await Promise.race([exited, timeout])) === "timeout") {
 				await client.kill(id).catch(() => undefined);
