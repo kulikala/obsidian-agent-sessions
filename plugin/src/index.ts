@@ -130,6 +130,11 @@ export class SessionIndex extends EventEmitter {
 		return detail;
 	}
 
+	/** `getDetail` が既に取得済みならそれを同期で返す。無ければ `null`（ここでは取得しない）。 */
+	getCachedDetail(id: string): Detail | null {
+		return this.detailCache.get(id) ?? null;
+	}
+
 	/** 全走査（`rescan()` と同じ）。 */
 	async scan(): Promise<void> {
 		return this.rescan();

@@ -11,12 +11,17 @@ export interface RowActions {
 	compact(id: string): void;
 	toggleArchive(row: Row): void;
 	endSession(id: string): void;
-	openFolder(cwd: string): void;
 	copyId(id: string): void;
 	/** 300 ms ホバーで呼ばれる。 */
 	showDetail(id: string): void;
-	/** トークン集計のモーダルを開く（D-31）。 */
+	/** セッション解析結果のモーダルを開く（D-31・D-45）。 */
 	showUsage(id: string): void;
+	/**
+	 * 直近の指示（`clean_text` 後）。取得済みなら同期で返す——`json detail` を新たに
+	 * 呼ばない（`index.getCachedDetail`）。無ければ `undefined`（「セッションを圧縮」を
+	 * 非活性にしない）。
+	 */
+	lastUserPrompt?(id: string): string | undefined;
 }
 
 export interface RenderRowOptions {
@@ -82,12 +87,17 @@ function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): void {
 			.setIcon("pencil")
 			.onClick(() => actions.rename(row.id, row.name ?? ""))
 	);
-	menu.addItem((item) =>
+	const lastPrompt = actions.lastUserPrompt?.(row.id);
+	const alreadyCompacted = lastPrompt != null && lastPrompt.trim() === "/compact";
+	menu.addItem((item) => {
 		item
-			.setTitle("圧縮")
+			.setTitle("セッションを圧縮")
 			.setIcon("scissors")
-			.onClick(() => actions.compact(row.id))
-	);
+			.onClick(() => actions.compact(row.id));
+		if (alreadyCompacted) {
+			item.setDisabled(true);
+		}
+	});
 	menu.addItem((item) =>
 		item
 			.setTitle(row.archived ? "アーカイブ解除" : "アーカイブ")
@@ -104,15 +114,9 @@ function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): void {
 	}
 	menu.addItem((item) =>
 		item
-			.setTitle("トークン集計")
+			.setTitle("セッション解析結果")
 			.setIcon("bar-chart-2")
 			.onClick(() => actions.showUsage(row.id))
-	);
-	menu.addItem((item) =>
-		item
-			.setTitle("フォルダを開く")
-			.setIcon("folder-open")
-			.onClick(() => actions.openFolder(row.cwd))
 	);
 	menu.addItem((item) =>
 		item
@@ -198,7 +202,7 @@ export function renderGroupHeader(
 
 /**
  * サイドパネル・マネージャー共通の行アクション。`openSession`・`rename`・`compact`・
- * `toggleArchive`・`endSession`・`openFolder`・`copyId` は両ビューで同じ振る舞い（§6.6）。
+ * `toggleArchive`・`endSession`・`copyId` は両ビューで同じ振る舞い（§6.6）。
  * `onShowDetail` だけビューごと（詳細欄の描画先が違う）。
  */
 export function createRowActions(app: App, plugin: AgentSessionsPlugin, onShowDetail: (id: string) => void): RowActions {
@@ -219,17 +223,11 @@ export function createRowActions(app: App, plugin: AgentSessionsPlugin, onShowDe
 			}
 		},
 		endSession: (id) => plugin.endSession(id),
-		openFolder: (cwd) => {
-			try {
-				(require("electron").shell as { openPath(p: string): Promise<string> }).openPath(cwd);
-			} catch (err) {
-				console.warn("agent-sessions: フォルダを開けません", err);
-			}
-		},
 		copyId: (id) => {
 			void navigator.clipboard.writeText(id);
 		},
 		showDetail: onShowDetail,
 		showUsage: (id) => plugin.showUsage(id),
+		lastUserPrompt: (id) => plugin.index.getCachedDetail(id)?.last_user ?? undefined,
 	};
 }
