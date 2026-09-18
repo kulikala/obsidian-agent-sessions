@@ -32,7 +32,10 @@ function messageOf(err: unknown): string {
 
 export class UsageModal extends Modal {
 	private result: UsageResult | null = null;
-	private selection: Selection = null;
+	// 名前は `selection` にしない——Obsidian の `Modal.open()` が「閉じるときに戻すテキスト選択」を
+	// `this.selection = { win, range, focusEl }` として自分で書き込むため、同名だと即座に上書き
+	// される（実機で確認済み）。
+	private turnSelection: Selection = null;
 	private bodyEl!: HTMLElement;
 	private copyBtn!: HTMLButtonElement;
 	private subtitleEl!: HTMLElement;
@@ -109,7 +112,7 @@ export class UsageModal extends Modal {
 			row.createEl("td", { text: formatK(t.output), cls: "agent-sessions-usage-num" });
 			row.createEl("td", { text: formatCost(t.cost), cls: "agent-sessions-usage-num" });
 			row.addEventListener("click", () => {
-				this.selection = nextSelection(this.selection, t.index);
+				this.turnSelection = nextSelection(this.turnSelection, t.index);
 				this.renderSelection();
 			});
 			return row;
@@ -124,22 +127,22 @@ export class UsageModal extends Modal {
 		if (!result) {
 			return;
 		}
-		const { from, to, pending } = effectiveRange(this.selection, result.turns);
+		const { from, to, pending } = effectiveRange(this.turnSelection, result.turns);
 		const total = sumRange(result.turns, from, to);
 		const count = result.turns.filter((t) => t.index >= from && t.index <= to).length;
 		const inputTotal = total.input + total.cache_read + total.cache_create;
 
 		this.subtitleEl.empty();
 		const label =
-			this.selection === null ? "全体" : pending ? `#${from}〜（終了行をクリック）` : `#${from}〜#${to}`;
+			this.turnSelection === null ? "全体" : pending ? `#${from}〜（終了行をクリック）` : `#${from}〜#${to}`;
 		this.subtitleEl.createSpan({ cls: "agent-sessions-usage-subtitle-label", text: label });
-		if (this.selection !== null) {
+		if (this.turnSelection !== null) {
 			const wholeBtn = this.subtitleEl.createEl("button", {
 				cls: "agent-sessions-usage-whole-btn",
 				text: "全体",
 			});
 			wholeBtn.addEventListener("click", () => {
-				this.selection = null;
+				this.turnSelection = null;
 				this.renderSelection();
 			});
 		}
@@ -164,7 +167,7 @@ export class UsageModal extends Modal {
 
 		result.turns.forEach((t, i) => {
 			const row = this.rowEls[i];
-			row.toggleClass("is-selected", this.selection !== null && t.index >= from && t.index <= to);
+			row.toggleClass("is-selected", this.turnSelection !== null && t.index >= from && t.index <= to);
 			row.toggleClass("is-anchor", pending && t.index === from);
 		});
 	}
@@ -227,7 +230,7 @@ export class UsageModal extends Modal {
 		if (!result) {
 			return;
 		}
-		const { from, to } = effectiveRange(this.selection, result.turns);
+		const { from, to } = effectiveRange(this.turnSelection, result.turns);
 		const total = sumRange(result.turns, from, to);
 		void navigator.clipboard.writeText(toMarkdown(result.turns, from, to, total));
 		new Notice("Markdown をコピーしました");
