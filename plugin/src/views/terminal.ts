@@ -10,7 +10,9 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { BackendError, loginEnv, resolveClaude } from "../backend";
 import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../daemon-client";
+import { classifyEnter, resolveEnterAction } from "../keys";
 import { buildAtToken, selectionLineRange, VaultLinkProvider } from "../links";
+import { submitSequence } from "../main";
 import type AgentSessionsPlugin from "../main";
 import { MarkTracker, type MarkerHandle, type MarkerSource } from "../marks";
 import { VIEW_TYPE_TERMINAL } from "../open-session";
@@ -91,8 +93,6 @@ export class TerminalView extends ItemView {
 
 	/** ジャンプ（§6.7）：指示・応答の先頭を覚える。xterm のマーカーは `markerSource()` で包む。 */
 	private marks: MarkTracker;
-	/** `\x1b[200~`…`\x1b[201~` の間かどうか（§6.7。ペースト内の改行を指示と数えない）。 */
-	private pasting = false;
 
 	constructor(
 		leaf: WorkspaceLeaf,
@@ -222,7 +222,6 @@ export class TerminalView extends ItemView {
 		this.terminal.attachCustomKeyEventHandler((ev) => this.handleKey(ev));
 		const onData = this.terminal.onData((data) => {
 			this.sendInput(Buffer.from(data, "utf8"));
-			this.marks.onInput(data, this.consumePasteMarkers(data));
 		});
 		const onBinary = this.terminal.onBinary((data) => this.sendInput(Buffer.from(data, "binary")));
 		const onResize = this.terminal.onResize(({ cols, rows }) => {
@@ -519,6 +518,13 @@ export class TerminalView extends ItemView {
 		}
 	}
 
+	/** 送信キーが押されたとき（§6.8・D-41）：送信列を書き、指示マーカーを記録する。ジャンプ
+	 * の指示マーカーはここが唯一の記録場所（`onData` からは記録しない。§6.7）。 */
+	private sendSubmit(): void {
+		this.sendInput(Buffer.from(submitSequence(this.plugin.settings), "binary"));
+		this.marks.markInstruction();
+	}
+
 	/** `start` 直後の出力を控える（`--resume` の失敗判定に使う。§7）。 */
 	private noteEarly(buf: Buffer): void {
 		if (this.startedAt && Date.now() - this.startedAt <= EARLY_EXIT_MS) {
@@ -631,34 +637,6 @@ export class TerminalView extends ItemView {
 		this.focusTerminal();
 	}
 
-	/** `\x1b[200~`…`\x1b[201~` を跨いで括弧付きペースト中かどうかを追う。この chunk の間に
-	 * ペースト中だった（またはペーストが始まった）ら真を返す。 */
-	private consumePasteMarkers(data: string): boolean {
-		const START = "\x1b[200~";
-		const END = "\x1b[201~";
-		let pasting = this.pasting;
-		let sawPaste = pasting;
-		let i = 0;
-		while (i < data.length) {
-			const start = data.indexOf(START, i);
-			const end = data.indexOf(END, i);
-			if (start !== -1 && (end === -1 || start <= end)) {
-				pasting = true;
-				sawPaste = true;
-				i = start + START.length;
-				continue;
-			}
-			if (end !== -1) {
-				pasting = false;
-				i = end + END.length;
-				continue;
-			}
-			break;
-		}
-		this.pasting = pasting;
-		return sawPaste;
-	}
-
 	private onBusyMark(id: string): void {
 		if (id === this.id) {
 			this.marks.onBusy();
@@ -686,11 +664,25 @@ export class TerminalView extends ItemView {
 			}
 			return true;
 		}
-		if (ev.key === "Enter" && (ev.shiftKey || ev.altKey || ev.metaKey)) {
+		const enterAction = resolveEnterAction(classifyEnter(ev), {
+			newlineKey: this.plugin.settings.newlineKey,
+			submitKey: this.plugin.settings.submitKey,
+		});
+		if (enterAction !== "passthrough") {
 			ev.preventDefault();
 			ev.stopPropagation();
 			if (ev.type === "keydown") {
-				this.sendInput(Buffer.from("\x1b\r", "binary"));
+				switch (enterAction) {
+					case "newline":
+						this.sendInput(Buffer.from("\x1b\r", "binary"));
+						break;
+					case "submit":
+						this.sendSubmit();
+						break;
+					case "raw-enter":
+						this.sendInput(Buffer.from("\r", "binary"));
+						break;
+				}
 			}
 			return false;
 		}

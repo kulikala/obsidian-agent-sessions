@@ -23,28 +23,12 @@ class FakeSource implements MarkerSource {
 }
 
 describe("MarkTracker（§6.7 ジャンプ）", () => {
-	it("CR を含む入力を指示として記録する", () => {
+	it("markInstruction を指示として記録する", () => {
 		const source = new FakeSource();
 		const tracker = new MarkTracker(source);
 		source.nextLine = 5;
-		tracker.onInput("hello\r", false);
+		tracker.markInstruction();
 		expect(tracker.prev(10)).toBe(5);
-	});
-
-	it("CR を含まない入力は記録しない", () => {
-		const source = new FakeSource();
-		const tracker = new MarkTracker(source);
-		source.nextLine = 5;
-		tracker.onInput("hello", false);
-		expect(tracker.prev(10)).toBeNull();
-	});
-
-	it("括弧付きペースト中の CR は記録しない", () => {
-		const source = new FakeSource();
-		const tracker = new MarkTracker(source);
-		source.nextLine = 5;
-		tracker.onInput("line1\r\nline2\r\n", true);
-		expect(tracker.prev(10)).toBeNull();
 	});
 
 	it("3 回指示すると、前の指示は表示先頭に最も近いものから戻る", () => {
@@ -52,7 +36,7 @@ describe("MarkTracker（§6.7 ジャンプ）", () => {
 		const tracker = new MarkTracker(source);
 		for (const line of [1, 5, 9]) {
 			source.nextLine = line;
-			tracker.onInput("cmd\r", false);
+			tracker.markInstruction();
 		}
 		expect(tracker.prev(100)).toBe(9);
 		expect(tracker.prev(9)).toBe(5);
@@ -65,7 +49,7 @@ describe("MarkTracker（§6.7 ジャンプ）", () => {
 		const tracker = new MarkTracker(source);
 		for (const line of [1, 5, 9]) {
 			source.nextLine = line;
-			tracker.onInput("cmd\r", false);
+			tracker.markInstruction();
 		}
 		expect(tracker.next(0)).toBe(1);
 		expect(tracker.next(1)).toBe(5);
@@ -76,9 +60,9 @@ describe("MarkTracker（§6.7 ジャンプ）", () => {
 		const source = new FakeSource();
 		const tracker = new MarkTracker(source);
 		source.nextLine = 1;
-		tracker.onInput("a\r", false);
+		tracker.markInstruction();
 		source.nextLine = 5;
-		tracker.onInput("b\r", false);
+		tracker.markInstruction();
 		source.markers[1].isDisposed = true;
 		expect(tracker.prev(100)).toBe(1);
 	});
@@ -87,7 +71,7 @@ describe("MarkTracker（§6.7 ジャンプ）", () => {
 		const source = new FakeSource();
 		source.fail = true;
 		const tracker = new MarkTracker(source);
-		tracker.onInput("cmd\r", false);
+		tracker.markInstruction();
 		tracker.onBusy();
 		expect(tracker.prev(100)).toBeNull();
 		expect(tracker.lastResponse()).toBeNull();

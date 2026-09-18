@@ -5,11 +5,11 @@ import { detail, live, resolveAgentSessionsPath, scan } from "./backend";
 import { DaemonClient, defaultSockPath, ensureDaemon } from "./daemon-client";
 import { EditServer, type EditReply, type EditRequest } from "./edit-server";
 import { SessionIndex } from "./index";
-import { defaultKeybindingsPath, readEnterMode, setEnterMode } from "./keybindings";
+import { applyNewlineKey, defaultKeybindingsPath, readEnterMode } from "./keybindings";
 import { buildAtToken, selectionLineRange } from "./links";
 import { ConfirmModal, NewSessionModal, RenameSessionModal } from "./modals";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./open-session";
-import { AgentSessionsSettings, DEFAULT_SETTINGS } from "./settings";
+import { AgentSessionsSettings, DEFAULT_SETTINGS, type NewlineKey, type SubmitKey } from "./settings";
 import { migrateFromMarkdown, StoreLockError, updateStore } from "./store";
 import type { ArchivedSession, DaemonSession } from "./types";
 import { UsageModal } from "./usage-modal";
@@ -23,6 +23,15 @@ const RUNTIME_DIR = join(homedir(), ".agents", "sessions");
 
 function messageOf(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
+}
+
+/**
+ * 送信キーが押されたときに送る列（§6.8・D-41）。`newlineKey === 'enter'` なら
+ * `enter` 自体が改行に回っているので `\x1b\r`（meta+enter＝送信）、それ以外は `\r`。
+ * `views/terminal.ts` の `sendSubmit()` と、D-42 のコマンド送信の両方から使う純関数。
+ */
+export function submitSequence(settings: AgentSessionsSettings): string {
+	return settings.newlineKey === "enter" ? "\x1b\r" : "\r";
 }
 
 export default class AgentSessionsPlugin extends Plugin {
@@ -575,7 +584,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 					})
 			);
 
-		this.renderEnterModeSetting(containerEl);
+		this.renderNewlineKeySetting(containerEl);
 
 		new Setting(containerEl)
 			.setName("最近の件数（サイドパネル）")
@@ -600,7 +609,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("claude のパス")
-			.setDesc("空＝ログインシェルで command -v claude")
+			.setDesc("空欄時のデフォルト: $(which claude)")
 			.addText((text) =>
 				text.setValue(this.plugin.settings.claudePath).onChange(async (value) => {
 					this.plugin.settings.claudePath = value;
@@ -610,7 +619,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("agent-sessions のパス")
-			.setDesc("空＝~/bin/agent-sessions")
+			.setDesc("空欄時のデフォルト: ~/bin/agent-sessions")
 			.addText((text) =>
 				text.setValue(this.plugin.settings.agentSessionsPath).onChange(async (value) => {
 					this.plugin.settings.agentSessionsPath = value;
@@ -620,6 +629,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName("Python のパス")
+			.setDesc("空欄時のデフォルト: /usr/bin/python3")
 			.addText((text) =>
 				text.setValue(this.plugin.settings.pythonPath).onChange(async (value) => {
 					this.plugin.settings.pythonPath = value;
@@ -657,43 +667,88 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		return defaultKeybindingsPath(homedir(), process.env.CLAUDE_CONFIG_DIR);
 	}
 
-	/** Enter の役割（§6.8）。開くたびに `keybindings.json` を読んで現在値を出す。 */
-	private renderEnterModeSetting(containerEl: HTMLElement): void {
-		const keybindingsPath = this.keybindingsPath();
+	private static readonly NEWLINE_KEY_LABELS: Record<NewlineKey, string> = {
+		enter: "Enter",
+		"meta+enter": "Meta+Enter（Option+Enter）",
+		"ctrl+enter": "Ctrl+Enter",
+		"shift+enter": "Shift+Enter",
+		"super+enter": "Super+Enter（Cmd+Enter）",
+	};
+
+	private static readonly SUBMIT_KEY_LABELS: Record<SubmitKey, string> = {
+		"meta+enter": "Meta+Enter（Option+Enter）",
+		"ctrl+enter": "Ctrl+Enter",
+		"shift+enter": "Shift+Enter",
+		"super+enter": "Super+Enter（Cmd+Enter）",
+	};
+
+	/** 現在の keybindings.json の Chat の enter の表示だけに使う（変更には使わない、§6.8）。 */
+	private currentEnterBindingText(keybindingsPath: string): string {
 		const info = readEnterMode(keybindingsPath);
-		const setting = new Setting(containerEl).setName("Enter の役割");
-
-		if (info.mode === "unreadable") {
-			setting.setDesc(`${keybindingsPath} が読めません。ここからは変更できません`);
-			return;
+		switch (info.mode) {
+			case "unreadable":
+				return `現在の keybindings.json：${keybindingsPath} が読めません`;
+			case "custom":
+				return `現在の keybindings.json の Chat の enter：${info.raw}`;
+			case "newline":
+				return "現在の keybindings.json の Chat の enter：chat:newline";
+			case "submit":
+				return "現在の keybindings.json の Chat の enter：既定（未設定、または chat:submit）";
 		}
-		if (info.mode === "custom") {
-			setting.setDesc(`カスタム（${info.raw}）。ここからは変更できません`);
-			return;
-		}
+	}
 
-		setting.setDesc("実体は keybindings.json。Claude Code 全体（他の端末の claude にも）に効きます。");
+	/** 改行キー・送信キー（§6.8・D-41）。開くたびに `keybindings.json` を読んで現在値を出す。 */
+	private renderNewlineKeySetting(containerEl: HTMLElement): void {
+		const keybindingsPath = this.keybindingsPath();
+
+		const applyAndSave = (next: NewlineKey) => {
+			const result = applyNewlineKey(keybindingsPath, next);
+			this.plugin.settings.newlineKey = next;
+			void this.plugin.saveSettings();
+			if (result.warning) {
+				new Notice(result.warning);
+			}
+			this.display();
+		};
+
+		const setting = new Setting(containerEl)
+			.setName("改行キー")
+			.setDesc(
+				`Option+Enter は常に改行になります（ターミナルが meta+enter を送るため）。${this.currentEnterBindingText(keybindingsPath)}`
+			);
 		setting.addDropdown((dropdown) => {
-			dropdown.addOptions({ submit: "送信", newline: "改行" });
-			dropdown.setValue(info.mode);
+			dropdown.addOptions(AgentSessionsSettingTab.NEWLINE_KEY_LABELS);
+			dropdown.setValue(this.plugin.settings.newlineKey);
 			dropdown.onChange((value) => {
-				const next = value as "submit" | "newline";
-				if (next === info.mode) {
+				const next = value as NewlineKey;
+				const current = this.plugin.settings.newlineKey;
+				if (next === current) {
 					return;
 				}
-				new ConfirmModal(
-					this.app,
-					"Claude Code 全体に効きます（iTerm など他の端末の claude にも）。切り替えますか？",
-					"切り替える",
-					() => {
-						const result = setEnterMode(keybindingsPath, next);
-						new Notice(result.warning ?? "Enter の役割を切り替えました");
-						this.display();
-					}
-				).open();
-				// 確認が済むまでは見た目を戻しておく（確定したら display() で組み直す）。
-				dropdown.setValue(info.mode);
+				if (next === "enter") {
+					new ConfirmModal(
+						this.app,
+						"Claude Code の keybindings.json に書きます。他のターミナルアプリで起動した claude にも効きます",
+						"書き込む",
+						() => applyAndSave(next)
+					).open();
+					// 確認が済むまでは見た目を戻しておく（確定したら display() で組み直す）。
+					dropdown.setValue(current);
+				} else {
+					applyAndSave(next);
+				}
 			});
 		});
+
+		if (this.plugin.settings.newlineKey === "enter") {
+			new Setting(containerEl).setName("送信キー").addDropdown((dropdown) => {
+				dropdown.addOptions(AgentSessionsSettingTab.SUBMIT_KEY_LABELS);
+				dropdown.setValue(this.plugin.settings.submitKey);
+				dropdown.onChange(async (value) => {
+					this.plugin.settings.submitKey = value as SubmitKey;
+					await this.plugin.saveSettings();
+				});
+			});
+		}
 	}
 }

@@ -1,5 +1,5 @@
-// ジャンプ（§6.7 D-13）。指示（CR を含む入力）と応答の先頭（`idle → busy`）をマーカーとして
-// 覚え、前の指示・次の指示・最後の応答へ飛べるようにする。xterm には依存しない——
+// ジャンプ（§6.7 D-13・D-41）。指示（送信キーが押された位置）と応答の先頭（`idle → busy`）を
+// マーカーとして覚え、前の指示・次の指示・最後の応答へ飛べるようにする。xterm には依存しない——
 // `registerMarker` を包んだ `MarkerSource` を `views/terminal.ts` から受け取る純クラス。
 
 /** xterm の `IMarker` を包んだ最小形。破棄済みなら `isDisposed` が真。 */
@@ -19,13 +19,10 @@ export class MarkTracker {
 	constructor(private source: MarkerSource) {}
 
 	/**
-	 * 入力に CR が含まれ、かつ括弧付きペースト中でなければ、指示の位置としてマーカーを打つ。
-	 * ペースト内の改行や、Enter を伴わない入力は数えない。
+	 * 指示を送った位置としてマーカーを打つ。`views/terminal.ts` の `sendSubmit()` から、
+	 * 送信キーが押されたときだけ明示的に呼ばれる（`onData` の `\r` からは記録しない。§6.7）。
 	 */
-	onInput(data: string, bracketedPasting: boolean): void {
-		if (bracketedPasting || !data.includes("\r")) {
-			return;
-		}
+	markInstruction(): void {
 		const marker = this.source.registerMarker();
 		if (marker) {
 			this.instructions.push(marker);

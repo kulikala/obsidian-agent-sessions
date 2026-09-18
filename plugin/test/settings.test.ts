@@ -11,9 +11,12 @@ describe("DEFAULT_SETTINGS", () => {
 			notifyOnIdle: true,
 			claudePath: "",
 			agentSessionsPath: "",
-			pythonPath: "/usr/bin/python3",
+			pythonPath: "",
 			scrollback: 5000,
 			editorHeight: 40,
+			newlineKey: "shift+enter",
+			submitKey: "super+enter",
+			sideDetailHeight: 220,
 		});
 	});
 });

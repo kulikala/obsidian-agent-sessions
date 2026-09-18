@@ -1,5 +1,5 @@
-// Enter の役割（送信／改行）（D-14・§6.8）。`~/.claude/keybindings.json`（正しくは
-// `$CLAUDE_CONFIG_DIR` 配下）の `Chat` コンテキストの `enter` を読み書きする。
+// 改行キー（D-41・§6.8）。`~/.claude/keybindings.json`（正しくは `$CLAUDE_CONFIG_DIR`
+// 配下）の `Chat` コンテキストの `enter`・`meta+enter` を読み書きする。
 // Claude Code 全体の設定で、vault の `.claude/` は読まない。
 
 import * as fs from "node:fs";
@@ -13,7 +13,7 @@ export interface EnterModeInfo {
 	raw?: string;
 }
 
-export interface SetEnterModeResult {
+export interface ApplyNewlineKeyResult {
 	/** 一致しない鍵が残っていて手で直す必要があるときの文言。 */
 	warning?: string;
 }
@@ -32,10 +32,9 @@ interface KeybindingsFile {
 const SCHEMA_URL = "https://www.schemastore.org/claude-code-keybindings.json";
 const DOCS_URL = "https://code.claude.com/docs/en/keybindings";
 
-/** 改行モードで `Chat` に入れる 3 鍵（§6.8）。 */
-const NEWLINE_KEYS: Record<string, string> = {
+/** `newlineKey === 'enter'` のときに `Chat` へ書く 2 鍵（§6.8・D-41）。 */
+const ENTER_KEYS: Record<string, string> = {
 	enter: "chat:newline",
-	"shift+enter": "chat:submit",
 	"meta+enter": "chat:submit",
 };
 
@@ -97,15 +96,18 @@ export function readEnterMode(filePath: string): EnterModeInfo {
 }
 
 /**
- * Enter の役割を切り替える（§6.8）。
- * - `newline`：`Chat` ブロック（無ければ作る）に 3 鍵を入れる。他の鍵・他の
- *   コンテキストは触らない。`$schema`・`$docs` が無ければ足す。
- * - `submit`：3 鍵のうち、書いた値と一致するものだけ消す。空になった `Chat`
- *   ブロックは消す。一致しない鍵は残し `warning` を返す。
+ * 改行キーの設定を `keybindings.json` に反映する（§6.8・D-41）。
+ * - `newlineKey === 'enter'`：`Chat` ブロック（無ければ作る）に `enter: chat:newline`・
+ *   `meta+enter: chat:submit` の 2 鍵を入れる。他の鍵・他のコンテキストは触らない。
+ *   `$schema`・`$docs` が無ければ足す。
+ * - それ以外：この 2 鍵のうち、自分が書いた値と一致するものだけ消す。空になった
+ *   `Chat` ブロックは消す。一致しない鍵は残し `warning` を返す。
  *
  * ファイルが読めない（壊れている）ときは書かずに `warning` を返す。
  */
-export function setEnterMode(filePath: string, mode: "newline" | "submit"): SetEnterModeResult {
+export function applyNewlineKey(filePath: string, newlineKey: string): ApplyNewlineKeyResult {
+	const writing = newlineKey === "enter";
+
 	let text: string | null;
 	try {
 		text = fs.readFileSync(filePath, "utf8");
@@ -117,8 +119,8 @@ export function setEnterMode(filePath: string, mode: "newline" | "submit"): SetE
 		}
 	}
 
-	if (text === null && mode === "submit") {
-		// 既定（送信）で、ファイルも無い。何もしない。
+	if (text === null && !writing) {
+		// 書く必要が無く、ファイルも無い。何もしない。
 		return {};
 	}
 
@@ -142,7 +144,7 @@ export function setEnterMode(filePath: string, mode: "newline" | "submit"): SetE
 
 	let warning: string | undefined;
 
-	if (mode === "newline") {
+	if (writing) {
 		let chat = findChat(data);
 		if (!chat) {
 			chat = { context: "Chat", bindings: {} };
@@ -151,12 +153,12 @@ export function setEnterMode(filePath: string, mode: "newline" | "submit"): SetE
 		if (!chat.bindings) {
 			chat.bindings = {};
 		}
-		Object.assign(chat.bindings, NEWLINE_KEYS);
+		Object.assign(chat.bindings, ENTER_KEYS);
 	} else {
 		const chat = findChat(data);
 		if (chat?.bindings) {
 			const mismatched: string[] = [];
-			for (const [key, value] of Object.entries(NEWLINE_KEYS)) {
+			for (const [key, value] of Object.entries(ENTER_KEYS)) {
 				if (chat.bindings[key] === value) {
 					delete chat.bindings[key];
 				} else if (key in chat.bindings) {

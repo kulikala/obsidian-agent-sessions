@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { defaultKeybindingsPath, readEnterMode, setEnterMode } from "../src/keybindings";
+import { applyNewlineKey, defaultKeybindingsPath, readEnterMode } from "../src/keybindings";
 
 describe("readEnterMode", () => {
 	let dir: string;
@@ -57,7 +57,7 @@ describe("readEnterMode", () => {
 	});
 });
 
-describe("setEnterMode", () => {
+describe("applyNewlineKey", () => {
 	let dir: string;
 	let filePath: string;
 
@@ -70,8 +70,8 @@ describe("setEnterMode", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("newline：ファイルが無ければ作り、3 鍵と $schema/$docs を入れる", () => {
-		const result = setEnterMode(filePath, "newline");
+	it("enter：ファイルが無ければ作り、2 鍵と $schema/$docs を入れる", () => {
+		const result = applyNewlineKey(filePath, "enter");
 		expect(result).toEqual({});
 
 		const data = JSON.parse(readFileSync(filePath, "utf8"));
@@ -80,20 +80,19 @@ describe("setEnterMode", () => {
 		const chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
 		expect(chat.bindings).toEqual({
 			enter: "chat:newline",
-			"shift+enter": "chat:submit",
 			"meta+enter": "chat:submit",
 		});
 	});
 
-	it("submit：ファイルが無ければ何もしない（作らない）", () => {
-		const result = setEnterMode(filePath, "submit");
+	it("enter 以外：ファイルが無ければ何もしない（作らない）", () => {
+		const result = applyNewlineKey(filePath, "shift+enter");
 		expect(result).toEqual({});
 		expect(() => readFileSync(filePath, "utf8")).toThrow();
 	});
 
-	it("newline → submit で 3 鍵が消え、空になった Chat ブロックごと消える", () => {
-		setEnterMode(filePath, "newline");
-		const result = setEnterMode(filePath, "submit");
+	it("enter → shift+enter で 2 鍵が消え、空になった Chat ブロックごと消える", () => {
+		applyNewlineKey(filePath, "enter");
+		const result = applyNewlineKey(filePath, "shift+enter");
 		expect(result).toEqual({});
 
 		const data = JSON.parse(readFileSync(filePath, "utf8"));
@@ -111,14 +110,14 @@ describe("setEnterMode", () => {
 			})
 		);
 
-		setEnterMode(filePath, "newline");
+		applyNewlineKey(filePath, "enter");
 		let data = JSON.parse(readFileSync(filePath, "utf8"));
 		let chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
 		expect(chat.bindings["ctrl+j"]).toBe("chat:newline");
 		expect(chat.bindings.enter).toBe("chat:newline");
 		expect(data.bindings.find((b: { context: string }) => b.context === "Other").bindings).toEqual({ a: "b" });
 
-		setEnterMode(filePath, "submit");
+		applyNewlineKey(filePath, "shift+enter");
 		data = JSON.parse(readFileSync(filePath, "utf8"));
 		chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
 		// 自分で足していない ctrl+j は残る。Chat ブロックも残る（空でないので）。
@@ -128,20 +127,20 @@ describe("setEnterMode", () => {
 	it("一致しない値の鍵は消さずに warning を返す", () => {
 		writeFileSync(
 			filePath,
-			JSON.stringify({ bindings: [{ context: "Chat", bindings: { enter: "chat:clear", "shift+enter": "chat:submit" } }] })
+			JSON.stringify({ bindings: [{ context: "Chat", bindings: { enter: "chat:clear", "meta+enter": "chat:submit" } }] })
 		);
 
-		const result = setEnterMode(filePath, "submit");
+		const result = applyNewlineKey(filePath, "shift+enter");
 		expect(result.warning).toContain("enter");
 		const data = JSON.parse(readFileSync(filePath, "utf8"));
 		const chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
-		// enter は想定と違う値だったので残る。shift+enter は一致したので消える。
+		// enter は想定と違う値だったので残る。meta+enter は一致したので消える。
 		expect(chat.bindings).toEqual({ enter: "chat:clear" });
 	});
 
 	it("壊れた JSON には書かず warning を返す", () => {
 		writeFileSync(filePath, "{not json");
-		const result = setEnterMode(filePath, "newline");
+		const result = applyNewlineKey(filePath, "enter");
 		expect(result.warning).toBeTruthy();
 		expect(readFileSync(filePath, "utf8")).toBe("{not json");
 	});
