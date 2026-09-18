@@ -14,6 +14,8 @@ export interface RowActions {
 	copyId(id: string): void;
 	/** 300 ms ホバーで呼ばれる。 */
 	showDetail(id: string): void;
+	/** ホバーが外れたら呼ばれる（既定の表示に戻すため。D-43 実機修正）。 */
+	hideDetail?(): void;
 	/** セッション解析結果のモーダルを開く（D-31・D-45）。 */
 	showUsage(id: string): void;
 	/**
@@ -178,6 +180,7 @@ export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptio
 			clearTimeout(hoverTimer);
 			hoverTimer = null;
 		}
+		opts.actions.hideDetail?.();
 	});
 
 	return el;
@@ -207,7 +210,12 @@ export function renderGroupHeader(
  * `toggleArchive`・`endSession`・`copyId` は両ビューで同じ振る舞い（§6.6）。
  * `onShowDetail` だけビューごと（詳細欄の描画先が違う）。
  */
-export function createRowActions(app: App, plugin: AgentSessionsPlugin, onShowDetail: (id: string) => void): RowActions {
+export function createRowActions(
+	app: App,
+	plugin: AgentSessionsPlugin,
+	onShowDetail: (id: string) => void,
+	onHideDetail?: () => void
+): RowActions {
 	return {
 		openSession: (id) => {
 			const row = plugin.index.sessions.get(id);
@@ -229,6 +237,7 @@ export function createRowActions(app: App, plugin: AgentSessionsPlugin, onShowDe
 			void navigator.clipboard.writeText(id);
 		},
 		showDetail: onShowDetail,
+		hideDetail: onHideDetail,
 		showUsage: (id) => plugin.showUsage(id),
 		lastUserPrompt: (id) => plugin.index.getCachedDetail(id)?.last_user ?? undefined,
 	};

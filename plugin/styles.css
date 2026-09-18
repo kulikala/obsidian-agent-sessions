@@ -2,9 +2,12 @@
 
 .agent-sessions-side {
 	display: grid;
+	grid-template-columns: minmax(0, 1fr);
 	grid-template-rows: auto 1fr var(--as-detail-h, 220px) auto;
 	height: 100%;
 	min-height: 0;
+	min-width: 0;
+	overflow-x: hidden;
 }
 
 .agent-sessions-manager {
@@ -142,7 +145,7 @@
 	align-items: center;
 	gap: var(--size-4-1);
 	padding: var(--size-4-2);
-	flex: 0 0 auto;
+	min-width: 0;
 }
 
 .agent-sessions-nav-btn {
@@ -178,12 +181,15 @@
 	display: flex;
 	flex-direction: column;
 	min-height: 0;
+	min-width: 0;
 }
 
 .agent-sessions-list,
 .agent-sessions-tree {
 	flex: 1 1 auto;
+	min-width: 0;
 	overflow-y: auto;
+	overflow-x: hidden;
 }
 
 /* 一覧と詳細の間のドラッグハンドル（4px、D-43）。 */
@@ -221,6 +227,7 @@
 	align-items: center;
 	gap: var(--size-4-2);
 	padding: var(--size-4-1) var(--size-4-3);
+	min-width: 0;
 	cursor: pointer;
 	border-radius: var(--radius-s);
 }
@@ -294,7 +301,9 @@
 	padding: var(--size-4-2) var(--size-4-3);
 	font-size: var(--font-ui-smaller);
 	overflow-y: auto;
+	overflow-x: hidden;
 	min-height: 0;
+	min-width: 0;
 	border-top: 1px solid var(--background-modifier-border);
 }
 
@@ -327,6 +336,7 @@
 	display: flex;
 	align-items: center;
 	gap: var(--size-4-2);
+	min-width: 0;
 	margin-bottom: var(--size-4-2);
 }
 
@@ -355,6 +365,8 @@
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
+	min-width: 0;
+	overflow: hidden;
 }
 
 .agent-sessions-detail-cards {
@@ -416,9 +428,14 @@
 
 /* ---- セッション制限ビュー（§6.1・D-43） ---- */
 
+.agent-sessions-limits-host {
+	min-width: 0;
+}
+
 .agent-sessions-limits {
 	padding: var(--size-4-2) var(--size-4-3);
 	font-size: var(--font-ui-smaller);
+	min-width: 0;
 	border-top: 1px solid var(--background-modifier-border);
 }
 
@@ -426,12 +443,12 @@
 	display: flex;
 	align-items: center;
 	gap: var(--size-4-2);
+	min-width: 0;
 	padding: 2px 0;
 }
 
 .agent-sessions-limits-label {
 	flex: 0 0 auto;
-	width: 1.6em;
 	color: var(--text-muted);
 }
 
@@ -450,7 +467,6 @@
 
 .agent-sessions-limits-pct {
 	flex: 0 0 auto;
-	width: 2.4em;
 	text-align: right;
 	font-variant-numeric: tabular-nums;
 }

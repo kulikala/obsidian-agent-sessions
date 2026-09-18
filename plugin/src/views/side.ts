@@ -7,6 +7,7 @@ import { usage } from "../backend";
 import { VIEW_TYPE_TERMINAL } from "../open-session";
 import { NewSessionModal } from "../modals";
 import type { Row } from "../index";
+import type { SideList } from "../tree";
 import { createRowActions, renderRow, RowSelection, type RowActions } from "./rows";
 import { computeSideList, leafIdsOf } from "./side-list";
 import { renderDetail, type DetailContext } from "./detail";
@@ -30,6 +31,8 @@ export class SideView extends ItemView {
 	private frontId: string | null = null;
 	private detailId: string | null = null;
 	private detailHeight = 220;
+	/** ホバーで一時的に詳細を差し替えている間は真（外れたら既定に戻す）。 */
+	private hovering = false;
 
 	constructor(leaf: WorkspaceLeaf, plugin: AgentSessionsPlugin) {
 		super(leaf);
@@ -78,7 +81,7 @@ export class SideView extends ItemView {
 		this.detailEl = this.contentEl.createDiv({ cls: "agent-sessions-detail" });
 		this.applyDetailHeight(this.plugin.settings.sideDetailHeight);
 
-		this.limitsHostEl = this.contentEl.createDiv();
+		this.limitsHostEl = this.contentEl.createDiv({ cls: "agent-sessions-limits-host" });
 		this.limitsView = new LimitsView(this.limitsHostEl, this.plugin.index.statusline.dir);
 	}
 
@@ -187,11 +190,19 @@ export class SideView extends ItemView {
 	private render(): void {
 		this.listEl.empty();
 		this.selection.clear();
-		const actions = createRowActions(this.app, this.plugin, (id) => void this.showDetail(id));
+		const actions = createRowActions(
+			this.app,
+			this.plugin,
+			(id) => this.onHoverShow(id),
+			() => this.onHoverEnd()
+		);
 		const list = computeSideList(this.plugin.index.sessions, this.terminalLeaves(), this.plugin.settings.recentCount);
 		this.renderSection(this.listEl, "開いているタブ", list.openTabs, actions);
 		this.renderSection(this.listEl, "起動中", list.running, actions);
 		this.renderSection(this.listEl, "最近", list.recent, actions);
+		if (!this.hovering) {
+			this.showDefaultDetail(list);
+		}
 	}
 
 	private renderSection(container: HTMLElement, title: string, rows: Row[], actions: RowActions): void {
@@ -206,16 +217,55 @@ export class SideView extends ItemView {
 
 	// ---- 詳細欄 -----------------------------------------------------------------
 
-	/** `registry`・`statusline` の変化：一覧を描き直し、制限ビューを読み直し、開いている詳細も更新する。 */
+	/**
+	 * `registry`・`statusline` の変化：一覧を描き直し（`render()` が非ホバー時の既定表示も
+	 * 更新する）、制限ビューを読み直し、ホバー中ならそのセッションのバッジ等も生かして
+	 * おく（badge・ctx% の値を最新にする）。
+	 */
 	private onRegistryOrStatusChange(): void {
 		this.render();
 		this.limitsView.reload();
-		if (this.detailId) {
-			void this.showDetail(this.detailId);
+		if (this.hovering && this.detailId) {
+			void this.renderDetailFor(this.detailId);
 		}
 	}
 
-	private async showDetail(id: string): Promise<void> {
+	/** ホバー開始（300 ms 後）：そのセッションに一時的に切り替える。 */
+	private onHoverShow(id: string): void {
+		this.hovering = true;
+		void this.renderDetailFor(id);
+	}
+
+	/** ホバーが外れた：既定（前面のタブ／一覧の先頭）に戻す。 */
+	private onHoverEnd(): void {
+		this.hovering = false;
+		this.showDefaultDetail();
+	}
+
+	/**
+	 * 何も指していないときの詳細：前面のターミナルタブのセッション、無ければ一覧の先頭
+	 * （開いているタブ→起動中→最近の順）。どちらも無ければ空にする。
+	 */
+	private showDefaultDetail(list?: SideList): void {
+		const id = this.defaultDetailId(list);
+		if (id) {
+			void this.renderDetailFor(id);
+		} else {
+			this.detailId = null;
+			renderDetail(this.detailEl, null);
+		}
+	}
+
+	private defaultDetailId(list?: SideList): string | null {
+		if (this.frontId && this.plugin.index.sessions.has(this.frontId)) {
+			return this.frontId;
+		}
+		const l =
+			list ?? computeSideList(this.plugin.index.sessions, this.terminalLeaves(), this.plugin.settings.recentCount);
+		return l.openTabs[0]?.id ?? l.running[0]?.id ?? l.recent[0]?.id ?? null;
+	}
+
+	private async renderDetailFor(id: string): Promise<void> {
 		this.detailId = id;
 		const row = this.plugin.index.sessions.get(id);
 		if (!row) {
