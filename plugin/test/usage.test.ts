@@ -233,6 +233,46 @@ describe("effectiveRange（§D-45 選択状態 → 実際の区間）", () => {
 	});
 });
 
+describe("全体（未選択）のカード計算（§D-45 モーダルの renderSelection と同じ手順）", () => {
+	// モーダルは selection === null のとき effectiveRange(null, turns) → sumRange → 件数フィルタ
+	// という手順で「全体」のカードを出す。ここで #NaN や 0 ターンにならないことを固定する。
+	function selectAll(turns: UsageTurn[]) {
+		const { from, to, pending } = effectiveRange(null, turns);
+		const total = sumRange(turns, from, to);
+		const count = turns.filter((t) => t.index >= from && t.index <= to).length;
+		return { from, to, pending, total, count };
+	}
+
+	it("3 ターンなら、全体は #0〜#2・3 ターンになる（NaN にならない）", () => {
+		const { from, to, pending, total, count } = selectAll(TURNS);
+		expect(from).toBe(0);
+		expect(to).toBe(2);
+		expect(pending).toBe(false);
+		expect(count).toBe(3);
+		expect(Number.isNaN(from)).toBe(false);
+		expect(Number.isNaN(to)).toBe(false);
+		expect(total.cost).toBeCloseTo(0.14, 6);
+	});
+
+	it("ターン数が多くても、全体の件数はターン総数と一致する", () => {
+		const many: UsageTurn[] = Array.from({ length: 40 }, (_, i) =>
+			turn({ index: i, ts: 1700000000 + i * 100, prompt: `#${i}`, input: i, output: i, cost: 0.001 * i, last_ts: 1700000050 + i * 100 })
+		);
+		const { from, to, count } = selectAll(many);
+		expect(from).toBe(0);
+		expect(to).toBe(39);
+		expect(count).toBe(40);
+	});
+
+	it("1 ターンしか無いセッションでも壊れない", () => {
+		const single = [TURNS[0]];
+		const { from, to, count } = selectAll(single);
+		expect(from).toBe(0);
+		expect(to).toBe(0);
+		expect(count).toBe(1);
+	});
+});
+
 describe("toMarkdown（§D-45 コピー用）", () => {
 	it("表は選んだ区間のターンだけを出し、カードの値を見出しに付ける", () => {
 		const total = sumRange(TURNS, 1, 2);

@@ -133,11 +133,22 @@ export function nextSelection(cur: Selection, clickedIndex: number): Selection {
 	return { anchor: cur.anchor, end: clickedIndex };
 }
 
-/** 選択状態を、ターン表に効かせる実際の区間にする（開始行だけの間は、その 1 行だけの区間）。 */
+/**
+ * 選択状態を、ターン表に効かせる実際の区間にする（開始行だけの間は、その 1 行だけの区間）。
+ * 「全体」は `turns` の並び（先頭・末尾）に頼らず、全ターンの `index` の最小・最大から求める
+ * ——ターンが無ければ `{0, 0}`（NaN にはしない）。
+ */
 export function effectiveRange(sel: Selection, turns: UsageTurn[]): { from: number; to: number; pending: boolean } {
-	const first = turns[0]?.index ?? 0;
-	const last = turns[turns.length - 1]?.index ?? 0;
 	if (sel === null) {
+		if (turns.length === 0) {
+			return { from: 0, to: 0, pending: false };
+		}
+		let first = turns[0].index;
+		let last = turns[0].index;
+		for (const t of turns) {
+			if (t.index < first) first = t.index;
+			if (t.index > last) last = t.index;
+		}
 		return { from: first, to: last, pending: false };
 	}
 	if (sel.end === null) {
