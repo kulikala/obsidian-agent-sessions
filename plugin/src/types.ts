@@ -78,10 +78,10 @@ export interface Detail {
 	tools: string[];
 }
 
-/** `json usage ID` の 1 ターン（D-30）。`ts` は epoch 秒。 */
+/** `json usage ID` の 1 ターン（D-30, D-40）。`ts`／`last_ts` は epoch 秒（無ければ `null`）。 */
 export interface UsageTurn {
 	index: number;
-	ts: number;
+	ts: number | null;
 	prompt: string;
 	calls: number;
 	input: number;
@@ -89,10 +89,15 @@ export interface UsageTurn {
 	cache_read: number;
 	output: number;
 	thinking: number;
+	cost: number;
+	tools: Record<string, number>;
+	estimated: boolean;
+	last_ts: number | null;
+	context_last: number;
 	models: Record<string, number>;
 }
 
-/** `json usage ID` の合計（D-30）。 */
+/** `json usage ID` の合計（D-30, D-40）。`duration` は `first_ts`〜`last_ts` の秒数。 */
 export interface UsageTotal {
 	calls: number;
 	input: number;
@@ -100,6 +105,13 @@ export interface UsageTotal {
 	cache_read: number;
 	output: number;
 	thinking: number;
+	cost: number;
+	tools: Record<string, number>;
+	estimated: boolean;
+	duration: number | null;
+	first_ts: number | null;
+	last_ts: number | null;
+	context_last: number;
 }
 
 /** `json usage ID` の出力全体（D-30）。`from`／`to` は epoch 秒（指定が無ければ `null`）。 */

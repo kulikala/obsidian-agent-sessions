@@ -328,23 +328,253 @@
 	gap: var(--size-4-2);
 }
 
-/* ---- トークン集計モーダル（D-31） ---- */
-.agent-sessions-usage-controls {
+/* ---- セッション解析結果モーダル（D-45） ---- */
+.agent-sessions-usage-modal {
+	width: 90vw;
+	max-width: 1100px;
+	height: 85vh;
+}
+
+.agent-sessions-usage-modal .modal-content {
 	display: flex;
-	flex-wrap: wrap;
+	flex-direction: column;
+	height: 100%;
+	padding: 0;
+	overflow: hidden;
+}
+
+.agent-sessions-usage-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	flex: none;
+	gap: var(--size-4-3);
+	padding: var(--size-4-3) var(--size-4-4);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.agent-sessions-usage-title {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: var(--font-ui-large);
+	font-weight: var(--font-semibold);
+}
+
+.agent-sessions-usage-copy {
+	flex: none;
+}
+
+.agent-sessions-usage-body {
+	flex: 1 1 auto;
+	overflow-y: auto;
+	padding: var(--size-4-3) var(--size-4-4) var(--size-4-4);
+}
+
+.agent-sessions-usage-loading,
+.agent-sessions-usage-error {
+	padding: var(--size-4-4) 0;
+	color: var(--text-muted);
+}
+
+.agent-sessions-usage-error {
+	color: var(--text-error);
+}
+
+.agent-sessions-usage-subtitle {
+	display: flex;
 	align-items: center;
 	gap: var(--size-4-2);
 	margin-bottom: var(--size-4-3);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
 }
 
-.agent-sessions-usage-total {
-	margin-bottom: var(--size-4-2);
+.agent-sessions-usage-subtitle-label {
 	font-weight: var(--font-medium);
+}
+
+.agent-sessions-usage-whole-btn {
+	padding: 0 var(--size-4-2);
+	font-size: var(--font-ui-smaller);
+}
+
+.agent-sessions-usage-cards {
+	display: grid;
+	grid-template-columns: repeat(4, 1fr);
+	gap: var(--size-4-3);
+	margin-bottom: var(--size-4-4);
+}
+
+.agent-sessions-usage-card {
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background: var(--background-secondary);
+}
+
+.agent-sessions-usage-card-value {
+	font-size: var(--font-ui-larger);
+	font-weight: var(--font-bold);
+	font-variant-numeric: tabular-nums;
+}
+
+.agent-sessions-usage-card-label {
+	margin-top: var(--size-2-1);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+}
+
+.agent-sessions-usage-card-sub {
+	margin-top: var(--size-2-1);
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}
+
+.agent-sessions-usage-charts {
+	display: grid;
+	grid-template-columns: 1fr 1fr 1.2fr;
+	align-items: start;
+	gap: var(--size-4-3);
+	margin-bottom: var(--size-4-4);
+}
+
+.agent-sessions-usage-chart {
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background: var(--background-secondary);
+}
+
+.agent-sessions-usage-chart-title {
+	margin-bottom: var(--size-4-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+}
+
+.agent-sessions-usage-bar {
+	display: flex;
+	height: 10px;
+	overflow: hidden;
+	border-radius: var(--radius-s);
+	background: var(--background-modifier-border);
+}
+
+.agent-sessions-usage-bar-segment {
+	height: 100%;
+}
+
+.agent-sessions-usage-bar-segment.is-uncached {
+	background: var(--color-orange);
+}
+
+.agent-sessions-usage-bar-segment.is-cache-read {
+	background: var(--color-cyan);
+}
+
+.agent-sessions-usage-bar-segment.is-cache-create {
+	background: var(--color-blue);
+}
+
+.agent-sessions-usage-bar-segment.is-output {
+	background: var(--color-green);
+}
+
+.agent-sessions-usage-bar-segment.is-thinking {
+	background: var(--color-purple);
+}
+
+.agent-sessions-usage-legend {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+	margin-top: var(--size-4-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.agent-sessions-usage-legend-item {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-1);
+}
+
+.agent-sessions-usage-legend-dot {
+	flex: none;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+}
+
+.agent-sessions-usage-legend-dot.is-uncached {
+	background: var(--color-orange);
+}
+
+.agent-sessions-usage-legend-dot.is-cache-read {
+	background: var(--color-cyan);
+}
+
+.agent-sessions-usage-legend-dot.is-cache-create {
+	background: var(--color-blue);
+}
+
+.agent-sessions-usage-legend-dot.is-output {
+	background: var(--color-green);
+}
+
+.agent-sessions-usage-legend-dot.is-thinking {
+	background: var(--color-purple);
+}
+
+.agent-sessions-usage-empty {
+	color: var(--text-faint);
+	font-size: var(--font-ui-small);
+}
+
+.agent-sessions-usage-tool-row {
+	display: grid;
+	grid-template-columns: 7em 1fr 3em;
+	align-items: center;
+	gap: var(--size-4-2);
+	margin-bottom: var(--size-2-2);
+	font-size: var(--font-ui-smaller);
+}
+
+.agent-sessions-usage-tool-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text-muted);
+}
+
+.agent-sessions-usage-tool-bar {
+	height: 6px;
+	border-radius: var(--radius-s);
+	background: var(--background-modifier-border);
+}
+
+.agent-sessions-usage-tool-bar-fill {
+	height: 100%;
+	border-radius: var(--radius-s);
+	background: var(--interactive-accent);
+}
+
+.agent-sessions-usage-tool-count {
+	text-align: right;
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
 }
 
 .agent-sessions-usage-table {
 	width: 100%;
 	border-collapse: collapse;
+	table-layout: fixed;
 	font-size: var(--font-ui-small);
 }
 
@@ -355,9 +585,70 @@
 	text-align: left;
 }
 
-.agent-sessions-usage-table td:nth-child(n + 4) {
+.agent-sessions-usage-table th {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	background: var(--background-primary);
+}
+
+.agent-sessions-usage-table th:nth-child(1),
+.agent-sessions-usage-table td:nth-child(1) {
+	width: 3em;
+}
+
+.agent-sessions-usage-table th:nth-child(2),
+.agent-sessions-usage-table td:nth-child(2) {
+	width: 8em;
+}
+
+.agent-sessions-usage-table th:nth-child(4),
+.agent-sessions-usage-table td:nth-child(4),
+.agent-sessions-usage-table th:nth-child(5),
+.agent-sessions-usage-table td:nth-child(5),
+.agent-sessions-usage-table th:nth-child(6),
+.agent-sessions-usage-table td:nth-child(6) {
+	width: 5.5em;
+}
+
+.agent-sessions-usage-table .agent-sessions-usage-num {
 	text-align: right;
 	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+}
+
+.agent-sessions-usage-prompt {
+	max-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.agent-sessions-usage-table tbody tr {
+	cursor: pointer;
+}
+
+.agent-sessions-usage-table tbody tr:hover {
+	background: var(--background-modifier-hover);
+}
+
+.agent-sessions-usage-table tbody tr.is-selected {
+	background: var(--background-modifier-active-hover);
+}
+
+.agent-sessions-usage-table tbody tr.is-anchor {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -2px;
+}
+
+@media (max-width: 700px) {
+	.agent-sessions-usage-cards {
+		grid-template-columns: repeat(2, 1fr);
+	}
+
+	.agent-sessions-usage-charts {
+		grid-template-columns: 1fr;
+	}
 }
 
 /* ---- 以下は @xterm/xterm/css/xterm.css（esbuild は css を束ねないためここに置く） ---- */
