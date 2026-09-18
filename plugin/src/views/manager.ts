@@ -3,16 +3,30 @@
 // （状態の印・名前・時刻の整形、⋯ の行メニュー）は `rows.ts` を再利用する。
 
 import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
+import type { Row } from "../index";
 import type AgentSessionsPlugin from "../main";
 import { usage } from "../backend";
 import { NewSessionModal } from "../modals";
+import { VIEW_TYPE_TERMINAL } from "../open-session";
 import { loadStore } from "../store";
-import { buildManagerTree } from "../tree";
+import { buildManagerTree, splitName } from "../tree";
 import { renderDetail, type DetailContext } from "./detail";
 import { ARCHIVED_GROUP, flattenTree, moveSelection, type ManagerRow } from "./manager-model";
 import { createRowActions, displayName, formatTime, showRowMenu, statusMark, type RowActions } from "./rows";
 
 export const VIEW_TYPE_MANAGER = "agent-sessions-manager";
+
+/**
+ * 表の名前列に出す文字列。名前が有ればグループ名を除いた分（`splitName` の 2 要素目、
+ * TUI と同じ）——グループに属さない名前ならそのまま全体になる。名前が無ければ
+ * `displayName`（`label`／無題）に落ちる。
+ */
+function rowLabel(row: Row): string {
+	if (row.name) {
+		return splitName(row.name)[1];
+	}
+	return displayName(row);
+}
 
 export class ManagerView extends ItemView {
 	private plugin: AgentSessionsPlugin;
@@ -29,6 +43,8 @@ export class ManagerView extends ItemView {
 	private cursor = -1;
 	private detailId: string | null = null;
 	private actions!: RowActions;
+	/** 前面のターミナルタブのセッション（詳細パネルの既定表示に使う）。 */
+	private frontId: string | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: AgentSessionsPlugin) {
 		super(leaf);
@@ -56,10 +72,21 @@ export class ManagerView extends ItemView {
 		this.register(this.plugin.index.registry.onChange(() => this.render()));
 		this.register(this.plugin.index.statusline.onChange(() => this.refreshDetail()));
 		this.register(this.plugin.index.addVisible());
+		this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.onActiveLeafChange()));
 
 		void this.plugin.index.rescan();
 		this.render();
 		this.wrapEl.focus();
+	}
+
+	private onActiveLeafChange(): void {
+		const activeLeaf = this.app.workspace.activeLeaf;
+		const state = activeLeaf?.view.getViewType() === VIEW_TYPE_TERMINAL ? activeLeaf.getViewState().state : undefined;
+		const id = typeof state?.id === "string" ? state.id : undefined;
+		if (id) {
+			this.frontId = id;
+			this.refreshDetail();
+		}
 	}
 
 	// ---- 骨組み -----------------------------------------------------------------
@@ -73,6 +100,12 @@ export class ManagerView extends ItemView {
 		this.registerDomEvent(this.wrapEl, "keydown", (evt) => this.onListKeydown(evt));
 
 		const table = this.wrapEl.createEl("table", { cls: "agent-sessions-manager-table" });
+		const colgroup = table.createEl("colgroup");
+		colgroup.createEl("col", { cls: "agent-sessions-manager-col-mark" });
+		colgroup.createEl("col", { cls: "agent-sessions-manager-col-name" });
+		colgroup.createEl("col", { cls: "agent-sessions-manager-col-time" });
+		colgroup.createEl("col", { cls: "agent-sessions-manager-col-folder" });
+		colgroup.createEl("col", { cls: "agent-sessions-manager-col-menu" });
 		this.tableBodyEl = table.createEl("tbody");
 
 		this.detailEl = body.createDiv({ cls: "agent-sessions-manager-detail" });
@@ -200,7 +233,7 @@ export class ManagerView extends ItemView {
 
 		const markTd = tr.createEl("td", { cls: "agent-sessions-manager-col-mark" });
 		markTd.createSpan({ cls: `agent-sessions-row-mark ${statusMark(row)}` });
-		tr.createEl("td", { cls: "agent-sessions-manager-col-name", text: displayName(row) });
+		tr.createEl("td", { cls: "agent-sessions-manager-col-name", text: rowLabel(row) });
 		tr.createEl("td", { cls: "agent-sessions-manager-col-time", text: formatTime(row.last_activity) });
 		tr.createEl("td", { cls: "agent-sessions-manager-col-folder", text: row.folder });
 
@@ -294,14 +327,35 @@ export class ManagerView extends ItemView {
 
 	// ---- 詳細パネル -----------------------------------------------------------------
 
+	/**
+	 * 選択が有ればそれ、無ければ既定（前面のターミナルタブのセッション、無ければ表の
+	 * 最初のセッション行）を表示する。どちらも無ければ空にする（実機修正：D-44）。
+	 */
 	private refreshDetail(): void {
 		const mrow = this.rows[this.cursor];
 		if (mrow?.kind === "session") {
 			void this.showDetailFor(mrow.row.id);
+			return;
+		}
+		const id = this.defaultDetailId();
+		if (id) {
+			void this.showDetailFor(id);
 		} else {
 			this.detailId = null;
 			renderDetail(this.detailEl, null);
 		}
+	}
+
+	private defaultDetailId(): string | null {
+		if (this.frontId && this.plugin.index.sessions.has(this.frontId)) {
+			return this.frontId;
+		}
+		for (const mrow of this.rows) {
+			if (mrow.kind === "session") {
+				return mrow.row.id;
+			}
+		}
+		return null;
 	}
 
 	private async showDetailFor(id: string): Promise<void> {
