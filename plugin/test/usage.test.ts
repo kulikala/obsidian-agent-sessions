@@ -156,6 +156,11 @@ describe("formatK（§D-45 k／M 表記）", () => {
 	it("丸めで k から M へ繰り上がる場合は M 側を出す", () => {
 		expect(formatK(999950)).toBe("1.0M");
 	});
+
+	it("十億は B、小数 1 桁。丸めで M から B へ繰り上がる場合は B 側を出す", () => {
+		expect(formatK(1_234_000_000)).toBe("1.2B");
+		expect(formatK(999_950_000)).toBe("1.0B");
+	});
 });
 
 describe("formatCost（§D-45 コスト表記）", () => {

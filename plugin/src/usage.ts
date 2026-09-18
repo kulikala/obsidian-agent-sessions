@@ -64,7 +64,8 @@ export function formatNumber(n: number): string {
 	return n.toLocaleString("en-US");
 }
 
-/** `999`→`999`、`1,234`→`1.2k`、`1,234,567`→`1.2M`。カードとターン表の入出力に使う。 */
+/** `999`→`999`、`1,234`→`1.2k`、`1,234,567`→`1.2M`、`1,234,000,000`→`1.2B`。
+ * カードとターン表の入出力、詳細ビューの総トークンに使う。 */
 export function formatK(n: number): string {
 	const abs = Math.abs(n);
 	if (abs < 1000) {
@@ -78,7 +79,15 @@ export function formatK(n: number): string {
 		}
 		return `${(n / 1000).toFixed(1)}k`;
 	}
-	return `${(n / 1_000_000).toFixed(1)}M`;
+	if (abs < 1_000_000_000) {
+		// 同じ理由で、M から B へ繰り上がる場合（例: 999,950,000 → 1.0B）は B 側の表記に回す。
+		const rounded = Math.round(n / 100_000) * 100_000;
+		if (Math.abs(rounded) >= 1_000_000_000) {
+			return formatK(rounded);
+		}
+		return `${(n / 1_000_000).toFixed(1)}M`;
+	}
+	return `${(n / 1_000_000_000).toFixed(1)}B`;
 }
 
 /** `$0.005` 未満は `<$0.01`、それ以外は小数 2 桁。 */

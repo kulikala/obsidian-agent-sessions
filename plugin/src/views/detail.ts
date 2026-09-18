@@ -5,6 +5,7 @@
 import type { Row } from "../index";
 import type { StatusInfo } from "../statusline";
 import type { Detail, UsageResult, UsageTotal } from "../types";
+import { formatK } from "../usage";
 
 export interface DetailContext {
 	row: Row;
@@ -27,10 +28,6 @@ export function totalTokens(total: Pick<UsageTotal, "input" | "output" | "cache_
 /** `$x.xx`。 */
 export function formatCost(cost: number): string {
 	return `$${cost.toFixed(2)}`;
-}
-
-function formatCount(n: number): string {
-	return n.toLocaleString("ja-JP");
 }
 
 function displayName(row: Row): string {
@@ -173,7 +170,7 @@ export function renderDetail(container: HTMLElement, ctx: DetailContext | null):
 		if (container.dataset.rowId !== row.id) {
 			return;
 		}
-		tokens.valueEl.setText(total ? formatCount(totalTokens(total)) : "—");
+		tokens.valueEl.setText(total ? formatK(totalTokens(total)) : "—");
 		cost.valueEl.setText(total ? formatCost(total.cost) : "—");
 	};
 
