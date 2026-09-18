@@ -75,6 +75,8 @@ export interface LiveResult {
 export interface Detail {
 	last_user: string | null;
 	last_assistant: string | null;
+	/** 直近のスラッシュコマンド名（例 `/compact`。引数は含めない）。無ければ `null`。 */
+	last_command: string | null;
 	tools: string[];
 }
 

@@ -16,7 +16,6 @@ import { EditServer, type EditReply, type EditRequest } from "./edit-server";
 import { SessionIndex } from "./index";
 import { applyNewlineKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./keybindings";
 import { deriveKeysFromKeybindings } from "./keys";
-import { lastInstructionIsCompact, readTailLines } from "./last-instruction";
 import { buildAtToken, selectionLineRange } from "./links";
 import { ConfirmModal, NewSessionModal, RenameSessionModal } from "./modals";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./open-session";
@@ -433,15 +432,21 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 	}
 
-	/** 直近の指示が `/compact` か（transcript の末尾で見る。D-42）。 */
-	lastInstructionIsCompact(id: string): boolean {
-		const transcript = this.index.sessions.get(id)?.transcript;
-		return !!transcript && lastInstructionIsCompact(readTailLines(transcript));
+	/**
+	 * 直近の指示が `/compact` か（`json detail` の `last_command`。transcript を読むのは Python だけ、R-C5）。
+	 * `index.getDetail` のキャッシュがあればそれ、無ければ取得する。
+	 */
+	async lastInstructionIsCompact(id: string): Promise<boolean> {
+		try {
+			return (await this.index.getDetail(id)).last_command === "/compact";
+		} catch {
+			return false;
+		}
 	}
 
 	/** 圧縮：直近の指示が `/compact` なら何もしない。それ以外は `/compact` を送る（タブが無くても。D-42）。 */
 	async compactSession(id: string): Promise<void> {
-		if (this.lastInstructionIsCompact(id)) {
+		if (await this.lastInstructionIsCompact(id)) {
 			new Notice("直近の指示が /compact のため、圧縮は送りません");
 			return;
 		}

@@ -718,10 +718,17 @@ export class TerminalView extends ItemView {
 
 	// ---- ⋯ メニュー（D-42） ---------------------------------------------------------
 
-	/** Obsidian 標準の項目（右／下に分割を含む）の後に、区切り線とセッションの操作を足す。 */
+	/**
+	 * Obsidian 標準の項目（右／下に分割を含む）の後に、区切り線とセッションの操作を足す。
+	 * 「セッションを圧縮」の非活性は `index.getCachedDetail` の `last_command`（同期。未取得なら活性のまま
+	 * にし、`compactSession` 側が改めて判定する）。
+	 */
 	onPaneMenu(menu: Menu, source: "more-options" | "tab-header" | string): void {
 		super.onPaneMenu(menu, source);
 		const id = this.id;
+		const lastCommand = this.plugin.index.getCachedDetail(id)?.last_command ?? null;
+		// 未取得なら次に開くときのために取っておく。
+		void this.plugin.index.getDetail(id).catch(() => undefined);
 		menu.addSeparator();
 		menu.addItem((item) =>
 			item
@@ -735,7 +742,7 @@ export class TerminalView extends ItemView {
 			item
 				.setTitle("セッションを圧縮")
 				.setIcon("fold-vertical")
-				.setDisabled(this.plugin.lastInstructionIsCompact(id))
+				.setDisabled(lastCommand === "/compact")
 				.onClick(() => void this.plugin.compactSession(id))
 		);
 		menu.addItem((item) =>

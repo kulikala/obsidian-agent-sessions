@@ -42,7 +42,7 @@ describe("SessionIndex", () => {
 			live: () => liveImpl(),
 			detail: async (id): Promise<Detail> => {
 				detailCalls.push(id);
-				return { last_user: "hi", last_assistant: null, tools: [] };
+				return { last_user: "hi", last_assistant: null, last_command: null, tools: [] };
 			},
 			storePath: join(dir, "sessions.json"),
 			eventsLogPath: join(dir, "events.log"),
