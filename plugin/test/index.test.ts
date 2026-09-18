@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -190,5 +190,31 @@ describe("SessionIndex", () => {
 		await index.getDetail("a");
 		await index.getDetail("a");
 		expect(detailCalls).toEqual(["a"]);
+	});
+
+	it("invalidateDetail はキャッシュを消し、次の getDetail が呼び直す", async () => {
+		const index = new SessionIndex(deps);
+		await index.getDetail("a");
+		expect(detailCalls).toEqual(["a"]);
+
+		index.invalidateDetail("a");
+		await index.getDetail("a");
+		expect(detailCalls).toEqual(["a", "a"]);
+	});
+
+	it("registry の busy→idle で detail キャッシュを自動で捨てる（/compact・/rename の後を想定）", async () => {
+		mkdirSync(deps.sessionsDir, { recursive: true });
+		const sessionFile = join(deps.sessionsDir, "a.json");
+		writeFileSync(sessionFile, JSON.stringify({ pid: process.pid, sessionId: "a", status: "busy" }), "utf8");
+
+		const index = new SessionIndex(deps);
+		await index.getDetail("a");
+		expect(detailCalls).toEqual(["a"]);
+
+		writeFileSync(sessionFile, JSON.stringify({ pid: process.pid, sessionId: "a", status: "idle" }), "utf8");
+		index.registry.refresh();
+
+		await index.getDetail("a");
+		expect(detailCalls).toEqual(["a", "a"]);
 	});
 });

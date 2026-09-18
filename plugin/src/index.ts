@@ -65,6 +65,7 @@ export class SessionIndex extends EventEmitter {
 	private eventsWatcher: fs.FSWatcher | null = null;
 	private eventsDebounce: ReturnType<typeof setTimeout> | null = null;
 	private registryUnsubscribe: () => void;
+	private registryIdleUnsubscribe: () => void;
 	private liveDebounce: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(private deps: SessionIndexDeps) {
@@ -76,6 +77,9 @@ export class SessionIndex extends EventEmitter {
 			this.scheduleLiveRefresh();
 			this.emit("change");
 		});
+		// busy→idle（/compact・/rename の送信が終わった直後を含む）で detail のキャッシュを
+		// 捨てる。次の getDetail が新しい last_command・last_user 等を読み直す。
+		this.registryIdleUnsubscribe = this.registry.onIdle((id) => this.invalidateDetail(id));
 		this.eventsOffset = this.currentEventsLogSize();
 	}
 
@@ -133,6 +137,11 @@ export class SessionIndex extends EventEmitter {
 	/** `getDetail` が既に取得済みならそれを同期で返す。無ければ `null`（ここでは取得しない）。 */
 	getCachedDetail(id: string): Detail | null {
 		return this.detailCache.get(id) ?? null;
+	}
+
+	/** `id` の detail キャッシュを捨てる。次の `getDetail`/`getCachedDetail` は読み直す。 */
+	invalidateDetail(id: string): void {
+		this.detailCache.delete(id);
 	}
 
 	/** 全走査（`rescan()` と同じ）。 */
@@ -241,6 +250,7 @@ export class SessionIndex extends EventEmitter {
 
 	dispose(): void {
 		this.registryUnsubscribe();
+		this.registryIdleUnsubscribe();
 		if (this.timer) {
 			clearInterval(this.timer);
 			this.timer = null;

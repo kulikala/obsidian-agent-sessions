@@ -19,9 +19,10 @@ export interface RowActions {
 	/** セッション解析結果のモーダルを開く（D-31・D-45）。 */
 	showUsage(id: string): void;
 	/**
-	 * 直近の指示（`clean_text` 後）。取得済みなら同期で返す——`json detail` を新たに
-	 * 呼ばない（`index.getCachedDetail`）。無ければ `undefined`（「セッションを圧縮」を
-	 * 非活性にしない）。
+	 * 直近のスラッシュコマンド（`json detail` の `last_command`。例 `/compact`。引数は
+	 * 含めない）。取得済みなら同期で返す——新たに `json detail` を呼ばない
+	 * （`index.getCachedDetail`）。無ければ `undefined`（「セッションを圧縮」を非活性に
+	 * しない）。
 	 */
 	lastUserPrompt?(id: string): string | undefined;
 }
@@ -239,6 +240,6 @@ export function createRowActions(
 		showDetail: onShowDetail,
 		hideDetail: onHideDetail,
 		showUsage: (id) => plugin.showUsage(id),
-		lastUserPrompt: (id) => plugin.index.getCachedDetail(id)?.last_user ?? undefined,
+		lastUserPrompt: (id) => plugin.index.getCachedDetail(id)?.last_command ?? undefined,
 	};
 }
