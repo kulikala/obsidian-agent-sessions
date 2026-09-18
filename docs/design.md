@@ -382,3 +382,83 @@ Claude Code は `~/.claude/keybindings.json`（`$CLAUDE_CONFIG_DIR` 配下。vau
 ### 11.3 プラグイン
 
 行メニュー「トークン集計」→ モーダル（`src/usage-modal.ts`）。上に区間の合計、「から」「まで」のドロップダウン（ターン #）、「全体」「コピー」、下にターンの表。合計の計算と Markdown 化は `src/usage.ts` の純関数（`sumRange`・`toMarkdown`。表は区間のターンだけ）。
+
+## 12. 改修（段 5：2026-09-16 の指示）
+
+### 12.1 事実と判断
+
+- **コスト**：`message.usage` に価格（$/MTok）を掛ける。価格表は Python 側（`agentsessions/pricing.py`）に置き、`json usage` が `cost` を返す。単価は入力・出力を表で持ち、cache 作成 5 分＝入力×1.25、1 時間＝入力×2、cache 読出＝入力×0.1（例外は表に明記）。モデル ID の前方一致で引く（長い方を優先）：
+
+| ID の前方 | 入力 | 出力 | cache 読出 |
+|---|---|---|---|
+| `claude-fable-5-1`・`claude-mythos-5-1` | 10 | 50 | 0.25（例外） |
+| `claude-fable-5`・`claude-mythos-5` | 10 | 50 | 1.0 |
+| `claude-opus-5`・`claude-opus-4-8`・`claude-opus-4-7`・`claude-opus-4-6`・`claude-opus-4-5` | 5 | 25 | 0.5 |
+| `claude-opus-4-1`・`claude-opus-4` | 15 | 75 | 1.5 |
+| `claude-sonnet-5` | 2 | 10 | 0.2 |
+| `claude-sonnet-4-6`・`claude-sonnet-4-5`・`claude-sonnet-4`・`claude-3-7-sonnet` | 3 | 15 | 0.3 |
+| `claude-haiku-4-5` | 1 | 5 | 0.1 |
+| `claude-3-5-haiku` | 0.8 | 4 | 0.08 |
+| `claude-3-haiku` | 0.25 | 1.25 | 0.03 |
+`cache_creation.ephemeral_1h_input_tokens` があれば 1 時間の単価、残りは 5 分。未知のモデルは Opus の単価で見積もり `estimated: true`。
+- **ツール使用**：`assistant` 行の `content` の `tool_use` ブロックを名前で数える（`message.id` で重複排除）。
+- **期間**：最初の指示から最後の assistant 行までの経過。
+- **セッション制限**：`status/<id>.json` の `rate_limits.five_hour/seven_day.{used_percentage, resets_at}`。アカウント共通なので、`rate_limits` を持つファイルのうち最新の mtime のものから取る（前提：アカウントを切り替えて並行使用しない）。カウントダウンは 1 秒毎に `resets_at − now`。
+- **Ctrl+S の事実（実機で確認、Claude Code 2.1.276）**：`~/.claude/keybindings.json` の `Chat` に `chat:stash`（既定 `ctrl+s`）がある。入力中に `\x13` を送るとプロンプトの右上に「› stashed」と出て入力欄が空になり、もう一度 `\x13` で下書きが戻る。stash したまま別の指示を送ると、送信の後に下書きが自動で戻る（「Draft restored」）。Claude Code は端末を raw mode にするので XOFF にはならない。下書きが空で退避も無いときの `\x13` は何もしない。
+- **`/compact`・`/rename` の送り方**（`main.ts` の `sendCommand(id, text)`）：
+  1. タブがあり attach 済み → xterm の画面で入力行（最後の `❯ ` の行）が空か見る。空でなければ `\x13`（Ctrl+S＝`chat:stash`、下書きを退避）。コマンドは **bracketed paste**（`\x1b[200~` + text + `\x1b[201~`。文字を打つと `/` の補完が開いて壊れる）で入れ、送信キーを送る。**復元は送らない**：Claude Code は stash した下書きを次の送信の後に自動で戻す（「Draft restored」）。
+  2. タブは無いがデーモンにある → 一時的に attach して同じ手順（画面が無いので `\x13` を無条件に送る。下書きが無ければ何も起きない）。
+  3. デーモンに無い → **裏で起動**：`start`（`--resume`）→ registry の状態が `idle` になったら送信 → `idle` に戻ったら `/exit` を送信 → `exit` で `forget`。進行は `Notice` で知らせる（「名前を変更しています…」）。
+  - 「状態が `idle` になったら」は**遷移イベントではなく状態を待つ**：`registry.waitFor(id, 'idle', timeoutMs)`（`refresh` のたびに `get(id)?.status` を見る。初めて観測する id でも成り立つ。既定 60 秒で諦めて `Notice`）。`Registry.refresh()` は、初めて現れた id が `busy` ならその時点で `busy` を発火する（応答マーカーが新規セッションでも記録されるように）。
+  - 新規セッション（名前つき）は、`start` の後に同じ `waitFor(id,'idle')` → `sendCommand(id, '/rename NAME')`。`pendingRenames` は使わない。
+  - 送信キー：設定の改行キーが `enter` なら `\x1b\r`（meta+enter＝送信）、それ以外は `\r`。
+  - 直近の指示が `/compact` かどうかは `json detail` の `last_user`（`clean_text` 後）で判定。`pendingRenames` は廃止（`store` の項目は読み飛ばし、書かない）。
+- **fullscreen レイアウト**：`~/.claude/settings.json` の `"tui": "fullscreen"` のとき、Claude Code は全面再描画でスクロールを自前で持ち、xterm のスクロールバックには溜まらない（`buffer.length === rows`）。この状態ではマーカー方式のジャンプは成り立たないので、3 つのボタンは Claude のスクロールキー（PageUp・PageDown・End）を送る。
+- **分割**：`TerminalView.setState` の「同じ id の別 leaf があれば自分を閉じる」を外す。`openSession` は既存タブへ移動のまま（重複を作らない）。⋯ の「右に分割」「下に分割」は `app.workspace.duplicateLeaf(leaf, 'vertical' | 'horizontal')`。Obsidian 標準の「タブを複製」も同様に複数ビューになる（許容。どれも同じセッションに attach し、閉じれば detach）。複数ビューはそれぞれ attach（デーモンの最小サイズ規則）。
+- **改行キー**：設定 `newlineKey`（5 択、既定 `shift+enter`）。ターミナルは、押されたキーが `newlineKey` なら `\x1b\r`（Claude の meta+enter＝改行）を送る。`enter` を選んだときだけ `keybindings.json` の `Chat` に `enter: chat:newline`・`meta+enter: chat:submit` を書き、送信キーは設定 `submitKey`（`meta+enter`／`ctrl+enter`／`shift+enter`／`super+enter`、既定 `super+enter`）で、押されたら `\x1b\r` を送る。`enter` 以外を選んだら `keybindings.json` から自分が書いた 2 鍵を消す。Option+Enter は xterm が元々 `\x1b\r` を送るので、設定に関わらず改行になる（設定画面に注記）。設定画面はこれまでどおり開くたびに `keybindings.json` を読む。
+- **`@`**：`workspace.activeEditor` はターミナルにフォーカスがあると null。`main.ts` が `active-leaf-change` で最後に前面だった Markdown leaf（`MarkdownView`）を覚え、`lastMarkdownView()` として公開する。ターミナルのヘッダの `@` とコマンド `insertNoteAt` の両方がこれを使う。
+- **ジャンプ**：指示マーカーは `onData` に `\r` が含まれたときに記録しているが、`\x1b\r`（改行）も `\r` を含むため誤記録し、送信の `\r` は `sendInput` 経由で `onData` を通らない。`handleKey` が **無修飾の Enter も横取り**して（IME 中を除く）`sendSubmit()` を呼び、修飾つきの送信キーも同じ関数を通す。`sendSubmit()` が送信列を書き、指示マーカーを記録する。`onData` からの `\r` 記録は消す。応答マーカーは registry の `busy`（初回観測を含む、上の修正）。ジャンプは `scrollToLine(marker.line)`。
+- **余白のスクロールバー**：`.agent-sessions-terminal-body` に `overflow: hidden`、`fit()` は padding を引いた領域で計算（`FitAddon` は要素の `padding` を見るので、padding を xterm の親ではなく外側の要素に付ける）。
+- **エディタ中のキー**：`pendingEdit` がある間は `attachCustomKeyEventHandler` で全部 `false`（xterm に渡さない）にし、`onData` も捨てる。
+- **`statusLine`**：`agent-sessions status` の 1 行を `Opus 5 · high · ctx 6% · rc ●` に（effort は `effort.level`、rc は `~/.claude/sessions/*.json` の `sessionId` 一致行の `bridgeSessionId`）。
+- **詳細ビューの総トークン・総コスト**：選択（または前面）のセッションについて `json usage` を呼ぶ（キャッシュ 60 秒）。
+- **サイドパネルの領域**：CSS grid の行 `auto 1fr <detailHeight> auto`。一覧と詳細の間に 4px のハンドル（`mousedown`→`mousemove` で `detailHeight` を更新、`mouseup` で設定に保存 `sideDetailHeight`、既定 220px、最小 80px）。
+
+### 12.2 作り
+
+#### 12.2.1 Python：`json usage` の拡張・`status` の 1 行（I-60, I-62, I-67）
+
+- `agentsessions/pricing.py`：`price_of(model) -> {input, output, cache_5m, cache_1h, cache_read, estimated}`（$/MTok）。`cost(usage_dict, model) -> float`。
+- `usage.py`：各ターンに `cost`（$）・`tools: {name: count}`・`models` を、`total` に `cost`・`tools`・`duration`（秒）・`first_ts`・`last_ts`・`context_last`（最後の呼出の `input + cache_read + cache_create`）を足す。`estimated: true` を持つターンがあれば `total.estimated = true`。
+- `hooks.format_status_line`：`モデル · エフォート · ctx NN% · rc ●/○`。
+- テスト：`test_pricing.py`（各表・1h・未知モデル）、`test_usage.py`（cost・tools・duration）。
+
+#### 12.2.2 プラグイン：設定とキー（I-68）
+
+- `settings.ts`：`newlineKey`（既定 `shift+enter`）・`submitKey`（既定 `super+enter`、`newlineKey === 'enter'` のときだけ表示）・`sideDetailHeight`・`pythonPath` の既定 `''`。`enterMode` の設定項目は廃止し、`keybindings.ts` は `applyNewlineKey(path, newlineKey)`（`enter` なら 2 鍵を書き、それ以外なら自分の 2 鍵を消す）に変える。
+- 設定タブの文言：「Enter を改行にする場合は `~/.claude/keybindings.json` に書くため、他のターミナルアプリで起動した claude にも効きます」「空欄時のデフォルト: $(which claude)」「空欄時のデフォルト: ~/bin/agent-sessions」「空欄時のデフォルト: /usr/bin/python3」。
+- `views/terminal.ts` の `handleKey`：Enter の修飾（shift／alt／ctrl／meta）を `newlineKey`／`submitKey` に照合。`sendSubmit()` を 1 箇所に集約（マーカー記録もここ）。
+
+#### 12.2.3 プラグイン：セッションタブ・コマンド送信・名前変更・圧縮（I-64, I-65, I-66）
+
+- `main.ts`：`sendCommand(id, text)`（上の 3 経路）、`renameSession`・`compactSession` はこれを使う。`pendingRenames` の送信・確定の仕組みを外す（`index.ts` の `PendingRenamer` も外す）。`RenameModal`：広い入力（`width: 100%`）、「変更」「キャンセル」、Enter では確定しない。
+- `views/terminal.ts`：余白のスクロールバー、エディタ中のキー遮断、`@`（最後の Markdown leaf）、ジャンプ、⋯ メニュー（`onPaneMenu`：Obsidian 標準の項目（右に分割・下に分割を含む）の後に **区切り線**／名前を変更／セッションを圧縮／セッション解析結果を表示／ID をコピー）、`setState` の自己閉鎖を外す。
+- `rows.ts` の行メニュー：「圧縮」→「セッションを圧縮」（直近が `/compact` なら `setDisabled(true)`）、「トークン集計」→「セッション解析結果」、「フォルダを開く」を外す。`rows.ts` の `renderDetailPane` と `pendingRename`（「（未適用）」）の表示は消し、詳細は `views/detail.ts` に一本化する（T-43 で置き換え）。
+
+#### 12.2.4 プラグイン：サイドパネル（I-61, I-62）
+
+- `views/side.ts`：4 領域の grid、ナビ（`＋` `layout-grid`（マネージャー） … `⋯`：設定・再走査）、一覧（行の右に常に `⋯`）、ハンドル、詳細、制限ビュー。
+- `views/detail.ts`（新規、共通部品）：名前・バッジ（モデル／エフォート／rc）・円グラフ（SVG、`ctxPercent`）・総トークン／総コスト（`json usage` を 60 秒キャッシュ）・直近の指示／応答（`-webkit-line-clamp: 6`、クリックで展開）・ツール・フォルダ・ID。
+- `views/limits.ts`（新規）：5h／7d のバー＋`used%`＋「リセットまで h:mm:ss」（1 秒更新。`resets_at` が無ければ「—」）。
+
+#### 12.2.5 プラグイン：マネージャー（I-63）
+
+- `views/manager.ts`：左＝表（グループ見出し行に件数と折畳、行＝印・名前・最終更新・フォルダ；選択行の強調；↑↓ で移動、Enter で開く、`/` で絞込にフォーカス）、右＝詳細パネル（`views/detail.ts`）。ツールバー：`＋`・`再走査（rotate-cw）`・絞込・`⋯`（「アーカイブを表示」チェック）。CSS は `agent-sessions-manager` 配下で独自（罫線・等幅の日時列）。
+
+#### 12.2.6 プラグイン：セッション解析結果（I-60）
+
+- `usage-modal.ts` を作り直す：`modalEl.addClass('agent-sessions-usage-modal')`（CSS：`width: 90vw; max-width: 1100px`）。固定ヘッダ（題名「セッション解析結果：<名前>」・コピー・閉じる）。要約カード 4 枚（コスト $・トークン（入力合計、下に出力）・ターン数・期間）。入力バー（cache 読出／cache 作成／非キャッシュの割合、凡例に数）、出力バー。ツール使用（横バー、上位 12）。ターン表（#・時刻・指示（`text-overflow: ellipsis`、ホバーで全文）・入力・出力・コスト）。区間：行クリックで開始、次のクリックで終了（範囲を強調）、もう一度で解除。カードとバーは区間の値、副題に「#a〜#b」。読み込み中は本文だけに表示し、完了で消す。`usage.ts` に `formatK`（1,234→1.2k、1,234,567→1.2M）・`sumRange` に cost・tools を足す。
+
+#### 12.2.7 文書・記録
+
+- `docs/design.md` §6・§10・§11 を更新、`docs/requirements.md` の R-S6・R-S8・R-T5b を現状に合わせる。README。`plan/04-実行記録.md` に I-60〜I-69。
