@@ -1,9 +1,10 @@
 /* Agent Sessions — サイドパネル・マネージャー・ターミナル */
 
 .agent-sessions-side {
-	display: flex;
-	flex-direction: column;
+	display: grid;
+	grid-template-rows: auto 1fr var(--as-detail-h, 220px) auto;
 	height: 100%;
+	min-height: 0;
 }
 
 .agent-sessions-manager {
@@ -11,19 +12,32 @@
 	overflow-y: auto;
 }
 
-/* ---- メニュー行・ツールバー（§6.1・§6.2） ---- */
+/* ---- ナビ・ツールバー（§6.1・§6.2・D-43） ---- */
 
-.agent-sessions-menu-row,
+.agent-sessions-nav {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	padding: var(--size-4-2);
+	flex: 0 0 auto;
+}
+
+.agent-sessions-nav-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+.agent-sessions-nav-more {
+	margin-left: auto;
+}
+
 .agent-sessions-toolbar {
 	display: flex;
 	align-items: center;
 	gap: var(--size-4-2);
 	padding: var(--size-4-2);
 	flex-wrap: wrap;
-}
-
-.agent-sessions-menu-more {
-	margin-left: auto;
 }
 
 .agent-sessions-toolbar input[type="text"] {
@@ -35,12 +49,29 @@
 	color: var(--text-accent);
 }
 
-/* ---- 一覧・木（§6.1・§6.2） ---- */
+/* ---- 一覧・木（§6.1・§6.2・D-43） ---- */
+
+.agent-sessions-list-wrap {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+}
 
 .agent-sessions-list,
 .agent-sessions-tree {
 	flex: 1 1 auto;
 	overflow-y: auto;
+}
+
+/* 一覧と詳細の間のドラッグハンドル（4px、D-43）。 */
+.agent-sessions-drag-handle {
+	flex: 0 0 4px;
+	cursor: row-resize;
+	background-color: var(--background-modifier-border);
+}
+
+.agent-sessions-drag-handle:hover {
+	background-color: var(--text-accent);
 }
 
 .agent-sessions-section-title,
@@ -116,7 +147,6 @@
 	white-space: nowrap;
 }
 
-.agent-sessions-row-pending,
 .agent-sessions-row-time,
 .agent-sessions-row-tab-mark {
 	flex: 0 0 auto;
@@ -124,6 +154,7 @@
 	font-size: var(--font-ui-smaller);
 }
 
+/* 常時表示（D-43）。 */
 .agent-sessions-row-menu-btn {
 	flex: 0 0 auto;
 	padding: 0 var(--size-4-1);
@@ -134,23 +165,105 @@
 	color: var(--text-normal);
 }
 
-/* ---- 詳細欄（§6.1） ---- */
+/* ---- 詳細欄（§6.1・D-43） ---- */
 
-.agent-sessions-detail-toggle {
-	padding: var(--size-4-1) var(--size-4-3);
+.agent-sessions-detail {
+	padding: var(--size-4-2) var(--size-4-3);
 	font-size: var(--font-ui-smaller);
+	overflow-y: auto;
+	min-height: 0;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.agent-sessions-detail-name {
+	margin: 0 0 var(--size-4-2);
+	font-size: var(--font-ui-medium);
+}
+
+.agent-sessions-detail-badges {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-1);
+	margin-bottom: var(--size-4-2);
+}
+
+.agent-sessions-badge {
+	padding: 1px var(--size-4-2);
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-hover);
 	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.agent-sessions-badge-rc.is-active {
+	background-color: var(--background-modifier-success, var(--background-modifier-hover));
+	color: var(--text-success, var(--text-accent));
+}
+
+.agent-sessions-detail-stats {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	margin-bottom: var(--size-4-2);
+}
+
+.agent-sessions-donut svg {
+	display: block;
+}
+
+.agent-sessions-donut-bg {
+	fill: none;
+	stroke: var(--background-modifier-border);
+}
+
+.agent-sessions-donut-fg {
+	fill: none;
+	stroke: var(--text-accent);
+	stroke-linecap: round;
+	transition: stroke-dashoffset 0.2s ease;
+}
+
+.agent-sessions-donut-text {
+	fill: var(--text-muted);
+	font-size: 8px;
+}
+
+.agent-sessions-detail-stats-text {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.agent-sessions-detail-cards {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	margin-bottom: var(--size-4-2);
+}
+
+.agent-sessions-detail-card {
+	padding: var(--size-4-2);
+	border-radius: var(--radius-s);
+	background-color: var(--background-secondary);
 	cursor: pointer;
 }
 
-.agent-sessions-detail {
-	padding: 0 var(--size-4-3) var(--size-4-2);
+.agent-sessions-detail-card-label {
+	margin-bottom: var(--size-2-1);
+	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
-	overflow-y: auto;
 }
 
-.agent-sessions-detail.is-collapsed {
-	display: none;
+.agent-sessions-detail-card-body {
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.agent-sessions-detail-card-body.is-clamped {
+	display: -webkit-box;
+	-webkit-line-clamp: 6;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
 }
 
 .agent-sessions-detail-field {
@@ -167,43 +280,95 @@
 	word-break: break-word;
 }
 
-/* ---- ステータスバー（§6.1） ---- */
-
-.agent-sessions-status-bar {
-	padding: var(--size-4-1) var(--size-4-3);
-	font-size: var(--font-ui-smaller);
+.agent-sessions-detail-icon-btn {
+	display: inline-flex;
+	margin-left: var(--size-4-1);
 	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.agent-sessions-detail-icon-btn:hover {
+	color: var(--text-normal);
+}
+
+/* ---- セッション制限ビュー（§6.1・D-43） ---- */
+
+.agent-sessions-limits {
+	padding: var(--size-4-2) var(--size-4-3);
+	font-size: var(--font-ui-smaller);
 	border-top: 1px solid var(--background-modifier-border);
-	white-space: nowrap;
+}
+
+.agent-sessions-limits-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding: 2px 0;
+}
+
+.agent-sessions-limits-label {
+	flex: 0 0 auto;
+	width: 1.6em;
+	color: var(--text-muted);
+}
+
+.agent-sessions-limits-bar {
+	flex: 1 1 auto;
+	height: 6px;
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-border);
 	overflow: hidden;
-	text-overflow: ellipsis;
+}
+
+.agent-sessions-limits-bar-fill {
+	height: 100%;
+	background-color: var(--text-accent);
+}
+
+.agent-sessions-limits-pct {
+	flex: 0 0 auto;
+	width: 2.4em;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+}
+
+.agent-sessions-limits-countdown {
+	flex: 0 0 auto;
+	color: var(--text-muted);
 }
 
 /* ---- ターミナル（§6.3） ---- */
 
-.agent-sessions-terminal {
+/* Obsidian の `.workspace-leaf-content .view-content` は padding と overflow: auto を持つ。
+   同じ詳細度で上書きできないので、leaf 側から書いて余白 0・はみ出し隠しにする（D-42）。 */
+.workspace-leaf-content .view-content.agent-sessions-terminal {
 	position: relative;
 	padding: 0;
 	overflow: hidden;
 }
 
-/* 余白は `--as-pad`（ゆったり 12px／コンパクト 4px／なし 0）。
-   content-box にして fit が余白を除いた領域で計れるようにする。 */
+/* 余白は `--as-pad`（ゆったり 12px／コンパクト 4px／なし 0）。padding は xterm の親ではなく
+   この外側の要素に付ける（FitAddon は xterm の親の計算済み幅・高さで列数・行数を決める）。 */
 .agent-sessions-terminal-body {
 	position: absolute;
 	inset: 0;
-	box-sizing: content-box;
+	box-sizing: border-box;
 	padding: var(--as-pad, 12px);
 	background-color: var(--background-primary);
 	display: flex;
 	flex-direction: column;
+	overflow: hidden;
 }
 
-/* xterm を載せる要素。fit はこの要素の計算済み高さで行数を決める。 */
+/* xterm を直接包む要素。padding 0・overflow hidden（fit の結果より大きく描かれた瞬間も
+   スクロールバーを出さない）。fit はこの要素の計算済み高さで行数を決める。 */
 .agent-sessions-terminal-term {
 	flex: 1 1 auto;
 	min-height: 0;
+	min-width: 0;
 	position: relative;
+	padding: 0;
+	overflow: hidden;
 }
 
 .agent-sessions-terminal-term .xterm {
@@ -297,6 +462,16 @@
 }
 
 /* 終了画面：出力の上に重ねる帯 */
+/* ---- 名前を変更（D-42）：入力欄を左右いっぱいに ---- */
+
+.agent-sessions-rename-field {
+	margin-bottom: var(--size-4-3);
+}
+
+.agent-sessions-rename-input {
+	width: 100%;
+}
+
 .agent-sessions-exit {
 	position: absolute;
 	top: 0;

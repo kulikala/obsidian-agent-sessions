@@ -1,28 +1,35 @@
-// サイドパネル（D-7・§6.1）：メニュー行・一覧 3 区分・詳細欄・ステータスバー。
+// サイドパネル（D-7・D-43・§6.1）：4 領域（ナビ・一覧・詳細・セッション制限）の grid。
+// 一覧と詳細の間はドラッグハンドルで高さを変える（`settings.sideDetailHeight` に保存）。
 
-import { ItemView, Menu, Notice, type WorkspaceLeaf } from "obsidian";
+import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
 import type AgentSessionsPlugin from "../main";
+import { usage } from "../backend";
 import { VIEW_TYPE_TERMINAL } from "../open-session";
 import { NewSessionModal } from "../modals";
-import { formatStatus } from "../statusline";
 import type { Row } from "../index";
-import { createRowActions, renderDetailPane, renderRow, RowSelection, type RowActions } from "./rows";
+import { createRowActions, renderRow, RowSelection, type RowActions } from "./rows";
 import { computeSideList, leafIdsOf } from "./side-list";
+import { renderDetail, type DetailContext } from "./detail";
+import { LimitsView } from "./limits";
 
 export const VIEW_TYPE_SIDE = "agent-sessions-side";
+
+/** ドラッグで詰められる詳細欄の下限（px）。 */
+const MIN_DETAIL_HEIGHT = 80;
 
 export class SideView extends ItemView {
 	private plugin: AgentSessionsPlugin;
 
 	private listEl!: HTMLElement;
+	private handleEl!: HTMLElement;
 	private detailEl!: HTMLElement;
-	private detailToggleEl!: HTMLElement;
-	private statusEl!: HTMLElement;
+	private limitsHostEl!: HTMLElement;
+	private limitsView!: LimitsView;
 	private selection = new RowSelection();
 
 	private frontId: string | null = null;
 	private detailId: string | null = null;
-	private detailCollapsed = false;
+	private detailHeight = 220;
 
 	constructor(leaf: WorkspaceLeaf, plugin: AgentSessionsPlugin) {
 		super(leaf);
@@ -47,11 +54,12 @@ export class SideView extends ItemView {
 
 		this.register(this.plugin.index.onChange(() => this.render()));
 		this.register(this.plugin.index.onError((message) => new Notice(`一覧の走査に失敗しました: ${message}`)));
-		this.register(this.plugin.index.registry.onChange(() => this.render()));
-		this.register(this.plugin.index.statusline.onChange(() => this.renderStatusBar()));
+		this.register(this.plugin.index.registry.onChange(() => this.onRegistryOrStatusChange()));
+		this.register(this.plugin.index.statusline.onChange(() => this.onRegistryOrStatusChange()));
 		this.register(this.plugin.index.addVisible());
 		this.registerEvent(this.app.workspace.on("layout-change", () => this.onLayoutChange()));
 		this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.onActiveLeafChange()));
+		this.register(() => this.limitsView.dispose());
 
 		this.onLayoutChange();
 		this.onActiveLeafChange();
@@ -60,28 +68,46 @@ export class SideView extends ItemView {
 	// ---- 骨組み -----------------------------------------------------------------
 
 	private buildSkeleton(): void {
-		const menuEl = this.contentEl.createDiv({ cls: "agent-sessions-menu-row" });
-		const newBtn = menuEl.createEl("button", { text: "新規セッション" });
-		this.registerDomEvent(newBtn, "click", () => this.openNewSessionModal());
-		const managerBtn = menuEl.createEl("button", { text: "セッションマネージャー" });
-		this.registerDomEvent(managerBtn, "click", () => void this.plugin.openManagerTab());
-		const moreBtn = menuEl.createEl("button", { text: "⋯", cls: "agent-sessions-menu-more" });
-		this.registerDomEvent(moreBtn, "click", (evt) => this.showMenuRowMenu(evt));
+		this.buildNav();
 
-		this.listEl = this.contentEl.createDiv({ cls: "agent-sessions-list" });
+		const listWrap = this.contentEl.createDiv({ cls: "agent-sessions-list-wrap" });
+		this.listEl = listWrap.createDiv({ cls: "agent-sessions-list" });
+		this.handleEl = listWrap.createDiv({ cls: "agent-sessions-drag-handle" });
+		this.bindHandle();
 
-		this.detailToggleEl = this.contentEl.createDiv({ cls: "agent-sessions-detail-toggle", text: "詳細" });
-		this.registerDomEvent(this.detailToggleEl, "click", () => this.toggleDetail());
 		this.detailEl = this.contentEl.createDiv({ cls: "agent-sessions-detail" });
+		this.applyDetailHeight(this.plugin.settings.sideDetailHeight);
 
-		this.statusEl = this.contentEl.createDiv({ cls: "agent-sessions-status-bar" });
+		this.limitsHostEl = this.contentEl.createDiv();
+		this.limitsView = new LimitsView(this.limitsHostEl, this.plugin.index.statusline.dir);
+	}
+
+	private buildNav(): void {
+		const navEl = this.contentEl.createDiv({ cls: "agent-sessions-nav" });
+		this.iconButton(navEl, "plus", "新規セッション", () => this.openNewSessionModal());
+		this.iconButton(navEl, "layout-grid", "セッションマネージャー", () => void this.plugin.openManagerTab());
+		const moreBtn = this.iconButton(navEl, "more-horizontal", "その他", (evt) => this.showMoreMenu(evt));
+		moreBtn.addClass("agent-sessions-nav-more");
+	}
+
+	private iconButton(
+		container: HTMLElement,
+		icon: string,
+		tooltip: string,
+		onClick: (evt: MouseEvent) => void
+	): HTMLElement {
+		const btn = container.createDiv({ cls: "agent-sessions-nav-btn clickable-icon" });
+		setIcon(btn, icon);
+		setTooltip(btn, tooltip);
+		this.registerDomEvent(btn, "click", (evt) => onClick(evt));
+		return btn;
 	}
 
 	private openNewSessionModal(): void {
 		new NewSessionModal(this.app, (name) => this.plugin.newSession(name || undefined)).open();
 	}
 
-	private showMenuRowMenu(evt: MouseEvent): void {
+	private showMoreMenu(evt: MouseEvent): void {
 		const menu = new Menu();
 		menu.addItem((item) =>
 			item
@@ -95,19 +121,46 @@ export class SideView extends ItemView {
 				.setIcon("refresh-cw")
 				.onClick(() => void this.plugin.index.rescan())
 		);
-		menu.addItem((item) =>
-			item
-				.setTitle("アーカイブを表示")
-				.setIcon("archive")
-				.onClick(() => void this.plugin.openManagerTab())
-		);
 		menu.showAtMouseEvent(evt);
 	}
 
-	private toggleDetail(): void {
-		this.detailCollapsed = !this.detailCollapsed;
-		this.detailEl.toggleClass("is-collapsed", this.detailCollapsed);
-		this.detailToggleEl.toggleClass("is-collapsed", this.detailCollapsed);
+	// ---- 詳細欄の高さ（ドラッグハンドル） -----------------------------------------
+
+	private applyDetailHeight(px: number): void {
+		this.detailHeight = px;
+		this.contentEl.style.setProperty("--as-detail-h", `${px}px`);
+	}
+
+	private bindHandle(): void {
+		let dragging = false;
+		let startY = 0;
+		let startHeight = 0;
+
+		const onMouseMove = (evt: MouseEvent) => {
+			if (!dragging) {
+				return;
+			}
+			const delta = evt.clientY - startY;
+			this.applyDetailHeight(Math.max(MIN_DETAIL_HEIGHT, Math.round(startHeight - delta)));
+		};
+		const onMouseUp = () => {
+			if (!dragging) {
+				return;
+			}
+			dragging = false;
+			document.removeEventListener("mousemove", onMouseMove);
+			document.removeEventListener("mouseup", onMouseUp);
+			this.plugin.settings.sideDetailHeight = this.detailHeight;
+			void this.plugin.saveSettings();
+		};
+		this.registerDomEvent(this.handleEl, "mousedown", (evt) => {
+			dragging = true;
+			startY = evt.clientY;
+			startHeight = this.detailHeight;
+			document.addEventListener("mousemove", onMouseMove);
+			document.addEventListener("mouseup", onMouseUp);
+			evt.preventDefault();
+		});
 	}
 
 	// ---- 一覧 -------------------------------------------------------------------
@@ -139,7 +192,6 @@ export class SideView extends ItemView {
 		this.renderSection(this.listEl, "開いているタブ", list.openTabs, actions);
 		this.renderSection(this.listEl, "起動中", list.running, actions);
 		this.renderSection(this.listEl, "最近", list.recent, actions);
-		this.renderStatusBar();
 	}
 
 	private renderSection(container: HTMLElement, title: string, rows: Row[], actions: RowActions): void {
@@ -152,34 +204,40 @@ export class SideView extends ItemView {
 		}
 	}
 
-	private async showDetail(id: string): Promise<void> {
-		if (this.detailId === id) {
-			return;
-		}
-		this.detailId = id;
-		const row = this.plugin.index.sessions.get(id);
-		try {
-			const detail = await this.plugin.index.getDetail(id);
-			if (this.detailId !== id) {
-				return;
-			}
-			renderDetailPane(this.detailEl, row, detail);
-		} catch {
-			if (this.detailId === id) {
-				renderDetailPane(this.detailEl, row, null);
-			}
+	// ---- 詳細欄 -----------------------------------------------------------------
+
+	/** `registry`・`statusline` の変化：一覧を描き直し、制限ビューを読み直し、開いている詳細も更新する。 */
+	private onRegistryOrStatusChange(): void {
+		this.render();
+		this.limitsView.reload();
+		if (this.detailId) {
+			void this.showDetail(this.detailId);
 		}
 	}
 
-	// ---- ステータスバー -----------------------------------------------------------
-
-	private renderStatusBar(): void {
-		if (!this.frontId) {
-			this.statusEl.setText("");
+	private async showDetail(id: string): Promise<void> {
+		this.detailId = id;
+		const row = this.plugin.index.sessions.get(id);
+		if (!row) {
+			renderDetail(this.detailEl, null);
 			return;
 		}
-		const rc = this.plugin.index.registry.get(this.frontId)?.rc ?? null;
-		const info = this.plugin.index.statusline.get(this.frontId);
-		this.statusEl.setText(formatStatus(info, rc));
+		let detail = null;
+		try {
+			detail = await this.plugin.index.getDetail(id);
+		} catch {
+			detail = null;
+		}
+		if (this.detailId !== id) {
+			return;
+		}
+		const ctx: DetailContext = {
+			row,
+			detail,
+			statusInfo: this.plugin.index.statusline.get(id),
+			rc: this.plugin.index.registry.get(id)?.rc ?? null,
+			fetchUsage: () => usage(this.plugin.agentSessionsPath(), id),
+		};
+		renderDetail(this.detailEl, ctx);
 	}
 }

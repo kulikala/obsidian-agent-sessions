@@ -6,7 +6,9 @@ import type AgentSessionsPlugin from "../main";
 import { NewSessionModal } from "../modals";
 import { loadStore } from "../store";
 import { buildManagerTree, OTHER_GROUP, type ArchivedEntry } from "../tree";
-import { createRowActions, renderDetailPane, renderGroupHeader, renderRow, RowSelection, type RowActions } from "./rows";
+import { usage } from "../backend";
+import { renderDetail, type DetailContext } from "./detail";
+import { createRowActions, renderGroupHeader, renderRow, RowSelection, type RowActions } from "./rows";
 
 export const VIEW_TYPE_MANAGER = "agent-sessions-manager";
 
@@ -142,16 +144,26 @@ export class ManagerView extends ItemView {
 		}
 		this.detailId = id;
 		const row = this.plugin.index.sessions.get(id);
-		try {
-			const detail = await this.plugin.index.getDetail(id);
-			if (this.detailId !== id) {
-				return;
-			}
-			renderDetailPane(this.detailEl, row, detail);
-		} catch {
-			if (this.detailId === id) {
-				renderDetailPane(this.detailEl, row, null);
-			}
+		if (!row) {
+			renderDetail(this.detailEl, null);
+			return;
 		}
+		let detail = null;
+		try {
+			detail = await this.plugin.index.getDetail(id);
+		} catch {
+			detail = null;
+		}
+		if (this.detailId !== id) {
+			return;
+		}
+		const ctx: DetailContext = {
+			row,
+			detail,
+			statusInfo: this.plugin.index.statusline.get(id),
+			rc: this.plugin.index.registry.get(id)?.rc ?? null,
+			fetchUsage: () => usage(this.plugin.agentSessionsPath(), id),
+		};
+		renderDetail(this.detailEl, ctx);
 	}
 }

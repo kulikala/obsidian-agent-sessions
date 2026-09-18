@@ -64,6 +64,11 @@ export class StatusLine extends EventEmitter {
 		return readStatus(this.statusDir, id);
 	}
 
+	/** `status/` ディレクトリの絶対パス（`views/limits.ts` が同じ場所を読む）。 */
+	get dir(): string {
+		return this.statusDir;
+	}
+
 	onChange(cb: () => void): () => void {
 		this.on("change", cb);
 		return () => this.off("change", cb);

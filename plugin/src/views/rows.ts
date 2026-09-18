@@ -1,10 +1,9 @@
-// 行の描画・選択・行メニュー・詳細欄（サイドパネルとマネージャーで共用。§6.1・§6.2）。
+// 行の描画・選択・行メニュー（サイドパネルとマネージャーで共用。§6.1・§6.2）。詳細欄は views/detail.ts。
 
 import { Menu, type App } from "obsidian";
 import type { Row } from "../index";
 import type AgentSessionsPlugin from "../main";
 import { RenameSessionModal } from "../modals";
-import type { Detail } from "../types";
 
 export interface RowActions {
 	openSession(id: string): void;
@@ -31,21 +30,19 @@ export interface RenderRowOptions {
 
 const HOVER_DELAY_MS = 300;
 
-/** 選択中の行を 1 つだけ持つ（クリック／右クリックで `⋯` を出す）。 */
+/** 選択中の行を 1 つだけ持つ（強調のみ。`⋯` は常時表示——選択とは独立）。 */
 export class RowSelection {
-	private current: { el: HTMLElement; menuBtn: HTMLElement } | null = null;
+	private current: HTMLElement | null = null;
 
-	select(el: HTMLElement, menuBtn: HTMLElement): void {
+	select(el: HTMLElement, _menuBtn?: HTMLElement): void {
 		this.clear();
 		el.addClass("is-selected");
-		menuBtn.show();
-		this.current = { el, menuBtn };
+		this.current = el;
 	}
 
 	clear(): void {
 		if (this.current) {
-			this.current.el.removeClass("is-selected");
-			this.current.menuBtn.hide();
+			this.current.removeClass("is-selected");
 			this.current = null;
 		}
 	}
@@ -65,7 +62,7 @@ function statusMark(row: Row): string {
 }
 
 function displayName(row: Row): string {
-	return row.pendingRename || row.name || row.label || `無題 ${row.id.slice(0, 8)}`;
+	return row.name || row.label || `無題 ${row.id.slice(0, 8)}`;
 }
 
 function formatTime(epochSeconds: number): string {
@@ -126,7 +123,7 @@ function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): void {
 	menu.showAtMouseEvent(evt);
 }
 
-/** 1 行を描く：`状態の印  名前  時刻  ▣`。行の選択で `⋯` が現れる。 */
+/** 1 行を描く：`状態の印  名前  時刻  ▣  ⋯`。`⋯` は常時表示（D-43）。 */
 export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptions): HTMLElement {
 	const el = container.createDiv({ cls: "agent-sessions-row" });
 	if (opts.front) {
@@ -141,9 +138,6 @@ export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptio
 
 	el.createSpan({ cls: `agent-sessions-row-mark ${statusMark(row)}` });
 	el.createSpan({ cls: "agent-sessions-row-name", text: displayName(row) });
-	if (row.pendingRename) {
-		el.createSpan({ cls: "agent-sessions-row-pending", text: "（未適用）" });
-	}
 	const time = formatTime(row.last_activity);
 	if (time) {
 		el.createSpan({ cls: "agent-sessions-row-time", text: time });
@@ -153,7 +147,6 @@ export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptio
 	}
 
 	const menuBtn = el.createSpan({ cls: "agent-sessions-row-menu-btn", text: "⋯" });
-	menuBtn.hide();
 	menuBtn.addEventListener("click", (evt) => {
 		evt.stopPropagation();
 		opts.selection.select(el, menuBtn);
@@ -203,15 +196,6 @@ export function renderGroupHeader(
 	return el;
 }
 
-function addDetailField(container: HTMLElement, label: string, value: string | null | undefined): void {
-	if (!value) {
-		return;
-	}
-	const field = container.createDiv({ cls: "agent-sessions-detail-field" });
-	field.createSpan({ cls: "agent-sessions-detail-label", text: label });
-	field.createSpan({ cls: "agent-sessions-detail-value", text: value });
-}
-
 /**
  * サイドパネル・マネージャー共通の行アクション。`openSession`・`rename`・`compact`・
  * `toggleArchive`・`endSession`・`openFolder`・`copyId` は両ビューで同じ振る舞い（§6.6）。
@@ -248,18 +232,4 @@ export function createRowActions(app: App, plugin: AgentSessionsPlugin, onShowDe
 		showDetail: onShowDetail,
 		showUsage: (id) => plugin.showUsage(id),
 	};
-}
-
-/** 詳細欄：直近の指示・直近のツール・直近の応答・フォルダ・ID（§6.1）。 */
-export function renderDetailPane(container: HTMLElement, row: Row | undefined, detail: Detail | null): void {
-	container.empty();
-	if (!row) {
-		return;
-	}
-	const lastTool = detail?.tools[detail.tools.length - 1] ?? null;
-	addDetailField(container, "直近の指示", detail?.last_user);
-	addDetailField(container, "直近のツール", lastTool);
-	addDetailField(container, "直近の応答", detail?.last_assistant);
-	addDetailField(container, "フォルダ", row.folder);
-	addDetailField(container, "ID", row.id);
 }
