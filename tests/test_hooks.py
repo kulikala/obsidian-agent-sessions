@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from agentsessions import config, hooks
+from agentsessions import config, hooks, live
 
 
 class TestRecordHook(unittest.TestCase):
@@ -56,27 +56,66 @@ class TestRecordHook(unittest.TestCase):
 
 
 class TestFormatStatusLine(unittest.TestCase):
+    # session_id が無いときは live.live_sessions を呼ばない（rc は常に ○）ので、
+    # このクラスの大半のテストは ps 等の実行環境に依存しない。
+
     def test_full_data(self):
         line = hooks.format_status_line({
             'model': {'display_name': 'Claude Sonnet 5'},
+            'effort': {'level': 'high'},
             'context_window': {'used_percentage': 45},
         })
-        self.assertEqual(line, 'Claude Sonnet 5 · ctx 45%')
+        self.assertEqual(line, 'Claude Sonnet 5 · high · ctx 45% · rc ○')
 
     def test_missing_model_falls_back_to_default_label(self):
         line = hooks.format_status_line({'context_window': {'used_percentage': 10}})
-        self.assertEqual(line, 'デフォルト · ctx 10%')
+        self.assertEqual(line, 'デフォルト · デフォルト · ctx 10% · rc ○')
 
     def test_missing_context_window_uses_dash(self):
         line = hooks.format_status_line({'model': {'display_name': 'Claude Sonnet 5'}})
-        self.assertEqual(line, 'Claude Sonnet 5 · ctx —%')
+        self.assertEqual(line, 'Claude Sonnet 5 · デフォルト · ctx —% · rc ○')
 
     def test_missing_everything(self):
-        self.assertEqual(hooks.format_status_line({}), 'デフォルト · ctx —%')
+        self.assertEqual(hooks.format_status_line({}), 'デフォルト · デフォルト · ctx —% · rc ○')
 
     def test_percentage_is_rounded(self):
         line = hooks.format_status_line({'context_window': {'used_percentage': 45.6}})
-        self.assertEqual(line, 'デフォルト · ctx 46%')
+        self.assertEqual(line, 'デフォルト · デフォルト · ctx 46% · rc ○')
+
+    def test_effort_as_plain_string(self):
+        line = hooks.format_status_line({'effort': 'high'})
+        self.assertEqual(line, 'デフォルト · high · ctx —% · rc ○')
+
+    def test_effort_dict_without_level_falls_back_to_default(self):
+        line = hooks.format_status_line({'effort': {}})
+        self.assertEqual(line, 'デフォルト · デフォルト · ctx —% · rc ○')
+
+    def test_missing_effort_falls_back_to_default_label(self):
+        line = hooks.format_status_line({'session_id': None})
+        self.assertEqual(line, 'デフォルト · デフォルト · ctx —% · rc ○')
+
+    def test_rc_marks_when_matching_session_has_bridge(self):
+        with mock.patch.object(live, 'live_sessions',
+                                return_value={'abc': live.Live(session_id='abc', pid=1, rc=True)}):
+            line = hooks.format_status_line({'session_id': 'abc'})
+        self.assertEqual(line, 'デフォルト · デフォルト · ctx —% · rc ●')
+
+    def test_rc_empty_when_matching_session_has_no_bridge(self):
+        with mock.patch.object(live, 'live_sessions',
+                                return_value={'abc': live.Live(session_id='abc', pid=1, rc=False)}):
+            line = hooks.format_status_line({'session_id': 'abc'})
+        self.assertEqual(line, 'デフォルト · デフォルト · ctx —% · rc ○')
+
+    def test_rc_empty_when_session_id_does_not_match_any_live_session(self):
+        with mock.patch.object(live, 'live_sessions',
+                                return_value={'other': live.Live(session_id='other', pid=1, rc=True)}):
+            line = hooks.format_status_line({'session_id': 'abc'})
+        self.assertEqual(line, 'デフォルト · デフォルト · ctx —% · rc ○')
+
+    def test_live_sessions_not_consulted_without_session_id(self):
+        with mock.patch.object(live, 'live_sessions') as m:
+            hooks.format_status_line({})
+        m.assert_not_called()
 
 
 class TestRecordStatus(unittest.TestCase):
@@ -94,10 +133,13 @@ class TestRecordStatus(unittest.TestCase):
         raw = json.dumps({
             'session_id': 'abc',
             'model': {'display_name': 'Claude Sonnet 5'},
+            'effort': {'level': 'high'},
             'context_window': {'used_percentage': 50},
         }, ensure_ascii=False).encode('utf-8')
-        line = hooks.record_status(raw)
-        self.assertEqual(line, 'Claude Sonnet 5 · ctx 50%')
+        with mock.patch.object(live, 'live_sessions',
+                                return_value={'abc': live.Live(session_id='abc', pid=1, rc=True)}):
+            line = hooks.record_status(raw)
+        self.assertEqual(line, 'Claude Sonnet 5 · high · ctx 50% · rc ●')
         path = os.path.join(self.status_dir, 'abc.json')
         with open(path, 'rb') as f:
             self.assertEqual(f.read(), raw)
@@ -105,12 +147,12 @@ class TestRecordStatus(unittest.TestCase):
     def test_missing_session_id_returns_line_without_writing_file(self):
         raw = json.dumps({'model': {'display_name': 'X'}}).encode('utf-8')
         line = hooks.record_status(raw)
-        self.assertEqual(line, 'X · ctx —%')
+        self.assertEqual(line, 'X · デフォルト · ctx —% · rc ○')
         self.assertFalse(os.path.isdir(self.status_dir))
 
     def test_invalid_json_returns_default_line(self):
         line = hooks.record_status(b'not json')
-        self.assertEqual(line, 'デフォルト · ctx —%')
+        self.assertEqual(line, 'デフォルト · デフォルト · ctx —% · rc ○')
 
 
 if __name__ == '__main__':

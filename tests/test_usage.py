@@ -3,14 +3,14 @@ import os
 import tempfile
 import unittest
 
-from agentsessions import usage
+from agentsessions import pricing, usage
 
 
 def _line(obj) -> str:
     return json.dumps(obj, ensure_ascii=False) + '\n'
 
 
-def _assistant(ts, msg_id, model, tokens, thinking=None, **flags):
+def _assistant(ts, msg_id, model, tokens, thinking=None, tools=None, **flags):
     u = {
         'input_tokens': tokens.get('input', 0),
         'cache_creation_input_tokens': tokens.get('cache_create', 0),
@@ -19,8 +19,10 @@ def _assistant(ts, msg_id, model, tokens, thinking=None, **flags):
     }
     if thinking is not None:
         u['output_tokens_details'] = {'thinking_tokens': thinking}
-    rec = {'type': 'assistant', 'timestamp': ts,
-           'message': {'id': msg_id, 'model': model, 'usage': u}}
+    message = {'id': msg_id, 'model': model, 'usage': u}
+    if tools is not None:
+        message['content'] = [{'type': 'tool_use', 'name': name} for name in tools]
+    rec = {'type': 'assistant', 'timestamp': ts, 'message': message}
     rec.update(flags)
     return rec
 
@@ -44,20 +46,32 @@ FIXTURE = [
     _user('2024-01-01T00:00:02.000Z', '最初の指示です'),
     _assistant('2024-01-01T00:00:03.000Z', 'syn1', '<synthetic>', {'input': 50, 'output': 50}),
     _assistant('2024-01-01T00:00:03.500Z', 'm1', 'claude-3-opus',
-               {'input': 100, 'cache_create': 20, 'cache_read': 5, 'output': 40}),
-    # 同じ message.id の重複行：2 回目は数えない
+               {'input': 100, 'cache_create': 20, 'cache_read': 5, 'output': 40},
+               tools=['Read', 'Read', 'Edit']),
+    # 同じ message.id の重複行：2 回目は数えない（ツールも重ねて数えない）
     _assistant('2024-01-01T00:00:03.600Z', 'm1', 'claude-3-opus',
-               {'input': 100, 'cache_create': 20, 'cache_read': 5, 'output': 40}),
+               {'input': 100, 'cache_create': 20, 'cache_read': 5, 'output': 40},
+               tools=['Read', 'Read', 'Edit']),
 
     # ターン 2
     _user('2024-01-01T00:00:05.000Z', '2件目の指示'),
     _assistant('2024-01-01T00:00:06.000Z', 'm2', 'claude-3-sonnet', {'input': 200, 'output': 80},
                thinking=15),
 
-    # ターン 3
+    # ターン 3（既知のモデル：claude-3-haiku。estimated は立たない）
     _user('2024-01-01T00:00:07.000Z', '3件目の指示'),
     _assistant('2024-01-01T00:00:08.000Z', 'm3', 'claude-3-haiku', {'input': 30, 'output': 10}),
 ]
+
+
+def _cost(model, tokens):
+    u = {
+        'input_tokens': tokens.get('input', 0),
+        'cache_creation_input_tokens': tokens.get('cache_create', 0),
+        'cache_read_input_tokens': tokens.get('cache_read', 0),
+        'output_tokens': tokens.get('output', 0),
+    }
+    return pricing.cost(u, model)
 
 
 class UsageTest(unittest.TestCase):
@@ -113,30 +127,102 @@ class UsageTest(unittest.TestCase):
         self.assertEqual(turns[2]['thinking'], 15)
         self.assertEqual(turns[1]['thinking'], 0)
 
+    # --- D-40：cost・tools・estimated（ターン単位） ---
+
+    def test_cost_per_turn_matches_pricing_cost(self):
+        turns = usage.collect(self.path)
+        self.assertAlmostEqual(turns[0]['cost'], _cost('claude-3-x', {'input': 10, 'output': 5}))
+        self.assertAlmostEqual(turns[1]['cost'], _cost('claude-3-opus',
+            {'input': 100, 'cache_create': 20, 'cache_read': 5, 'output': 40}))
+        self.assertAlmostEqual(turns[2]['cost'], _cost('claude-3-sonnet', {'input': 200, 'output': 80}))
+        self.assertAlmostEqual(turns[3]['cost'], _cost('claude-3-haiku', {'input': 30, 'output': 10}))
+
+    def test_unknown_model_marks_turn_estimated(self):
+        turns = usage.collect(self.path)
+        # claude-3-x・claude-3-opus・claude-3-sonnet は表に無く、未知として estimated
+        self.assertTrue(turns[0]['estimated'])
+        self.assertTrue(turns[1]['estimated'])
+        self.assertTrue(turns[2]['estimated'])
+        # claude-3-haiku は表にある既知のモデル
+        self.assertFalse(turns[3]['estimated'])
+
+    def test_tool_use_counted_by_name_and_deduplicated_with_the_message(self):
+        turns = usage.collect(self.path)
+        turn1 = turns[1]
+        # 重複行（同じ message.id）のツールは重ねて数えない
+        self.assertEqual(turn1['tools'], {'Read': 2, 'Edit': 1})
+        self.assertEqual(turns[2]['tools'], {})
+
+    def test_context_last_is_the_last_calls_input_plus_cache(self):
+        turns = usage.collect(self.path)
+        turn1 = turns[1]
+        self.assertEqual(turn1['context_last'], 100 + 5 + 20)   # input + cache_read + cache_create
+        self.assertEqual(turns[3]['context_last'], 30)
+
+    def test_last_ts_is_the_last_assistant_lines_ts_within_the_turn(self):
+        turns = usage.collect(self.path)
+        self.assertEqual(turns[1]['last_ts'], usage._parse_ts('2024-01-01T00:00:03.500Z'))
+        self.assertEqual(turns[3]['last_ts'], usage._parse_ts('2024-01-01T00:00:08.000Z'))
+
+    # --- D-40：summarize の total（cost・tools・duration・first_ts・last_ts・context_last・estimated） ---
+
     def test_summarize_totals_everything_by_default(self):
         turns = usage.collect(self.path)
         result = usage.summarize(turns)
         self.assertEqual(result['from'], None)
         self.assertEqual(result['to'], None)
         self.assertEqual(result['turns'], turns)
-        self.assertEqual(result['total'], {
-            'calls': 4, 'input': 340, 'cache_create': 20, 'cache_read': 5,
-            'output': 135, 'thinking': 15,
-        })
+        total = result['total']
+        self.assertEqual(total['calls'], 4)
+        self.assertEqual(total['input'], 340)
+        self.assertEqual(total['cache_create'], 20)
+        self.assertEqual(total['cache_read'], 5)
+        self.assertEqual(total['output'], 135)
+        self.assertEqual(total['thinking'], 15)
+        self.assertAlmostEqual(total['cost'], sum(t['cost'] for t in turns))
+        self.assertEqual(total['tools'], {'Read': 2, 'Edit': 1})
+        self.assertTrue(total['estimated'])   # 未知モデルのターンがある
+        self.assertEqual(total['first_ts'], usage._parse_ts('2024-01-01T00:00:02.000Z'))
+        self.assertEqual(total['last_ts'], usage._parse_ts('2024-01-01T00:00:08.000Z'))
+        self.assertAlmostEqual(total['duration'], 6.0)
+        self.assertEqual(total['context_last'], 30)   # 最後に数えた呼出＝m3
 
     def test_summarize_range_excludes_before_turn(self):
         turns = usage.collect(self.path)
         turn2_ts = turns[2]['ts']
         result = usage.summarize(turns, from_ts=turn2_ts, to_ts=turn2_ts)
-        self.assertEqual(result['total'], {
-            'calls': 1, 'input': 200, 'cache_create': 0, 'cache_read': 0,
-            'output': 80, 'thinking': 15,
-        })
+        total = result['total']
+        self.assertEqual(total['calls'], 1)
+        self.assertEqual(total['input'], 200)
+        self.assertEqual(total['cache_create'], 0)
+        self.assertEqual(total['cache_read'], 0)
+        self.assertEqual(total['output'], 80)
+        self.assertEqual(total['thinking'], 15)
+        self.assertAlmostEqual(total['cost'], turns[2]['cost'])
+        self.assertEqual(total['tools'], {})
+        self.assertEqual(total['context_last'], turns[2]['context_last'])
 
     def test_summarize_range_is_inclusive_of_both_ends(self):
         turns = usage.collect(self.path)
         result = usage.summarize(turns, from_ts=turns[1]['ts'], to_ts=turns[3]['ts'])
         self.assertEqual(result['total']['calls'], 3)   # ターン 1〜3。開始前は入らない
+
+    def test_summarize_range_includes_cost_and_tools_for_partial_range(self):
+        turns = usage.collect(self.path)
+        result = usage.summarize(turns, from_ts=turns[1]['ts'], to_ts=turns[2]['ts'])
+        total = result['total']
+        self.assertAlmostEqual(total['cost'], turns[1]['cost'] + turns[2]['cost'])
+        self.assertEqual(total['tools'], {'Read': 2, 'Edit': 1})
+
+    def test_summarize_with_no_turns_has_no_duration(self):
+        result = usage.summarize([])
+        self.assertIsNone(result['total']['first_ts'])
+        self.assertIsNone(result['total']['last_ts'])
+        self.assertIsNone(result['total']['duration'])
+        self.assertEqual(result['total']['context_last'], 0)
+        self.assertEqual(result['total']['cost'], 0.0)
+        self.assertEqual(result['total']['tools'], {})
+        self.assertFalse(result['total']['estimated'])
 
     def test_missing_transcript_collects_nothing(self):
         self.assertEqual(usage.collect('/no/such/path.jsonl'), [])
