@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applyNewlineKey, defaultKeybindingsPath, readEnterMode } from "../src/keybindings";
+import { applyNewlineKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "../src/keybindings";
 
 describe("readEnterMode", () => {
 	let dir: string;
@@ -54,6 +54,48 @@ describe("readEnterMode", () => {
 	it("bindings が配列でなければ unreadable", () => {
 		writeFileSync(filePath, JSON.stringify({ bindings: {} }));
 		expect(readEnterMode(filePath)).toEqual({ mode: "unreadable" });
+	});
+});
+
+describe("readChatBindings", () => {
+	let dir: string;
+	let filePath: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), "agent-sessions-keybindings-"));
+		filePath = join(dir, "keybindings.json");
+	});
+
+	afterEach(() => {
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it("ファイルが無ければ undefined", () => {
+		expect(readChatBindings(filePath)).toBeUndefined();
+	});
+
+	it("JSON が壊れていれば undefined", () => {
+		writeFileSync(filePath, "{not json");
+		expect(readChatBindings(filePath)).toBeUndefined();
+	});
+
+	it("Chat ブロックが無ければ undefined", () => {
+		writeFileSync(filePath, JSON.stringify({ bindings: [{ context: "Other", bindings: { enter: "x" } }] }));
+		expect(readChatBindings(filePath)).toBeUndefined();
+	});
+
+	it("Chat の生の鍵一覧をそのまま返す（実機の例）", () => {
+		writeFileSync(
+			filePath,
+			JSON.stringify({
+				bindings: [{ context: "Chat", bindings: { enter: "chat:newline", "meta+enter": "chat:submit", "cmd+enter": "chat:submit" } }],
+			})
+		);
+		expect(readChatBindings(filePath)).toEqual({
+			enter: "chat:newline",
+			"meta+enter": "chat:submit",
+			"cmd+enter": "chat:submit",
+		});
 	});
 });
 

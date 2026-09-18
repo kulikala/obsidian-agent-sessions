@@ -1169,3 +1169,8 @@
     z-index: 2;
     position: relative;
 }
+
+/* 改行キーの設定が keybindings.json と食い違っているときの警告（§6.8・D-41 追補）。 */
+.agent-sessions-settings-mismatch {
+	color: var(--text-error);
+}

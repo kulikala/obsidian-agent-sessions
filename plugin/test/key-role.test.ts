@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyEnter, resolveEnterAction, type KeyLike } from "../src/keys";
+import { classifyEnter, deriveKeysFromKeybindings, resolveEnterAction, type KeyLike } from "../src/keys";
 import type { NewlineKey, SubmitKey } from "../src/settings";
 
 function key(overrides: Partial<KeyLike> = {}): KeyLike {
@@ -86,5 +86,70 @@ describe("resolveEnterAction", () => {
 
 	it("newlineKey に一致しない修飾つき Enter は passthrough（従来どおりの扱いに委ねる）", () => {
 		expect(resolveEnterAction("ctrl+enter", settings("shift+enter"))).toBe("passthrough");
+	});
+});
+
+describe("deriveKeysFromKeybindings", () => {
+	const settings = (newlineKey: NewlineKey, submitKey: SubmitKey = "super+enter") => ({ newlineKey, submitKey });
+
+	it("実機の例：enter/meta+enter/cmd+enter が chat:newline/chat:submit なら enter・super+enter を導く", () => {
+		const chatBindings = { enter: "chat:newline", "meta+enter": "chat:submit", "cmd+enter": "chat:submit" };
+		expect(deriveKeysFromKeybindings(chatBindings, settings("shift+enter"))).toEqual({
+			newlineKey: "enter",
+			submitKey: "super+enter",
+		});
+	});
+
+	it("cmd+enter が無く meta+enter だけあれば meta+enter を導く", () => {
+		const chatBindings = { enter: "chat:newline", "meta+enter": "chat:submit" };
+		expect(deriveKeysFromKeybindings(chatBindings, settings("shift+enter"))).toEqual({
+			newlineKey: "enter",
+			submitKey: "meta+enter",
+		});
+	});
+
+	it("super+enter という鍵名でも cmd+enter と同様に扱う", () => {
+		const chatBindings = { enter: "chat:newline", "super+enter": "chat:submit" };
+		expect(deriveKeysFromKeybindings(chatBindings, settings("shift+enter"))).toEqual({
+			newlineKey: "enter",
+			submitKey: "super+enter",
+		});
+	});
+
+	it("どちらも無ければ既定の super+enter", () => {
+		const chatBindings = { enter: "chat:newline" };
+		expect(deriveKeysFromKeybindings(chatBindings, settings("shift+enter"))).toEqual({
+			newlineKey: "enter",
+			submitKey: "super+enter",
+		});
+	});
+
+	it("newline モードで既に設定が一致していれば null（変更不要）", () => {
+		const chatBindings = { enter: "chat:newline", "cmd+enter": "chat:submit" };
+		expect(deriveKeysFromKeybindings(chatBindings, settings("enter", "super+enter"))).toBeNull();
+	});
+
+	it("enter が無ければ submit 扱い：設定が enter のままなら shift+enter に戻す", () => {
+		expect(deriveKeysFromKeybindings(undefined, settings("enter"))).toEqual({
+			newlineKey: "shift+enter",
+			submitKey: "super+enter",
+		});
+		expect(deriveKeysFromKeybindings({}, settings("enter", "meta+enter"))).toEqual({
+			newlineKey: "shift+enter",
+			submitKey: "meta+enter",
+		});
+	});
+
+	it("enter が chat:submit でも submit 扱い", () => {
+		const chatBindings = { enter: "chat:submit" };
+		expect(deriveKeysFromKeybindings(chatBindings, settings("enter"))).toEqual({
+			newlineKey: "shift+enter",
+			submitKey: "super+enter",
+		});
+	});
+
+	it("submit 扱いで設定が既に enter 以外なら null（変更不要）", () => {
+		expect(deriveKeysFromKeybindings(undefined, settings("shift+enter"))).toBeNull();
+		expect(deriveKeysFromKeybindings({ enter: "chat:submit" }, settings("ctrl+enter"))).toBeNull();
 	});
 });

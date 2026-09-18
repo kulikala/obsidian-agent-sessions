@@ -77,3 +77,38 @@ export function resolveEnterAction(cls: EnterClass, settings: EnterKeySettings):
 	}
 	return "passthrough";
 }
+
+/**
+ * `keybindings.json` の `Chat` の中身から、設定（`newlineKey`／`submitKey`）を導く
+ * （§6.8・D-41 追補）。ユーザーが手で（または他のツールで）`keybindings.json` を書いた
+ * 場合に、プラグインの設定をそれに合わせて自動で追随させるために使う。純関数——
+ * `keybindings.json` 自体は読み書きしない（呼び出し側が `readChatBindings` で読み、
+ * 結果が非 `null` のときだけ設定に反映する）。
+ *
+ * - `Chat.enter === 'chat:newline'`：`newlineKey` を `'enter'` に。`submitKey` は
+ *   `cmd+enter`／`super+enter` があれば `super+enter`、無く `meta+enter` があれば
+ *   `meta+enter`、どちらも無ければ既定（`super+enter`）。
+ * - それ以外（`enter` が無い、または `chat:submit`）：現在の設定が `newlineKey === 'enter'`
+ *   なら既定の `shift+enter` に戻す（`submitKey` はそのまま）。
+ * - 結果が現在の設定と同じなら（変更不要）`null`。
+ */
+export function deriveKeysFromKeybindings(
+	chatBindings: Record<string, string> | undefined,
+	settings: EnterKeySettings
+): EnterKeySettings | null {
+	const isNewlineMode = chatBindings?.enter === "chat:newline";
+
+	if (isNewlineMode) {
+		const hasSuper = "cmd+enter" in chatBindings || "super+enter" in chatBindings;
+		const submitKey: SubmitKey = hasSuper ? "super+enter" : "meta+enter" in chatBindings ? "meta+enter" : "super+enter";
+		if (settings.newlineKey === "enter" && settings.submitKey === submitKey) {
+			return null;
+		}
+		return { newlineKey: "enter", submitKey };
+	}
+
+	if (settings.newlineKey === "enter") {
+		return { newlineKey: "shift+enter", submitKey: settings.submitKey };
+	}
+	return null;
+}

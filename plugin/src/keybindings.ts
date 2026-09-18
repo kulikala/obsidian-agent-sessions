@@ -96,6 +96,25 @@ export function readEnterMode(filePath: string): EnterModeInfo {
 }
 
 /**
+ * `Chat` コンテキストの生の鍵一覧を読む（§6.8・D-41 追補）。`deriveKeysFromKeybindings`
+ * が `cmd+enter`／`super+enter`／`meta+enter` の有無から送信キーを導くのに使う。
+ * ファイルが無い・読めない・`Chat` ブロックが無いときは `undefined`。
+ */
+export function readChatBindings(filePath: string): Record<string, string> | undefined {
+	let text: string;
+	try {
+		text = fs.readFileSync(filePath, "utf8");
+	} catch {
+		return undefined;
+	}
+	const data = parseKeybindingsFile(text);
+	if (!data) {
+		return undefined;
+	}
+	return findChat(data)?.bindings;
+}
+
+/**
  * 改行キーの設定を `keybindings.json` に反映する（§6.8・D-41）。
  * - `newlineKey === 'enter'`：`Chat` ブロック（無ければ作る）に `enter: chat:newline`・
  *   `meta+enter: chat:submit` の 2 鍵を入れる。他の鍵・他のコンテキストは触らない。
