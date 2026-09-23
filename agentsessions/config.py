@@ -17,6 +17,7 @@ EXITED_PATH = os.path.join(RUNTIME_DIR, 'exited.json')
 EVENTS_LOG = os.path.join(RUNTIME_DIR, 'events.log')
 CACHE_PATH = os.path.join(RUNTIME_DIR, 'scan-cache.json')
 STATUS_DIR = os.path.join(RUNTIME_DIR, 'status')
+STATS_CACHE_PATH = os.path.join(RUNTIME_DIR, 'stats-cache.json')
 
 PROJECTS_DIR = os.path.expanduser('~/.claude/projects')
 SESSIONS_DIR = os.path.expanduser('~/.claude/sessions')

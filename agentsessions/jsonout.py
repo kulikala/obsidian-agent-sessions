@@ -1,5 +1,5 @@
-"""`json scan`・`json live`・`json detail`・`json usage` の出力を組み立てる
-（D-6 §5・D-30）。"""
+"""`json scan`・`json live`・`json detail`・`json usage`・`json stats` の出力を
+組み立てる（D-6 §5・D-30・D-55）。"""
 
 import glob
 import os
@@ -7,7 +7,7 @@ import socket
 import time
 from typing import List, Optional
 
-from . import cache, config, protocol, store
+from . import cache, config, protocol, stats, store
 from .detail import read_detail_for
 from .items import OTHER_LABEL_LEN
 from .live import live_sessions
@@ -166,3 +166,9 @@ def usage_output(session_id: str, from_ts: Optional[float] = None,
     paths = _find_transcripts([session_id])
     turns = collect_usage(paths[0]) if paths else []
     return summarize_usage(turns, from_ts=from_ts, to_ts=to_ts)
+
+
+def stats_output() -> dict:
+    # stats.compute も同じ理由（jsonout.py 冒頭のコメント）で config を都度渡す。
+    return stats.compute(now=time.time(), projects_dir=config.PROJECTS_DIR,
+                          status_dir=config.STATUS_DIR, cache_path=config.STATS_CACHE_PATH)

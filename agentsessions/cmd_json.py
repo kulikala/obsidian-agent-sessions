@@ -23,7 +23,7 @@ def _parse_iso(value: str) -> float:
 
 def main(args: List[str]) -> int:
     if not args:
-        sys.stderr.write('usage: agent-sessions json scan|live|detail|usage ...\n')
+        sys.stderr.write('usage: agent-sessions json scan|live|detail|usage|stats ...\n')
         return 2
     sub, rest = args[0], args[1:]
 
@@ -74,6 +74,10 @@ def main(args: List[str]) -> int:
                 sys.stderr.write('unknown option: %s\n' % opt)
                 return 2
         _print(jsonout.usage_output(session_id, from_ts=from_ts, to_ts=to_ts))
+        return 0
+
+    if sub == 'stats':
+        _print(jsonout.stats_output())
         return 0
 
     sys.stderr.write('unknown json subcommand: %s\n' % sub)
