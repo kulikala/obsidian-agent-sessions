@@ -8,6 +8,14 @@ from unittest import mock
 from agentsessions import config, hooks, live
 
 
+def setUpModule():
+    # プラグインから起動したセッションの中で走らせても、送信キー記号が混ざらない。
+    patcher = mock.patch.dict(os.environ)
+    patcher.start()
+    os.environ.pop('AGENT_SESSIONS_ID', None)
+    unittest.addModuleCleanup(patcher.stop)
+
+
 class TestRecordHook(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
@@ -140,7 +148,7 @@ class TestSubmitSymbol(unittest.TestCase):
         self._write_ui_state(json.dumps({'submitKey': 'cmd+enter', 'submitSymbol': '⌘⏎'}))
         with mock.patch.dict(os.environ, {'AGENT_SESSIONS_ID': 'x'}):
             line = hooks.format_status_line({})
-        self.assertEqual(line, 'デフォルト · デフォルト · ctx —% · rc ○ · ⌘⏎')
+        self.assertEqual(line, '⌘⏎ · デフォルト · デフォルト · ctx —% · rc ○')
 
     def test_no_symbol_without_env_var_even_if_ui_state_exists(self):
         self._write_ui_state(json.dumps({'submitKey': 'cmd+enter', 'submitSymbol': '⌘⏎'}))

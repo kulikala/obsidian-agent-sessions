@@ -31,14 +31,14 @@ def record_hook(raw: bytes) -> None:
 
 
 def format_status_line(data: dict) -> str:
-    """`<model.display_name> · <effort> · ctx NN% · rc ●/○[ · <送信キー記号>]` の 1 行。
+    """`[<送信キー記号> · ]<model.display_name> · <effort> · ctx NN% · rc ●/○` の 1 行。
 
     `effort` は `effort.level`（辞書のとき）、または `effort` 自身（文字列の
     とき）、無ければ「デフォルト」。`rc` は `~/.claude/sessions/*.json` の
     うち `session_id` の一致する行の `bridgeSessionId` の有無
     （`live.live_sessions` を使う。一致が無ければ `○`）。送信キー記号
     （T-71）は `AGENT_SESSIONS_ID`（プラグインのデーモンから起動したセッション）
-    のときだけ、`config.UI_STATE_PATH` から読めれば末尾に付ける。
+    のときだけ、`config.UI_STATE_PATH` から読めれば先頭に付ける。
     """
     model = data.get('model') or {}
     display_name = model.get('display_name') or 'デフォルト'
@@ -65,7 +65,7 @@ def format_status_line(data: dict) -> str:
     line = '%s · %s · ctx %s%% · rc %s' % (display_name, effort_label, pct, rc_mark)
     symbol = _submit_symbol()
     if symbol:
-        line += ' · %s' % symbol
+        line = '%s · %s' % (symbol, line)
     return line
 
 
