@@ -727,27 +727,38 @@ export default class AgentSessionsPlugin extends Plugin {
 	/**
 	 * deferred なタブ（`leaf.view` が `TerminalView` ではなく Obsidian の `DeferredView`。
 	 * 復元直後でまだ前面にしていないタブがこれ）のアイコンを直す（D-66 追補 2）。
-	 * `leaf.getViewState().icon` は最後に `updateHeader()` が呼ばれたときの値のまま
-	 * 残り続ける——新規タブなら Obsidian の既定（`ghost`）、古いタブなら前のコードの
-	 * `bot`／`message-circle` のことがある。`TerminalView` はまだ無いので `updateIcon()`
-	 * は使えず、`plugin.index.sessions` の `Row` から分かる範囲（`rowTerminalStatus`。
-	 * 台帳すら無ければ `detached`）でタブ見出しの DOM を直接書き換える。
+	 * `TerminalView` はまだ無いので `updateIcon()` は使えず、`plugin.index.sessions` の
+	 * `Row` から分かる範囲（`rowTerminalStatus`。台帳すら無ければ `detached`）で決める。
+	 *
+	 * 直す先は 2 つ：
+	 * 1. `leaf.view.icon`——`DeferredView` も `View`（公開型）のインスタンスで、`icon:
+	 *    IconName` は公開のフィールド（`getIcon()` はこれを返すだけ）。ここが古いまま
+	 *    だと `view.getIcon()` が `lucide-ghost`（Obsidian の既定）や前のコードの
+	 *    `bot`／`message-circle`（最後に描かれたときの値が Obsidian の側で保存され、
+	 *    `DeferredView` 生成時にそのまま入る）を返し続ける。
+	 * 2. タブ見出しの DOM（`agent-sessions-status-<status>` のクラス・tooltip・実際の
+	 *    `<svg>`）——1 を直すだけでは Obsidian が自分から再描画してくれるとは限らない
+	 *    ので、こちらも直接合わせておく。
 	 */
 	private refreshDeferredTerminalIcons(): void {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
 			if (!leaf.isDeferred) {
 				continue;
 			}
+			const state = leaf.getViewState().state as { id?: string } | undefined;
+			const id = typeof state?.id === "string" ? state.id : "";
+			const row = id ? this.index.sessions.get(id) : undefined;
+			const status: TerminalStatus = row ? rowTerminalStatus(row) : "detached";
+			const iconName = TERMINAL_STATUS_ICON[status];
+
+			leaf.view.icon = iconName;
+
 			const headerEl = (leaf as unknown as { tabHeaderEl?: HTMLElement }).tabHeaderEl;
 			const iconEl = headerEl?.querySelector<HTMLElement>(".workspace-tab-header-inner-icon");
 			if (!iconEl) {
 				continue;
 			}
-			const state = leaf.getViewState().state as { id?: string } | undefined;
-			const id = typeof state?.id === "string" ? state.id : "";
-			const row = id ? this.index.sessions.get(id) : undefined;
-			const status: TerminalStatus = row ? rowTerminalStatus(row) : "detached";
-			setIcon(iconEl, TERMINAL_STATUS_ICON[status]);
+			setIcon(iconEl, iconName);
 			for (const s of ALL_TERMINAL_STATUSES) {
 				iconEl.toggleClass(terminalStatusClass(s), s === status);
 			}
