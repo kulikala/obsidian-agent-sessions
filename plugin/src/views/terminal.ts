@@ -17,6 +17,7 @@ import { submitSequence } from "../main";
 import type AgentSessionsPlugin from "../main";
 import { MarkTracker, type MarkerHandle, type MarkerSource } from "../marks";
 import { RenameSessionModal } from "../modals";
+import { sessionDisplayName } from "../name";
 import { VIEW_TYPE_TERMINAL } from "../open-session";
 import type { Padding } from "../settings";
 import {
@@ -149,7 +150,7 @@ export class TerminalView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return this.displayName || t("common.untitled", { id: this.id.slice(0, 8) });
+		return sessionDisplayName(this.displayName, this.id);
 	}
 
 	getIcon(): string {

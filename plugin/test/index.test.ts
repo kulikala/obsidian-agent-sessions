@@ -235,4 +235,65 @@ describe("SessionIndex", () => {
 		await index.getDetail("a");
 		expect(detailCalls).toEqual(["a", "a"]);
 	});
+
+	describe("waitForName（T-72：/rename は busy にならず events.log にも来ないので明示的に待つ）", () => {
+		it("既に一致していれば rescan を呼ばずに true", async () => {
+			scanImpl = async () => ({
+				sessions: [scanSession({ id: "a", name: "新しい名前" })],
+				store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+			});
+			const index = new SessionIndex(deps);
+			await index.scan();
+
+			let scanCalls = 0;
+			scanImpl = async () => {
+				scanCalls++;
+				return {
+					sessions: [scanSession({ id: "a", name: "新しい名前" })],
+					store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+				};
+			};
+
+			expect(await index.waitForName("a", "新しい名前", 200, 5)).toBe(true);
+			expect(scanCalls).toBe(0);
+		});
+
+		it("数回の再走査の後に一致すれば true（rescan のたび change も発火する）", async () => {
+			scanImpl = async () => ({
+				sessions: [scanSession({ id: "a", name: "旧名" })],
+				store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+			});
+			const index = new SessionIndex(deps);
+			await index.scan();
+
+			let scanCalls = 0;
+			let changes = 0;
+			index.onChange(() => changes++);
+			scanImpl = async (only) => {
+				scanCalls++;
+				const name = scanCalls >= 3 ? "新しい名前" : "旧名";
+				return {
+					sessions: [scanSession({ id: "a", name })],
+					store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+				};
+			};
+
+			expect(await index.waitForName("a", "新しい名前", 500, 5)).toBe(true);
+			expect(scanCalls).toBeGreaterThanOrEqual(3);
+			expect(changes).toBeGreaterThanOrEqual(3);
+			expect(index.sessions.get("a")?.name).toBe("新しい名前");
+		});
+
+		it("timeoutMs に達しても一致しなければ false で諦める", async () => {
+			scanImpl = async () => ({
+				sessions: [scanSession({ id: "a", name: "旧名" })],
+				store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+			});
+			const index = new SessionIndex(deps);
+			await index.scan();
+
+			expect(await index.waitForName("a", "新しい名前", 20, 5)).toBe(false);
+			expect(index.sessions.get("a")?.name).toBe("旧名");
+		});
+	});
 });

@@ -21,6 +21,7 @@ import { applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode
 import { reconcileSubmitKey, sendSequence } from "./keys";
 import { buildAtToken, selectionLineRange } from "./links";
 import { ConfirmModal, NewSessionModal, RenameSessionModal } from "./modals";
+import { sessionDisplayName } from "./name";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./open-session";
 import { AgentSessionsSettings, DEFAULT_SETTINGS, mergeSettings, SUBMIT_KEYS, type SubmitKey } from "./settings";
 import { migrateFromMarkdown, StoreLockError, updateStore } from "./store";
@@ -158,13 +159,14 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.registerView(VIEW_TYPE_TERMINAL, (leaf) => new TerminalView(leaf, this));
 
 		// deferred（復元直後などでまだ前面にしていない、TerminalView が読み込まれていない）
-		// タブのアイコン（D-66 追補 2）：ビューが無い間は `updateIcon()` が届かないので、
-		// ここでタブ見出しの DOM を直接、分かる範囲（`rowTerminalStatus`。台帳が無ければ
-		// `detached`）で直す。`TerminalView` が読み込まれれば `updateIcon()` が引き継ぐ。
-		this.app.workspace.onLayoutReady(() => this.refreshDeferredTerminalIcons());
-		this.registerEvent(this.app.workspace.on("layout-change", () => this.refreshDeferredTerminalIcons()));
-		this.register(this.index.onChange(() => this.refreshDeferredTerminalIcons()));
-		this.register(this.index.registry.onChange(() => this.refreshDeferredTerminalIcons()));
+		// タブのアイコン・題名（D-66 追補 2・T-72）：ビューが無い間は `updateIcon()`・`updateHeader()`
+		// が届かないので、ここでタブ見出しの DOM を直接、分かる範囲（`rowTerminalStatus`・
+		// `Row.name`。台帳が無ければ `detached`・「無題」）で直す。`TerminalView` が読み込まれれば
+		// `updateIcon()`・`refreshName()` が引き継ぐ。
+		this.app.workspace.onLayoutReady(() => this.refreshDeferredTerminalTabs());
+		this.registerEvent(this.app.workspace.on("layout-change", () => this.refreshDeferredTerminalTabs()));
+		this.register(this.index.onChange(() => this.refreshDeferredTerminalTabs()));
+		this.register(this.index.registry.onChange(() => this.refreshDeferredTerminalTabs()));
 
 		this.addRibbonIcon("list-tree", "Agent Sessions", () => {
 			void this.openSidePanel();
@@ -450,6 +452,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	/**
 	 * 新規セッション：uuid を作り `sessions.json` に控えてからタブを開く。名前があれば、
 	 * タブの `start` で claude が `idle` になってから `/rename` を送る（D-42。未適用の控えは持たない）。
+	 * 送った後は `index.waitForName` で `Row.name` に反映されるまで待つ（T-72。タブの題名は
+	 * 反映され次第、購読側が自分で描き直す）。
 	 */
 	newSession(name?: string): void {
 		const id = crypto.randomUUID();
@@ -474,6 +478,7 @@ export default class AgentSessionsPlugin extends Plugin {
 					return;
 				}
 				await this.sendCommand(id, `/rename ${name}`);
+				void this.index.waitForName(id, name);
 			})
 			.catch((err) => {
 				new Notice(t("notice.renameFailed", { error: messageOf(err) }));
@@ -484,6 +489,9 @@ export default class AgentSessionsPlugin extends Plugin {
 	async renameSession(id: string, name: string): Promise<void> {
 		try {
 			await this.sendCommand(id, `/rename ${name}`, t("progress.renaming"));
+			// `/rename` はモデルを呼ばず events.log にも来ないので、`rescan` を明示的に
+			// 繰り返して待つ（T-72）。タブの題名は `Row.name` が変わり次第、購読側が描き直す。
+			void this.index.waitForName(id, name);
 		} catch (err) {
 			new Notice(t("notice.renameFailed", { error: messageOf(err) }));
 		}
@@ -741,21 +749,23 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	/**
 	 * deferred なタブ（`leaf.view` が `TerminalView` ではなく Obsidian の `DeferredView`。
-	 * 復元直後でまだ前面にしていないタブがこれ）のアイコンを直す（D-66 追補 2）。
-	 * `TerminalView` はまだ無いので `updateIcon()` は使えず、`plugin.index.sessions` の
-	 * `Row` から分かる範囲（`rowTerminalStatus`。台帳すら無ければ `detached`）で決める。
+	 * 復元直後でまだ前面にしていないタブがこれ）のアイコン・題名を直す（D-66 追補 2・T-72）。
+	 * `TerminalView` はまだ無いので `updateIcon()`・`refreshName()` は使えず、
+	 * `plugin.index.sessions` の `Row` から分かる範囲（状態は `rowTerminalStatus`・台帳すら
+	 * 無ければ `detached`。名前は `Row.name`・無ければ `sessionDisplayName` の「無題 <id8>」）で決める。
 	 *
-	 * 直す先は 2 つ：
-	 * 1. `leaf.view.icon`——`DeferredView` も `View`（公開型）のインスタンスで、`icon:
-	 *    IconName` は公開のフィールド（`getIcon()` はこれを返すだけ）。ここが古いまま
-	 *    だと `view.getIcon()` が `lucide-ghost`（Obsidian の既定）や前のコードの
-	 *    `bot`／`message-circle`（最後に描かれたときの値が Obsidian の側で保存され、
+	 * 直す先はそれぞれ 2 つ：
+	 * 1. `leaf.view.icon`・`leaf.view.title`——`DeferredView` も `View`（公開型）のインスタンスで、
+	 *    `icon: IconName` は公開のフィールド（`getIcon()` はこれを返すだけ）。`title` は公開の
+	 *    型には無いが実際に持っている値で、`getDisplayText()` の代わりにここから読まれる。
+	 *    どちらも古いままだと、`lucide-ghost`（Obsidian の既定）や「agent-sessions-terminal」
+	 *    （`TerminalView` の `getViewType()`。最後に描かれたときの値が Obsidian の側で保存され、
 	 *    `DeferredView` 生成時にそのまま入る）を返し続ける。
-	 * 2. タブ見出しの DOM（`agent-sessions-status-<status>` のクラス・tooltip・実際の
-	 *    `<svg>`）——1 を直すだけでは Obsidian が自分から再描画してくれるとは限らない
-	 *    ので、こちらも直接合わせておく。
+	 * 2. タブ見出しの DOM（アイコンは `agent-sessions-status-<status>` のクラス・tooltip・実際の
+	 *    `<svg>`、題名は `.workspace-tab-header-inner-title` の文字）——1 を直すだけでは
+	 *    Obsidian が自分から再描画してくれるとは限らないので、こちらも直接合わせておく。
 	 */
-	private refreshDeferredTerminalIcons(): void {
+	private refreshDeferredTerminalTabs(): void {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
 			if (!leaf.isDeferred) {
 				continue;
@@ -765,10 +775,16 @@ export default class AgentSessionsPlugin extends Plugin {
 			const row = id ? this.index.sessions.get(id) : undefined;
 			const status: TerminalStatus = row ? rowTerminalStatus(row) : "detached";
 			const iconName = TERMINAL_STATUS_ICON[status];
+			const name = sessionDisplayName(row?.name, id);
 
 			leaf.view.icon = iconName;
+			(leaf.view as unknown as { title?: string }).title = name;
 
 			const headerEl = (leaf as unknown as { tabHeaderEl?: HTMLElement }).tabHeaderEl;
+			const titleEl = headerEl?.querySelector<HTMLElement>(".workspace-tab-header-inner-title");
+			if (titleEl) {
+				titleEl.setText(name);
+			}
 			const iconEl = headerEl?.querySelector<HTMLElement>(".workspace-tab-header-inner-icon");
 			if (!iconEl) {
 				continue;

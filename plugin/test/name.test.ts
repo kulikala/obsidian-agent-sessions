@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { composeName, filterCategories, listCategories, tokenizeNameInput } from "../src/name";
+import { setLang } from "../src/i18n";
+import { composeName, filterCategories, listCategories, sessionDisplayName, tokenizeNameInput } from "../src/name";
 import { splitName } from "../src/tree";
 
 describe("composeName", () => {
@@ -110,5 +111,33 @@ describe("filterCategories（T-70）", () => {
 
 	it("一致が無ければ空配列", () => {
 		expect(filterCategories(["RIM", "ZERO"], "no-match")).toEqual([]);
+	});
+});
+
+describe("sessionDisplayName（T-72）", () => {
+	it("名前があればそのまま", () => {
+		expect(sessionDisplayName("スキル開発: セッション管理", "01234567-89ab-cdef-0123-456789abcdef")).toBe(
+			"スキル開発: セッション管理"
+		);
+	});
+
+	it("名前が空文字なら「無題 <id8>」（日本語）", () => {
+		setLang("ja");
+		expect(sessionDisplayName("", "01234567-89ab-cdef-0123-456789abcdef")).toBe("無題 01234567");
+	});
+
+	it("名前が null なら「無題 <id8>」", () => {
+		setLang("ja");
+		expect(sessionDisplayName(null, "01234567-89ab-cdef-0123-456789abcdef")).toBe("無題 01234567");
+	});
+
+	it("名前が undefined なら「無題 <id8>」", () => {
+		setLang("ja");
+		expect(sessionDisplayName(undefined, "01234567-89ab-cdef-0123-456789abcdef")).toBe("無題 01234567");
+	});
+
+	it("英語では Untitled <id8>", () => {
+		setLang("en");
+		expect(sessionDisplayName(null, "01234567-89ab-cdef-0123-456789abcdef")).toBe("Untitled 01234567");
 	});
 });

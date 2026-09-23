@@ -1,7 +1,17 @@
 // 名前の組み立て・カテゴリ候補（純関数、D-63・T-70）。ダイアログの 1 つの入力欄と
 // `splitName`（`tree.ts`）を行き来する。
 
+import { t } from "./i18n";
 import { splitName } from "./tree";
+
+/**
+ * タブ見出しに出す表示名（T-72）。`Row.name`（または `TerminalView` の控え）があればそれ、
+ * 無ければ「無題 <id8>」。`terminal.ts` の `getDisplayText()` と `main.ts` の deferred タブ
+ * 直しの両方で使う——どちらも同じ規則で名前を決めるため。
+ */
+export function sessionDisplayName(name: string | null | undefined, id: string): string {
+	return name || t("common.untitled", { id: id.slice(0, 8) });
+}
 
 /**
  * カテゴリと名前から `"カテゴリ: 名前"` を組み立てる（`splitName` の逆）。

@@ -35,6 +35,13 @@ export interface SessionIndexDeps {
 const RESCAN_INTERVAL_MS = 60000;
 /** `registry` の変化から `refreshLive()` までのデバウンス（§6.1・§6.3）。 */
 const LIVE_DEBOUNCE_MS = 1000;
+/** `waitForName` の再走査の間隔・諦める上限（T-72）。 */
+const WAIT_NAME_POLL_MS = 300;
+const WAIT_NAME_TIMEOUT_MS = 5000;
+
+function delay(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 function rowFromScan(s: ScanSession, openTabIds: Set<string>, store: Store): Row {
 	const archivedEntry = store.archived.find((a) => a.id === s.id);
@@ -207,6 +214,35 @@ export class SessionIndex extends EventEmitter {
 		this.applyRegistry();
 		await this.refreshLive();
 		this.emit("change");
+	}
+
+	/**
+	 * `/rename NAME` が書いた名前が `sessions.get(id).name` に現れるまで待つ（T-72）。
+	 * `/rename` はモデルを呼ばないコマンドなので `busy` にならず、`events.log` にも
+	 * hook イベントが来ない——明示的に `rescan([id])` を繰り返さないと、次の周期走査
+	 * （`RESCAN_INTERVAL_MS`）まで `Row.name` もタブの題名も変わらない。`rescan` は毎回
+	 * `change` を発火するので、一致すれば購読側（`TerminalView.refreshName`・
+	 * `refreshDeferredTerminalTabs`）が自分で描き直す。`timeoutMs` に達しても一致しなければ
+	 * 諦めて `false`（呼出側は何もしなくてよい——いずれ周期走査で追いつく）。
+	 */
+	async waitForName(
+		id: string,
+		expected: string,
+		timeoutMs = WAIT_NAME_TIMEOUT_MS,
+		intervalMs = WAIT_NAME_POLL_MS
+	): Promise<boolean> {
+		const deadline = Date.now() + timeoutMs;
+		for (;;) {
+			if (this.sessions.get(id)?.name === expected) {
+				return true;
+			}
+			const remaining = deadline - Date.now();
+			if (remaining <= 0) {
+				return false;
+			}
+			await delay(Math.min(intervalMs, remaining));
+			await this.rescan([id]);
+		}
 	}
 
 	/**
