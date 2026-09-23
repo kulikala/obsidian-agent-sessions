@@ -35,6 +35,7 @@ import {
 } from "./terminal-status";
 import { claudeSettingsPath, readFullscreenTui } from "./tui-mode";
 import type { ArchivedSession, DaemonSession } from "./types";
+import { writeUiState } from "./ui-state";
 import { UsageModal } from "./usage-modal";
 import { ManagerView, VIEW_TYPE_MANAGER } from "./views/manager";
 import { SideView, VIEW_TYPE_SIDE } from "./views/side";
@@ -109,6 +110,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		// keybindings.json が既に改行キーを持っていれば（他のツール・ユーザーが手で書いた場合を
 		// 含む）、プラグインの設定をそれに合わせる（§6.8・D-41 追補。keybindings.json 自体は書かない）。
 		await this.syncSubmitKeyFromKeybindings();
+		this.syncUiState();
 
 		// 旧 `claude-sessions.md` の取り込み（§3）。`sessions.json` が既にあれば何もしない。
 		try {
@@ -232,7 +234,20 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
+		this.syncUiState();
 		this.events.trigger("settings-changed");
+	}
+
+	/**
+	 * 送信キーの記号を `ui.json` へ書く（T-71）。statusLine（Python 側の `format_status_line`）が
+	 * 読む。`AGENT_SESSIONS_ID` で起動したセッションだけが付ける対象なので、ここでは無条件に書く。
+	 */
+	private syncUiState(): void {
+		try {
+			writeUiState(RUNTIME_DIR, this.settings.submitKey);
+		} catch (err) {
+			console.warn("agent-sessions: ui.json を書けない", err);
+		}
 	}
 
 	/**

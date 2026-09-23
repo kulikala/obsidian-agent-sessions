@@ -31,12 +31,14 @@ def record_hook(raw: bytes) -> None:
 
 
 def format_status_line(data: dict) -> str:
-    """`<model.display_name> · <effort> · ctx NN% · rc ●/○` の 1 行。
+    """`<model.display_name> · <effort> · ctx NN% · rc ●/○[ · <送信キー記号>]` の 1 行。
 
     `effort` は `effort.level`（辞書のとき）、または `effort` 自身（文字列の
     とき）、無ければ「デフォルト」。`rc` は `~/.claude/sessions/*.json` の
     うち `session_id` の一致する行の `bridgeSessionId` の有無
-    （`live.live_sessions` を使う。一致が無ければ `○`）。
+    （`live.live_sessions` を使う。一致が無ければ `○`）。送信キー記号
+    （T-71）は `AGENT_SESSIONS_ID`（プラグインのデーモンから起動したセッション）
+    のときだけ、`config.UI_STATE_PATH` から読めれば末尾に付ける。
     """
     model = data.get('model') or {}
     display_name = model.get('display_name') or 'デフォルト'
@@ -60,7 +62,29 @@ def format_status_line(data: dict) -> str:
             rc = entry.rc
     rc_mark = '●' if rc else '○'
 
-    return '%s · %s · ctx %s%% · rc %s' % (display_name, effort_label, pct, rc_mark)
+    line = '%s · %s · ctx %s%% · rc %s' % (display_name, effort_label, pct, rc_mark)
+    symbol = _submit_symbol()
+    if symbol:
+        line += ' · %s' % symbol
+    return line
+
+
+def _submit_symbol() -> str:
+    """送信キーの記号（T-71）。プラグインのデーモンから起動したセッション
+    （`AGENT_SESSIONS_ID` が立っている）でだけ、`config.UI_STATE_PATH` から読む。
+    無い・壊れている・その環境変数が無いプロセスでは空文字（付けない）。
+    """
+    if not os.environ.get('AGENT_SESSIONS_ID'):
+        return ''
+    try:
+        with open(config.UI_STATE_PATH, encoding='utf-8') as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return ''
+    if not isinstance(data, dict):
+        return ''
+    symbol = data.get('submitSymbol')
+    return symbol if isinstance(symbol, str) else ''
 
 
 def record_status(raw: bytes) -> str:

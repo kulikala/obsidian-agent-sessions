@@ -118,6 +118,55 @@ class TestFormatStatusLine(unittest.TestCase):
         m.assert_not_called()
 
 
+class TestSubmitSymbol(unittest.TestCase):
+    # 送信キー記号（T-71）：`AGENT_SESSIONS_ID` があり `config.UI_STATE_PATH` が
+    # 読めるときだけ末尾に ` · <記号>` が付く。
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.ui_state_path = os.path.join(self.tmpdir, 'ui.json')
+        self.patcher = mock.patch.object(config, 'UI_STATE_PATH', self.ui_state_path)
+        self.patcher.start()
+        self.addCleanup(self.patcher.stop)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _write_ui_state(self, content):
+        with open(self.ui_state_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+
+    def test_appends_symbol_when_env_set_and_ui_state_readable(self):
+        self._write_ui_state(json.dumps({'submitKey': 'cmd+enter', 'submitSymbol': '⌘⏎'}))
+        with mock.patch.dict(os.environ, {'AGENT_SESSIONS_ID': 'x'}):
+            line = hooks.format_status_line({})
+        self.assertEqual(line, 'デフォルト · デフォルト · ctx —% · rc ○ · ⌘⏎')
+
+    def test_no_symbol_without_env_var_even_if_ui_state_exists(self):
+        self._write_ui_state(json.dumps({'submitKey': 'cmd+enter', 'submitSymbol': '⌘⏎'}))
+        with mock.patch.dict(os.environ, {}, clear=False):
+            os.environ.pop('AGENT_SESSIONS_ID', None)
+            line = hooks.format_status_line({})
+        self.assertEqual(line, 'デフォルト · デフォルト · ctx —% · rc ○')
+
+    def test_no_symbol_when_ui_state_missing(self):
+        with mock.patch.dict(os.environ, {'AGENT_SESSIONS_ID': 'x'}):
+            line = hooks.format_status_line({})
+        self.assertEqual(line, 'デフォルト · デフォルト · ctx —% · rc ○')
+
+    def test_no_symbol_when_ui_state_is_broken_json(self):
+        self._write_ui_state('not json')
+        with mock.patch.dict(os.environ, {'AGENT_SESSIONS_ID': 'x'}):
+            line = hooks.format_status_line({})
+        self.assertEqual(line, 'デフォルト · デフォルト · ctx —% · rc ○')
+
+    def test_no_symbol_when_ui_state_has_no_submit_symbol(self):
+        self._write_ui_state(json.dumps({'submitKey': 'enter'}))
+        with mock.patch.dict(os.environ, {'AGENT_SESSIONS_ID': 'x'}):
+            line = hooks.format_status_line({})
+        self.assertEqual(line, 'デフォルト · デフォルト · ctx —% · rc ○')
+
+
 class TestRecordStatus(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
