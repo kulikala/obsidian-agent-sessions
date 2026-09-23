@@ -175,10 +175,9 @@ export function renderDetail(container: HTMLElement, ctx: DetailContext | null):
 
 	const statsRow = container.createDiv({ cls: "agent-sessions-detail-stats" });
 	renderDonut(statsRow, statusInfo?.ctxPercent ?? null);
-	// `/compact` の直後は ctx が 0 近くにリセットされていて、他と紛れて見える——
-	// ctx の横に小さく「compact 済み」を出して違いが分かるようにする（T-76 追補）。
-	// `detail.last_command`（transcript から）を見るので、タブが無い行でも判定できる。
-	if (detail?.last_command === "/compact") {
+	// compact 済み（SessionStart source=compact 〜 次の UserPromptSubmit）は ctx が 0 近くで
+	// 他と紛れるので、ctx の横に小さく出す。`row.compacted` は印ファイルから来るので、タブが無い行でも判定できる。
+	if (row.compacted) {
 		statsRow.createSpan({ cls: "agent-sessions-detail-compacted", text: t("detail.compacted") });
 	}
 	const statsText = statsRow.createDiv({ cls: "agent-sessions-detail-stats-text" });
