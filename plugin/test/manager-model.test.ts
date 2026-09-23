@@ -7,11 +7,14 @@ import {
 	categoryKeyOf,
 	categoryTotals,
 	flattenTree,
+	formatWeekdayTime,
 	isRealCategoryKey,
 	moveSelection,
 	sessionCost,
+	shortModelName,
 	sortRows,
 	topCategoryTotals,
+	weeklyPace,
 	windowSummary,
 	type CategoryTotal,
 	type ManagerRow,
@@ -324,5 +327,88 @@ describe("topCategoryTotals（D-64 追補）", () => {
 
 	it("全部 0 なら空配列", () => {
 		expect(topCategoryTotals([total("A", 0), total("B", 0)], 8)).toEqual([]);
+	});
+});
+
+const DAY = 86400;
+const WEEK = 7 * DAY;
+
+describe("weeklyPace（T-74）", () => {
+	it("usedPct が無ければ unknown", () => {
+		expect(weeklyPace(null, 0, WEEK, 100, 50)).toEqual({ kind: "unknown" });
+	});
+
+	it("枠の長さが 0 以下でも unknown", () => {
+		expect(weeklyPace(10, 100, 100, 200, 50)).toEqual({ kind: "unknown" });
+	});
+
+	it("経過が 6 時間未満なら too-early", () => {
+		const result = weeklyPace(10, 0, WEEK, 3600, 50);
+		expect(result.kind).toBe("too-early");
+		if (result.kind === "too-early") {
+			expect(result.elapsedPct).toBeCloseTo((3600 / WEEK) * 100, 5);
+		}
+	});
+
+	it("予測が 100 以下なら on-track（順調）", () => {
+		// 経過 50%（3.5 日）で使用 40% → 予測 80%。
+		const result = weeklyPace(40, 0, WEEK, WEEK / 2, 100);
+		expect(result).toEqual({ kind: "on-track", projectedPct: 80, elapsedPct: 50, usedPct: 40 });
+	});
+
+	it("予測が 100 を超えたら over-pace（使い切る見込み時刻・1 日あたりの上限）", () => {
+		// 経過 50%（3.5 日）で使用 70% → 予測 140%。このペースなら経過 5 日で使い切り、
+		// リセット（7 日）まで 2 日 0 時間残る。残り 3.5 日で 30% 分の余地。
+		const result = weeklyPace(70, 0, WEEK, WEEK / 2, 140);
+		expect(result.kind).toBe("over-pace");
+		if (result.kind === "over-pace") {
+			expect(result.exhaustAt).toBe(5 * DAY);
+			expect(result.daysBeforeReset).toBe(2);
+			expect(result.hoursBeforeReset).toBe(0);
+			expect(result.maxDailyPct).toBeCloseTo(30 / 3.5, 5);
+			expect(result.maxDailyCost).toBeCloseTo((140 * 30) / 70 / 3.5, 5);
+			expect(result.elapsedPct).toBe(50);
+			expect(result.usedPct).toBe(70);
+		}
+	});
+
+	it("使い切る見込み時刻がリセットの直前（日をまたがない）なら daysBeforeReset は 0", () => {
+		// 経過 50%（3.5 日）で使用 90% → 予測 180%。使い切りは経過 ×100/90 ≈ 3.888…日。
+		const result = weeklyPace(90, 0, WEEK, WEEK / 2, 90);
+		expect(result.kind).toBe("over-pace");
+		if (result.kind === "over-pace") {
+			expect(result.daysBeforeReset).toBeGreaterThanOrEqual(3);
+		}
+	});
+});
+
+describe("formatWeekdayTime（T-74）", () => {
+	it("ローカル時刻で「<曜日> HH:MM」にする", () => {
+		const d = new Date(2026, 0, 5, 14, 30, 0);
+		const epochSeconds = d.getTime() / 1000;
+		const weekdayJa = ["日", "月", "火", "水", "木", "金", "土"][d.getDay()];
+		const weekdayEn = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getDay()];
+		expect(formatWeekdayTime(epochSeconds, "ja")).toBe(`${weekdayJa} 14:30`);
+		expect(formatWeekdayTime(epochSeconds, "en")).toBe(`${weekdayEn} 14:30`);
+	});
+
+	it("時・分は 2 桁ゼロ埋め", () => {
+		const d = new Date(2026, 5, 1, 9, 5, 0);
+		const epochSeconds = d.getTime() / 1000;
+		expect(formatWeekdayTime(epochSeconds, "ja")).toMatch(/^. 09:05$/);
+	});
+});
+
+describe("shortModelName（T-74）", () => {
+	it("末尾の `(...)` を落とす", () => {
+		expect(shortModelName("Opus 5.5 (1M context)")).toBe("Opus 5.5");
+	});
+
+	it("付記が無ければそのまま", () => {
+		expect(shortModelName("Sonnet 5")).toBe("Sonnet 5");
+	});
+
+	it("null なら空文字", () => {
+		expect(shortModelName(null)).toBe("");
 	});
 });

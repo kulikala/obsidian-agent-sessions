@@ -87,6 +87,7 @@ const ja = {
 	// ---- 汎用 ----
 	"common.default": "デフォルト",
 	"common.none": "（無し）",
+	"common.unknown": "不明",
 	"common.listSep": "、",
 	"common.untitled": "無題 {id}",
 
@@ -163,6 +164,8 @@ const ja = {
 	// ---- マネージャー（views/manager.ts・manager-model.ts） ----
 	"table.name": "名前",
 	"table.updated": "最終更新",
+	"table.model": "モデル",
+	"table.effort": "エフォート",
 	"table.folder": "フォルダ",
 	"stats.fiveHour": "5 時間枠",
 	"stats.sevenDay": "7 日枠",
@@ -177,6 +180,13 @@ const ja = {
 	"stats.metric.sessionsTip": "この枠内で動いたセッション数",
 	"stats.categoryBar.title": "カテゴリ別（7 日枠）",
 	"stats.categoryBar.empty": "この枠の使用はありません",
+	"stats.pace.unknown": "使用率が分かりません",
+	"stats.pace.tooEarly": "判定には経過が足りません",
+	"stats.pace.onTrack": "順調 — このペースで枠の終わりに約 {pct}",
+	"stats.pace.overPace": "このペースでは {when} に使い切ります（リセットの {days} 日 {hours} 時間前）",
+	"stats.pace.overPaceGuide": "残り 1 日あたり {pct} 以下（約 {cost}／日）",
+	"stats.pace.overPaceGuideNoCost": "残り 1 日あたり {pct} 以下",
+	"stats.pace.tooltip": "経過 {elapsedPct}%・使用 {usedPct}%",
 	"category.single": "カテゴリなし",
 	"category.other": "名前なし",
 	"toolbar.filterPlaceholder": "絞込",
@@ -304,6 +314,7 @@ const en: Record<MessageKey, string> = {
 
 	"common.default": "Default",
 	"common.none": "(none)",
+	"common.unknown": "Unknown",
 	"common.listSep": ", ",
 	"common.untitled": "Untitled {id}",
 
@@ -375,6 +386,8 @@ const en: Record<MessageKey, string> = {
 
 	"table.name": "Name",
 	"table.updated": "Last updated",
+	"table.model": "Model",
+	"table.effort": "Effort",
 	"table.folder": "Folder",
 	"stats.fiveHour": "5-hour window",
 	"stats.sevenDay": "7-day window",
@@ -389,6 +402,13 @@ const en: Record<MessageKey, string> = {
 	"stats.metric.sessionsTip": "Number of sessions active within this window",
 	"stats.categoryBar.title": "By category (7-day window)",
 	"stats.categoryBar.empty": "No usage in this window",
+	"stats.pace.unknown": "Usage percentage unavailable",
+	"stats.pace.tooEarly": "Not enough elapsed time to judge yet",
+	"stats.pace.onTrack": "On track — about {pct} by the end of the window at this pace",
+	"stats.pace.overPace": "At this pace you'll run out {when} ({days}d {hours}h before reset)",
+	"stats.pace.overPaceGuide": "Stay under {pct} per remaining day (about {cost}/day)",
+	"stats.pace.overPaceGuideNoCost": "Stay under {pct} per remaining day",
+	"stats.pace.tooltip": "{elapsedPct}% elapsed · {usedPct}% used",
 	"category.single": "No category",
 	"category.other": "Unnamed",
 	"toolbar.filterPlaceholder": "Filter",

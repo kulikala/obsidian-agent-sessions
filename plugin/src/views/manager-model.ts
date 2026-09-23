@@ -3,7 +3,7 @@
 // （テストは test/manager-model.test.ts）。
 
 import type { Row } from "../index";
-import { t } from "../i18n";
+import { t, type Lang } from "../i18n";
 import { NO_CATEGORY_GROUP, OTHER_GROUP, splitName, type ManagerTree } from "../tree";
 import type { StatsResult, StatsWindow } from "../types";
 
@@ -213,4 +213,94 @@ export function topCategoryTotals(totals: CategoryTotal[], n: number): CategoryT
 		.filter((c) => c.cost > 0)
 		.sort((a, b) => b.cost - a.cost)
 		.slice(0, n);
+}
+
+// ---- 週間枠（7 日枠）のペース判定（T-74） --------------------------------------------------
+
+/** 経過がこれ未満（秒）ならペースが安定しないため判定しない。 */
+const MIN_PACE_ELAPSED_SECONDS = 6 * 60 * 60;
+
+export type WeeklyPace =
+	| { kind: "unknown" }
+	| { kind: "too-early"; elapsedPct: number }
+	| {
+			kind: "on-track";
+			/** このペースが続いた場合の、枠の終わりまでの使用率の見込み（%。100 以下）。 */
+			projectedPct: number;
+			elapsedPct: number;
+			usedPct: number;
+	  }
+	| {
+			kind: "over-pace";
+			/** このペースで 100% に達する見込み時刻（epoch 秒）。 */
+			exhaustAt: number;
+			/** `exhaustAt` からリセット（`end`）までの残り。 */
+			daysBeforeReset: number;
+			hoursBeforeReset: number;
+			/** 使い切らずに済ませるための、残り日数あたりの上限（%／日）。 */
+			maxDailyPct: number;
+			/** 同じ上限をコストに換算した目安（$／日）。`usedPct` が 0 なら計算できないので `null`。 */
+			maxDailyCost: number | null;
+			elapsedPct: number;
+			usedPct: number;
+	  };
+
+/**
+ * 「同じペースで 7 日枠を使い切るか」の判定（T-74）。`usedPct` が無ければ `unknown`。
+ * 経過（`now - start`）が 6 時間未満、または枠の長さ（`end - start`）が 0 以下なら
+ * `too-early`——ペースがまだ安定しないため判定しない。それ以外は、経過率
+ * `e = (now - start) / (end - start)` に対する予測 `usedPct / e` が 100 以下なら
+ * `on-track`（このペースなら使い切らない）、100 を超えるなら `over-pace`
+ * （使い切る見込み時刻と、使い切らずに済ませるための 1 日あたりの上限を返す）。
+ * `windowCost`（枠内のコスト合計）は `over-pace` の `maxDailyCost`（$ の目安）に使う。
+ */
+export function weeklyPace(usedPct: number | null, start: number, end: number, now: number, windowCost: number): WeeklyPace {
+	const duration = end - start;
+	if (usedPct == null || duration <= 0) {
+		return { kind: "unknown" };
+	}
+	const elapsed = now - start;
+	if (elapsed < MIN_PACE_ELAPSED_SECONDS) {
+		return { kind: "too-early", elapsedPct: Math.max(0, (elapsed / duration) * 100) };
+	}
+	const elapsedFrac = elapsed / duration;
+	const elapsedPct = elapsedFrac * 100;
+	const projectedPct = usedPct / elapsedFrac;
+	if (projectedPct <= 100) {
+		return { kind: "on-track", projectedPct, elapsedPct, usedPct };
+	}
+	// 使い切る時刻：`usedPct` が `elapsed` 秒で貯まったのと同じペースのまま 100% まで進むとしたら。
+	const secondsToExhaust = elapsed * (100 / usedPct);
+	const exhaustAt = start + secondsToExhaust;
+	const secondsBeforeReset = Math.max(0, end - exhaustAt);
+	const daysBeforeReset = Math.floor(secondsBeforeReset / 86400);
+	const hoursBeforeReset = Math.floor((secondsBeforeReset % 86400) / 3600);
+	const remainingDays = Math.max(0, (end - now) / 86400);
+	const maxDailyPct = remainingDays > 0 ? (100 - usedPct) / remainingDays : 0;
+	const maxDailyCost = usedPct > 0 && remainingDays > 0 ? (windowCost * (100 - usedPct)) / usedPct / remainingDays : null;
+	return { kind: "over-pace", exhaustAt, daysBeforeReset, hoursBeforeReset, maxDailyPct, maxDailyCost, elapsedPct, usedPct };
+}
+
+const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"] as const;
+const WEEKDAY_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+
+/** `epochSeconds`（ローカル時刻）を「<曜日> HH:MM」にする（T-74）。 */
+export function formatWeekdayTime(epochSeconds: number, lang: Lang): string {
+	const d = new Date(epochSeconds * 1000);
+	const pad = (n: number) => String(n).padStart(2, "0");
+	const weekday = (lang === "ja" ? WEEKDAY_JA : WEEKDAY_EN)[d.getDay()];
+	return `${weekday} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+// ---- モデル・エフォート列（T-74） ----------------------------------------------------------
+
+/**
+ * モデルの表示名から `(...)` の付記を落とした短い表記（例 `"Opus 5.5 (1M context)"` →
+ * `"Opus 5.5"`）。表のモデル列に使う——完全な値は tooltip に出す（`statusInfo.model` そのまま）。
+ */
+export function shortModelName(model: string | null): string {
+	if (!model) {
+		return "";
+	}
+	return model.replace(/\s*\([^)]*\)\s*$/, "").trim();
 }

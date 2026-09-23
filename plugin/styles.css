@@ -69,6 +69,33 @@
 	font-weight: var(--font-semibold);
 }
 
+/* 7 日枠のペース判定（使用率の下、T-74）。順調は緑、使い切る見込みはオレンジ、
+   判定できないときは薄いグレー。 */
+.agent-sessions-manager-stats-pace {
+	margin-top: var(--size-2-2);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+}
+
+.agent-sessions-manager-stats-pace.is-good {
+	color: var(--color-green);
+}
+
+.agent-sessions-manager-stats-pace.is-warn {
+	color: var(--color-orange, darkorange);
+}
+
+.agent-sessions-manager-stats-pace.is-muted {
+	color: var(--text-faint);
+	font-weight: var(--font-normal);
+}
+
+.agent-sessions-manager-stats-pace-guide {
+	margin-top: var(--size-2-1);
+	color: var(--text-muted);
+	font-weight: var(--font-normal);
+}
+
 .agent-sessions-manager-stats-countdown {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
@@ -363,6 +390,22 @@
 	white-space: nowrap;
 }
 
+.agent-sessions-manager-col-model,
+.agent-sessions-manager-col-effort {
+	color: var(--text-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.agent-sessions-manager-col-model {
+	width: 90px;
+}
+
+.agent-sessions-manager-col-effort {
+	width: 64px;
+}
+
 .agent-sessions-manager-col-5h,
 .agent-sessions-manager-col-7d {
 	width: 72px;
@@ -392,7 +435,8 @@
 	cursor: pointer;
 }
 
-/* 幅が足りないときは フォルダ → 5h の順に列を隠す（`col` と `td` の両方。D-54）。 */
+/* 幅が足りないときは フォルダ → エフォート → モデル → 5h の順に列を隠す
+   （`col` と `td`／`th` の両方。D-54・T-74）。 */
 @container (max-width: 599px) {
 	.agent-sessions-manager-table col.agent-sessions-manager-col-folder {
 		display: none;
@@ -400,6 +444,28 @@
 
 	.agent-sessions-manager-row td.agent-sessions-manager-col-folder,
 	.agent-sessions-manager-row th.agent-sessions-manager-col-folder {
+		display: none;
+	}
+}
+
+@container (max-width: 549px) {
+	.agent-sessions-manager-table col.agent-sessions-manager-col-effort {
+		display: none;
+	}
+
+	.agent-sessions-manager-row td.agent-sessions-manager-col-effort,
+	.agent-sessions-manager-row th.agent-sessions-manager-col-effort {
+		display: none;
+	}
+}
+
+@container (max-width: 499px) {
+	.agent-sessions-manager-table col.agent-sessions-manager-col-model {
+		display: none;
+	}
+
+	.agent-sessions-manager-row td.agent-sessions-manager-col-model,
+	.agent-sessions-manager-row th.agent-sessions-manager-col-model {
 		display: none;
 	}
 }

@@ -6,7 +6,7 @@ import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf } from 
 import type AgentSessionsPlugin from "../main";
 import { stats, usage } from "../backend";
 import { paletteHueDeg } from "../category";
-import { t } from "../i18n";
+import { getLang, t } from "../i18n";
 import { NewSessionModal } from "../modals";
 import { VIEW_TYPE_TERMINAL } from "../open-session";
 import { loadStore } from "../store";
@@ -20,11 +20,14 @@ import {
 	categoryKeyOf,
 	categoryTotals,
 	flattenTree,
+	formatWeekdayTime,
 	isRealCategoryKey,
 	moveSelection,
 	sessionCost,
+	shortModelName,
 	sortRows,
 	topCategoryTotals,
+	weeklyPace,
 	windowSummary,
 	type CategoryTotal,
 	type ManagerRow,
@@ -197,6 +200,8 @@ export class ManagerView extends ItemView {
 		colgroup.createEl("col", { cls: "agent-sessions-manager-col-mark" });
 		colgroup.createEl("col", { cls: "agent-sessions-manager-col-name" });
 		colgroup.createEl("col", { cls: "agent-sessions-manager-col-time" });
+		colgroup.createEl("col", { cls: "agent-sessions-manager-col-model" });
+		colgroup.createEl("col", { cls: "agent-sessions-manager-col-effort" });
 		colgroup.createEl("col", { cls: "agent-sessions-manager-col-5h" });
 		colgroup.createEl("col", { cls: "agent-sessions-manager-col-7d" });
 		colgroup.createEl("col", { cls: "agent-sessions-manager-col-folder" });
@@ -287,6 +292,8 @@ export class ManagerView extends ItemView {
 		tr.createEl("th", { cls: "agent-sessions-manager-col-mark" });
 		tr.createEl("th", { cls: "agent-sessions-manager-col-name", text: t("table.name") });
 		this.headEls.updated = this.buildSortHead(tr, "agent-sessions-manager-col-time", t("table.updated"), "updated");
+		tr.createEl("th", { cls: "agent-sessions-manager-col-model", text: t("table.model") });
+		tr.createEl("th", { cls: "agent-sessions-manager-col-effort", text: t("table.effort") });
 		this.headEls["5h"] = this.buildSortHead(tr, "agent-sessions-manager-col-5h", "5h", "5h");
 		this.headEls["7d"] = this.buildSortHead(tr, "agent-sessions-manager-col-7d", "7d", "7d");
 		tr.createEl("th", { cls: "agent-sessions-manager-col-folder", text: t("table.folder") });
@@ -318,12 +325,13 @@ export class ManagerView extends ItemView {
 
 	private renderStatsBar(): void {
 		this.statsBarEl.empty();
-		this.renderStatsCard(this.statsBarEl, t("stats.fiveHour"), this.statsResult?.windows.five_hour ?? null);
-		this.renderStatsCard(this.statsBarEl, t("stats.sevenDay"), this.statsResult?.windows.seven_day ?? null);
+		this.renderStatsCard(this.statsBarEl, t("stats.fiveHour"), this.statsResult?.windows.five_hour ?? null, false);
+		this.renderStatsCard(this.statsBarEl, t("stats.sevenDay"), this.statsResult?.windows.seven_day ?? null, true);
 	}
 
-	/** カード見出しの横に「リセットまで…」、下段はラベル付き 2×2（D-62）。 */
-	private renderStatsCard(container: HTMLElement, label: string, w: StatsWindow | null): void {
+	/** カード見出しの横に「リセットまで…」、下段はラベル付き 2×2（D-62）。`showPace` は
+	 * 7 日枠だけ真——「同じペースで足りるか」の判定（T-74）は週間枠にしか意味が無い。 */
+	private renderStatsCard(container: HTMLElement, label: string, w: StatsWindow | null, showPace: boolean): void {
 		const card = container.createDiv({ cls: "agent-sessions-manager-stats-card" });
 
 		const head = card.createDiv({ cls: "agent-sessions-manager-stats-head" });
@@ -341,6 +349,10 @@ export class ManagerView extends ItemView {
 		const pctText = w?.used_percentage != null ? `${Math.round(w.used_percentage)}%` : "—";
 		card.createDiv({ cls: "agent-sessions-manager-stats-pct", text: pctText });
 
+		if (showPace) {
+			this.renderPaceLine(card, w);
+		}
+
 		const summary = w ? windowSummary(w) : null;
 		const metrics = card.createDiv({ cls: "agent-sessions-manager-stats-metrics" });
 		this.renderMetric(metrics, t("stats.metric.cost"), w ? formatCost(w.total.cost) : "—", t("stats.metric.costTip"));
@@ -357,6 +369,58 @@ export class ManagerView extends ItemView {
 			summary ? String(summary.sessionCount) : "—",
 			t("stats.metric.sessionsTip")
 		);
+	}
+
+	/**
+	 * 7 日枠の使用率バーの下に 1 行：「同じペースで進んでも枠が足りるか」（T-74・`weeklyPace`）。
+	 * 順調なら緑、使い切る見込みならオレンジ＋1 日あたりの上限の目安（2 行目）、判定できなければ
+	 * 薄いグレーで理由を出す。tooltip に判定の根拠（経過％・使用％）。
+	 */
+	private renderPaceLine(card: HTMLElement, w: StatsWindow | null): void {
+		const lineEl = card.createDiv({ cls: "agent-sessions-manager-stats-pace" });
+		if (!w || w.used_percentage == null) {
+			lineEl.addClass("is-muted");
+			lineEl.setText(t("stats.pace.unknown"));
+			return;
+		}
+		const now = Date.now() / 1000;
+		const pace = weeklyPace(w.used_percentage, w.start, w.end, now, w.total.cost);
+		const tooltipText = (elapsedPct: number, usedPct: number) =>
+			t("stats.pace.tooltip", { elapsedPct: String(Math.round(elapsedPct)), usedPct: String(Math.round(usedPct)) });
+
+		if (pace.kind === "unknown" || pace.kind === "too-early") {
+			lineEl.addClass("is-muted");
+			lineEl.setText(t("stats.pace.tooEarly"));
+			if (pace.kind === "too-early") {
+				setTooltip(lineEl, tooltipText(pace.elapsedPct, w.used_percentage));
+			}
+			return;
+		}
+		if (pace.kind === "on-track") {
+			lineEl.addClass("is-good");
+			lineEl.setText(t("stats.pace.onTrack", { pct: `${Math.round(pace.projectedPct)}%` }));
+			setTooltip(lineEl, tooltipText(pace.elapsedPct, pace.usedPct));
+			return;
+		}
+		lineEl.addClass("is-warn");
+		const when = formatWeekdayTime(pace.exhaustAt, getLang());
+		lineEl.createDiv({
+			cls: "agent-sessions-manager-stats-pace-main",
+			text: t("stats.pace.overPace", {
+				when,
+				days: String(pace.daysBeforeReset),
+				hours: String(pace.hoursBeforeReset),
+			}),
+		});
+		const pctText = `${pace.maxDailyPct.toFixed(1)}%`;
+		lineEl.createDiv({
+			cls: "agent-sessions-manager-stats-pace-guide",
+			text:
+				pace.maxDailyCost != null
+					? t("stats.pace.overPaceGuide", { pct: pctText, cost: formatCost(pace.maxDailyCost) })
+					: t("stats.pace.overPaceGuideNoCost", { pct: pctText }),
+		});
+		setTooltip(lineEl, tooltipText(pace.elapsedPct, pace.usedPct));
 	}
 
 	/** ラベル（薄）＋値（太字）の 1 マス。tooltip にその値の定義（D-62）。 */
@@ -558,6 +622,9 @@ export class ManagerView extends ItemView {
 				head.createSpan({ cls: "agent-sessions-manager-group-label", text: mrow.label });
 			}
 			head.createSpan({ cls: "agent-sessions-manager-group-count", text: String(mrow.count) });
+			// モデル・エフォートはセッション単位の値なので、見出し行は空にする（T-74）。
+			tr.createEl("td", { cls: "agent-sessions-manager-col-model" });
+			tr.createEl("td", { cls: "agent-sessions-manager-col-effort" });
 			this.renderGroupCostCell(tr, "agent-sessions-manager-col-5h", "5h", mrow.key);
 			this.renderGroupCostCell(tr, "agent-sessions-manager-col-7d", "7d", mrow.key);
 			tr.createEl("td", { cls: "agent-sessions-manager-col-folder" });
@@ -575,6 +642,8 @@ export class ManagerView extends ItemView {
 			tr.createEl("td", { cls: "agent-sessions-manager-col-mark" });
 			tr.createEl("td", { cls: "agent-sessions-manager-col-name", text: mrow.name || t("common.untitled", { id: mrow.id.slice(0, 8) }) });
 			tr.createEl("td", { cls: "agent-sessions-manager-col-time" });
+			tr.createEl("td", { cls: "agent-sessions-manager-col-model" });
+			tr.createEl("td", { cls: "agent-sessions-manager-col-effort" });
 			tr.createEl("td", { cls: "agent-sessions-manager-col-5h" });
 			tr.createEl("td", { cls: "agent-sessions-manager-col-7d" });
 			tr.createEl("td", { cls: "agent-sessions-manager-col-folder" });
@@ -610,6 +679,9 @@ export class ManagerView extends ItemView {
 		}
 		nameWrap.createSpan({ cls: "agent-sessions-manager-name-text", text: rowLabel(row) });
 		tr.createEl("td", { cls: "agent-sessions-manager-col-time", text: formatTime(row.last_activity) });
+		const statusInfo = this.plugin.index.statusline.get(row.id);
+		this.renderShortValueCell(tr, "agent-sessions-manager-col-model", shortModelName(statusInfo?.model ?? null), statusInfo?.model ?? null);
+		this.renderShortValueCell(tr, "agent-sessions-manager-col-effort", statusInfo?.effort ?? "", statusInfo?.effort ?? null);
 		this.renderCostCell(tr, "agent-sessions-manager-col-5h", this.statsResult?.windows.five_hour, row.id);
 		this.renderCostCell(tr, "agent-sessions-manager-col-7d", this.statsResult?.windows.seven_day, row.id);
 		tr.createEl("td", { cls: "agent-sessions-manager-col-folder", text: row.folder });
@@ -640,6 +712,13 @@ export class ManagerView extends ItemView {
 			cls: `${cls} agent-sessions-manager-col-num`,
 			text: cost != null ? formatCost(cost) : "",
 		});
+	}
+
+	/** モデル・エフォート列の 1 セル：短い表記（`short`）を出し、tooltip に完全な値
+	 * （`full`。無ければ「不明」）。値の出所は詳細パネルと同じ `statusline.get(id)`（T-74）。 */
+	private renderShortValueCell(tr: HTMLTableRowElement, cls: string, short: string, full: string | null): void {
+		const td = tr.createEl("td", { cls, text: short });
+		setTooltip(td, full ?? t("common.unknown"));
 	}
 
 	/** グループ見出し行の 5h／7d の列 1 セル：そのカテゴリの合計（無ければ空欄。D-64）。 */
