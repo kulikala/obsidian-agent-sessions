@@ -4,7 +4,7 @@
 
 import type { Row } from "../index";
 import { t } from "../i18n";
-import { OTHER_GROUP, splitName, type ManagerTree } from "../tree";
+import { NO_CATEGORY_GROUP, OTHER_GROUP, splitName, type ManagerTree } from "../tree";
 import type { StatsResult, StatsWindow } from "../types";
 
 /** 折畳の対象にならない特別なグループ鍵（アーカイブの見出し）。 */
@@ -17,8 +17,10 @@ export type ManagerRow =
 	| { kind: "archived-orphan"; id: string; name: string };
 
 /**
- * グループ（見出し→畳んでなければ子）→ 単独 → その他のセッション（見出し→子）→
- * `showArchived` なら アーカイブ（見出し→子。常に展開）、の順に 1 本へ平らにする。
+ * グループ（見出し→畳んでなければ子）→ カテゴリなし（見出し→子）→ その他のセッション
+ * （見出し→子）→ `showArchived` なら アーカイブ（見出し→子。常に展開）、の順に 1 本へ
+ * 平らにする。カテゴリなし・その他のセッションも他のグループと同じ見出し付きの区分にし、
+ * 直前のグループの最後の行と続いて見えないようにする（T-70 追補）。
  */
 export function flattenTree(tree: ManagerTree, showArchived: boolean): ManagerRow[] {
 	const out: ManagerRow[] = [];
@@ -32,8 +34,20 @@ export function flattenTree(tree: ManagerTree, showArchived: boolean): ManagerRo
 		}
 	}
 
-	for (const row of tree.singles) {
-		out.push({ kind: "session", row, indent: false });
+	if (tree.singles.rows.length > 0) {
+		out.push({
+			// `key` は `store.folded` の識別子（`tree.ts` の `NO_CATEGORY_GROUP` と同じ値）。
+			key: NO_CATEGORY_GROUP,
+			kind: "group",
+			label: t("category.single"),
+			count: tree.singles.rows.length,
+			folded: tree.singles.folded,
+		});
+		if (!tree.singles.folded) {
+			for (const row of tree.singles.rows) {
+				out.push({ kind: "session", row, indent: true });
+			}
+		}
 	}
 
 	if (tree.others.rows.length > 0) {
@@ -138,42 +152,40 @@ export function windowSummary(w: StatsWindow): WindowSummary {
 	};
 }
 
-/** グループ名を持たない名前付きセッション（`singles`）のカテゴリ鍵。表には群の見出しが無い
- * （`flattenTree` 参照）ので、実際のグループ名や `OTHER_GROUP` とは衝突しない値にする。 */
-const SINGLE_CATEGORY = "__single__";
-
 /**
- * `row` のカテゴリ鍵（D-64・D-65）：名前があればグループ部分（無ければ `SINGLE_CATEGORY`）、
- * 名前が無ければ `OTHER_GROUP`。`flattenTree` の分類（グループ／単独／その他）と揃える。
+ * `row` のカテゴリ鍵（D-64・D-65）：名前があればグループ部分（無ければ `NO_CATEGORY_GROUP`
+ * 「カテゴリなし」）、名前が無ければ `OTHER_GROUP`「その他のセッション」（表示は「名前なし」）。
+ * `flattenTree` の分類（グループ／カテゴリなし／その他）と揃える。
  */
 export function categoryKeyOf(row: Row): string {
 	if (row.name) {
 		const [group] = splitName(row.name);
-		return group ?? SINGLE_CATEGORY;
+		return group ?? NO_CATEGORY_GROUP;
 	}
 	return OTHER_GROUP;
 }
 
-/** `key` が実際のカテゴリ名か（「単独」「その他」「アーカイブ」の見出しではないか）。
- * チップ（T-70）を出すかどうかの判定に使う。 */
+/** `key` が実際のカテゴリ名か（「カテゴリなし」「その他のセッション（名前なし）」「アーカイブ」
+ * の見出しではないか）。チップ（T-70）を出すかどうかの判定に使う——カテゴリの色を持たない
+ * 区分にはチップを付けない。 */
 export function isRealCategoryKey(key: string): boolean {
-	return key !== SINGLE_CATEGORY && key !== OTHER_GROUP && key !== ARCHIVED_GROUP;
+	return key !== NO_CATEGORY_GROUP && key !== OTHER_GROUP && key !== ARCHIVED_GROUP;
 }
 
 export interface CategoryTotal {
-	/** グループ名、または `OTHER_GROUP`／`SINGLE_CATEGORY`（表のグループ行の `key` と同じ値で
-	 * 引ければ揃う。「単独」はどの見出しとも一致しない——表に見出しが無いため）。 */
+	/** グループ名、または `OTHER_GROUP`／`NO_CATEGORY_GROUP`（表のグループ行の `key` と同じ値で
+	 * 引ければ揃う）。 */
 	key: string;
-	/** 画面に出す文字列（「単独」「その他」はここで日本語化する）。 */
+	/** 画面に出す文字列（「カテゴリなし」「名前なし」はここで日本語化する）。 */
 	label: string;
 	cost: number;
 	count: number;
 }
 
 /**
- * カテゴリ（グループ名。無ければ「単独」、名前が無ければ「その他」）ごとの、`window` 内の
- * コスト合計とセッション数（D-64）。アーカイブ済みと無名の子セッションは数えない
- * （`buildManagerTree` の `active`・`othersRows` と同じ絞り込み）。
+ * カテゴリ（グループ名。無ければ「カテゴリなし」、名前が無ければ「名前なし」）ごとの、
+ * `window` 内のコスト合計とセッション数（D-64）。アーカイブ済みと無名の子セッションは
+ * 数えない（`buildManagerTree` の `active`・`othersRows` と同じ絞り込み）。
  */
 export function categoryTotals(rows: Row[], stats: StatsResult | null, window: "5h" | "7d"): CategoryTotal[] {
 	const w = windowOf(stats, window);
@@ -183,7 +195,7 @@ export function categoryTotals(rows: Row[], stats: StatsResult | null, window: "
 			continue;
 		}
 		const key = categoryKeyOf(row);
-		const label = key === SINGLE_CATEGORY ? t("category.single") : key === OTHER_GROUP ? t("category.other") : key;
+		const label = key === NO_CATEGORY_GROUP ? t("category.single") : key === OTHER_GROUP ? t("category.other") : key;
 		const bucket = buckets.get(key) ?? { key, label, cost: 0, count: 0 };
 		bucket.cost += sessionCost(w, row.id) ?? 0;
 		bucket.count += 1;

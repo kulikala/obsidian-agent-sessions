@@ -30,6 +30,10 @@ export interface AgentSessionsSettings {
 	sideDetailHeight: number;
 	/** 表示言語（§6.9・D-56）。既定は自動（Obsidian の言語に合わせる）。 */
 	language: LanguageSetting;
+	/** マネージャー下部・解析領域（統計の帯＋カテゴリ別バー）の高さ（px。T-70 追補）。 */
+	managerAnalysisHeight: number;
+	/** マネージャーの解析領域を畳んであるか（T-70 追補）。 */
+	managerAnalysisCollapsed: boolean;
 }
 
 export const DEFAULT_SETTINGS: AgentSessionsSettings = {
@@ -46,6 +50,8 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	submitKey: "enter",
 	sideDetailHeight: 220,
 	language: "auto",
+	managerAnalysisHeight: 240,
+	managerAnalysisCollapsed: false,
 };
 
 /**

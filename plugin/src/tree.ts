@@ -5,6 +5,10 @@ import type { Row } from "./index";
 import type { Store } from "./store";
 
 export const OTHER_GROUP = "その他のセッション";
+/** 名前は有るがカテゴリ（グループ名）が無いセッションの区分（T-70 追補）。実際のカテゴリ名とは
+ * 衝突しない識別子。表示は「カテゴリなし」（`i18n.ts` の `category.single`）——「単独」とは呼ばない
+ * （そのようなカテゴリだと誤認されるため）。 */
+export const NO_CATEGORY_GROUP = "__no_category__";
 
 const GROUP_SEP = ": ";
 
@@ -36,7 +40,9 @@ export interface ArchivedEntry {
 
 export interface ManagerTree {
 	groups: GroupNode[];
-	singles: Row[];
+	/** 名前は有るがカテゴリの無いセッション（「カテゴリなし」区分。T-70 追補で `others` と
+	 * 同じ形——折畳の状態を持たせ、表で見出し付きの区分にする）。 */
+	singles: { folded: boolean; rows: Row[] };
 	others: { folded: boolean; rows: Row[] };
 	archived: ArchivedEntry[];
 }
@@ -51,9 +57,9 @@ function byMtimeDesc(list: Labeled[]): Labeled[] {
 }
 
 /**
- * グループ（見出し、折畳）→ 単独 → その他のセッション（既定で折畳）→ アーカイブ。
- * 各区分の中は最終更新順（§6.2）。「その他のセッション」に載るのは名前が無く
- * `child` が偽のものだけ（無名の子セッションはどこにも出ない）。
+ * グループ（見出し、折畳）→ カテゴリなし（見出し、折畳）→ その他のセッション（見出し、
+ * 既定で折畳）→ アーカイブ。各区分の中は最終更新順（§6.2）。「その他のセッション」に
+ * 載るのは名前が無く `child` が偽のものだけ（無名の子セッションはどこにも出ない）。
  */
 export function buildManagerTree(rows: Row[], store: Store): ManagerTree {
 	const active = rows.filter((r) => !r.archived);
@@ -113,7 +119,7 @@ export function buildManagerTree(rows: Row[], store: Store): ManagerTree {
 
 	return {
 		groups,
-		singles: singleRows,
+		singles: { folded: store.folded.includes(NO_CATEGORY_GROUP), rows: singleRows },
 		others: { folded: store.folded.includes(OTHER_GROUP), rows: othersSorted },
 		archived,
 	};

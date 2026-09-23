@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Row } from "../src/index";
 import { emptyStore, type Store } from "../src/store";
-import { buildManagerTree, buildSideList, OTHER_GROUP, splitName } from "../src/tree";
+import { buildManagerTree, buildSideList, NO_CATEGORY_GROUP, OTHER_GROUP, splitName } from "../src/tree";
 
 function row(overrides: Partial<Row> & Pick<Row, "id">): Row {
 	return {
@@ -45,7 +45,7 @@ describe("splitName", () => {
 });
 
 describe("buildManagerTree", () => {
-	it("グループ→単独→その他の順に組む", () => {
+	it("グループ→カテゴリなし→その他の順に組む", () => {
 		const rows: Row[] = [
 			row({ id: "1", name: "RIM: 議事メモ作成", last_activity: 300 }),
 			row({ id: "2", name: "RIM: Fit&Gap進め方", last_activity: 400 }),
@@ -59,7 +59,7 @@ describe("buildManagerTree", () => {
 		// グループ内は最終更新順（新しい順）。
 		expect(tree.groups[0].rows.map((r) => r.id)).toEqual(["2", "1"]);
 
-		expect(tree.singles.map((r) => r.id)).toEqual(["3"]);
+		expect(tree.singles.rows.map((r) => r.id)).toEqual(["3"]);
 		expect(tree.others.rows.map((r) => r.id)).toEqual(["4"]);
 	});
 
@@ -72,13 +72,13 @@ describe("buildManagerTree", () => {
 
 		expect(tree.others.rows.map((r) => r.id)).toEqual(["2"]);
 		expect(tree.groups).toHaveLength(0);
-		expect(tree.singles).toHaveLength(0);
+		expect(tree.singles.rows).toHaveLength(0);
 	});
 
 	it("アーカイブは出ない（groups/singles/others のどこにも）", () => {
 		const rows: Row[] = [
 			row({ id: "1", name: "RIM: 議事メモ作成", archived: true, last_activity: 300 }),
-			row({ id: "2", name: "単独セッション", archived: true, last_activity: 200 }),
+			row({ id: "2", name: "カテゴリなしセッション", archived: true, last_activity: 200 }),
 			row({ id: "3", name: null, child: false, archived: true, last_activity: 100 }),
 			row({ id: "4", name: "RIM: 生きてる方", archived: false, last_activity: 50 }),
 		];
@@ -86,7 +86,7 @@ describe("buildManagerTree", () => {
 		const tree = buildManagerTree(rows, st);
 
 		expect(tree.groups.flatMap((g) => g.rows.map((r) => r.id))).toEqual(["4"]);
-		expect(tree.singles).toHaveLength(0);
+		expect(tree.singles.rows).toHaveLength(0);
 		expect(tree.others.rows).toHaveLength(0);
 		expect(tree.archived.map((a) => a.id).sort()).toEqual(["1", "2", "3"]);
 	});
@@ -98,12 +98,13 @@ describe("buildManagerTree", () => {
 		expect(tree.archived).toEqual([{ id: "ghost", name: "消えたセッション", agent: "claude", row: null }]);
 	});
 
-	it("folded は store.folded から（その他のセッション含む）", () => {
-		const rows: Row[] = [row({ id: "1", name: "RIM: x" })];
-		const st = store({ folded: ["RIM", OTHER_GROUP] });
+	it("folded は store.folded から（カテゴリなし・その他のセッション含む）", () => {
+		const rows: Row[] = [row({ id: "1", name: "RIM: x" }), row({ id: "2", name: "カテゴリなしの名前" })];
+		const st = store({ folded: ["RIM", NO_CATEGORY_GROUP, OTHER_GROUP] });
 		const tree = buildManagerTree(rows, st);
 
 		expect(tree.groups[0].folded).toBe(true);
+		expect(tree.singles.folded).toBe(true);
 		expect(tree.others.folded).toBe(true);
 	});
 });

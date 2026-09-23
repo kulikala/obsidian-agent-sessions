@@ -170,6 +170,11 @@
 	background-color: var(--text-accent);
 }
 
+/* 「カテゴリなし」「名前なし」はチップを付けない代わりに灰色（T-70 追補）。 */
+.agent-sessions-manager-category-bar-fill.is-neutral {
+	background-color: var(--text-faint);
+}
+
 .agent-sessions-manager-category-bar-value {
 	flex: 0 0 auto;
 	color: var(--text-muted);
@@ -199,6 +204,54 @@
 	display: flex;
 	flex: 1 1 auto;
 	min-height: 0;
+}
+
+/* ---- マネージャー：下部・解析領域（統計の帯＋カテゴリ別バー。T-70 追補） ----
+   一覧（`.agent-sessions-manager-body`）を主役にして上へ、解析は下の固定高さの帯にした
+   （既定 240px、ドラッグハンドルで変えられ `managerAnalysisHeight` に保存。見出しクリックで
+   折畳、`managerAnalysisCollapsed` に保存）。 */
+.agent-sessions-manager-analysis {
+	display: flex;
+	flex-direction: column;
+	flex: 0 0 auto;
+	height: var(--as-manager-analysis-h, 240px);
+	min-height: 0;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.agent-sessions-manager-analysis.is-collapsed {
+	height: auto;
+}
+
+.agent-sessions-manager-analysis-header {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	flex: 0 0 auto;
+	padding: var(--size-4-2) var(--size-4-3);
+	cursor: pointer;
+	user-select: none;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+}
+
+.agent-sessions-manager-analysis-header:hover {
+	color: var(--text-normal);
+}
+
+.agent-sessions-manager-analysis.is-collapsed .agent-sessions-manager-analysis-header {
+	border-bottom: none;
+}
+
+.agent-sessions-manager-analysis-body {
+	flex: 1 1 auto;
+	min-height: 0;
+	overflow-y: auto;
+}
+
+.agent-sessions-manager-analysis.is-collapsed .agent-sessions-manager-analysis-body {
+	display: none;
 }
 
 .agent-sessions-manager-table-wrap {
@@ -359,9 +412,12 @@
 	color: var(--text-normal);
 }
 
+/* 区分の見出し行。直前の行（前のグループの最後の行など）と続いて見えないよう、上に
+   少し余白を持たせる（T-70 追補：「カテゴリなし」が最後のカテゴリと連続して見える指摘）。 */
 .agent-sessions-manager-row.is-group td {
 	background-color: var(--background-secondary);
 	cursor: pointer;
+	border-top: var(--size-4-1) solid var(--background-primary);
 }
 
 .agent-sessions-manager-group-head {
@@ -458,6 +514,11 @@
 
 .agent-sessions-drag-handle:hover {
 	background-color: var(--text-accent);
+}
+
+/* マネージャーの解析領域を畳んだ間はハンドルも隠す（T-70 追補）。 */
+.agent-sessions-drag-handle.is-hidden {
+	display: none;
 }
 
 .agent-sessions-section-title,

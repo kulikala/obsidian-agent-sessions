@@ -17,6 +17,8 @@ describe("DEFAULT_SETTINGS", () => {
 			submitKey: "enter",
 			sideDetailHeight: 220,
 			language: "auto",
+			managerAnalysisHeight: 240,
+			managerAnalysisCollapsed: false,
 		});
 	});
 });

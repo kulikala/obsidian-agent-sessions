@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Row } from "../src/index";
-import { OTHER_GROUP, type ManagerTree } from "../src/tree";
+import { NO_CATEGORY_GROUP, OTHER_GROUP, type ManagerTree } from "../src/tree";
 import type { StatsResult, StatsUsage, StatsWindow } from "../src/types";
 import {
 	ARCHIVED_GROUP,
@@ -42,29 +42,30 @@ function row(overrides: Partial<Row> & Pick<Row, "id">): Row {
 function tree(overrides: Partial<ManagerTree> = {}): ManagerTree {
 	return {
 		groups: [],
-		singles: [],
+		singles: { folded: false, rows: [] },
 		others: { folded: false, rows: [] },
 		archived: [],
 		...overrides,
 	};
 }
 
-describe("flattenTree（D-44）", () => {
-	it("グループ→単独→その他の順に見出しと子を並べる", () => {
+describe("flattenTree（D-44・T-70 追補）", () => {
+	it("グループ→カテゴリなし→その他（名前なし）の順に見出しと子を並べる", () => {
 		const g1 = row({ id: "1", name: "RIM: 議事メモ" });
-		const single = row({ id: "2", name: "単独" });
+		const single = row({ id: "2", name: "カテゴリなしの名前" });
 		const other = row({ id: "3", name: null });
 		const t = tree({
 			groups: [{ name: "RIM", folded: false, rows: [g1] }],
-			singles: [single],
+			singles: { folded: false, rows: [single] },
 			others: { folded: false, rows: [other] },
 		});
 		const rows = flattenTree(t, false);
 		expect(rows).toEqual<ManagerRow[]>([
 			{ kind: "group", key: "RIM", label: "RIM", count: 1, folded: false },
 			{ kind: "session", row: g1, indent: true },
-			{ kind: "session", row: single, indent: false },
-			{ kind: "group", key: OTHER_GROUP, label: OTHER_GROUP, count: 1, folded: false },
+			{ kind: "group", key: NO_CATEGORY_GROUP, label: "カテゴリなし", count: 1, folded: false },
+			{ kind: "session", row: single, indent: true },
+			{ kind: "group", key: OTHER_GROUP, label: "名前なし", count: 1, folded: false },
 			{ kind: "session", row: other, indent: true },
 		]);
 	});
@@ -74,6 +75,20 @@ describe("flattenTree（D-44）", () => {
 		const t = tree({ groups: [{ name: "RIM", folded: true, rows: [child] }] });
 		const rows = flattenTree(t, false);
 		expect(rows).toEqual<ManagerRow[]>([{ kind: "group", key: "RIM", label: "RIM", count: 1, folded: true }]);
+	});
+
+	it("畳まれた「カテゴリなし」は見出しだけで子を出さない", () => {
+		const single = row({ id: "1", name: "カテゴリなしの名前" });
+		const t = tree({ singles: { folded: true, rows: [single] } });
+		const rows = flattenTree(t, false);
+		expect(rows).toEqual<ManagerRow[]>([
+			{ kind: "group", key: NO_CATEGORY_GROUP, label: "カテゴリなし", count: 1, folded: true },
+		]);
+	});
+
+	it("カテゴリなしが空なら見出しを出さない", () => {
+		const t = tree({ singles: { folded: false, rows: [] } });
+		expect(flattenTree(t, false)).toEqual([]);
 	});
 
 	it("その他が空なら見出しを出さない", () => {
@@ -226,10 +241,10 @@ describe("categoryKeyOf（D-64・D-65）", () => {
 		expect(categoryKeyOf(row({ id: "1", name: "RIM: 議事メモ" }))).toBe("RIM");
 	});
 
-	it("グループの無い名前は「単独」扱い（実際のグループ名とは衝突しない値）", () => {
-		const key = categoryKeyOf(row({ id: "1", name: "単独のセッション" }));
+	it("グループの無い名前は「カテゴリなし」扱い（実際のグループ名とは衝突しない値）", () => {
+		const key = categoryKeyOf(row({ id: "1", name: "カテゴリなしのセッション" }));
 		expect(key).not.toBe("RIM");
-		expect(key).toBe(categoryKeyOf(row({ id: "2", name: "別の単独" })));
+		expect(key).toBe(categoryKeyOf(row({ id: "2", name: "別のカテゴリなし" })));
 	});
 
 	it("名前が無ければ「その他」（OTHER_GROUP）", () => {
@@ -243,8 +258,8 @@ describe("isRealCategoryKey（T-70）", () => {
 		expect(isRealCategoryKey(categoryKeyOf(row({ id: "1", name: "RIM: 議事メモ" })))).toBe(true);
 	});
 
-	it("「単独」「その他」「アーカイブ」は偽", () => {
-		expect(isRealCategoryKey(categoryKeyOf(row({ id: "1", name: "単独のセッション" })))).toBe(false);
+	it("「カテゴリなし」「その他（名前なし）」「アーカイブ」は偽", () => {
+		expect(isRealCategoryKey(categoryKeyOf(row({ id: "1", name: "カテゴリなしのセッション" })))).toBe(false);
 		expect(isRealCategoryKey(OTHER_GROUP)).toBe(false);
 		expect(isRealCategoryKey(ARCHIVED_GROUP)).toBe(false);
 	});
@@ -270,10 +285,10 @@ describe("categoryTotals（D-64）", () => {
 		expect(zero).toEqual({ key: "ZERO", label: "ZERO", cost: 5, count: 1 });
 	});
 
-	it("グループの無い名前は「単独」、名前の無いセッションは「その他」にまとまる", () => {
-		const rows: Row[] = [row({ id: "1", name: "単独" }), row({ id: "2", name: null })];
+	it("グループの無い名前は「カテゴリなし」、名前の無いセッションは「名前なし」にまとまる", () => {
+		const rows: Row[] = [row({ id: "1", name: "カテゴリなしの名前" }), row({ id: "2", name: null })];
 		const totals = categoryTotals(rows, null, "5h");
-		expect(totals.map((c) => c.label).sort()).toEqual(["その他", "単独"]);
+		expect(totals.map((c) => c.label).sort()).toEqual(["カテゴリなし", "名前なし"]);
 	});
 
 	it("アーカイブ済み・無名の子セッションは数えない", () => {

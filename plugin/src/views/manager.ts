@@ -39,6 +39,8 @@ const COLUMN_COUNT = 7;
 const CATEGORY_BAR_TOP_N = 8;
 /** `terminal-status`（D-66 追補）は busy/idle のたびに飛んでくるので、まとめて描き直す間隔。 */
 const TERMINAL_STATUS_DEBOUNCE_MS = 200;
+/** ドラッグで詰められる下部・解析領域の下限（px。T-70 追補）。 */
+const MIN_ANALYSIS_HEIGHT = 120;
 
 export const VIEW_TYPE_MANAGER = "agent-sessions-manager";
 
@@ -73,6 +75,13 @@ export class ManagerView extends ItemView {
 	private categoryBarEl!: HTMLElement;
 	/** `terminal-status` のデバウンス用タイマー（D-66 追補）。 */
 	private statusRenderTimer: ReturnType<typeof setTimeout> | null = null;
+	/** 下部・解析領域（統計の帯＋カテゴリ別バー。T-70 追補）。見出しクリックで折畳、
+	 * ハンドルで高さを変える——どちらも `plugin.settings` に保存する。 */
+	private analysisEl!: HTMLElement;
+	private analysisCaretEl!: HTMLElement;
+	private analysisBodyEl!: HTMLElement;
+	private analysisHandleEl!: HTMLElement;
+	private analysisHeight = 240;
 
 	constructor(leaf: WorkspaceLeaf, plugin: AgentSessionsPlugin) {
 		super(leaf);
@@ -175,8 +184,6 @@ export class ManagerView extends ItemView {
 	// ---- 骨組み -----------------------------------------------------------------
 
 	private buildSkeleton(): void {
-		this.buildStatsBar();
-		this.buildCategoryBar();
 		this.buildToolbar();
 
 		const body = this.contentEl.createDiv({ cls: "agent-sessions-manager-body" });
@@ -197,6 +204,79 @@ export class ManagerView extends ItemView {
 		this.tableBodyEl = table.createEl("tbody");
 
 		this.detailEl = body.createDiv({ cls: "agent-sessions-manager-detail" });
+
+		// 下部・解析領域（T-70 追補：一覧を上、解析を下に入れ替えた——一覧が主役で、
+		// 解析はいつでも見返せる補助情報のため）。
+		this.analysisHandleEl = this.contentEl.createDiv({ cls: "agent-sessions-drag-handle" });
+		this.bindAnalysisHandle();
+
+		this.analysisEl = this.contentEl.createDiv({ cls: "agent-sessions-manager-analysis" });
+		this.buildAnalysisHeader();
+		this.analysisBodyEl = this.analysisEl.createDiv({ cls: "agent-sessions-manager-analysis-body" });
+		this.buildStatsBar();
+		this.buildCategoryBar();
+
+		this.applyAnalysisHeight(this.plugin.settings.managerAnalysisHeight);
+		this.applyAnalysisCollapsed(this.plugin.settings.managerAnalysisCollapsed);
+	}
+
+	/** 解析領域の見出し：クリックで折畳（キャレット＋「解析」）。状態は設定に保存する。 */
+	private buildAnalysisHeader(): void {
+		const header = this.analysisEl.createDiv({ cls: "agent-sessions-manager-analysis-header" });
+		this.analysisCaretEl = header.createSpan({ cls: "agent-sessions-manager-analysis-caret" });
+		header.createSpan({ cls: "agent-sessions-manager-analysis-title", text: t("manager.analysis.title") });
+		this.registerDomEvent(header, "click", () => this.toggleAnalysisCollapsed());
+	}
+
+	private toggleAnalysisCollapsed(): void {
+		const collapsed = !this.plugin.settings.managerAnalysisCollapsed;
+		this.plugin.settings.managerAnalysisCollapsed = collapsed;
+		void this.plugin.saveSettings();
+		this.applyAnalysisCollapsed(collapsed);
+	}
+
+	private applyAnalysisCollapsed(collapsed: boolean): void {
+		this.analysisEl.toggleClass("is-collapsed", collapsed);
+		this.analysisCaretEl.setText(collapsed ? "▸" : "▾");
+		this.analysisHandleEl.toggleClass("is-hidden", collapsed);
+	}
+
+	private applyAnalysisHeight(px: number): void {
+		this.analysisHeight = px;
+		this.contentEl.style.setProperty("--as-manager-analysis-h", `${px}px`);
+	}
+
+	/** 一覧と解析の間のドラッグハンドル（`views/side.ts` の詳細欄と同じ作り）。 */
+	private bindAnalysisHandle(): void {
+		let dragging = false;
+		let startY = 0;
+		let startHeight = 0;
+
+		const onMouseMove = (evt: MouseEvent) => {
+			if (!dragging) {
+				return;
+			}
+			const delta = evt.clientY - startY;
+			this.applyAnalysisHeight(Math.max(MIN_ANALYSIS_HEIGHT, Math.round(startHeight - delta)));
+		};
+		const onMouseUp = () => {
+			if (!dragging) {
+				return;
+			}
+			dragging = false;
+			document.removeEventListener("mousemove", onMouseMove);
+			document.removeEventListener("mouseup", onMouseUp);
+			this.plugin.settings.managerAnalysisHeight = this.analysisHeight;
+			void this.plugin.saveSettings();
+		};
+		this.registerDomEvent(this.analysisHandleEl, "mousedown", (evt) => {
+			dragging = true;
+			startY = evt.clientY;
+			startHeight = this.analysisHeight;
+			document.addEventListener("mousemove", onMouseMove);
+			document.addEventListener("mouseup", onMouseUp);
+			evt.preventDefault();
+		});
 	}
 
 	/** 見出し行。「最終更新」「5h」「7d」はクリックで並べ替え（D-54）。 */
@@ -231,7 +311,7 @@ export class ManagerView extends ItemView {
 
 	/** 統計の帯（5 時間枠・7 日枠。D-54）：使用率のバー・カウントダウン・コスト・トークン・呼出数・セッション数。 */
 	private buildStatsBar(): void {
-		this.statsBarEl = this.contentEl.createDiv({ cls: "agent-sessions-manager-stats" });
+		this.statsBarEl = this.analysisBodyEl.createDiv({ cls: "agent-sessions-manager-stats" });
 		this.renderStatsBar();
 	}
 
@@ -288,7 +368,7 @@ export class ManagerView extends ItemView {
 
 	/** 統計の帯の下：「カテゴリ別（7 日枠）」の横バー（コスト上位 8。D-64）。 */
 	private buildCategoryBar(): void {
-		this.categoryBarEl = this.contentEl.createDiv({ cls: "agent-sessions-manager-category-bar" });
+		this.categoryBarEl = this.analysisBodyEl.createDiv({ cls: "agent-sessions-manager-category-bar" });
 		this.renderCategoryBar();
 	}
 
@@ -322,13 +402,20 @@ export class ManagerView extends ItemView {
 	private renderCategoryBarItem(container: HTMLElement, entry: CategoryTotal, maxCost: number, windowCost: number): void {
 		const item = container.createDiv({ cls: "agent-sessions-manager-category-bar-item" });
 		const labelWrap = item.createDiv({ cls: "agent-sessions-manager-category-bar-label" });
-		if (isRealCategoryKey(entry.key)) {
+		const isReal = isRealCategoryKey(entry.key);
+		if (isReal) {
 			renderCategoryChip(labelWrap, entry.key, this.plugin.index.categoryColorIndex(entry.key));
 		}
 		labelWrap.createSpan({ cls: "agent-sessions-manager-category-bar-label-text", text: entry.label });
 		const track = item.createDiv({ cls: "agent-sessions-manager-category-bar-track" });
 		const barPct = maxCost > 0 ? (entry.cost / maxCost) * 100 : 0;
-		track.createDiv({ cls: "agent-sessions-manager-category-bar-fill" }).style.width = `${barPct}%`;
+		// 「カテゴリなし」「名前なし」はチップを付けない代わりに、バーも灰色にして区別する
+		// （T-70 追補）。
+		const fill = track.createDiv({ cls: "agent-sessions-manager-category-bar-fill" });
+		if (!isReal) {
+			fill.addClass("is-neutral");
+		}
+		fill.style.width = `${barPct}%`;
 		const share = windowCost > 0 ? Math.round((entry.cost / windowCost) * 100) : 0;
 		item.createDiv({
 			cls: "agent-sessions-manager-category-bar-value",
