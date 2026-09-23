@@ -195,8 +195,8 @@ export class ManagerView extends ItemView {
 
 	private renderStatsBar(): void {
 		this.statsBarEl.empty();
-		this.renderStatsCard(this.statsBarEl, "5h", this.statsResult?.windows.five_hour ?? null);
-		this.renderStatsCard(this.statsBarEl, "7d", this.statsResult?.windows.seven_day ?? null);
+		this.renderStatsCard(this.statsBarEl, "5 時間枠", this.statsResult?.windows.five_hour ?? null);
+		this.renderStatsCard(this.statsBarEl, "7 日枠", this.statsResult?.windows.seven_day ?? null);
 	}
 
 	private renderStatsCard(container: HTMLElement, label: string, w: StatsWindow | null): void {

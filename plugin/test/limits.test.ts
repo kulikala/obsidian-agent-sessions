@@ -61,4 +61,9 @@ describe("formatCountdown（D-43）", () => {
 	it("端数は丸める", () => {
 		expect(formatCountdown(59.6)).toBe("0:01:00");
 	});
+
+	it("24 時間以上は秒を落として「N 日 h:mm」にする（D-54）", () => {
+		// 2 日と 3 時間 5 分 10 秒。
+		expect(formatCountdown(2 * 86400 + 3 * 3600 + 5 * 60 + 10)).toBe("2 日 3:05");
+	});
 });

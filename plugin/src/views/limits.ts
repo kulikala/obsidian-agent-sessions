@@ -54,14 +54,19 @@ export function pickLatestLimits(files: RawLimitsFile[]): LimitsInfo | null {
 	};
 }
 
-/** `h:mm:ss`（0 未満は 0 に丸める）。 */
+/** `h:mm:ss`（0 未満は 0 に丸める）。24 時間以上は秒を落として `N 日 h:mm` にする（D-54）。 */
 export function formatCountdown(seconds: number): string {
 	const s = Math.max(0, Math.round(seconds));
-	const h = Math.floor(s / 3600);
-	const m = Math.floor((s % 3600) / 60);
-	const sec = s % 60;
 	const pad = (n: number) => String(n).padStart(2, "0");
-	return `${h}:${pad(m)}:${pad(sec)}`;
+	const totalHours = Math.floor(s / 3600);
+	const m = Math.floor((s % 3600) / 60);
+	if (totalHours >= 24) {
+		const days = Math.floor(totalHours / 24);
+		const h = totalHours % 24;
+		return `${days} 日 ${h}:${pad(m)}`;
+	}
+	const sec = s % 60;
+	return `${totalHours}:${pad(m)}:${pad(sec)}`;
 }
 
 // ---- ファイル読み込み（node:fs）。DOM 側は `LimitsView` に閉じ込める。 -----------------------

@@ -41,8 +41,6 @@
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 	font-weight: var(--font-semibold);
-	text-transform: uppercase;
-	letter-spacing: 0.02em;
 }
 
 .agent-sessions-manager-stats-bar {
@@ -179,7 +177,8 @@
 }
 
 .agent-sessions-manager-col-time {
-	width: 88px;
+	/* `MM-DD HH:MM`（11 文字、等幅）が収まる幅（実機修正：D-54）。 */
+	width: 104px;
 	font-family: var(--font-monospace);
 	color: var(--text-muted);
 	overflow: hidden;
