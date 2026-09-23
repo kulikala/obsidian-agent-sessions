@@ -4,11 +4,16 @@
 import type { Row } from "./index";
 import type { Store } from "./store";
 
+/**
+ * 「その他」区分の識別子（`store.folded` のキー）。カテゴリの無い名前付きセッションと、
+ * 名前の無いセッションをまとめて 1 つの区分にする（T-74 追補：以前は「カテゴリなし」
+ * 「名前なし」の 2 区分に分かれていたが、分ける意味が無いため統合した）。
+ */
 export const OTHER_GROUP = "その他のセッション";
-/** 名前は有るがカテゴリ（グループ名）が無いセッションの区分（T-70 追補）。実際のカテゴリ名とは
- * 衝突しない識別子。表示は「カテゴリなし」（`i18n.ts` の `category.single`）——「単独」とは呼ばない
- * （そのようなカテゴリだと誤認されるため）。 */
-export const NO_CATEGORY_GROUP = "__no_category__";
+/** 旧「カテゴリなし」区分の識別子（T-70 追補で導入、T-74 追補で `OTHER_GROUP` に統合）。
+ * 以前のバージョンでこちらだけ畳んであった場合の後方互換のためだけに読む
+ * （`buildManagerTree` の折畳判定）。新規に書き込むことはもう無い。 */
+const LEGACY_NO_CATEGORY_GROUP = "__no_category__";
 
 const GROUP_SEP = ": ";
 
@@ -40,9 +45,8 @@ export interface ArchivedEntry {
 
 export interface ManagerTree {
 	groups: GroupNode[];
-	/** 名前は有るがカテゴリの無いセッション（「カテゴリなし」区分。T-70 追補で `others` と
-	 * 同じ形——折畳の状態を持たせ、表で見出し付きの区分にする）。 */
-	singles: { folded: boolean; rows: Row[] };
+	/** 「その他」区分：カテゴリの無い名前付きセッション＋名前の無いセッション（T-74 追補で
+	 * 統合。中は最終更新順）。 */
 	others: { folded: boolean; rows: Row[] };
 	archived: ArchivedEntry[];
 }
@@ -57,9 +61,9 @@ function byMtimeDesc(list: Labeled[]): Labeled[] {
 }
 
 /**
- * グループ（見出し、折畳）→ カテゴリなし（見出し、折畳）→ その他のセッション（見出し、
- * 既定で折畳）→ アーカイブ。各区分の中は最終更新順（§6.2）。「その他のセッション」に
- * 載るのは名前が無く `child` が偽のものだけ（無名の子セッションはどこにも出ない）。
+ * グループ（見出し、折畳）→ その他（見出し、既定で折畳）→ アーカイブ。各区分の中は
+ * 最終更新順（§6.2）。「その他」に載るのは、カテゴリの無い名前付きセッションと、名前が
+ * 無く `child` が偽のセッション（無名の子セッションはどこにも出ない）。
  */
 export function buildManagerTree(rows: Row[], store: Store): ManagerTree {
 	const active = rows.filter((r) => !r.archived);
@@ -67,10 +71,10 @@ export function buildManagerTree(rows: Row[], store: Store): ManagerTree {
 
 	const named = active.filter((r) => !!r.name);
 	const unnamed = active.filter((r) => !r.name);
-	const othersRows = unnamed.filter((r) => !r.child);
+	const unnamedOthers = unnamed.filter((r) => !r.child);
 
 	const groupMap = new Map<string, Labeled[]>();
-	const singles: Labeled[] = [];
+	const singleRows: Row[] = [];
 	for (const row of named) {
 		const [group, label] = splitName(row.name as string);
 		if (group) {
@@ -81,7 +85,7 @@ export function buildManagerTree(rows: Row[], store: Store): ManagerTree {
 				groupMap.set(group, [{ row, label }]);
 			}
 		} else {
-			singles.push({ row, label });
+			singleRows.push(row);
 		}
 	}
 
@@ -100,8 +104,9 @@ export function buildManagerTree(rows: Row[], store: Store): ManagerTree {
 		rows: byMtimeDesc(groupMap.get(name)!).map((c) => c.row),
 	}));
 
-	const singleRows = byMtimeDesc(singles).map((c) => c.row);
-	const othersSorted = [...othersRows].sort((a, b) => b.last_activity - a.last_activity);
+	// 「その他」：カテゴリの無い名前付きセッション＋名前の無いセッションを 1 つにまとめ、
+	// 最終更新順に並べる（T-74 追補）。
+	const otherRows = [...singleRows, ...unnamedOthers].sort((a, b) => b.last_activity - a.last_activity);
 
 	const archived: ArchivedEntry[] = [];
 	const seen = new Set<string>();
@@ -119,8 +124,12 @@ export function buildManagerTree(rows: Row[], store: Store): ManagerTree {
 
 	return {
 		groups,
-		singles: { folded: store.folded.includes(NO_CATEGORY_GROUP), rows: singleRows },
-		others: { folded: store.folded.includes(OTHER_GROUP), rows: othersSorted },
+		// 旧「カテゴリなし」（`LEGACY_NO_CATEGORY_GROUP`）だけが畳んであった場合も、統合後の
+		// 「その他」は畳んだ扱いにする（後方互換）。
+		others: {
+			folded: store.folded.includes(OTHER_GROUP) || store.folded.includes(LEGACY_NO_CATEGORY_GROUP),
+			rows: otherRows,
+		},
 		archived,
 	};
 }

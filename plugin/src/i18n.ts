@@ -187,11 +187,10 @@ const ja = {
 	"stats.pace.overPaceGuide": "残り 1 日あたり {pct} 以下（約 {cost}／日）",
 	"stats.pace.overPaceGuideNoCost": "残り 1 日あたり {pct} 以下",
 	"stats.pace.tooltip": "経過 {elapsedPct}%・使用 {usedPct}%",
-	"category.single": "カテゴリなし",
-	"category.other": "名前なし",
+	"category.other": "その他",
 	"toolbar.filterPlaceholder": "絞込",
 	"group.archived": "アーカイブ（{count}）",
-	"group.other": "名前なし",
+	"group.other": "その他",
 	"manager.analysis.title": "解析",
 
 	// ---- 詳細ビュー（views/detail.ts） ----
@@ -409,11 +408,10 @@ const en: Record<MessageKey, string> = {
 	"stats.pace.overPaceGuide": "Stay under {pct} per remaining day (about {cost}/day)",
 	"stats.pace.overPaceGuideNoCost": "Stay under {pct} per remaining day",
 	"stats.pace.tooltip": "{elapsedPct}% elapsed · {usedPct}% used",
-	"category.single": "No category",
-	"category.other": "Unnamed",
+	"category.other": "Other",
 	"toolbar.filterPlaceholder": "Filter",
 	"group.archived": "Archive ({count})",
-	"group.other": "Unnamed",
+	"group.other": "Other",
 	"manager.analysis.title": "Analysis",
 
 	"detail.totalTokens": "Total tokens",
