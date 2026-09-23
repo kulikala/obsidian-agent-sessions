@@ -36,8 +36,16 @@
 	background: var(--background-secondary);
 }
 
-.agent-sessions-manager-stats-title {
+/* 見出しの横に「リセットまで…」（D-62）。 */
+.agent-sessions-manager-stats-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--size-4-2);
 	margin-bottom: var(--size-4-1);
+}
+
+.agent-sessions-manager-stats-title {
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 	font-weight: var(--font-semibold);
@@ -66,14 +74,97 @@
 	font-size: var(--font-ui-smaller);
 }
 
+/* 下段：ラベル付きの 2×2（D-62）。 */
 .agent-sessions-manager-stats-metrics {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: var(--size-2-2) var(--size-4-3);
+	margin-top: var(--size-4-2);
+}
+
+.agent-sessions-manager-stats-metric {
+	min-width: 0;
+	cursor: help;
+}
+
+.agent-sessions-manager-stats-metric-label {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.agent-sessions-manager-stats-metric-value {
+	font-weight: var(--font-semibold);
+	font-variant-numeric: tabular-nums;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* ---- マネージャー：カテゴリ別の横バー（7 日枠。D-64） ---- */
+
+.agent-sessions-manager-category-bar {
+	padding: var(--size-4-2) var(--size-4-3);
+	flex: 0 0 auto;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.agent-sessions-manager-category-bar-title {
+	margin-bottom: var(--size-4-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+}
+
+.agent-sessions-manager-category-bar-empty {
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}
+
+.agent-sessions-manager-category-bar-list {
 	display: flex;
-	flex-wrap: wrap;
-	gap: var(--size-4-3);
-	margin-top: var(--size-4-1);
+	flex-direction: column;
+	gap: var(--size-2-2);
+}
+
+.agent-sessions-manager-category-bar-item {
+	display: grid;
+	grid-template-columns: minmax(6em, 10em) 1fr auto;
+	align-items: center;
+	gap: var(--size-4-2);
+	cursor: pointer;
+	border-radius: var(--radius-s);
+	padding: 1px var(--size-4-1);
+}
+
+.agent-sessions-manager-category-bar-item:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.agent-sessions-manager-category-bar-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: var(--font-ui-smaller);
+}
+
+.agent-sessions-manager-category-bar-track {
+	height: 6px;
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-border);
+	overflow: hidden;
+}
+
+.agent-sessions-manager-category-bar-fill {
+	height: 100%;
+	background-color: var(--text-accent);
+}
+
+.agent-sessions-manager-category-bar-value {
+	flex: 0 0 auto;
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
 }
 
 /* ---- マネージャー：ツールバー・本体・表（D-44・D-54） ---- */
@@ -177,8 +268,8 @@
 }
 
 .agent-sessions-manager-col-time {
-	/* `MM-DD HH:MM`（11 文字、等幅）が収まる幅（実機修正：D-54）。 */
-	width: 104px;
+	/* `MM-DD HH:MM`（11 文字、等幅）が切れない幅（実機修正：D-54・D-61）。 */
+	width: 120px;
 	font-family: var(--font-monospace);
 	color: var(--text-muted);
 	overflow: hidden;
@@ -408,6 +499,28 @@
 
 .agent-sessions-mark-none {
 	background-color: var(--text-faint);
+}
+
+/* カテゴリのチップ（名前の `': '` より前。色相はカテゴリ名のハッシュ。D-65）。
+   ダーク基調はそのまま（背景 40%/50%/.18・文字 45%/60%、実機でコントラスト比 6:1 以上を確認）。
+   ライトは背景が白に近く同じ明度だと読めない（実機で 3.5:1 止まり）ため、文字を暗めに
+   （45%/32%）落として 4.5:1 以上を確保する。 */
+.agent-sessions-row-chip {
+	flex: 0 0 auto;
+	max-width: 8em;
+	padding: 0 var(--size-4-1);
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	border-radius: var(--radius-s);
+	background-color: hsl(var(--as-chip-hue) 40% 50% / 0.18);
+	color: hsl(var(--as-chip-hue) 45% 60%);
+	font-size: var(--font-ui-smaller);
+}
+
+.theme-light .agent-sessions-row-chip {
+	background-color: hsl(var(--as-chip-hue) 50% 50% / 0.16);
+	color: hsl(var(--as-chip-hue) 45% 32%);
 }
 
 .agent-sessions-row-name {
