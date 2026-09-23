@@ -3,6 +3,7 @@
 // 総コスト・直近の指示／応答（クリックで展開）・ツール・フォルダ・ID を描く。
 
 import type { Row } from "../index";
+import { t } from "../i18n";
 import type { StatusInfo } from "../statusline";
 import type { Detail, UsageResult, UsageTotal } from "../types";
 import { formatK } from "../usage";
@@ -31,7 +32,7 @@ export function formatCost(cost: number): string {
 }
 
 function displayName(row: Row): string {
-	return row.name || row.label || `無題 ${row.id.slice(0, 8)}`;
+	return row.name || row.label || t("common.untitled", { id: row.id.slice(0, 8) });
 }
 
 /** `obsidian` の `setIcon`／`setTooltip` は遅延 require（`rows.ts` の `require("electron")` と同じ理由：
@@ -99,8 +100,8 @@ function renderDonut(container: HTMLElement, percent: number | null): void {
 
 function renderBadges(container: HTMLElement, statusInfo: StatusInfo | null, rc: boolean | null): void {
 	const row = container.createDiv({ cls: "agent-sessions-detail-badges" });
-	row.createSpan({ cls: "agent-sessions-badge", text: statusInfo?.model ?? "デフォルト" });
-	row.createSpan({ cls: "agent-sessions-badge", text: statusInfo?.effort ?? "デフォルト" });
+	row.createSpan({ cls: "agent-sessions-badge", text: statusInfo?.model ?? t("common.default") });
+	row.createSpan({ cls: "agent-sessions-badge", text: statusInfo?.effort ?? t("common.default") });
 	const rcBadge = row.createSpan({ cls: "agent-sessions-badge" });
 	rcBadge.appendText("rc ");
 	const dot = rcBadge.createSpan({
@@ -114,7 +115,7 @@ function renderBadges(container: HTMLElement, statusInfo: StatusInfo | null, rc:
 function renderCard(container: HTMLElement, label: string, value: string | null | undefined): void {
 	const card = container.createDiv({ cls: "agent-sessions-detail-card" });
 	card.createDiv({ cls: "agent-sessions-detail-card-label", text: label });
-	const body = card.createDiv({ cls: "agent-sessions-detail-card-body is-clamped", text: value || "（無し）" });
+	const body = card.createDiv({ cls: "agent-sessions-detail-card-body is-clamped", text: value || t("common.none") });
 	let expanded = false;
 	card.addEventListener("click", () => {
 		expanded = !expanded;
@@ -154,19 +155,19 @@ export function renderDetail(container: HTMLElement, ctx: DetailContext | null):
 	const statsRow = container.createDiv({ cls: "agent-sessions-detail-stats" });
 	renderDonut(statsRow, statusInfo?.ctxPercent ?? null);
 	const statsText = statsRow.createDiv({ cls: "agent-sessions-detail-stats-text" });
-	const tokens = field(statsText, "総トークン", "…");
-	const cost = field(statsText, "総コスト", "…");
+	const tokens = field(statsText, t("detail.totalTokens"), "…");
+	const cost = field(statsText, t("detail.totalCost"), "…");
 
 	const cards = container.createDiv({ cls: "agent-sessions-detail-cards" });
-	renderCard(cards, "直近の指示", detail?.last_user);
-	renderCard(cards, "直近の応答", detail?.last_assistant);
+	renderCard(cards, t("detail.lastUser"), detail?.last_user);
+	renderCard(cards, t("detail.lastAssistant"), detail?.last_assistant);
 
 	if (detail?.tools.length) {
-		field(container, "ツール", detail.tools.join("、"));
+		field(container, t("detail.tools"), detail.tools.join(t("common.listSep")));
 	}
-	field(container, "フォルダ", row.folder);
+	field(container, t("detail.folder"), row.folder);
 	const idField = field(container, "ID", row.id);
-	makeIconButton(idField.el, "copy", "ID をコピー", () => void navigator.clipboard.writeText(row.id));
+	makeIconButton(idField.el, "copy", t("action.copyId"), () => void navigator.clipboard.writeText(row.id));
 
 	const applyTotal = (total: UsageTotal | null) => {
 		if (container.dataset.rowId !== row.id) {

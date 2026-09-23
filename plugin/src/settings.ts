@@ -1,5 +1,7 @@
 // 設定の型と既定値（§6.9）。obsidian には依存しない（純粋なデータ定義）。
 
+import type { LanguageSetting } from "./i18n";
+
 export type Padding = "comfortable" | "compact" | "none";
 
 /**
@@ -26,6 +28,8 @@ export interface AgentSessionsSettings {
 	submitKey: SubmitKey;
 	/** サイドパネルの詳細領域の高さ（px、§6.9・D-43）。 */
 	sideDetailHeight: number;
+	/** 表示言語（§6.9・D-56）。既定は自動（Obsidian の言語に合わせる）。 */
+	language: LanguageSetting;
 }
 
 export const DEFAULT_SETTINGS: AgentSessionsSettings = {
@@ -41,6 +45,7 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	editorHeight: 40,
 	submitKey: "enter",
 	sideDetailHeight: 220,
+	language: "auto",
 };
 
 /**
@@ -53,6 +58,9 @@ export function mergeSettings(data: unknown): AgentSessionsSettings {
 		unknown
 	>;
 	delete saved.newlineKey;
+	if (saved.language !== "auto" && saved.language !== "ja" && saved.language !== "en") {
+		delete saved.language;
+	}
 	if (!SUBMIT_KEYS.includes(saved.submitKey as SubmitKey)) {
 		delete saved.submitKey;
 	}

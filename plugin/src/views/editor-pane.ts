@@ -9,6 +9,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { prepareFuzzySearch, type App, type TFile } from "obsidian";
 import { applyCompletion, findAtQuery, relPathFor, type AtQuery } from "../at-complete";
+import { t } from "../i18n";
 import { classifyEnter, SUBMIT_KEY_SYMBOLS } from "../keys";
 import type { SubmitKey } from "../settings";
 
@@ -142,8 +143,11 @@ export class EditorPane {
 
 		const bar = root.createDiv({ cls: "agent-sessions-editor-bar" });
 		bar.createSpan({ cls: "agent-sessions-editor-file", text: path.basename(this.file) });
-		const send = bar.createEl("button", { text: `送る（${SUBMIT_KEY_SYMBOLS[this.deps.submitKey]}）`, cls: "mod-cta" });
-		const back = bar.createEl("button", { text: "入力欄に戻る（Esc）" });
+		const send = bar.createEl("button", {
+			text: t("action.send", { key: SUBMIT_KEY_SYMBOLS[this.deps.submitKey] }),
+			cls: "mod-cta",
+		});
+		const back = bar.createEl("button", { text: t("action.backToInput") });
 		send.addEventListener("click", () => this.send());
 		back.addEventListener("click", () => this.returnToInput());
 

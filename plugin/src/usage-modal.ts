@@ -5,6 +5,7 @@
 
 import { App, Modal, Notice } from "obsidian";
 import { usage } from "./backend";
+import { t } from "./i18n";
 import {
 	effectiveRange,
 	formatCost,
@@ -58,13 +59,13 @@ export class UsageModal extends Modal {
 		this.modalEl.addClass("agent-sessions-usage-modal");
 
 		const header = this.contentEl.createDiv({ cls: "agent-sessions-usage-header" });
-		header.createDiv({ cls: "agent-sessions-usage-title", text: `セッション解析結果：${this.sessionName}` });
-		this.copyBtn = header.createEl("button", { cls: "agent-sessions-usage-copy mod-cta", text: "コピー" });
+		header.createDiv({ cls: "agent-sessions-usage-title", text: t("usage.title", { name: this.sessionName }) });
+		this.copyBtn = header.createEl("button", { cls: "agent-sessions-usage-copy mod-cta", text: t("action.copy") });
 		this.copyBtn.disabled = true;
 		this.copyBtn.addEventListener("click", () => this.copyMarkdown());
 
 		this.bodyEl = this.contentEl.createDiv({ cls: "agent-sessions-usage-body" });
-		this.bodyEl.createDiv({ cls: "agent-sessions-usage-loading", text: "読み込み中…" });
+		this.bodyEl.createDiv({ cls: "agent-sessions-usage-loading", text: t("usage.loading") });
 		void this.load();
 	}
 
@@ -77,7 +78,7 @@ export class UsageModal extends Modal {
 			this.result = await usage(this.agentSessionsPath, this.sessionId);
 		} catch (err) {
 			this.bodyEl.empty();
-			this.bodyEl.createDiv({ cls: "agent-sessions-usage-error", text: `集計に失敗しました: ${messageOf(err)}` });
+			this.bodyEl.createDiv({ cls: "agent-sessions-usage-error", text: t("usage.loadFailed", { error: messageOf(err) }) });
 			return;
 		}
 		this.bodyEl.empty();
@@ -98,21 +99,34 @@ export class UsageModal extends Modal {
 		const table = this.bodyEl.createEl("table", { cls: "agent-sessions-usage-table" });
 		const thead = table.createEl("thead");
 		const headRow = thead.createEl("tr");
-		for (const label of ["#", "時刻", "指示", "入力", "出力", "コスト"]) {
+		for (const label of [
+			"#",
+			t("usage.col.time"),
+			t("usage.col.prompt"),
+			t("usage.col.input"),
+			t("usage.col.output"),
+			t("usage.col.cost"),
+		]) {
 			headRow.createEl("th", { text: label });
 		}
 		const tbody = table.createEl("tbody");
-		this.rowEls = turns.map((t) => {
+		this.rowEls = turns.map((turn) => {
 			const row = tbody.createEl("tr");
-			row.createEl("td", { text: String(t.index) });
-			row.createEl("td", { text: formatEpoch(t.ts), cls: "agent-sessions-usage-num" });
-			const promptTd = row.createEl("td", { cls: "agent-sessions-usage-prompt", text: t.prompt || "（空）" });
-			promptTd.setAttribute("title", t.prompt);
-			row.createEl("td", { text: formatK(t.input + t.cache_read + t.cache_create), cls: "agent-sessions-usage-num" });
-			row.createEl("td", { text: formatK(t.output), cls: "agent-sessions-usage-num" });
-			row.createEl("td", { text: formatCost(t.cost), cls: "agent-sessions-usage-num" });
+			row.createEl("td", { text: String(turn.index) });
+			row.createEl("td", { text: formatEpoch(turn.ts), cls: "agent-sessions-usage-num" });
+			const promptTd = row.createEl("td", {
+				cls: "agent-sessions-usage-prompt",
+				text: turn.prompt || t("usage.emptyPrompt"),
+			});
+			promptTd.setAttribute("title", turn.prompt);
+			row.createEl("td", {
+				text: formatK(turn.input + turn.cache_read + turn.cache_create),
+				cls: "agent-sessions-usage-num",
+			});
+			row.createEl("td", { text: formatK(turn.output), cls: "agent-sessions-usage-num" });
+			row.createEl("td", { text: formatCost(turn.cost), cls: "agent-sessions-usage-num" });
 			row.addEventListener("click", () => {
-				this.turnSelection = nextSelection(this.turnSelection, t.index);
+				this.turnSelection = nextSelection(this.turnSelection, turn.index);
 				this.renderSelection();
 			});
 			return row;
@@ -129,17 +143,21 @@ export class UsageModal extends Modal {
 		}
 		const { from, to, pending } = effectiveRange(this.turnSelection, result.turns);
 		const total = sumRange(result.turns, from, to);
-		const count = result.turns.filter((t) => t.index >= from && t.index <= to).length;
+		const count = result.turns.filter((turn) => turn.index >= from && turn.index <= to).length;
 		const inputTotal = total.input + total.cache_read + total.cache_create;
 
 		this.subtitleEl.empty();
 		const label =
-			this.turnSelection === null ? "全体" : pending ? `#${from}〜（終了行をクリック）` : `#${from}〜#${to}`;
+			this.turnSelection === null
+				? t("usage.whole")
+				: pending
+					? t("usage.rangePending", { from })
+					: t("usage.range", { from, to });
 		this.subtitleEl.createSpan({ cls: "agent-sessions-usage-subtitle-label", text: label });
 		if (this.turnSelection !== null) {
 			const wholeBtn = this.subtitleEl.createEl("button", {
 				cls: "agent-sessions-usage-whole-btn",
-				text: "全体",
+				text: t("usage.whole"),
 			});
 			wholeBtn.addEventListener("click", () => {
 				this.turnSelection = null;
@@ -148,27 +166,37 @@ export class UsageModal extends Modal {
 		}
 
 		this.cardsEl.empty();
-		this.renderCard(this.cardsEl, "コスト", formatCost(total.cost), total.estimated ? "概算" : undefined);
-		this.renderCard(this.cardsEl, "トークン", formatK(inputTotal), `出力 ${formatK(total.output)}`);
-		this.renderCard(this.cardsEl, "ターン数", formatK(count));
-		this.renderCard(this.cardsEl, "期間", formatDuration(total.duration));
+		this.renderCard(
+			this.cardsEl,
+			t("usage.col.cost"),
+			formatCost(total.cost),
+			total.estimated ? t("usage.card.estimated") : undefined
+		);
+		this.renderCard(
+			this.cardsEl,
+			t("usage.card.tokens"),
+			formatK(inputTotal),
+			t("usage.card.outputSub", { output: formatK(total.output) })
+		);
+		this.renderCard(this.cardsEl, t("usage.card.turns"), formatK(count));
+		this.renderCard(this.cardsEl, t("usage.card.duration"), formatDuration(total.duration));
 
-		this.renderBar(this.inputChartEl, "入力", [
-			{ label: "非キャッシュ", value: total.input, cls: "uncached" },
-			{ label: "cache 読出", value: total.cache_read, cls: "cache-read" },
-			{ label: "cache 作成", value: total.cache_create, cls: "cache-create" },
+		this.renderBar(this.inputChartEl, t("usage.chart.input"), [
+			{ label: t("usage.chart.uncached"), value: total.input, cls: "uncached" },
+			{ label: t("usage.chart.cacheRead"), value: total.cache_read, cls: "cache-read" },
+			{ label: t("usage.chart.cacheCreate"), value: total.cache_create, cls: "cache-create" },
 		]);
 		const thinking = Math.min(total.thinking, total.output);
-		this.renderBar(this.outputChartEl, "出力", [
-			{ label: "出力", value: Math.max(0, total.output - thinking), cls: "output" },
+		this.renderBar(this.outputChartEl, t("usage.chart.output"), [
+			{ label: t("usage.chart.output"), value: Math.max(0, total.output - thinking), cls: "output" },
 			{ label: "thinking", value: thinking, cls: "thinking" },
 		]);
 		this.renderTools(this.toolsChartEl, total.tools);
 
-		result.turns.forEach((t, i) => {
+		result.turns.forEach((turn, i) => {
 			const row = this.rowEls[i];
-			row.toggleClass("is-selected", this.turnSelection !== null && t.index >= from && t.index <= to);
-			row.toggleClass("is-anchor", pending && t.index === from);
+			row.toggleClass("is-selected", this.turnSelection !== null && turn.index >= from && turn.index <= to);
+			row.toggleClass("is-anchor", pending && turn.index === from);
 		});
 	}
 
@@ -206,12 +234,12 @@ export class UsageModal extends Modal {
 
 	private renderTools(container: HTMLElement, tools: Record<string, number>): void {
 		container.empty();
-		container.createDiv({ cls: "agent-sessions-usage-chart-title", text: "ツール使用" });
+		container.createDiv({ cls: "agent-sessions-usage-chart-title", text: t("usage.chart.toolsTitle") });
 		const entries = Object.entries(tools)
 			.sort((a, b) => b[1] - a[1])
 			.slice(0, MAX_TOOL_ROWS);
 		if (entries.length === 0) {
-			container.createDiv({ cls: "agent-sessions-usage-empty", text: "ツール使用なし" });
+			container.createDiv({ cls: "agent-sessions-usage-empty", text: t("usage.chart.toolsEmpty") });
 			return;
 		}
 		const max = entries[0][1];
@@ -233,6 +261,6 @@ export class UsageModal extends Modal {
 		const { from, to } = effectiveRange(this.turnSelection, result.turns);
 		const total = sumRange(result.turns, from, to);
 		void navigator.clipboard.writeText(toMarkdown(result.turns, from, to, total));
-		new Notice("Markdown をコピーしました");
+		new Notice(t("notice.markdownCopied"));
 	}
 }

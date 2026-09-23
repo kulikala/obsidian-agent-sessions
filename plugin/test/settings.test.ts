@@ -16,6 +16,7 @@ describe("DEFAULT_SETTINGS", () => {
 			editorHeight: 40,
 			submitKey: "enter",
 			sideDetailHeight: 220,
+			language: "auto",
 		});
 	});
 });

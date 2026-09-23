@@ -10,6 +10,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { BackendError, loginEnv, resolveClaude } from "../backend";
 import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../daemon-client";
+import { t } from "../i18n";
 import { classifyEnter, resolveEnterAction, sendSequence } from "../keys";
 import { buildAtToken, selectionLineRange, VaultLinkProvider } from "../links";
 import { submitSequence } from "../main";
@@ -140,7 +141,7 @@ export class TerminalView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return this.displayName || `無題 ${this.id.slice(0, 8)}`;
+		return this.displayName || t("common.untitled", { id: this.id.slice(0, 8) });
 	}
 
 	getIcon(): string {
@@ -274,10 +275,10 @@ export class TerminalView extends ItemView {
 		);
 		this.register(() => linkProvider.dispose());
 
-		this.addAction("at-sign", "現在のノートを @ で挿入", () => this.insertActiveNoteAt());
-		this.jumpActions.prev = this.addAction("arrow-up", "前の指示", () => this.jumpPrev());
-		this.jumpActions.next = this.addAction("arrow-down", "次の指示", () => this.jumpNext());
-		this.jumpActions.last = this.addAction("corner-right-down", "最後の応答", () => this.jumpLast());
+		this.addAction("at-sign", t("action.insertNoteAt"), () => this.insertActiveNoteAt());
+		this.jumpActions.prev = this.addAction("arrow-up", t("action.prevInstruction"), () => this.jumpPrev());
+		this.jumpActions.next = this.addAction("arrow-down", t("action.nextInstruction"), () => this.jumpNext());
+		this.jumpActions.last = this.addAction("corner-right-down", t("action.lastResponse"), () => this.jumpLast());
 
 		this.applySettings();
 	}
@@ -311,6 +312,11 @@ export class TerminalView extends ItemView {
 		this.applyTerminalMinHeight();
 		this.applyTheme();
 		this.applyJumpTooltips();
+		this.updateHeader();
+		if (this.exitReason) {
+			// 言語が変わったとき、終了画面が出ていれば描き直す（§6.9・D-56）。
+			this.showExit(this.exitReason);
+		}
 		this.scheduleFit();
 	}
 
@@ -318,8 +324,8 @@ export class TerminalView extends ItemView {
 	private applyJumpTooltips(): void {
 		const full = this.plugin.isFullscreenTui();
 		const labels = full
-			? { prev: "1 画面上へ", next: "1 画面下へ", last: "最下部へ" }
-			: { prev: "前の指示", next: "次の指示", last: "最後の応答" };
+			? { prev: t("action.scrollUp"), next: t("action.scrollDown"), last: t("action.scrollBottom") }
+			: { prev: t("action.prevInstruction"), next: t("action.nextInstruction"), last: t("action.lastResponse") };
 		for (const key of ["prev", "next", "last"] as const) {
 			this.jumpActions[key]?.setAttribute("aria-label", labels[key]);
 		}
@@ -492,7 +498,7 @@ export class TerminalView extends ItemView {
 			rows: this.terminal.rows,
 		});
 		if (!res.ok && res.error !== "exists") {
-			throw new Error(`start に失敗: ${res.error ?? "unknown"}`);
+			throw new Error(t("error.startFailed", { error: res.error ?? "unknown" }));
 		}
 		this.startedAt = Date.now();
 		this.earlyOutput = "";
@@ -507,7 +513,7 @@ export class TerminalView extends ItemView {
 		const res = await client.attach(this.id, this.terminal.cols, this.terminal.rows);
 		if (!res.ok) {
 			this.replayChunks = null;
-			throw new Error(`attach に失敗: ${res.error ?? "unknown"}`);
+			throw new Error(t("error.attachFailed", { error: res.error ?? "unknown" }));
 		}
 		this.attached = true;
 		this.updateIcon();
@@ -587,7 +593,7 @@ export class TerminalView extends ItemView {
 		const early = this.startedAt > 0 && Date.now() - this.startedAt <= EARLY_EXIT_MS;
 		this.startedAt = 0;
 		if (early && code === 127) {
-			this.showExit({ kind: "claude-missing", message: "claude が見つからない" });
+			this.showExit({ kind: "claude-missing", message: t("error.claudeMissing") });
 			return;
 		}
 		const resumeFailed =
@@ -663,7 +669,7 @@ export class TerminalView extends ItemView {
 	private insertActiveNoteAt(): void {
 		const md = this.plugin.lastMarkdownView();
 		if (!md || !md.file) {
-			new Notice("開いているノートがありません");
+			new Notice(t("notice.noActiveNote"));
 			return;
 		}
 		const abs = join(this.plugin.vaultPath(), md.file.path);
@@ -744,7 +750,7 @@ export class TerminalView extends ItemView {
 		menu.addSeparator();
 		menu.addItem((item) =>
 			item
-				.setTitle("名前を変更")
+				.setTitle(t("action.rename"))
 				.setIcon("pencil")
 				.onClick(() => {
 					new RenameSessionModal(this.app, this.getDisplayText(), (name) => void this.plugin.renameSession(id, name)).open();
@@ -752,23 +758,23 @@ export class TerminalView extends ItemView {
 		);
 		menu.addItem((item) =>
 			item
-				.setTitle("セッションを圧縮")
+				.setTitle(t("action.compact"))
 				.setIcon("fold-vertical")
 				.setDisabled(lastCommand === "/compact")
 				.onClick(() => void this.plugin.compactSession(id))
 		);
 		menu.addItem((item) =>
 			item
-				.setTitle("セッション解析結果を表示")
+				.setTitle(t("action.showUsage"))
 				.setIcon("bar-chart-2")
 				.onClick(() => this.plugin.showUsage(id))
 		);
 		menu.addItem((item) =>
 			item
-				.setTitle("ID をコピー")
+				.setTitle(t("action.copyId"))
 				.setIcon("copy")
 				.onClick(() => {
-					void navigator.clipboard.writeText(id).then(() => new Notice("ID をコピーしました"));
+					void navigator.clipboard.writeText(id).then(() => new Notice(t("notice.idCopied")));
 				})
 		);
 	}
@@ -844,38 +850,38 @@ export class TerminalView extends ItemView {
 
 		switch (reason.kind) {
 			case "exited":
-				msg.setText(`セッションは終了しました（${reason.code}）`);
-				button("再開", "mod-cta", () => void this.restart(false));
+				msg.setText(t("exit.exited", { code: reason.code }));
+				button(t("action.resume"), "mod-cta", () => void this.restart(false));
 				if (reason.resumeFailed) {
-					button("新規として開始", undefined, () => void this.restart(true));
+					button(t("action.startFresh"), undefined, () => void this.restart(true));
 				}
-				button("閉じる", undefined, () => void this.closeTab(true));
+				button(t("action.close"), undefined, () => void this.closeTab(true));
 				break;
 			case "claude-missing": {
 				msg.setText(reason.message);
-				const link = msg.createEl("a", { text: "設定を開く", cls: "agent-sessions-exit-link" });
+				const link = msg.createEl("a", { text: t("action.openSettings"), cls: "agent-sessions-exit-link" });
 				this.registerDomEvent(link, "click", (e) => {
 					e.preventDefault();
 					this.plugin.openSettings();
 				});
-				button("再試行", "mod-cta", () => void this.retry());
-				button("閉じる", undefined, () => void this.closeTab(false));
+				button(t("action.retry"), "mod-cta", () => void this.retry());
+				button(t("action.close"), undefined, () => void this.closeTab(false));
 				break;
 			}
 			case "daemon-unavailable":
 				msg.setText(reason.message);
-				button("再試行", "mod-cta", () => void this.retry());
-				button("閉じる", undefined, () => void this.closeTab(false));
+				button(t("action.retry"), "mod-cta", () => void this.retry());
+				button(t("action.close"), undefined, () => void this.closeTab(false));
 				break;
 			case "disconnected":
-				msg.setText("デーモンとの接続が切れました");
-				button("再接続", "mod-cta", () => void this.retry());
-				button("閉じる", undefined, () => void this.closeTab(false));
+				msg.setText(t("exit.disconnected"));
+				button(t("action.reconnect"), "mod-cta", () => void this.retry());
+				button(t("action.close"), undefined, () => void this.closeTab(false));
 				break;
 			case "error":
 				msg.setText(reason.message);
-				button("再試行", "mod-cta", () => void this.retry());
-				button("閉じる", undefined, () => void this.closeTab(false));
+				button(t("action.retry"), "mod-cta", () => void this.retry());
+				button(t("action.close"), undefined, () => void this.closeTab(false));
 				break;
 		}
 		el.show();

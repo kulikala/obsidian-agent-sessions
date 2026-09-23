@@ -2,6 +2,7 @@
 
 import { Menu, type App } from "obsidian";
 import type { Row } from "../index";
+import { t } from "../i18n";
 import type AgentSessionsPlugin from "../main";
 import { RenameSessionModal } from "../modals";
 
@@ -70,7 +71,7 @@ export function statusMark(row: Row): string {
 }
 
 export function displayName(row: Row): string {
-	return row.name || row.label || `無題 ${row.id.slice(0, 8)}`;
+	return row.name || row.label || t("common.untitled", { id: row.id.slice(0, 8) });
 }
 
 export function formatTime(epochSeconds: number): string {
@@ -88,7 +89,7 @@ export function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): voi
 	const menu = new Menu();
 	menu.addItem((item) =>
 		item
-			.setTitle("名前を変更")
+			.setTitle(t("action.rename"))
 			.setIcon("pencil")
 			.onClick(() => actions.rename(row.id, row.name ?? ""))
 	);
@@ -96,7 +97,7 @@ export function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): voi
 	const alreadyCompacted = lastPrompt != null && lastPrompt.trim() === "/compact";
 	menu.addItem((item) => {
 		item
-			.setTitle("セッションを圧縮")
+			.setTitle(t("action.compact"))
 			.setIcon("scissors")
 			.onClick(() => actions.compact(row.id));
 		if (alreadyCompacted) {
@@ -105,27 +106,27 @@ export function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): voi
 	});
 	menu.addItem((item) =>
 		item
-			.setTitle(row.archived ? "アーカイブ解除" : "アーカイブ")
+			.setTitle(row.archived ? t("action.unarchive") : t("action.archive"))
 			.setIcon(row.archived ? "archive-restore" : "archive")
 			.onClick(() => actions.toggleArchive(row))
 	);
 	if (row.daemon) {
 		menu.addItem((item) =>
 			item
-				.setTitle("セッションを終了")
+				.setTitle(t("action.endSession"))
 				.setIcon("square-x")
 				.onClick(() => actions.endSession(row.id))
 		);
 	}
 	menu.addItem((item) =>
 		item
-			.setTitle("セッション解析結果")
+			.setTitle(t("action.usage"))
 			.setIcon("bar-chart-2")
 			.onClick(() => actions.showUsage(row.id))
 	);
 	menu.addItem((item) =>
 		item
-			.setTitle("ID をコピー")
+			.setTitle(t("action.copyId"))
 			.setIcon("copy")
 			.onClick(() => actions.copyId(row.id))
 	);

@@ -2,6 +2,7 @@
 // 両端含む）で合計し直し、表示・コピー用の Markdown にする。純関数のみ——`obsidian`・
 // `@xterm/xterm` には依存しない（テストは test/usage.test.ts）。
 
+import { t } from "./i18n";
 import type { UsageTotal, UsageTurn } from "./types";
 
 const TOTAL_KEYS = ["calls", "input", "cache_create", "cache_read", "output", "thinking"] as const;
@@ -182,14 +183,16 @@ export function toMarkdown(turns: UsageTurn[], from: number, to: number, total: 
 	const inputTotal = total.input + total.cache_read + total.cache_create;
 
 	const lines: string[] = [];
-	lines.push(`# セッション解析結果（#${lo}〜#${hi}）`);
+	lines.push(t("usage.md.title", { lo, hi }));
 	lines.push("");
-	lines.push(`- コスト: ${formatCost(total.cost)}${total.estimated ? "（概算）" : ""}`);
-	lines.push(`- トークン: 入力 ${formatK(inputTotal)}・出力 ${formatK(total.output)}`);
-	lines.push(`- ターン数: ${rows.length}`);
-	lines.push(`- 期間: ${formatDuration(total.duration)}`);
+	lines.push(
+		t("usage.md.cost", { cost: formatCost(total.cost), estimated: total.estimated ? t("usage.md.estimatedSuffix") : "" })
+	);
+	lines.push(t("usage.md.tokens", { input: formatK(inputTotal), output: formatK(total.output) }));
+	lines.push(t("usage.md.turns", { count: rows.length }));
+	lines.push(t("usage.md.duration", { duration: formatDuration(total.duration) }));
 	lines.push("");
-	lines.push("| # | 時刻 | 指示 | 入力 | 出力 | コスト |");
+	lines.push(t("usage.md.tableHeader"));
 	lines.push("|---|---|---|---|---|---|");
 	for (const t of rows) {
 		const input = t.input + t.cache_read + t.cache_create;

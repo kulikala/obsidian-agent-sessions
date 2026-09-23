@@ -14,6 +14,7 @@ import { detail, live, loginEnv, resolveAgentSessionsPath, resolveClaude, scan }
 import { DaemonClient, defaultSockPath, ensureDaemon } from "./daemon-client";
 import { EditServer, editReplyFor, submitsAfterEdit, type EditReply, type EditRequest } from "./edit-server";
 import { SessionIndex } from "./index";
+import { readObsidianLang, resolveLang, setLang, t } from "./i18n";
 import { applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./keybindings";
 import { reconcileSubmitKey, sendSequence } from "./keys";
 import { buildAtToken, selectionLineRange } from "./links";
@@ -86,6 +87,7 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+		this.applyLanguage();
 		this.refreshTuiMode();
 		this.registerEvent(this.events.on("settings-changed", () => this.refreshTuiMode()));
 		// keybindings.json が既に改行キーを持っていれば（他のツール・ユーザーが手で書いた場合を
@@ -141,9 +143,18 @@ export default class AgentSessionsPlugin extends Plugin {
 			void this.openSidePanel();
 		});
 
+		this.registerCommands();
+		// コマンド名は言語が変わるたびに描き直す（同じ id で `addCommand` し直すと上書きされる）。
+		this.registerEvent(this.events.on("settings-changed", () => this.registerCommands()));
+
+		this.addSettingTab(new AgentSessionsSettingTab(this.app, this));
+	}
+
+	/** コマンドパレットの項目（§6.9・D-56）。言語が変わるたびに同じ id で呼び直し、名前を描き直す。 */
+	private registerCommands(): void {
 		this.addCommand({
 			id: "open-side-panel",
-			name: "一覧を開く",
+			name: t("action.openSidePanel"),
 			callback: () => {
 				void this.openSidePanel();
 			},
@@ -151,7 +162,7 @@ export default class AgentSessionsPlugin extends Plugin {
 
 		this.addCommand({
 			id: "open-manager",
-			name: "セッションマネージャーを開く",
+			name: t("action.sessionManager"),
 			callback: () => {
 				void this.openManagerTab();
 			},
@@ -159,7 +170,7 @@ export default class AgentSessionsPlugin extends Plugin {
 
 		this.addCommand({
 			id: "new-session",
-			name: "新規セッション",
+			name: t("action.newSession"),
 			callback: () => {
 				new NewSessionModal(this.app, (name) => this.newSession(name || undefined)).open();
 			},
@@ -167,13 +178,11 @@ export default class AgentSessionsPlugin extends Plugin {
 
 		this.addCommand({
 			id: "insert-note-at",
-			name: "現在のノートを @ で挿入",
+			name: t("action.insertNoteAt"),
 			callback: () => {
 				this.insertNoteAt();
 			},
 		});
-
-		this.addSettingTab(new AgentSessionsSettingTab(this.app, this));
 	}
 
 	onunload(): void {
@@ -199,6 +208,15 @@ export default class AgentSessionsPlugin extends Plugin {
 	async saveSettings(): Promise<void> {
 		await this.saveData(this.settings);
 		this.events.trigger("settings-changed");
+	}
+
+	/**
+	 * 表示言語（§6.9・D-56）：設定の `language` と Obsidian の言語（`localStorage.language`）から
+	 * `t()` の現在値を決める。`onload` の最初と、設定タブで言語を変えたときに呼ぶ
+	 * （呼んだ後に `saveSettings()` すれば `settings-changed` で各ビューが描き直す）。
+	 */
+	applyLanguage(): void {
+		setLang(resolveLang(this.settings.language, readObsidianLang()));
 	}
 
 	/** `keybindings.json` の置き場（§6.8）。`AgentSessionsSettingTab` もここを使う。 */
@@ -259,13 +277,13 @@ export default class AgentSessionsPlugin extends Plugin {
 	insertNoteAt(): void {
 		const md = this.lastMarkdownView();
 		if (!md || !md.file) {
-			new Notice("開いているノートがありません");
+			new Notice(t("notice.noActiveNote"));
 			return;
 		}
 		const file = md.file;
 		const view = this.frontTerminalView();
 		if (!view) {
-			new Notice("開いているターミナルがありません");
+			new Notice(t("notice.noActiveTerminal"));
 			return;
 		}
 		const abs = join(this.vaultPath(), file.path);
@@ -412,22 +430,22 @@ export default class AgentSessionsPlugin extends Plugin {
 		void opened
 			.then(async () => {
 				if (!(await this.index.registry.waitFor(id, "idle", WAIT_IDLE_MS))) {
-					new Notice("セッションの起動を待てなかったため、名前を付けられませんでした");
+					new Notice(t("notice.renameWaitFailed"));
 					return;
 				}
 				await this.sendCommand(id, `/rename ${name}`);
 			})
 			.catch((err) => {
-				new Notice(`名前の変更に失敗しました: ${messageOf(err)}`);
+				new Notice(t("notice.renameFailed", { error: messageOf(err) }));
 			});
 	}
 
 	/** 名前を変更：`/rename` を今すぐ送る（タブが無くても。§6.6・D-42）。 */
 	async renameSession(id: string, name: string): Promise<void> {
 		try {
-			await this.sendCommand(id, `/rename ${name}`, "名前を変更しています…");
+			await this.sendCommand(id, `/rename ${name}`, t("progress.renaming"));
 		} catch (err) {
-			new Notice(`名前の変更に失敗しました: ${messageOf(err)}`);
+			new Notice(t("notice.renameFailed", { error: messageOf(err) }));
 		}
 	}
 
@@ -446,13 +464,13 @@ export default class AgentSessionsPlugin extends Plugin {
 	/** 圧縮：直近の指示が `/compact` なら何もしない。それ以外は `/compact` を送る（タブが無くても。D-42）。 */
 	async compactSession(id: string): Promise<void> {
 		if (await this.lastInstructionIsCompact(id)) {
-			new Notice("直近の指示が /compact のため、圧縮は送りません");
+			new Notice(t("notice.compactAlready"));
 			return;
 		}
 		try {
-			await this.sendCommand(id, "/compact", "セッションを圧縮しています…");
+			await this.sendCommand(id, "/compact", t("progress.compacting"));
 		} catch (err) {
-			new Notice(`圧縮に失敗しました: ${messageOf(err)}`);
+			new Notice(t("notice.compactFailed", { error: messageOf(err) }));
 		}
 	}
 
@@ -471,7 +489,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * コマンドを送る。`progress` は経路③（裏で起動）のときだけ `Notice` に出す。
 	 * 失敗は例外（呼出側が `Notice` にする）。
 	 */
-	async sendCommand(id: string, text: string, progress = "送信しています…"): Promise<void> {
+	async sendCommand(id: string, text: string, progress = t("progress.sending")): Promise<void> {
 		const view = this.findTerminalView(id);
 		if (view?.isAttached()) {
 			this.sendViaView(view, text);
@@ -511,7 +529,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	private async sendViaAttach(client: DaemonClient, id: string, text: string): Promise<void> {
 		const res = await client.attach(id, HEADLESS_COLS, HEADLESS_ROWS);
 		if (!res.ok) {
-			throw new Error(`attach に失敗: ${res.error ?? "unknown"}`);
+			throw new Error(t("error.attachFailed", { error: res.error ?? "unknown" }));
 		}
 		try {
 			client.writeInput(this.commandBytes(text));
@@ -528,7 +546,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	private async sendHeadless(client: DaemonClient, id: string, text: string, progress: string): Promise<void> {
 		const row = this.index.sessions.get(id);
 		if (!row) {
-			throw new Error("セッションが見つかりません");
+			throw new Error(t("error.sessionNotFound"));
 		}
 		const notice = new Notice(progress, 0);
 		this.headless.add(id);
@@ -552,20 +570,20 @@ export default class AgentSessionsPlugin extends Plugin {
 				rows: HEADLESS_ROWS,
 			});
 			if (!res.ok) {
-				throw new Error(`start に失敗: ${res.error ?? "unknown"}`);
+				throw new Error(t("error.startFailed", { error: res.error ?? "unknown" }));
 			}
 			const attached = await client.attach(id, HEADLESS_COLS, HEADLESS_ROWS);
 			if (!attached.ok) {
-				throw new Error(`attach に失敗: ${attached.error ?? "unknown"}`);
+				throw new Error(t("error.attachFailed", { error: attached.error ?? "unknown" }));
 			}
 			const registry = this.index.registry;
 			if (!(await registry.waitFor(id, "idle", WAIT_IDLE_MS))) {
-				throw new Error("claude の起動を待てませんでした");
+				throw new Error(t("error.claudeStartWaitFailed"));
 			}
 			client.writeInput(this.commandBytes(text));
 			await registry.waitFor(id, "busy", WAIT_BUSY_MS);
 			if (!(await registry.waitFor(id, "idle", WAIT_IDLE_MS))) {
-				throw new Error("応答を待てませんでした");
+				throw new Error(t("error.replyWaitFailed"));
 			}
 			client.writeInput(this.commandBytes("/exit"));
 			const timeout = new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), WAIT_EXIT_MS));
@@ -584,7 +602,7 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	/** セッションを終了：確認 → `kill`。 */
 	endSession(id: string): void {
-		new ConfirmModal(this.app, "このセッションを終了しますか？", "終了する", () => {
+		new ConfirmModal(this.app, t("confirm.endSession.message"), t("action.endSession"), () => {
 			void (async () => {
 				let client: DaemonClient | null = null;
 				try {
@@ -592,7 +610,7 @@ export default class AgentSessionsPlugin extends Plugin {
 					await client.hello("plugin");
 					await client.kill(id);
 				} catch (err) {
-					new Notice(`終了に失敗しました: ${messageOf(err)}`);
+					new Notice(t("notice.endFailed", { error: messageOf(err) }));
 				} finally {
 					client?.close();
 				}
@@ -603,7 +621,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	/** セッション解析結果のモーダルを開く（D-31）。 */
 	showUsage(id: string): void {
 		const row = this.index.sessions.get(id);
-		const name = row?.name || row?.label || `無題 ${id.slice(0, 8)}`;
+		const name = row?.name || row?.label || t("common.untitled", { id: id.slice(0, 8) });
 		new UsageModal(this.app, this.agentSessionsPath(), id, name).open();
 	}
 
@@ -669,8 +687,8 @@ export default class AgentSessionsPlugin extends Plugin {
 		if (front?.sessionId === id && document.hasFocus()) {
 			return;
 		}
-		const name = this.index.sessions.get(id)?.name ?? `無題 ${id.slice(0, 8)}`;
-		const notice = new Notice(`${name}：指示待ち`, 8000);
+		const name = this.index.sessions.get(id)?.name ?? t("common.untitled", { id: id.slice(0, 8) });
+		const notice = new Notice(t("notice.waitingForInput", { name }), 8000);
 		notice.noticeEl.addEventListener("click", () => void this.openSession(id));
 	}
 
@@ -720,10 +738,10 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	private notifyLockError(err: unknown): void {
 		if (err instanceof StoreLockError) {
-			new Notice("sessions.json のロックが取れません。少し待って再試行してください");
+			new Notice(t("notice.storeLocked"));
 			return;
 		}
-		new Notice(`sessions.json の更新に失敗しました: ${messageOf(err)}`);
+		new Notice(t("notice.storeUpdateFailed", { error: messageOf(err) }));
 	}
 }
 
@@ -741,7 +759,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		new Setting(containerEl)
-			.setName("フォント")
+			.setName(t("settings.font.name"))
 			.addText((text) =>
 				text.setValue(this.plugin.settings.fontFamily).onChange(async (value) => {
 					this.plugin.settings.fontFamily = value;
@@ -750,7 +768,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("フォントサイズ")
+			.setName(t("settings.fontSize.name"))
 			.addText((text) =>
 				text.setValue(String(this.plugin.settings.fontSize)).onChange(async (value) => {
 					const n = Number(value);
@@ -762,10 +780,14 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("余白")
+			.setName(t("settings.padding.name"))
 			.addDropdown((dropdown) =>
 				dropdown
-					.addOptions({ comfortable: "ゆったり", compact: "コンパクト", none: "なし" })
+					.addOptions({
+						comfortable: t("settings.padding.comfortable"),
+						compact: t("settings.padding.compact"),
+						none: t("settings.padding.none"),
+					})
 					.setValue(this.plugin.settings.padding)
 					.onChange(async (value) => {
 						this.plugin.settings.padding = value as AgentSessionsSettings["padding"];
@@ -773,10 +795,11 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 					})
 			);
 
+		this.renderLanguageSetting(containerEl);
 		this.renderSubmitKeySetting(containerEl);
 
 		new Setting(containerEl)
-			.setName("最近の件数（サイドパネル）")
+			.setName(t("settings.recentCount.name"))
 			.addText((text) =>
 				text.setValue(String(this.plugin.settings.recentCount)).onChange(async (value) => {
 					const n = Number(value);
@@ -788,7 +811,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("指示待ちの通知")
+			.setName(t("settings.notifyOnIdle.name"))
 			.addToggle((toggle) =>
 				toggle.setValue(this.plugin.settings.notifyOnIdle).onChange(async (value) => {
 					this.plugin.settings.notifyOnIdle = value;
@@ -797,8 +820,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("claude のパス")
-			.setDesc("空欄時のデフォルト: $(which claude)")
+			.setName(t("settings.claudePath.name"))
+			.setDesc(t("settings.claudePath.desc"))
 			.addText((text) =>
 				text.setValue(this.plugin.settings.claudePath).onChange(async (value) => {
 					this.plugin.settings.claudePath = value;
@@ -807,8 +830,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("agent-sessions のパス")
-			.setDesc("空欄時のデフォルト: ~/bin/agent-sessions")
+			.setName(t("settings.agentSessionsPath.name"))
+			.setDesc(t("settings.agentSessionsPath.desc"))
 			.addText((text) =>
 				text.setValue(this.plugin.settings.agentSessionsPath).onChange(async (value) => {
 					this.plugin.settings.agentSessionsPath = value;
@@ -817,8 +840,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("Python のパス")
-			.setDesc("空欄時のデフォルト: /usr/bin/python3")
+			.setName(t("settings.pythonPath.name"))
+			.setDesc(t("settings.pythonPath.desc"))
 			.addText((text) =>
 				text.setValue(this.plugin.settings.pythonPath).onChange(async (value) => {
 					this.plugin.settings.pythonPath = value;
@@ -827,8 +850,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("編集領域の高さ（%）")
-			.setDesc("Ctrl+G で開く内蔵エディタの高さ")
+			.setName(t("settings.editorHeight.name"))
+			.setDesc(t("settings.editorHeight.desc"))
 			.addText((text) =>
 				text.setValue(String(this.plugin.settings.editorHeight)).onChange(async (value) => {
 					const n = Number(value);
@@ -840,7 +863,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName("スクロールバック行数")
+			.setName(t("settings.scrollback.name"))
 			.addText((text) =>
 				text.setValue(String(this.plugin.settings.scrollback)).onChange(async (value) => {
 					const n = Number(value);
@@ -849,6 +872,28 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}
 				})
+			);
+	}
+
+	/** 言語（§6.9・D-56）：自動／日本語／English。変えたら `setLang` → `saveSettings()`
+	 * （`settings-changed` で各ビュー・このタブ自身が描き直す）。 */
+	private renderLanguageSetting(containerEl: HTMLElement): void {
+		new Setting(containerEl)
+			.setName(t("settings.language.name"))
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOptions({
+						auto: t("settings.language.optionAuto"),
+						ja: t("settings.language.optionJa"),
+						en: t("settings.language.optionEn"),
+					})
+					.setValue(this.plugin.settings.language)
+					.onChange(async (value) => {
+						this.plugin.settings.language = value as AgentSessionsSettings["language"];
+						this.plugin.applyLanguage();
+						await this.plugin.saveSettings();
+						this.display();
+					})
 			);
 	}
 
@@ -865,13 +910,13 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		const info = readEnterMode(keybindingsPath);
 		switch (info.mode) {
 			case "unreadable":
-				return `現在の keybindings.json：${keybindingsPath} が読めません`;
+				return t("settings.submitKey.currentUnreadable", { path: keybindingsPath });
 			case "custom":
-				return `現在の keybindings.json の Chat の enter：${info.raw}`;
+				return t("settings.submitKey.currentCustom", { raw: info.raw ?? "" });
 			case "newline":
-				return "現在の keybindings.json の Chat の enter：chat:newline";
+				return t("settings.submitKey.currentNewline");
 			case "submit":
-				return "現在の keybindings.json の Chat の enter：既定（未設定、または chat:submit）";
+				return t("settings.submitKey.currentSubmit");
 		}
 	}
 
@@ -889,9 +934,9 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			this.display();
 		};
 
-		const setting = new Setting(containerEl).setName("送信キー");
+		const setting = new Setting(containerEl).setName(t("settings.submitKey.name"));
 		setting.descEl.createDiv({
-			text: "Enter 以外を選ぶと、Enter は改行になります。そのため ~/.claude/keybindings.json に書き込みます（他のターミナルアプリで起動した claude にも効きます）",
+			text: t("settings.submitKey.desc"),
 		});
 		setting.descEl.createDiv({ text: this.currentEnterBindingText(keybindingsPath) });
 		setting.addDropdown((dropdown) => {
@@ -906,11 +951,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 					return;
 				}
 				if (next !== "enter") {
-					new ConfirmModal(
-						this.app,
-						"Enter を改行にするため、Claude Code の keybindings.json に書きます。他のターミナルアプリで起動した claude にも効きます",
-						"書き込む",
-						() => applyAndSave(next)
+					new ConfirmModal(this.app, t("confirm.writeKeybindings.message"), t("action.write"), () =>
+						applyAndSave(next)
 					).open();
 					// 確認が済むまでは見た目を戻しておく（確定したら display() で組み直す）。
 					dropdown.setValue(current);
@@ -936,16 +978,16 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			return;
 		}
 
-		const setting = new Setting(containerEl).setName("keybindings.json と食い違っています");
+		const setting = new Setting(containerEl).setName(t("settings.submitKeyMismatch.name"));
 		setting.descEl.createSpan({
-			text: "Claude Code の keybindings.json と一致していません",
+			text: t("settings.submitKeyMismatch.desc"),
 			cls: "agent-sessions-settings-mismatch",
 		});
 		setting.addButton((button) =>
-			button.setButtonText("ファイルに合わせる").onClick(async () => {
+			button.setButtonText(t("action.matchFile")).onClick(async () => {
 				const changed = await this.plugin.syncSubmitKeyFromKeybindings();
 				if (changed) {
-					new Notice("keybindings.json に合わせました");
+					new Notice(t("notice.matchedKeybindings"));
 				}
 				this.display();
 			})

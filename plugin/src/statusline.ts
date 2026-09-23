@@ -5,6 +5,7 @@
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { t } from "./i18n";
 
 export interface StatusInfo {
 	model: string | null;
@@ -125,8 +126,8 @@ function effortOf(v: unknown): unknown {
 }
 
 export function formatStatus(info: StatusInfo | null, rc: boolean | null): string {
-	const model = info?.model ?? "デフォルト";
-	const effort = info?.effort ?? "デフォルト";
+	const model = info?.model ?? t("common.default");
+	const effort = info?.effort ?? t("common.default");
 	const ctx = info?.ctxPercent != null ? `ctx ${Math.round(info.ctxPercent)}%` : "ctx —";
 	const rcMark = rc === null ? "rc —" : rc ? "rc ●" : "rc ○";
 	const five = info?.fiveHour != null ? `5h ${Math.round(info.fiveHour)}%` : "5h —";

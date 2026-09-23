@@ -1,7 +1,7 @@
 {
   "name": "agent-sessions",
   "version": "0.1.0",
-  "description": "Obsidian プラグイン：agent-sessions のサイドパネル・セッションマネージャー・ターミナル",
+  "description": "Obsidian plugin: agent-sessions side panel, session manager, and terminal",
   "main": "main.js",
   "private": true,
   "scripts": {

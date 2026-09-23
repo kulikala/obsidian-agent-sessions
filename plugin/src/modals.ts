@@ -1,6 +1,7 @@
 // 新規セッション・名前を変更・確認のダイアログ（§6.6・§6.12）。
 
 import { App, Modal, Setting, TextComponent } from "obsidian";
+import { t } from "./i18n";
 
 /** 新規セッション：名前 1 行と「開始」。Enter でも開始。 */
 export class NewSessionModal extends Modal {
@@ -14,8 +15,8 @@ export class NewSessionModal extends Modal {
 	}
 
 	onOpen(): void {
-		this.setTitle("新規セッション");
-		new Setting(this.contentEl).setName("名前").addText((text) => {
+		this.setTitle(t("modal.newSession.title"));
+		new Setting(this.contentEl).setName(t("modal.newSession.nameField")).addText((text) => {
 			this.textComponent = text;
 			text.inputEl.addEventListener("keydown", (evt) => {
 				if (evt.key === "Enter") {
@@ -26,7 +27,7 @@ export class NewSessionModal extends Modal {
 		});
 		new Setting(this.contentEl).addButton((button) =>
 			button
-				.setButtonText("開始")
+				.setButtonText(t("action.start"))
 				.setCta()
 				.onClick(() => this.submit())
 		);
@@ -59,17 +60,17 @@ export class RenameSessionModal extends Modal {
 	}
 
 	onOpen(): void {
-		this.setTitle("名前を変更");
+		this.setTitle(t("modal.renameSession.title"));
 		this.modalEl.addClass("agent-sessions-rename-modal");
 		const field = this.contentEl.createDiv({ cls: "agent-sessions-rename-field" });
 		this.textComponent = new TextComponent(field);
 		this.textComponent.setValue(this.currentName);
 		this.textComponent.inputEl.addClass("agent-sessions-rename-input");
 		new Setting(this.contentEl)
-			.addButton((button) => button.setButtonText("キャンセル").onClick(() => this.close()))
+			.addButton((button) => button.setButtonText(t("action.cancel")).onClick(() => this.close()))
 			.addButton((button) =>
 				button
-					.setButtonText("変更")
+					.setButtonText(t("action.change"))
 					.setCta()
 					.onClick(() => this.submit())
 			);
@@ -106,7 +107,7 @@ export class ConfirmModal extends Modal {
 	onOpen(): void {
 		this.contentEl.createEl("p", { text: this.message });
 		new Setting(this.contentEl)
-			.addButton((button) => button.setButtonText("キャンセル").onClick(() => this.close()))
+			.addButton((button) => button.setButtonText(t("action.cancel")).onClick(() => this.close()))
 			.addButton((button) =>
 				button
 					.setButtonText(this.confirmLabel)

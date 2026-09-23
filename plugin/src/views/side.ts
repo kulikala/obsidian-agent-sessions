@@ -4,6 +4,7 @@
 import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
 import type AgentSessionsPlugin from "../main";
 import { usage } from "../backend";
+import { t } from "../i18n";
 import { VIEW_TYPE_TERMINAL } from "../open-session";
 import { NewSessionModal } from "../modals";
 import type { Row } from "../index";
@@ -33,6 +34,8 @@ export class SideView extends ItemView {
 	private detailHeight = 220;
 	/** ホバーで一時的に詳細を差し替えている間は真（外れたら既定に戻す）。 */
 	private hovering = false;
+	/** ナビの 3 ボタン（言語が変わったら tooltip を描き直す。§6.9・D-56）。 */
+	private navButtons: { newSession?: HTMLElement; manager?: HTMLElement; more?: HTMLElement } = {};
 
 	constructor(leaf: WorkspaceLeaf, plugin: AgentSessionsPlugin) {
 		super(leaf);
@@ -56,12 +59,13 @@ export class SideView extends ItemView {
 		this.buildSkeleton();
 
 		this.register(this.plugin.index.onChange(() => this.render()));
-		this.register(this.plugin.index.onError((message) => new Notice(`一覧の走査に失敗しました: ${message}`)));
+		this.register(this.plugin.index.onError((message) => new Notice(t("notice.scanFailed", { message }))));
 		this.register(this.plugin.index.registry.onChange(() => this.onRegistryOrStatusChange()));
 		this.register(this.plugin.index.statusline.onChange(() => this.onRegistryOrStatusChange()));
 		this.register(this.plugin.index.addVisible());
 		this.registerEvent(this.app.workspace.on("layout-change", () => this.onLayoutChange()));
 		this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.onActiveLeafChange()));
+		this.registerEvent(this.plugin.events.on("settings-changed", () => this.refreshLanguage()));
 		this.register(() => this.limitsView.dispose());
 
 		this.onLayoutChange();
@@ -87,10 +91,27 @@ export class SideView extends ItemView {
 
 	private buildNav(): void {
 		const navEl = this.contentEl.createDiv({ cls: "agent-sessions-nav" });
-		this.iconButton(navEl, "plus", "新規セッション", () => this.openNewSessionModal());
-		this.iconButton(navEl, "layout-grid", "セッションマネージャー", () => void this.plugin.openManagerTab());
-		const moreBtn = this.iconButton(navEl, "more-horizontal", "その他", (evt) => this.showMoreMenu(evt));
+		this.navButtons.newSession = this.iconButton(navEl, "plus", t("action.newSession"), () => this.openNewSessionModal());
+		this.navButtons.manager = this.iconButton(navEl, "layout-grid", t("action.sessionManager"), () =>
+			void this.plugin.openManagerTab()
+		);
+		const moreBtn = this.iconButton(navEl, "more-horizontal", t("action.more"), (evt) => this.showMoreMenu(evt));
 		moreBtn.addClass("agent-sessions-nav-more");
+		this.navButtons.more = moreBtn;
+	}
+
+	/** 言語が変わったとき（§6.9・D-56）：ナビの tooltip と一覧・詳細を描き直す。 */
+	private refreshLanguage(): void {
+		if (this.navButtons.newSession) {
+			setTooltip(this.navButtons.newSession, t("action.newSession"));
+		}
+		if (this.navButtons.manager) {
+			setTooltip(this.navButtons.manager, t("action.sessionManager"));
+		}
+		if (this.navButtons.more) {
+			setTooltip(this.navButtons.more, t("action.more"));
+		}
+		this.render();
 	}
 
 	private iconButton(
@@ -114,13 +135,13 @@ export class SideView extends ItemView {
 		const menu = new Menu();
 		menu.addItem((item) =>
 			item
-				.setTitle("再走査")
+				.setTitle(t("action.rescan"))
 				.setIcon("refresh-cw")
 				.onClick(() => void this.plugin.index.rescan())
 		);
 		menu.addItem((item) =>
 			item
-				.setTitle("設定を開く")
+				.setTitle(t("action.openSettings"))
 				.setIcon("settings")
 				.onClick(() => this.plugin.openSettings())
 		);
@@ -197,9 +218,9 @@ export class SideView extends ItemView {
 			() => this.onHoverEnd()
 		);
 		const list = computeSideList(this.plugin.index.sessions, this.terminalLeaves(), this.plugin.settings.recentCount);
-		this.renderSection(this.listEl, "開いているタブ", list.openTabs, actions);
-		this.renderSection(this.listEl, "起動中", list.running, actions);
-		this.renderSection(this.listEl, "最近", list.recent, actions);
+		this.renderSection(this.listEl, t("section.openTabs"), list.openTabs, actions);
+		this.renderSection(this.listEl, t("section.running"), list.running, actions);
+		this.renderSection(this.listEl, t("section.recent"), list.recent, actions);
 		if (!this.hovering) {
 			this.showDefaultDetail(list);
 		}

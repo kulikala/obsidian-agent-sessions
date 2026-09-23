@@ -6,6 +6,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { t } from "../i18n";
 
 export interface RateLimitWindow {
 	usedPercentage: number;
@@ -63,7 +64,7 @@ export function formatCountdown(seconds: number): string {
 	if (totalHours >= 24) {
 		const days = Math.floor(totalHours / 24);
 		const h = totalHours % 24;
-		return `${days} 日 ${h}:${pad(m)}`;
+		return t("limits.countdownDays", { days, h, mm: pad(m) });
 	}
 	const sec = s % 60;
 	return `${totalHours}:${pad(m)}:${pad(sec)}`;
@@ -139,7 +140,7 @@ export class LimitsView {
 		const countdown = w?.resetsAt != null ? formatCountdown(w.resetsAt - Date.now() / 1000) : null;
 		el.createSpan({
 			cls: "agent-sessions-limits-countdown",
-			text: countdown != null ? `リセットまで ${countdown}` : "—",
+			text: countdown != null ? t("stats.resetsIn", { countdown }) : "—",
 		});
 	}
 }

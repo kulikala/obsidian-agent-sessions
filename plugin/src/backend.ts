@@ -4,6 +4,7 @@
 import { execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { t } from "./i18n";
 import type { Detail, LiveResult, ScanResult, StatsResult, UsageResult } from "./types";
 
 /** `json` サブコマンドが失敗したときの例外。stderr の先頭行を message に持つ。 */
@@ -129,13 +130,13 @@ export async function resolveClaude(configuredPath: string): Promise<string> {
 		const { stdout } = await execFileText(shell, ["-l", "-c", "command -v claude"]);
 		const path = stdout.trim();
 		if (!path) {
-			throw new BackendError("claude が見つからない");
+			throw new BackendError(t("error.claudeMissing"));
 		}
 		return path;
 	} catch (err) {
 		if (err instanceof BackendError) {
 			throw err;
 		}
-		throw new BackendError("claude が見つからない");
+		throw new BackendError(t("error.claudeMissing"));
 	}
 }

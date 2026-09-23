@@ -4,6 +4,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { t } from "./i18n";
 
 export type EnterMode = "submit" | "newline" | "custom" | "unreadable";
 
@@ -134,7 +135,7 @@ export function applySubmitKey(filePath: string, submitKey: string): ApplySubmit
 		if ((err as NodeJS.ErrnoException).code === "ENOENT") {
 			text = null;
 		} else {
-			return { warning: `${filePath} が読めません。手で直す必要があります` };
+			return { warning: t("error.keybindingsUnreadable", { path: filePath }) };
 		}
 	}
 
@@ -149,7 +150,7 @@ export function applySubmitKey(filePath: string, submitKey: string): ApplySubmit
 	} else {
 		const parsed = parseKeybindingsFile(text);
 		if (!parsed) {
-			return { warning: `${filePath} が読めません。手で直す必要があります` };
+			return { warning: t("error.keybindingsUnreadable", { path: filePath }) };
 		}
 		data = parsed;
 	}
@@ -188,7 +189,7 @@ export function applySubmitKey(filePath: string, submitKey: string): ApplySubmit
 				data.bindings = data.bindings.filter((b) => b !== chat);
 			}
 			if (mismatched.length > 0) {
-				warning = `手で直す必要があります（${mismatched.join(", ")} が想定と違う値のまま残っています）`;
+				warning = t("warning.manualFix", { keys: mismatched.join(", ") });
 			}
 		}
 	}

@@ -3,6 +3,7 @@
 // （テストは test/manager-model.test.ts）。
 
 import type { Row } from "../index";
+import { t } from "../i18n";
 import { OTHER_GROUP, type ManagerTree } from "../tree";
 import type { StatsResult, StatsWindow } from "../types";
 
@@ -38,8 +39,10 @@ export function flattenTree(tree: ManagerTree, showArchived: boolean): ManagerRo
 	if (tree.others.rows.length > 0) {
 		out.push({
 			kind: "group",
+			// `key` は `store.folded` の識別子（`tree.ts` の `OTHER_GROUP` と同じ値）——表示言語を
+			// 変えても畳んだ状態が保てるよう、キーとラベルは別に持つ（ラベルだけ `t()` で描く）。
 			key: OTHER_GROUP,
-			label: OTHER_GROUP,
+			label: t("group.other"),
 			count: tree.others.rows.length,
 			folded: tree.others.folded,
 		});
@@ -54,7 +57,7 @@ export function flattenTree(tree: ManagerTree, showArchived: boolean): ManagerRo
 		out.push({
 			kind: "group",
 			key: ARCHIVED_GROUP,
-			label: `アーカイブ（${tree.archived.length}）`,
+			label: t("group.archived", { count: tree.archived.length }),
 			count: tree.archived.length,
 			folded: false,
 		});

@@ -6,6 +6,7 @@ import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf } from 
 import type { Row } from "../index";
 import type AgentSessionsPlugin from "../main";
 import { stats, usage } from "../backend";
+import { t } from "../i18n";
 import { NewSessionModal } from "../modals";
 import { VIEW_TYPE_TERMINAL } from "../open-session";
 import { loadStore } from "../store";
@@ -79,7 +80,7 @@ export class ManagerView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return "セッションマネージャー";
+		return t("action.sessionManager");
 	}
 
 	getIcon(): string {
@@ -91,11 +92,12 @@ export class ManagerView extends ItemView {
 		this.buildSkeleton();
 
 		this.register(this.plugin.index.onChange(() => this.render()));
-		this.register(this.plugin.index.onError((message) => new Notice(`一覧の走査に失敗しました: ${message}`)));
+		this.register(this.plugin.index.onError((message) => new Notice(t("notice.scanFailed", { message }))));
 		this.register(this.plugin.index.registry.onChange(() => this.render()));
 		this.register(this.plugin.index.statusline.onChange(() => this.refreshDetail()));
 		this.register(this.plugin.index.addVisible());
 		this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.onActiveLeafChange()));
+		this.registerEvent(this.plugin.events.on("settings-changed", () => this.refreshLanguage()));
 
 		this.statsFetchTimer = setInterval(() => void this.refreshStats(), STATS_FETCH_INTERVAL_MS);
 		this.statsTickTimer = setInterval(() => this.renderStatsBar(), STATS_TICK_INTERVAL_MS);
@@ -108,6 +110,21 @@ export class ManagerView extends ItemView {
 		void this.refreshStats();
 		this.render();
 		this.wrapEl.focus();
+	}
+
+	/**
+	 * 言語が変わったとき（§6.9・D-56）：タブ見出しと骨組み（見出し・ツールバー・統計の帯）を
+	 * 描き直す。骨組みは固定文言（tooltip・列見出し・placeholder）を開いたときに 1 回だけ組むため、
+	 * 描き直すには作り直すのが早い（`statsResult`・選択・折畳は保つ）。
+	 */
+	private refreshLanguage(): void {
+		const leaf = this.leaf as unknown as { updateHeader?: () => void };
+		if (typeof leaf.updateHeader === "function") {
+			leaf.updateHeader();
+		}
+		this.contentEl.empty();
+		this.buildSkeleton();
+		this.render();
 	}
 
 	/** `json stats`（D-54・D-55）：開いたとき・再走査・60 秒毎に読み直す。失敗したら帯に「—」。 */
@@ -162,11 +179,11 @@ export class ManagerView extends ItemView {
 		const thead = table.createEl("thead");
 		const tr = thead.createEl("tr", { cls: "agent-sessions-manager-row" });
 		tr.createEl("th", { cls: "agent-sessions-manager-col-mark" });
-		tr.createEl("th", { cls: "agent-sessions-manager-col-name", text: "名前" });
-		this.headEls.updated = this.buildSortHead(tr, "agent-sessions-manager-col-time", "最終更新", "updated");
+		tr.createEl("th", { cls: "agent-sessions-manager-col-name", text: t("table.name") });
+		this.headEls.updated = this.buildSortHead(tr, "agent-sessions-manager-col-time", t("table.updated"), "updated");
 		this.headEls["5h"] = this.buildSortHead(tr, "agent-sessions-manager-col-5h", "5h", "5h");
 		this.headEls["7d"] = this.buildSortHead(tr, "agent-sessions-manager-col-7d", "7d", "7d");
-		tr.createEl("th", { cls: "agent-sessions-manager-col-folder", text: "フォルダ" });
+		tr.createEl("th", { cls: "agent-sessions-manager-col-folder", text: t("table.folder") });
 		tr.createEl("th", { cls: "agent-sessions-manager-col-menu" });
 		this.applySortHighlight();
 	}
@@ -195,8 +212,8 @@ export class ManagerView extends ItemView {
 
 	private renderStatsBar(): void {
 		this.statsBarEl.empty();
-		this.renderStatsCard(this.statsBarEl, "5 時間枠", this.statsResult?.windows.five_hour ?? null);
-		this.renderStatsCard(this.statsBarEl, "7 日枠", this.statsResult?.windows.seven_day ?? null);
+		this.renderStatsCard(this.statsBarEl, t("stats.fiveHour"), this.statsResult?.windows.five_hour ?? null);
+		this.renderStatsCard(this.statsBarEl, t("stats.sevenDay"), this.statsResult?.windows.seven_day ?? null);
 	}
 
 	private renderStatsCard(container: HTMLElement, label: string, w: StatsWindow | null): void {
@@ -213,7 +230,7 @@ export class ManagerView extends ItemView {
 		const countdown = w ? formatCountdown(w.end - Date.now() / 1000) : null;
 		card.createDiv({
 			cls: "agent-sessions-manager-stats-countdown",
-			text: countdown != null ? `リセットまで ${countdown}` : "—",
+			text: countdown != null ? t("stats.resetsIn", { countdown }) : "—",
 		});
 
 		const metrics = card.createDiv({ cls: "agent-sessions-manager-stats-metrics" });
@@ -221,8 +238,8 @@ export class ManagerView extends ItemView {
 			const summary = windowSummary(w);
 			metrics.createSpan({ text: formatCost(w.total.cost) });
 			metrics.createSpan({ text: formatK(summary.tokens) });
-			metrics.createSpan({ text: `${formatK(w.total.calls)} 回` });
-			metrics.createSpan({ text: `${summary.sessionCount} セッション` });
+			metrics.createSpan({ text: t("stats.calls", { count: formatK(w.total.calls) }) });
+			metrics.createSpan({ text: t("stats.sessions", { count: summary.sessionCount }) });
 		} else {
 			metrics.createSpan({ text: "—" });
 		}
@@ -230,17 +247,18 @@ export class ManagerView extends ItemView {
 
 	private buildToolbar(): void {
 		const toolbarEl = this.contentEl.createDiv({ cls: "agent-sessions-manager-toolbar" });
-		this.iconButton(toolbarEl, "plus", "新規セッション", () => this.openNewSessionModal());
-		this.iconButton(toolbarEl, "rotate-cw", "再走査", () => {
+		this.iconButton(toolbarEl, "plus", t("action.newSession"), () => this.openNewSessionModal());
+		this.iconButton(toolbarEl, "rotate-cw", t("action.rescan"), () => {
 			void this.plugin.index.rescan();
 			void this.refreshStats();
 		});
 
 		this.filterEl = toolbarEl.createEl("input", {
 			type: "text",
-			placeholder: "絞込",
+			placeholder: t("toolbar.filterPlaceholder"),
 			cls: "agent-sessions-manager-filter",
 		});
+		this.filterEl.value = this.filterText;
 		this.registerDomEvent(this.filterEl, "input", () => {
 			this.filterText = this.filterEl.value;
 			this.render();
@@ -255,7 +273,7 @@ export class ManagerView extends ItemView {
 			}
 		});
 
-		const moreBtn = this.iconButton(toolbarEl, "more-horizontal", "その他", (evt) => this.showMoreMenu(evt));
+		const moreBtn = this.iconButton(toolbarEl, "more-horizontal", t("action.more"), (evt) => this.showMoreMenu(evt));
 		moreBtn.addClass("agent-sessions-nav-more");
 	}
 
@@ -280,7 +298,7 @@ export class ManagerView extends ItemView {
 		const menu = new Menu();
 		menu.addItem((item) =>
 			item
-				.setTitle("アーカイブを表示")
+				.setTitle(t("action.showArchived"))
 				.setChecked(this.showArchived)
 				.onClick(() => {
 					this.showArchived = !this.showArchived;
@@ -329,7 +347,7 @@ export class ManagerView extends ItemView {
 		if (mrow.kind === "archived-orphan") {
 			const tr = this.tableBodyEl.createEl("tr", { cls: "agent-sessions-manager-row is-indented is-archived" });
 			tr.createEl("td", { cls: "agent-sessions-manager-col-mark" });
-			tr.createEl("td", { cls: "agent-sessions-manager-col-name", text: mrow.name || `無題 ${mrow.id.slice(0, 8)}` });
+			tr.createEl("td", { cls: "agent-sessions-manager-col-name", text: mrow.name || t("common.untitled", { id: mrow.id.slice(0, 8) }) });
 			tr.createEl("td", { cls: "agent-sessions-manager-col-time" });
 			tr.createEl("td", { cls: "agent-sessions-manager-col-5h" });
 			tr.createEl("td", { cls: "agent-sessions-manager-col-7d" });

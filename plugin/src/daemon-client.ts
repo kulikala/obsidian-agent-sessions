@@ -13,6 +13,7 @@ import * as net from "node:net";
 import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { t } from "./i18n";
 
 export type FrameKind = "J" | "D" | "R";
 
@@ -49,7 +50,7 @@ export class FrameDecoder {
 			const kindByte = this.buf.readUInt8(0);
 			const kind = BYTE_KIND[kindByte];
 			if (kind === undefined) {
-				throw new Error(`不明なフレーム種別: 0x${kindByte.toString(16)}`);
+				throw new Error(t("error.unknownFrameKind", { hex: kindByte.toString(16) }));
 			}
 			const length = this.buf.readUInt32BE(1);
 			if (this.buf.length < 5 + length) break;
@@ -113,7 +114,7 @@ export class DaemonClient extends EventEmitter {
 				socket.on("data", (chunk: Buffer) => this.handleData(chunk));
 				socket.on("close", () => {
 					this.socket = null;
-					this.rejectPending(new Error("ソケットが閉じた"));
+					this.rejectPending(new Error(t("error.socketClosed")));
 					this.emit("close");
 				});
 				socket.on("error", (err: Error) => this.emit("error", err));
@@ -151,7 +152,7 @@ export class DaemonClient extends EventEmitter {
 
 	request(op: string, args: JsonRequestArgs = {}): Promise<JsonResponse> {
 		if (!this.socket) {
-			return Promise.reject(new Error("デーモンに未接続"));
+			return Promise.reject(new Error(t("error.notConnected")));
 		}
 		const seq = ++this.seq;
 		const payload = Buffer.from(JSON.stringify({ op, seq, ...args }), "utf8");
@@ -208,7 +209,7 @@ export class DaemonClient extends EventEmitter {
 
 	writeInput(bytes: Uint8Array | Buffer): void {
 		if (!this.socket) {
-			throw new Error("デーモンに未接続");
+			throw new Error(t("error.notConnected"));
 		}
 		this.socket.write(encodeFrame("D", bytes));
 	}
@@ -262,7 +263,7 @@ function describeUnavailable(err: unknown, agentSessionsPath: string): string {
 	const code = (err as NodeJS.ErrnoException | undefined)?.code;
 	const path = (err as NodeJS.ErrnoException | undefined)?.path;
 	if (code === "ENOENT" && path === agentSessionsPath) {
-		return `agent-sessions が見つからない: ${agentSessionsPath}`;
+		return t("error.agentSessionsNotFound", { path: agentSessionsPath });
 	}
-	return "デーモンに接続できない。Python が無いか、ソケットが作れない可能性がある。";
+	return t("error.daemonUnavailable");
 }

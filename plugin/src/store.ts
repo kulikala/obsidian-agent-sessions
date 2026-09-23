@@ -4,6 +4,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { t } from "./i18n";
 import type { ArchivedSession, StoreSessionEntry } from "./types";
 
 export interface MigratedFrom {
@@ -177,7 +178,7 @@ function acquireLock(lockPath: string, opts: Required<LockOptions>): void {
 			}
 			clearIfStale(lockPath, opts.staleAfterMs);
 			if (Date.now() >= deadline) {
-				throw new StoreLockError(`ロックが取れない: ${lockPath}`);
+				throw new StoreLockError(t("error.lockFailed", { path: lockPath }));
 			}
 			sleepSync(opts.retryIntervalMs);
 		}
