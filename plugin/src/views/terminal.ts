@@ -500,8 +500,11 @@ export class TerminalView extends ItemView {
 
 	private async startSession(client: DaemonClient, fresh: boolean): Promise<void> {
 		const claude = await resolveClaude(this.plugin.settings.claudePath);
-		// `VISUAL` は内蔵エディタ（D-20）。`EDITOR` は触らない。
-		const env = { ...(await loginEnv()), VISUAL: this.plugin.visualPath() };
+		// `VISUAL` は内蔵エディタ（D-20）。`EDITOR` は触らない。`AGENT_SESSIONS_VAULT`
+		// は claude 自身のフック・statusLine（agent-sessions hook/status）が vault を
+		// 見失わないように（T-80。デーモンは env をそのまま execvpe に渡すだけなので、
+		// ここで入れておかないと env にも vault.json にも無い環境では効かない）。
+		const env = { ...(await loginEnv()), VISUAL: this.plugin.visualPath(), AGENT_SESSIONS_VAULT: this.plugin.vaultPath() };
 		const argv = fresh ? [claude, "--session-id", this.id] : [claude, "--resume", this.id];
 		const cwd = this.cwd || this.plugin.vaultPath();
 		const res = await client.start({

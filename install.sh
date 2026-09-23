@@ -1,8 +1,18 @@
 #!/bin/sh
 # agent-sessions を手元に入れる：~/bin の symlink、vault の plugins への symlink、Claude Code のフックと statusLine。
+# vault は既定値を持たない——env AGENT_SESSIONS_VAULT か、第 1 引数で渡す（T-80）。
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
-VAULT="${AGENT_SESSIONS_VAULT:-/path/to/vault}"
+
+VAULT="${AGENT_SESSIONS_VAULT:-}"
+if [ -z "$VAULT" ] && [ $# -gt 0 ]; then
+  VAULT="$1"
+  shift
+fi
+if [ -z "$VAULT" ]; then
+  echo "usage: $0 <vault path>   (or set AGENT_SESSIONS_VAULT)" >&2
+  exit 1
+fi
 
 mkdir -p "$HOME/bin"
 ln -fns "$HERE/bin/agent-sessions" "$HOME/bin/agent-sessions"

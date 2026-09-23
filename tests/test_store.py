@@ -5,7 +5,7 @@ import tempfile
 import time
 import unittest
 
-from agentsessions import store
+from agentsessions import config, store
 
 
 def _bump(path, tag, n):
@@ -139,6 +139,21 @@ class TestUpdateConcurrency(unittest.TestCase):
             self.assertEqual(len(store.load(path=path).folded), 100)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+class TestNoVault(unittest.TestCase):
+    """T-80: vault が分からない（`path` が `None`）ときの振る舞い。読みは空、書きは止める。"""
+
+    def test_load_with_none_path_returns_empty_store(self):
+        self.assertEqual(store.load(path=None), store.Store())
+
+    def test_save_with_none_path_raises_vault_not_configured(self):
+        with self.assertRaises(config.VaultNotConfigured):
+            store.save(store.Store(), path=None)
+
+    def test_update_with_none_path_raises_vault_not_configured(self):
+        with self.assertRaises(config.VaultNotConfigured):
+            store.update(lambda st: None, path=None)
 
 
 if __name__ == '__main__':

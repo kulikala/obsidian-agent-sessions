@@ -20,9 +20,13 @@ function firstLine(text: string): string {
 	return (line ?? text).trim();
 }
 
-function execFileText(cmd: string, args: string[]): Promise<{ stdout: string; stderr: string }> {
+function execFileText(
+	cmd: string,
+	args: string[],
+	env?: NodeJS.ProcessEnv
+): Promise<{ stdout: string; stderr: string }> {
 	return new Promise((resolve, reject) => {
-		execFile(cmd, args, { encoding: "utf8" }, (err, stdout, stderr) => {
+		execFile(cmd, args, { encoding: "utf8", env }, (err, stdout, stderr) => {
 			if (err) {
 				const e = err as NodeJS.ErrnoException & { stderr?: string };
 				e.stderr = stderr;
@@ -34,10 +38,19 @@ function execFileText(cmd: string, args: string[]): Promise<{ stdout: string; st
 	});
 }
 
+/**
+ * `process.env` に `AGENT_SESSIONS_VAULT` を重ねる（T-80）。`agent-sessions` は既定の
+ * vault を持たないので、`json …` を呼ぶすべての経路でこれを渡す必要がある——渡さないと
+ * env にも `~/.agents/sessions/vault.json` にも無い環境で python 側が vault を見失う。
+ */
+export function envWithVault(vaultPath: string, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+	return { ...base, AGENT_SESSIONS_VAULT: vaultPath };
+}
+
 /** `agent-sessions json …` を呼び、stdout を JSON として返す。失敗は `BackendError`。 */
-export async function runJson(agentSessionsPath: string, args: string[]): Promise<unknown> {
+export async function runJson(agentSessionsPath: string, vaultPath: string, args: string[]): Promise<unknown> {
 	try {
-		const { stdout } = await execFileText(agentSessionsPath, ["json", ...args]);
+		const { stdout } = await execFileText(agentSessionsPath, ["json", ...args], envWithVault(vaultPath));
 		return JSON.parse(stdout);
 	} catch (err) {
 		const stderr = (err as { stderr?: string }).stderr;
@@ -46,21 +59,27 @@ export async function runJson(agentSessionsPath: string, args: string[]): Promis
 	}
 }
 
-export async function scan(agentSessionsPath: string, only?: string[]): Promise<ScanResult> {
+export async function scan(agentSessionsPath: string, vaultPath: string, only?: string[]): Promise<ScanResult> {
 	const args = only && only.length > 0 ? ["scan", "--only", ...only] : ["scan"];
-	return runJson(agentSessionsPath, args) as Promise<ScanResult>;
+	return runJson(agentSessionsPath, vaultPath, args) as Promise<ScanResult>;
 }
 
-export async function live(agentSessionsPath: string): Promise<LiveResult> {
-	return runJson(agentSessionsPath, ["live"]) as Promise<LiveResult>;
+export async function live(agentSessionsPath: string, vaultPath: string): Promise<LiveResult> {
+	return runJson(agentSessionsPath, vaultPath, ["live"]) as Promise<LiveResult>;
 }
 
-export async function detail(agentSessionsPath: string, id: string): Promise<Detail> {
-	return runJson(agentSessionsPath, ["detail", id]) as Promise<Detail>;
+export async function detail(agentSessionsPath: string, vaultPath: string, id: string): Promise<Detail> {
+	return runJson(agentSessionsPath, vaultPath, ["detail", id]) as Promise<Detail>;
 }
 
 /** `json usage ID [--from ISO] [--to ISO]`（D-30）。`from`／`to` は ISO8601（UTC）。 */
-export async function usage(agentSessionsPath: string, id: string, from?: string, to?: string): Promise<UsageResult> {
+export async function usage(
+	agentSessionsPath: string,
+	vaultPath: string,
+	id: string,
+	from?: string,
+	to?: string
+): Promise<UsageResult> {
 	const args = ["usage", id];
 	if (from) {
 		args.push("--from", from);
@@ -68,12 +87,12 @@ export async function usage(agentSessionsPath: string, id: string, from?: string
 	if (to) {
 		args.push("--to", to);
 	}
-	return runJson(agentSessionsPath, args) as Promise<UsageResult>;
+	return runJson(agentSessionsPath, vaultPath, args) as Promise<UsageResult>;
 }
 
 /** `json stats`（D-54・D-55）：5 時間・7 日の枠の使用状況。 */
-export async function stats(agentSessionsPath: string): Promise<StatsResult> {
-	return runJson(agentSessionsPath, ["stats"]) as Promise<StatsResult>;
+export async function stats(agentSessionsPath: string, vaultPath: string): Promise<StatsResult> {
+	return runJson(agentSessionsPath, vaultPath, ["stats"]) as Promise<StatsResult>;
 }
 
 const LOGIN_ENV_KEYS = ["PATH", "LANG", "HOME", "USER", "TMPDIR", "CLAUDE_CONFIG_DIR"] as const;

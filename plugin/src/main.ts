@@ -38,6 +38,7 @@ import { claudeSettingsPath, readFullscreenTui } from "./tui-mode";
 import type { ArchivedSession, DaemonSession } from "./types";
 import { writeUiState } from "./ui-state";
 import { UsageModal } from "./usage-modal";
+import { writeVaultState } from "./vault-state";
 import { ManagerView, VIEW_TYPE_MANAGER } from "./views/manager";
 import { SideView, VIEW_TYPE_SIDE } from "./views/side";
 import { TerminalView } from "./views/terminal";
@@ -112,6 +113,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		// 含む）、プラグインの設定をそれに合わせる（§6.8・D-41 追補。keybindings.json 自体は書かない）。
 		await this.syncSubmitKeyFromKeybindings();
 		this.syncUiState();
+		this.syncVaultState();
 
 		// 旧 `claude-sessions.md` の取り込み（§3）。`sessions.json` が既にあれば何もしない。
 		try {
@@ -121,9 +123,9 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 
 		this.index = new SessionIndex({
-			scan: (only) => scan(this.agentSessionsPath(), only),
-			live: () => live(this.agentSessionsPath()),
-			detail: (id) => detail(this.agentSessionsPath(), id),
+			scan: (only) => scan(this.agentSessionsPath(), this.vaultPath(), only),
+			live: () => live(this.agentSessionsPath(), this.vaultPath()),
+			detail: (id) => detail(this.agentSessionsPath(), this.vaultPath(), id),
 			storePath: this.storePath(),
 			eventsLogPath: join(RUNTIME_DIR, "events.log"),
 			sessionsDir: join(homedir(), ".claude", "sessions"),
@@ -250,6 +252,20 @@ export default class AgentSessionsPlugin extends Plugin {
 			writeUiState(RUNTIME_DIR, this.settings.submitKey);
 		} catch (err) {
 			console.warn("agent-sessions: ui.json を書けない", err);
+		}
+	}
+
+	/**
+	 * vault の場所を `vault.json` へ書く（T-80）。python 側（`agentsessions/config.py` の
+	 * `_resolve_vault`）が env の次にここを読み、Obsidian の外（TUI・CLI・デーモンから
+	 * spawn する claude）でも vault を見失わない。vault は起動中に変わらないので、
+	 * `onload` の 1 回だけ書けば足りる。
+	 */
+	private syncVaultState(): void {
+		try {
+			writeVaultState(RUNTIME_DIR, this.vaultPath());
+		} catch (err) {
+			console.warn("agent-sessions: vault.json を書けない", err);
 		}
 	}
 
@@ -608,7 +624,8 @@ export default class AgentSessionsPlugin extends Plugin {
 		});
 		try {
 			const claude = await resolveClaude(this.settings.claudePath);
-			const env = { ...(await loginEnv()), VISUAL: this.visualPath() };
+			// `AGENT_SESSIONS_VAULT`：terminal.ts の startSession と同じ理由（T-80）。
+			const env = { ...(await loginEnv()), VISUAL: this.visualPath(), AGENT_SESSIONS_VAULT: this.vaultPath() };
 			const res = await client.start({
 				id,
 				agent: row.agent || "claude",
@@ -671,7 +688,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	showUsage(id: string): void {
 		const row = this.index.sessions.get(id);
 		const name = row?.name || row?.label || t("common.untitled", { id: id.slice(0, 8) });
-		new UsageModal(this.app, this.agentSessionsPath(), id, name).open();
+		new UsageModal(this.app, this.agentSessionsPath(), this.vaultPath(), id, name).open();
 	}
 
 	archive(id: string, name: string, agent: string): void {

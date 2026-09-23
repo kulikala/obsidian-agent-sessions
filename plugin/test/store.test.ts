@@ -20,9 +20,6 @@ import { emptyStore, loadStore, migrateFromMarkdown, StoreLockError, updateStore
 const here = fileURLToPath(new URL(".", import.meta.url));
 const storeSrcPath = join(here, "..", "src", "store.ts");
 
-const REAL_MD_PATH =
-	"/path/to/vault/claude-sessions.md";
-
 function tmpDir(prefix: string): string {
 	return mkdtempSync(join(tmpdir(), prefix));
 }
@@ -179,19 +176,6 @@ describe("updateStore の排他（2 プロセス）", () => {
 	}, 30000);
 });
 
-function stripFrontmatter(text: string): string {
-	const lines = text.split("\n");
-	if (lines[0]?.trim() !== "---") {
-		return text;
-	}
-	for (let i = 1; i < lines.length; i++) {
-		if (lines[i].trim() === "---") {
-			return lines.slice(i + 1).join("\n");
-		}
-	}
-	return text;
-}
-
 describe("migrateFromMarkdown", () => {
 	let dir: string;
 
@@ -249,33 +233,31 @@ describe("migrateFromMarkdown", () => {
 		expect(existsSync(storePath)).toBe(false);
 	});
 
-	it("実 vault の claude-sessions.md をコピーした fixture で archived が入る", () => {
-		if (!existsSync(REAL_MD_PATH)) {
-			return;
-		}
-		const body = readFileSync(REAL_MD_PATH, "utf8");
-		const rowMatch = body.match(/^\|\s*([^|]+?)\s*\|[^|]*\|[^|]*\|\s*([0-9a-fA-F-]{36})\s*\|\s*$/m);
-		expect(rowMatch).not.toBeNull();
-		const [, name, id] = rowMatch as RegExpMatchArray;
-
-		// 実物には folded/hidden が無いので、コピーした本体に frontmatter を足して
-		// 取り込みを試す（実物の行データはそのまま使う）。
-		const fixture = [
+	it("frontmatter の後にテーブル本体が続いていても、archived は hidden の一覧だけで決まる", () => {
+		// テーブル本体（`| 名前 | ... | id |` の行）は `migrateFromMarkdown` が読まない
+		// （見るのは frontmatter の `hidden:` だけ）——本体があっても無視されることを確認する。
+		const md = [
 			"---",
 			"folded:",
 			'  - "RIM"',
 			"hidden:",
-			`  - "${id} | ${name}"`,
+			'  - "5778f81f-0be9-4744-aa4c-9f6d5211bd5c | 酔い酒鮨庵"',
 			"---",
-			stripFrontmatter(body),
+			"# Claude sessions",
+			"",
+			"| 名前 | フォルダ | 更新 | ID |",
+			"|---|---|---|---|",
+			"| 別のセッション | v | 2026-01-01 12:00 | 11111111-1111-1111-1111-111111111111 |",
+			"",
 		].join("\n");
-
 		const mdPath = join(dir, "claude-sessions.md");
 		const storePath = join(dir, "sessions.json");
-		writeFileSync(mdPath, fixture, "utf8");
+		writeFileSync(mdPath, md, "utf8");
 
 		const result = migrateFromMarkdown(mdPath, storePath);
 
-		expect(result?.archived).toEqual([{ id, name, agent: "claude" }]);
+		expect(result?.archived).toEqual([
+			{ id: "5778f81f-0be9-4744-aa4c-9f6d5211bd5c", name: "酔い酒鮨庵", agent: "claude" },
+		]);
 	});
 });

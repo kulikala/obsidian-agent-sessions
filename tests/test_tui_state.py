@@ -1,10 +1,12 @@
+import io
 import unittest
 from unittest import mock
 
+from agentsessions import config
 from agentsessions import store as store_mod
 from agentsessions.config import OTHER_GROUP
 from agentsessions.model import Session
-from agentsessions.tui import State, list_columns, panel_width
+from agentsessions.tui import State, list_columns, main, panel_width
 
 A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
@@ -109,6 +111,16 @@ class TestListColumns(unittest.TestCase):
 
     def test_folder_shown_once_wide_enough(self):
         self.assertEqual(list_columns(56), (True, True))
+
+
+class TestMainVaultCheck(unittest.TestCase):
+    """T-80: vault が分からなければ、curses を起こす前に止まる。"""
+
+    def test_returns_1_and_prints_message_when_vault_not_configured(self):
+        with mock.patch.object(config, 'VAULT', None), mock.patch('sys.stderr', io.StringIO()) as err:
+            code = main()
+        self.assertEqual(code, 1)
+        self.assertIn('AGENT_SESSIONS_VAULT', err.getvalue())
 
 
 if __name__ == '__main__':

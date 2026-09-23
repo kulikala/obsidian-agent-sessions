@@ -50,10 +50,12 @@ def _from_dict(data: dict) -> Store:
     )
 
 
-def load(path: str = config.STORE_PATH) -> Store:
-    """無ければ空の Store。壊れていれば `path+'.broken-<YYYYmmddHHMMSS>'` に
-    退避して空の Store を返す。"""
-    if not os.path.exists(path):
+def load(path: Optional[str] = config.STORE_PATH) -> Store:
+    """無ければ（`path` が `None`＝vault 未設定のときも）空の Store。壊れていれば
+    `path+'.broken-<YYYYmmddHHMMSS>'` に退避して空の Store を返す（T-80：vault が
+    無くても読み取り側は落ちない——`json scan` はプラグインから必ず env が来る前提
+    だが、来なくても空を返すだけにする）。"""
+    if not path or not os.path.exists(path):
         return Store()
     try:
         with open(path, 'r', encoding='utf-8') as f:
@@ -70,8 +72,11 @@ def load(path: str = config.STORE_PATH) -> Store:
         return Store()
 
 
-def save(store: Store, path: str = config.STORE_PATH) -> None:
-    """tmp に書いて rename。呼び出し側が `Lock` の中で呼ぶ前提（`update` 参照）。"""
+def save(store: Store, path: Optional[str] = config.STORE_PATH) -> None:
+    """tmp に書いて rename。呼び出し側が `Lock` の中で呼ぶ前提（`update` 参照）。
+    `path` が `None`（vault 未設定）なら書く先が無いので `VaultNotConfigured`（T-80）。"""
+    if not path:
+        raise config.VaultNotConfigured(config.VAULT_NOT_CONFIGURED_MESSAGE)
     dirpath = os.path.dirname(path) or '.'
     os.makedirs(dirpath, exist_ok=True)
     data = json.dumps(_to_dict(store), ensure_ascii=False, indent=1).encode('utf-8')
@@ -96,7 +101,7 @@ class Lock:
     として `rmdir` して取り直す。
     """
 
-    def __init__(self, path: str = config.LOCK_DIR, timeout: float = 2.0,
+    def __init__(self, path: Optional[str] = config.LOCK_DIR, timeout: float = 2.0,
                  retry_interval: float = 0.05, stale_after: float = 10.0):
         self.path = path
         self.timeout = timeout
@@ -133,9 +138,12 @@ class Lock:
                 pass
 
 
-def update(fn: Callable[[Store], None], path: str = config.STORE_PATH,
+def update(fn: Callable[[Store], None], path: Optional[str] = config.STORE_PATH,
            lock_path: Optional[str] = None) -> Store:
-    """ロックの中で読み→`fn(store)` で書き換え→保存。書き換えた Store を返す。"""
+    """ロックの中で読み→`fn(store)` で書き換え→保存。書き換えた Store を返す。
+    `path` が `None`（vault 未設定）なら `VaultNotConfigured`（T-80）。"""
+    if not path:
+        raise config.VaultNotConfigured(config.VAULT_NOT_CONFIGURED_MESSAGE)
     if lock_path is None:
         lock_path = path + '.lock'
     os.makedirs(os.path.dirname(lock_path) or '.', exist_ok=True)

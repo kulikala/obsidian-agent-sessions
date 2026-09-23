@@ -27,6 +27,7 @@ agent-sessions/
 │   │   ├── registry.ts        ~/.claude/sessions/*.json の監視（状態・pid・rc）
 │   │   ├── statusline.ts      ~/.agents/sessions/status/<id>.json の監視
 │   │   ├── ui-state.ts        ~/.agents/sessions/ui.json の書込（statusLine への送信キー記号）
+│   │   ├── vault-state.ts     ~/.agents/sessions/vault.json の書込（vault の場所。T-80）
 │   │   ├── tree.ts            JSON → グループ木・サイドの 3 区分（純関数。splitName・OTHER_GROUP・buildManagerTree・buildSideList）
 │   │   ├── category.ts        カテゴリの固定色（パレット番号の割当）
 │   │   ├── chip.ts            カテゴリのチップ描画（サイド・マネージャー・ダイアログ共通）
@@ -65,7 +66,7 @@ agent-sessions/
 ├── bin/agent-sessions          #!/usr/bin/python3。agentsessions.cli.main を呼ぶ
 ├── bin/agent-sessions-code     内蔵エディタ用の `$VISUAL`（sh、名前に `code` を含める）
 ├── agentsessions/               Python パッケージ（標準ライブラリのみ）
-│   ├── config.py               パス定数（VAULT, STORE_PATH, RUNTIME_DIR, SOCK_PATH, UI_STATE_PATH, …）
+│   ├── config.py               パス定数（VAULT, STORE_PATH, RUNTIME_DIR, SOCK_PATH, UI_STATE_PATH, …）。VAULT は既定値を持たず env→vault.json→None（§3.2）
 │   ├── model.py scan.py detail.py live.py items.py   走査・抽出
 │   ├── store.py                 sessions.json（折畳・アーカイブ・カテゴリ色）。mkdir ロック付き
 │   ├── cache.py                 走査キャッシュ（path → mtime,size,結果）
@@ -111,6 +112,7 @@ agent-sessions/
 | `~/.agents/sessions/exited.json` | 終了済みで未 `forget` のセッション（`id → {code, exitedAt}`）。デーモンが終了時に書き、起動時に読む | デーモン |
 | `~/.agents/sessions/status/<session_id>.json` | `statusLine` が渡す JSON をそのまま | `agent-sessions status` |
 | `~/.agents/sessions/ui.json` | `{submitKey, submitSymbol}`。statusLine が送信キーの記号を付けるための控え | プラグイン（`onload`・設定保存のたび） |
+| `~/.agents/sessions/vault.json` | `{"vault": "<path>"}`。vault は既定値を持たないので、Obsidian の外（TUI・CLI）から見るための控え（T-80。§3.2 参照） | プラグイン（`onload` に 1 回、tmp→rename） |
 | `~/.agents/sessions/plugin.sock` | 内蔵エディタの受け口（プラグインが listen） | プラグイン |
 | `~/.agents/sessions/events.log` | フック 1 件 1 行 `{"event","session_id","transcript_path","ts"}` | `agent-sessions hook` |
 | `~/.agents/sessions/scan-cache.json` | 走査キャッシュ | `agent-sessions json scan` |
@@ -140,6 +142,14 @@ agent-sessions/
 ### 3.1 `sessions.json` の排他
 
 書く者はプラグイン（名前変更・アーカイブ・折畳・新規・カテゴリ色の確定）と `agent-sessions` TUI（折畳）で、同時に動きうる。書込みは `sessions.json.lock/` ディレクトリを `mkdir` で取ってから行う（Python `os.mkdir`、Node `fs.mkdirSync`。作れた者がロックを持つ）。`EEXIST` なら 50 ms 待って再試行、2 秒で諦めてエラー（プラグインは `Notice`）。ロックの mtime が 10 秒より古ければ壊れたものとして `rmdir` して取り直す。ロックの中で読み→更新→tmp に書き→rename→`rmdir`。読むだけの者はロックを取らない。
+
+### 3.2 vault の場所（T-80）
+
+`agent-sessions` は既定の vault を持たない。`agentsessions/config.py` の `VAULT`（`_resolve_vault()`。import 時に 1 回だけ決める）は、env `AGENT_SESSIONS_VAULT` → `~/.agents/sessions/vault.json` の `vault` フィールド → どちらも無ければ `None`、の順で決める。`STORE_DIR`・`STORE_PATH`・`LOCK_DIR` は `VAULT` が `None` なら同じく `None`（`import` 時にここで落ちない）。
+
+- **プラグイン**：`agent-sessions json …`（`backend.ts` の `runJson`）・デーモンの `start` に渡す `env`（`main.ts`・`views/terminal.ts`）のどちらにも `env AGENT_SESSIONS_VAULT=<this.vaultPath()>` を必ず付ける（`backend.ts` の `envWithVault`）。デーモン自身は `env` を素通しして `execvpe` するだけなので（`daemon.py` の `_op_start`）、claude 本体やその子（フック・statusLine）にもここから伝わる。`onload` の 1 回だけ `vault.json` を書く（vault は起動中に変わらない）。
+- **python**：`config.require_vault()` は `VAULT` を返すか、`VaultNotConfigured`（英語の分かりやすいメッセージ）を投げる。TUI の入口（`tui.main()`）はこれを呼び、curses を起こす前に止まる（終了コード 1）。`store.load()` は `path` が `None`（＝ vault 不明）でも空の `Store` を返す（`json scan` はプラグインから必ず env が来る前提だが、来なくても落ちない）。`store.save()`・`store.update()` は `path` が `None` なら `VaultNotConfigured` を投げる（書く先が無いので黙って諦めない）。
+- **install.sh**：vault は第 1 引数か `$AGENT_SESSIONS_VAULT` の必須値（既定値なし）。どちらも無ければ usage を出して終了。
 
 ## 4. デーモンとプロトコル
 
@@ -220,7 +230,7 @@ TUI：一覧（グループ→カテゴリの無い名前付きセッション�
 
 キャッシュ：`scan-cache.json` に `path → {mtime,size,head,last_activity}`。`mtime`・`size` が一致すれば再読しない。全走査の 2 回目以降は 0.1 秒以下。
 
-`install.sh`：`~/bin/agent-sessions`・`~/bin/agent-sessions-code` の symlink と、`<vault>/.obsidian/plugins/agent-sessions` → `plugin/` の symlink（vault は `$AGENT_SESSIONS_VAULT`、無ければ既定の vault）を張る。`plugin/main.js` が無ければ build を促す。最後に `agent-sessions setup`（引数はそのまま渡す）を呼ぶ。
+`install.sh`：`~/bin/agent-sessions`・`~/bin/agent-sessions-code` の symlink と、`<vault>/.obsidian/plugins/agent-sessions` → `plugin/` の symlink を張る。vault は既定値を持たない（T-80）——`$AGENT_SESSIONS_VAULT` か第 1 引数で渡す必須の値で、どちらも無ければ usage を出して終了する。`plugin/main.js` が無ければ build を促す。最後に `agent-sessions setup`（残りの引数をそのまま渡す）を呼ぶ。
 
 ## 6. コマンド送信（名前変更・圧縮）
 
@@ -507,8 +517,8 @@ cache 作成は 5 分＝入力×1.25、1 時間＝入力×2（`cache_creation.ep
 
 ## 19. テスト
 
-- **Python**（unittest、`-W error`。`tests/`）：`protocol`（フレームの分割・結合）、`daemon`（`cat` を子にした start/attach/replay/resize/kill/forget、バッファ上限、複数接続と最小サイズ、切断の後始末、終了済みへの attach、`exited.json` の書き出しと読み込み）、`store` のロック（2 プロセスで同時に書く。`categoryColors` の往復も含む）、`setup`（settings.json の置換と backup。`SessionStart`（matcher `compact`）・`UserPromptSubmit` の追加を含む）、`cache`、`jsonout`（`waiting_for` を条件付きで持つこと）、`live`（`waiting`／`waiting_for`／ラベル）、`pricing`（各表・1h・未知モデル）、`usage`（cost・tools・duration）、`stats`（窓・バケット・重複排除・`_roll_forward` の 1 期分／複数期分の先送りと境界）、`hooks`（`format_status_line`・送信キー記号・`_update_compacted` の書込と削除）、`model`・`scan`・`detail`（`last_command` を含む）・`items`（TUI の区分け）・`tui_state`、`edit`（偽ソケットサーバーで `ok:true`→0、`cancel`→1、`no-tab`／`busy`→fallback、接続不可／EOF→fallback）、`attach`。
-- **TypeScript**（vitest、`plugin/test/`）：`tree`・`manager-model`（開いているタブ／起動中／最近・グループ／その他／アーカイブの区分け、`categoryTotals`、`weeklyPace`・`formatWeekdayTime`・`shortModelName`）、`links`・`at-complete`、`marks`、`keys`（`classifyEnter`・`resolveEnterAction`・`sendSequence`・`deriveSubmitKey`・`reconcileSubmitKey`）、`keybindings`（読解・書換・戻し）、`daemon-client`（フレーム）、`daemon-integration`、`statusline`・`limits`（整形・並べ替え・`rollForwardWindow`）、`store`（読み書きとロック、tmp dir）、`category`（パレット番号の割当）、`name`（`tokenizeNameInput`・`filterCategories`・`sessionDisplayName`）、`detail`（`categoryAndLabel`）、`terminal-status`（`terminalStatus` の優先順・`asking`・`compacted`・アイコン対応表）、`attention`（`attentionCounts`・`urgencyByGroupKey`）、`compacted`（`CompactedTracker`）、`autosave`（`SaveDebouncer`）、`ui-state`、`registry`（`waitingFor` の素通し）、`index`（`waitForName`・`row.compacted` の合成を含む）、`edit-server`（フレームの往復とハンドラの分岐）、`i18n`、`settings`、`usage`、`tui-mode`、`side-list`、`key-role`、`dedupe`。`openSession` の多重呼出はモックの workspace で確認する。
+- **Python**（unittest、`-W error`。`tests/`）：`protocol`（フレームの分割・結合）、`daemon`（`cat` を子にした start/attach/replay/resize/kill/forget、バッファ上限、複数接続と最小サイズ、切断の後始末、終了済みへの attach、`exited.json` の書き出しと読み込み）、`store` のロック（2 プロセスで同時に書く。`categoryColors` の往復・`path=None`（vault 未設定）で `load` は空、`save`／`update` は `VaultNotConfigured` を含む）、`setup`（settings.json の置換と backup。`SessionStart`（matcher `compact`）・`UserPromptSubmit` の追加を含む）、`cache`、`jsonout`（`waiting_for` を条件付きで持つこと）、`live`（`waiting`／`waiting_for`／ラベル）、`pricing`（各表・1h・未知モデル）、`usage`（cost・tools・duration）、`stats`（窓・バケット・重複排除・`_roll_forward` の 1 期分／複数期分の先送りと境界）、`hooks`（`format_status_line`・送信キー記号・`_update_compacted` の書込と削除）、`config`（`_resolve_vault` の優先順・`require_vault`。T-80）、`model`・`scan`・`detail`（`last_command` を含む）・`items`（TUI の区分け）・`tui_state`（vault 未設定時の `main()` の早期終了を含む）、`edit`（偽ソケットサーバーで `ok:true`→0、`cancel`→1、`no-tab`／`busy`→fallback、接続不可／EOF→fallback）、`attach`。
+- **TypeScript**（vitest、`plugin/test/`）：`tree`・`manager-model`（開いているタブ／起動中／最近・グループ／その他／アーカイブの区分け、`categoryTotals`、`weeklyPace`・`formatWeekdayTime`・`shortModelName`）、`links`・`at-complete`、`marks`、`keys`（`classifyEnter`・`resolveEnterAction`・`sendSequence`・`deriveSubmitKey`・`reconcileSubmitKey`）、`keybindings`（読解・書換・戻し）、`daemon-client`（フレーム）、`daemon-integration`、`statusline`・`limits`（整形・並べ替え・`rollForwardWindow`）、`store`（読み書きとロック、tmp dir）、`category`（パレット番号の割当）、`name`（`tokenizeNameInput`・`filterCategories`・`sessionDisplayName`）、`detail`（`categoryAndLabel`）、`terminal-status`（`terminalStatus` の優先順・`asking`・`compacted`・アイコン対応表）、`attention`（`attentionCounts`・`urgencyByGroupKey`）、`compacted`（`CompactedTracker`）、`autosave`（`SaveDebouncer`）、`ui-state`、`vault-state`（`writeVaultState`。T-80）、`backend`（`envWithVault`。T-80）、`registry`（`waitingFor` の素通し）、`index`（`waitForName`・`row.compacted` の合成を含む）、`edit-server`（フレームの往復とハンドラの分岐）、`i18n`、`settings`、`usage`、`tui-mode`、`side-list`、`key-role`、`dedupe`。`openSession` の多重呼出はモックの workspace で確認する。
 - **手動**：`requirements.md` の「受け入れの確認」。実機での目視は崩れを指摘されたときと、Obsidian CLI で組立てにくい操作（右クリックメニューなど）に限る。
 
 ## 20. 検証の手段と Obsidian の注意点

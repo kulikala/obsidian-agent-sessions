@@ -1,5 +1,6 @@
 import curses
 import os
+import sys
 import time
 from typing import Dict, List, Optional, Tuple
 
@@ -432,7 +433,13 @@ def _launch(s: Session) -> int:
 
 
 def main() -> int:
-    """引数なしの `agent-sessions` の入口。"""
+    """引数なしの `agent-sessions` の入口。vault が分からなければ、curses を起こす前に
+    分かりやすい英語メッセージで止める（T-80）。"""
+    try:
+        config.require_vault()
+    except config.VaultNotConfigured as err:
+        sys.stderr.write('%s\n' % err)
+        return 1
     st = store.load()
     scanned = scan(list_transcripts(config.PROJECTS_DIR))
     s = run(st, scanned)

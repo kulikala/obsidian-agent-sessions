@@ -170,7 +170,7 @@ export class ManagerView extends ItemView {
 	/** `json stats`（D-54・D-55）：開いたとき・再走査・60 秒毎に読み直す。失敗したら帯に「—」。 */
 	private async refreshStats(): Promise<void> {
 		try {
-			this.statsResult = await stats(this.plugin.agentSessionsPath());
+			this.statsResult = await stats(this.plugin.agentSessionsPath(), this.plugin.vaultPath());
 		} catch {
 			this.statsResult = null;
 		}
@@ -879,7 +879,7 @@ export class ManagerView extends ItemView {
 			detail,
 			statusInfo: this.plugin.index.statusline.get(id),
 			rc: this.plugin.index.registry.get(id)?.rc ?? null,
-			fetchUsage: () => usage(this.plugin.agentSessionsPath(), id),
+			fetchUsage: () => usage(this.plugin.agentSessionsPath(), this.plugin.vaultPath(), id),
 			categoryColorIndex: (category) => this.plugin.index.categoryColorIndex(category),
 		};
 		renderDetail(this.detailEl, ctx);

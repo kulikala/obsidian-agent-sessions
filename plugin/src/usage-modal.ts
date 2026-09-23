@@ -49,6 +49,7 @@ export class UsageModal extends Modal {
 	constructor(
 		app: App,
 		private agentSessionsPath: string,
+		private vaultPath: string,
 		private sessionId: string,
 		private sessionName: string
 	) {
@@ -75,7 +76,7 @@ export class UsageModal extends Modal {
 
 	private async load(): Promise<void> {
 		try {
-			this.result = await usage(this.agentSessionsPath, this.sessionId);
+			this.result = await usage(this.agentSessionsPath, this.vaultPath, this.sessionId);
 		} catch (err) {
 			this.bodyEl.empty();
 			this.bodyEl.createDiv({ cls: "agent-sessions-usage-error", text: t("usage.loadFailed", { error: messageOf(err) }) });
