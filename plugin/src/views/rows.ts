@@ -1,11 +1,12 @@
 // 行の描画・選択・行メニュー（サイドパネルとマネージャーで共用。§6.1・§6.2）。詳細欄は views/detail.ts。
 
-import { Menu, type App } from "obsidian";
+import { Menu, setTooltip, type App } from "obsidian";
 import { categoryHueDeg } from "../category";
 import type { Row } from "../index";
 import { t } from "../i18n";
 import type AgentSessionsPlugin from "../main";
 import { RenameSessionModal } from "../modals";
+import { resolveRowStatus, STATUS_LABEL_KEY, terminalStatusClass } from "../terminal-status";
 import { splitName } from "../tree";
 
 export interface RowActions {
@@ -37,6 +38,8 @@ export interface RenderRowOptions {
 	indent?: boolean;
 	selection: RowSelection;
 	actions: RowActions;
+	/** 状態の印（`rowStatusMark`）が `terminalStatuses` を読むのに使う（D-66 追補）。 */
+	plugin: AgentSessionsPlugin;
 }
 
 const HOVER_DELAY_MS = 300;
@@ -59,17 +62,16 @@ export class RowSelection {
 	}
 }
 
-export function statusMark(row: Row): string {
-	if (row.exited != null) {
-		return "circle-off";
-	}
-	if (row.status === "busy" || row.status === "shell") {
-		return "agent-sessions-mark-busy";
-	}
-	if (row.status === "idle") {
-		return "agent-sessions-mark-waiting";
-	}
-	return "agent-sessions-mark-none";
+/**
+ * 状態の印（小さな点）を 1 つ作って積む：タブが開いていれば `plugin.terminalStatuses`
+ * の実際の状態、無ければ `Row` だけから分かる範囲（`resolveRowStatus`）。タブのアイコンと
+ * 同じ色・動きの CSS クラス、tooltip も状態名で揃える（D-66 追補）。
+ */
+export function rowStatusMark(container: HTMLElement, plugin: AgentSessionsPlugin, row: Row): HTMLElement {
+	const status = resolveRowStatus(plugin, row);
+	const mark = container.createSpan({ cls: `agent-sessions-row-mark ${terminalStatusClass(status)}` });
+	setTooltip(mark, t(STATUS_LABEL_KEY[status]));
+	return mark;
 }
 
 export function displayName(row: Row): string {
@@ -167,7 +169,7 @@ export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptio
 		el.addClass("is-archived");
 	}
 
-	el.createSpan({ cls: `agent-sessions-row-mark ${statusMark(row)}` });
+	rowStatusMark(el, opts.plugin, row);
 	const category = categoryOf(row);
 	if (category) {
 		const chip = el.createSpan({ cls: "agent-sessions-row-chip", text: category });

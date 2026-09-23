@@ -1,5 +1,35 @@
 import { describe, expect, it } from "vitest";
-import { terminalStatus, type TerminalStatusInput } from "../src/terminal-status";
+import type { Row } from "../src/index";
+import {
+	higherPriorityStatus,
+	resolveRowStatus,
+	rowTerminalStatus,
+	terminalStatus,
+	type TerminalStatus,
+	type TerminalStatusInput,
+} from "../src/terminal-status";
+
+function row(overrides: Partial<Row> & Pick<Row, "id">): Row {
+	return {
+		agent: "claude",
+		name: null,
+		group: null,
+		label: null,
+		cwd: "/v",
+		folder: "v",
+		last_activity: 0,
+		child: false,
+		transcript: null,
+		status: null,
+		pid: null,
+		rc: false,
+		daemon: false,
+		exited: null,
+		hasTab: false,
+		archived: false,
+		...overrides,
+	};
+}
 
 function input(overrides: Partial<TerminalStatusInput> = {}): TerminalStatusInput {
 	return {
@@ -93,5 +123,54 @@ describe("terminalStatus", () => {
 			expect(terminalStatus(input({ attached: false }))).toBe("detached");
 			expect(terminalStatus(input({ attached: true }))).toBe("idle");
 		});
+	});
+});
+
+describe("higherPriorityStatus", () => {
+	it("優先順の高い方を返す（順序を問わない）", () => {
+		expect(higherPriorityStatus("idle", "working")).toBe("working");
+		expect(higherPriorityStatus("working", "idle")).toBe("working");
+		expect(higherPriorityStatus("error", "exited")).toBe("error");
+	});
+
+	it("同じ状態ならそのまま", () => {
+		expect(higherPriorityStatus("waiting", "waiting")).toBe("waiting");
+	});
+});
+
+describe("rowTerminalStatus（タブが無い行。D-66 追補）", () => {
+	it("`exited` があれば exited", () => {
+		expect(rowTerminalStatus(row({ id: "a", exited: 1700000000 }))).toBe("exited");
+	});
+
+	it("registry busy／shell は working／running-shell", () => {
+		expect(rowTerminalStatus(row({ id: "a", status: "busy", daemon: true }))).toBe("working");
+		expect(rowTerminalStatus(row({ id: "a", status: "shell", daemon: true }))).toBe("running-shell");
+	});
+
+	it("daemon（≈attached）が無ければ detached", () => {
+		expect(rowTerminalStatus(row({ id: "a", daemon: false }))).toBe("detached");
+	});
+
+	it("daemon があって busy／shell でなければ idle", () => {
+		expect(rowTerminalStatus(row({ id: "a", daemon: true, status: "idle" }))).toBe("idle");
+	});
+
+	it("waiting・editing・connecting・error にはならない（Row だけでは分からない）", () => {
+		const statuses: TerminalStatus[] = ["waiting", "editing", "connecting", "error"];
+		const r = row({ id: "a", daemon: true, status: "busy" });
+		expect(statuses).not.toContain(rowTerminalStatus(r));
+	});
+});
+
+describe("resolveRowStatus（タブあり／なし。D-66 追補）", () => {
+	it("タブがあれば terminalStatuses の値をそのまま使う", () => {
+		const source = { terminalStatuses: new Map<string, TerminalStatus>([["a", "editing"]]) };
+		expect(resolveRowStatus(source, row({ id: "a", daemon: true, status: "idle" }))).toBe("editing");
+	});
+
+	it("タブが無ければ rowTerminalStatus に落ちる", () => {
+		const source = { terminalStatuses: new Map<string, TerminalStatus>() };
+		expect(resolveRowStatus(source, row({ id: "a", daemon: true, status: "busy" }))).toBe("working");
 	});
 });

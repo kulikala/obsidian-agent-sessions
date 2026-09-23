@@ -28,7 +28,7 @@ import {
 	type ManagerRow,
 	type SortKey,
 } from "./manager-model";
-import { createRowActions, formatTime, rowLabel, showRowMenu, statusMark, type RowActions } from "./rows";
+import { createRowActions, formatTime, rowLabel, rowStatusMark, showRowMenu, type RowActions } from "./rows";
 
 const STATS_FETCH_INTERVAL_MS = 60000;
 const STATS_TICK_INTERVAL_MS = 1000;
@@ -36,6 +36,8 @@ const STATS_TICK_INTERVAL_MS = 1000;
 const COLUMN_COUNT = 7;
 /** カテゴリ別の横バー（D-64）に出す上位カテゴリの数。 */
 const CATEGORY_BAR_TOP_N = 8;
+/** `terminal-status`（D-66 追補）は busy/idle のたびに飛んでくるので、まとめて描き直す間隔。 */
+const TERMINAL_STATUS_DEBOUNCE_MS = 200;
 
 export const VIEW_TYPE_MANAGER = "agent-sessions-manager";
 
@@ -68,6 +70,8 @@ export class ManagerView extends ItemView {
 		"7d": new Map(),
 	};
 	private categoryBarEl!: HTMLElement;
+	/** `terminal-status` のデバウンス用タイマー（D-66 追補）。 */
+	private statusRenderTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: AgentSessionsPlugin) {
 		super(leaf);
@@ -103,18 +107,31 @@ export class ManagerView extends ItemView {
 		this.register(this.plugin.index.addVisible());
 		this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.onActiveLeafChange()));
 		this.registerEvent(this.plugin.events.on("settings-changed", () => this.refreshLanguage()));
+		this.registerEvent(this.plugin.events.on("terminal-status", () => this.scheduleStatusRender()));
 
 		this.statsFetchTimer = setInterval(() => void this.refreshStats(), STATS_FETCH_INTERVAL_MS);
 		this.statsTickTimer = setInterval(() => this.renderStatsBar(), STATS_TICK_INTERVAL_MS);
 		this.register(() => {
 			if (this.statsFetchTimer) clearInterval(this.statsFetchTimer);
 			if (this.statsTickTimer) clearInterval(this.statsTickTimer);
+			if (this.statusRenderTimer) clearTimeout(this.statusRenderTimer);
 		});
 
 		void this.plugin.index.rescan();
 		void this.refreshStats();
 		this.render();
 		this.wrapEl.focus();
+	}
+
+	/** タブの状態が変わるたびに来る `terminal-status` をまとめて描き直す（D-66 追補）。 */
+	private scheduleStatusRender(): void {
+		if (this.statusRenderTimer) {
+			return;
+		}
+		this.statusRenderTimer = setTimeout(() => {
+			this.statusRenderTimer = null;
+			this.render();
+		}, TERMINAL_STATUS_DEBOUNCE_MS);
 	}
 
 	/**
@@ -473,7 +490,7 @@ export class ManagerView extends ItemView {
 		}
 
 		const markTd = tr.createEl("td", { cls: "agent-sessions-manager-col-mark" });
-		markTd.createSpan({ cls: `agent-sessions-row-mark ${statusMark(row)}` });
+		rowStatusMark(markTd, this.plugin, row);
 		tr.createEl("td", { cls: "agent-sessions-manager-col-name", text: rowLabel(row) });
 		tr.createEl("td", { cls: "agent-sessions-manager-col-time", text: formatTime(row.last_activity) });
 		this.renderCostCell(tr, "agent-sessions-manager-col-5h", this.statsResult?.windows.five_hour, row.id);

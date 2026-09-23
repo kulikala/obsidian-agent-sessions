@@ -1,5 +1,8 @@
 // ターミナルタブの状態（純関数、D-66）。`obsidian` にも `terminal.ts` にも依存しない——
-// サイドパネル・マネージャーの行の印も、この状態と CSS クラスを共有する（適用は別の体）。
+// サイドパネル・マネージャーの行の印も、この状態と CSS クラスを共有する（D-66 追補）。
+
+import type { MessageKey } from "./i18n";
+import type { Row } from "./index";
 
 export type TerminalStatus =
 	| "connecting"
@@ -87,3 +90,64 @@ export const ALL_TERMINAL_STATUSES: readonly TerminalStatus[] = [
 	"exited",
 	"error",
 ];
+
+/** 状態名の tooltip キー（`status.*`。タブ見出し・行の印で共有。D-66 追補）。 */
+export const STATUS_LABEL_KEY: Record<TerminalStatus, MessageKey> = {
+	connecting: "status.connecting",
+	working: "status.working",
+	"running-shell": "status.runningShell",
+	waiting: "status.waiting",
+	editing: "status.editing",
+	idle: "status.idle",
+	detached: "status.detached",
+	exited: "status.exited",
+	error: "status.error",
+};
+
+/** 優先順（`terminalStatus` の分岐順と同じ、高い方が先）。複数ビュー・行の合成に使う（D-66 追補）。 */
+const PRIORITY_ORDER: readonly TerminalStatus[] = [
+	"error",
+	"exited",
+	"editing",
+	"connecting",
+	"running-shell",
+	"working",
+	"waiting",
+	"detached",
+	"idle",
+];
+
+/** `a`・`b` のうち優先順の高い方（同じセッションに複数タブがあるときの合成。D-66 追補）。 */
+export function higherPriorityStatus(a: TerminalStatus, b: TerminalStatus): TerminalStatus {
+	return PRIORITY_ORDER.indexOf(a) <= PRIORITY_ORDER.indexOf(b) ? a : b;
+}
+
+/**
+ * タブが無い行の状態（分かる範囲。D-66 追補）：`row.status`（走査結果に合成済みの registry
+ * 状態）・`row.exited`・`row.daemon` だけで決まる分——`working`・`running-shell`・`exited`・
+ * `idle`・`detached`（＝起動中でない）のどれかにしかならない。
+ */
+export function rowTerminalStatus(row: Row): TerminalStatus {
+	return terminalStatus({
+		error: false,
+		exited: row.exited != null,
+		editing: false,
+		connecting: false,
+		registryStatus: row.status as "busy" | "shell" | "idle" | null | undefined,
+		waiting: false,
+		attached: row.daemon,
+	});
+}
+
+/** `resolveRowStatus` が読む最小限。`AgentSessionsPlugin` はこれを満たす（構造的に）。 */
+export interface TerminalStatusSource {
+	terminalStatuses: Map<string, TerminalStatus>;
+}
+
+/**
+ * 行の状態：その id のタブが開いていれば `source.terminalStatuses` の値（`TerminalView` が
+ * 書く、実際の状態）、無ければ `rowTerminalStatus`（`Row` だけから分かる範囲。D-66 追補）。
+ */
+export function resolveRowStatus(source: TerminalStatusSource, row: Row): TerminalStatus {
+	return source.terminalStatuses.get(row.id) ?? rowTerminalStatus(row);
+}

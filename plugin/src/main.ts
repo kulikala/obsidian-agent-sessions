@@ -22,6 +22,7 @@ import { ConfirmModal, NewSessionModal, RenameSessionModal } from "./modals";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./open-session";
 import { AgentSessionsSettings, DEFAULT_SETTINGS, mergeSettings, SUBMIT_KEYS, type SubmitKey } from "./settings";
 import { migrateFromMarkdown, StoreLockError, updateStore } from "./store";
+import { higherPriorityStatus, type TerminalStatus } from "./terminal-status";
 import { claudeSettingsPath, readFullscreenTui } from "./tui-mode";
 import type { ArchivedSession, DaemonSession } from "./types";
 import { UsageModal } from "./usage-modal";
@@ -64,10 +65,15 @@ export function submitSequence(settings: AgentSessionsSettings): string {
 
 export default class AgentSessionsPlugin extends Plugin {
 	settings: AgentSessionsSettings = DEFAULT_SETTINGS;
-	/** プラグイン内のイベント（`settings-changed`）。 */
+	/** プラグイン内のイベント（`settings-changed`・`terminal-status`）。 */
 	events = new Events();
 	/** 走査結果＋起動中＋タブの合成。`registry`・`statusline` もこの中に 1 つずつ。 */
 	index!: SessionIndex;
+	/**
+	 * 各セッションのターミナルタブの状態（D-66 追補）。行の印（サイド・マネージャー）が
+	 * `resolveRowStatus` で読む。タブが無い id はここに無い（`refreshTerminalStatus` が消す）。
+	 */
+	terminalStatuses = new Map<string, TerminalStatus>();
 	private stopIndex: (() => void) | null = null;
 	private opener!: SessionOpener<WorkspaceLeaf>;
 	/** `agent-sessions edit` からの要求を受けるソケット（D-21）。 */
@@ -674,6 +680,29 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	private findTerminalView(id: string): TerminalView | undefined {
 		return this.terminalViews().find((view) => view.sessionId === id);
+	}
+
+	/**
+	 * `TerminalView` が状態を変えるたび（`updateIcon()`）・閉じたとき（`onClose()`）に呼ぶ
+	 * （D-66 追補）。`id` の全ビュー（分割で複数あり得る）を見て、優先順の高い方を
+	 * `terminalStatuses` に残す。ビューが 1 つも無ければ消す。行の印（サイド・
+	 * マネージャー）はこの `terminal-status` イベントで更新する。
+	 */
+	refreshTerminalStatus(id: string): void {
+		let combined: TerminalStatus | null = null;
+		for (const view of this.terminalViews()) {
+			if (view.sessionId !== id || !view.isOpen()) {
+				continue;
+			}
+			const status = view.currentStatus();
+			combined = combined ? higherPriorityStatus(combined, status) : status;
+		}
+		if (combined) {
+			this.terminalStatuses.set(id, combined);
+		} else {
+			this.terminalStatuses.delete(id);
+		}
+		this.events.trigger("terminal-status", id);
 	}
 
 	// ---- 通知・後始末（§6.5） -----------------------------------------------------

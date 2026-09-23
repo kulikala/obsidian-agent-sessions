@@ -18,6 +18,8 @@ export const VIEW_TYPE_SIDE = "agent-sessions-side";
 
 /** ドラッグで詰められる詳細欄の下限（px）。 */
 const MIN_DETAIL_HEIGHT = 80;
+/** `terminal-status`（D-66 追補）は busy/idle のたびに飛んでくるので、まとめて描き直す間隔。 */
+const TERMINAL_STATUS_DEBOUNCE_MS = 200;
 
 export class SideView extends ItemView {
 	private plugin: AgentSessionsPlugin;
@@ -36,6 +38,8 @@ export class SideView extends ItemView {
 	private hovering = false;
 	/** ナビの 3 ボタン（言語が変わったら tooltip を描き直す。§6.9・D-56）。 */
 	private navButtons: { newSession?: HTMLElement; manager?: HTMLElement; more?: HTMLElement } = {};
+	/** `terminal-status` のデバウンス用タイマー（D-66 追補）。 */
+	private statusRenderTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: AgentSessionsPlugin) {
 		super(leaf);
@@ -66,10 +70,27 @@ export class SideView extends ItemView {
 		this.registerEvent(this.app.workspace.on("layout-change", () => this.onLayoutChange()));
 		this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.onActiveLeafChange()));
 		this.registerEvent(this.plugin.events.on("settings-changed", () => this.refreshLanguage()));
+		this.registerEvent(this.plugin.events.on("terminal-status", () => this.scheduleStatusRender()));
 		this.register(() => this.limitsView.dispose());
+		this.register(() => {
+			if (this.statusRenderTimer) {
+				clearTimeout(this.statusRenderTimer);
+			}
+		});
 
 		this.onLayoutChange();
 		this.onActiveLeafChange();
+	}
+
+	/** タブの状態が変わるたびに来る `terminal-status` をまとめて描き直す（D-66 追補）。 */
+	private scheduleStatusRender(): void {
+		if (this.statusRenderTimer) {
+			return;
+		}
+		this.statusRenderTimer = setTimeout(() => {
+			this.statusRenderTimer = null;
+			this.render();
+		}, TERMINAL_STATUS_DEBOUNCE_MS);
 	}
 
 	// ---- 骨組み -----------------------------------------------------------------
@@ -232,7 +253,12 @@ export class SideView extends ItemView {
 		}
 		container.createDiv({ cls: "agent-sessions-section-title", text: title });
 		for (const row of rows) {
-			renderRow(container, row, { front: row.id === this.frontId, selection: this.selection, actions });
+			renderRow(container, row, {
+				front: row.id === this.frontId,
+				selection: this.selection,
+				actions,
+				plugin: this.plugin,
+			});
 		}
 	}
 

@@ -10,7 +10,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { BackendError, loginEnv, resolveClaude } from "../backend";
 import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../daemon-client";
-import { t, type MessageKey } from "../i18n";
+import { t } from "../i18n";
 import { classifyEnter, resolveEnterAction, sendSequence } from "../keys";
 import { buildAtToken, selectionLineRange, VaultLinkProvider } from "../links";
 import { submitSequence } from "../main";
@@ -19,23 +19,17 @@ import { MarkTracker, type MarkerHandle, type MarkerSource } from "../marks";
 import { RenameSessionModal } from "../modals";
 import { VIEW_TYPE_TERMINAL } from "../open-session";
 import type { Padding } from "../settings";
-import { ALL_TERMINAL_STATUSES, TERMINAL_STATUS_ICON, terminalStatus, terminalStatusClass } from "../terminal-status";
+import {
+	ALL_TERMINAL_STATUSES,
+	STATUS_LABEL_KEY,
+	TERMINAL_STATUS_ICON,
+	terminalStatus,
+	terminalStatusClass,
+	type TerminalStatus,
+} from "../terminal-status";
 import { readObsidianTheme } from "../theme";
 import type { DaemonSession } from "../types";
 import { EditorPane, type EditResult } from "./editor-pane";
-
-/** 状態名を tooltip に出す（`status.*`。D-66）。 */
-const STATUS_LABEL_KEY: Record<ReturnType<typeof terminalStatus>, MessageKey> = {
-	connecting: "status.connecting",
-	working: "status.working",
-	"running-shell": "status.runningShell",
-	waiting: "status.waiting",
-	editing: "status.editing",
-	idle: "status.idle",
-	detached: "status.detached",
-	exited: "status.exited",
-	error: "status.error",
-};
 
 export { VIEW_TYPE_TERMINAL };
 
@@ -307,6 +301,8 @@ export class TerminalView extends ItemView {
 		}
 		this.disconnect();
 		this.terminal.dispose();
+		// このビュー分を除いて合成し直す（同じ id の他のビューが無ければ消える。D-66 追補）。
+		this.plugin.refreshTerminalStatus(this.id);
 	}
 
 	// ---- 設定・テーマ ---------------------------------------------------------
@@ -1008,12 +1004,12 @@ export class TerminalView extends ItemView {
 		return !!this.exitReason && this.exitReason.kind !== "exited";
 	}
 
-	/** タブ見出しのアイコン（`terminalStatus`・D-66）。状態ごとにアイコン・色・動きのクラスが変わる。 */
-	private updateIcon(): void {
-		if (this.closed) {
-			return;
-		}
-		const status = terminalStatus({
+	/**
+	 * 今の状態（`terminalStatus`・D-66）。`updateIcon()` と、行の印と合成する
+	 * `main.ts` の `refreshTerminalStatus()`（`currentStatus()` 経由。D-66 追補）で使う。
+	 */
+	private computeStatus(): TerminalStatus {
+		return terminalStatus({
 			error: this.isErrorState(),
 			exited: this.isExited(),
 			editing: !!this.pendingEdit,
@@ -1022,6 +1018,25 @@ export class TerminalView extends ItemView {
 			waiting: this.waiting,
 			attached: this.attached,
 		});
+	}
+
+	/** 今の状態（公開版。`main.ts` の `refreshTerminalStatus()` が読む。D-66 追補）。 */
+	currentStatus(): TerminalStatus {
+		return this.computeStatus();
+	}
+
+	/** 閉じていないか（`main.ts` の `refreshTerminalStatus()` が複数ビューを合成するのに使う。D-66 追補）。 */
+	isOpen(): boolean {
+		return !this.closed;
+	}
+
+	/** タブ見出しのアイコン（`terminalStatus`・D-66）。状態ごとにアイコン・色・動きのクラスが変わる。 */
+	private updateIcon(): void {
+		if (this.closed) {
+			return;
+		}
+		const status = this.computeStatus();
+		this.plugin.refreshTerminalStatus(this.id);
 		const icon = TERMINAL_STATUS_ICON[status];
 		if (icon !== this.icon) {
 			this.icon = icon;
