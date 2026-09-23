@@ -4,7 +4,9 @@ import {
 	Notice,
 	Plugin,
 	PluginSettingTab,
+	setIcon,
 	Setting,
+	setTooltip,
 	WorkspaceLeaf,
 	type FileSystemAdapter,
 } from "obsidian";
@@ -22,7 +24,15 @@ import { ConfirmModal, NewSessionModal, RenameSessionModal } from "./modals";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./open-session";
 import { AgentSessionsSettings, DEFAULT_SETTINGS, mergeSettings, SUBMIT_KEYS, type SubmitKey } from "./settings";
 import { migrateFromMarkdown, StoreLockError, updateStore } from "./store";
-import { higherPriorityStatus, type TerminalStatus } from "./terminal-status";
+import {
+	ALL_TERMINAL_STATUSES,
+	higherPriorityStatus,
+	rowTerminalStatus,
+	STATUS_LABEL_KEY,
+	TERMINAL_STATUS_ICON,
+	terminalStatusClass,
+	type TerminalStatus,
+} from "./terminal-status";
 import { claudeSettingsPath, readFullscreenTui } from "./tui-mode";
 import type { ArchivedSession, DaemonSession } from "./types";
 import { UsageModal } from "./usage-modal";
@@ -144,6 +154,15 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.registerView(VIEW_TYPE_SIDE, (leaf) => new SideView(leaf, this));
 		this.registerView(VIEW_TYPE_MANAGER, (leaf) => new ManagerView(leaf, this));
 		this.registerView(VIEW_TYPE_TERMINAL, (leaf) => new TerminalView(leaf, this));
+
+		// deferred（復元直後などでまだ前面にしていない、TerminalView が読み込まれていない）
+		// タブのアイコン（D-66 追補 2）：ビューが無い間は `updateIcon()` が届かないので、
+		// ここでタブ見出しの DOM を直接、分かる範囲（`rowTerminalStatus`。台帳が無ければ
+		// `detached`）で直す。`TerminalView` が読み込まれれば `updateIcon()` が引き継ぐ。
+		this.app.workspace.onLayoutReady(() => this.refreshDeferredTerminalIcons());
+		this.registerEvent(this.app.workspace.on("layout-change", () => this.refreshDeferredTerminalIcons()));
+		this.register(this.index.onChange(() => this.refreshDeferredTerminalIcons()));
+		this.register(this.index.registry.onChange(() => this.refreshDeferredTerminalIcons()));
 
 		this.addRibbonIcon("list-tree", "Agent Sessions", () => {
 			void this.openSidePanel();
@@ -703,6 +722,37 @@ export default class AgentSessionsPlugin extends Plugin {
 			this.terminalStatuses.delete(id);
 		}
 		this.events.trigger("terminal-status", id);
+	}
+
+	/**
+	 * deferred なタブ（`leaf.view` が `TerminalView` ではなく Obsidian の `DeferredView`。
+	 * 復元直後でまだ前面にしていないタブがこれ）のアイコンを直す（D-66 追補 2）。
+	 * `leaf.getViewState().icon` は最後に `updateHeader()` が呼ばれたときの値のまま
+	 * 残り続ける——新規タブなら Obsidian の既定（`ghost`）、古いタブなら前のコードの
+	 * `bot`／`message-circle` のことがある。`TerminalView` はまだ無いので `updateIcon()`
+	 * は使えず、`plugin.index.sessions` の `Row` から分かる範囲（`rowTerminalStatus`。
+	 * 台帳すら無ければ `detached`）でタブ見出しの DOM を直接書き換える。
+	 */
+	private refreshDeferredTerminalIcons(): void {
+		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
+			if (!leaf.isDeferred) {
+				continue;
+			}
+			const headerEl = (leaf as unknown as { tabHeaderEl?: HTMLElement }).tabHeaderEl;
+			const iconEl = headerEl?.querySelector<HTMLElement>(".workspace-tab-header-inner-icon");
+			if (!iconEl) {
+				continue;
+			}
+			const state = leaf.getViewState().state as { id?: string } | undefined;
+			const id = typeof state?.id === "string" ? state.id : "";
+			const row = id ? this.index.sessions.get(id) : undefined;
+			const status: TerminalStatus = row ? rowTerminalStatus(row) : "detached";
+			setIcon(iconEl, TERMINAL_STATUS_ICON[status]);
+			for (const s of ALL_TERMINAL_STATUSES) {
+				iconEl.toggleClass(terminalStatusClass(s), s === status);
+			}
+			setTooltip(iconEl, t(STATUS_LABEL_KEY[status]));
+		}
 	}
 
 	// ---- 通知・後始末（§6.5） -----------------------------------------------------
