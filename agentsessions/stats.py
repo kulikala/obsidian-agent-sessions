@@ -17,6 +17,7 @@
 
 import glob
 import json
+import math
 import os
 import tempfile
 from datetime import datetime, timezone
@@ -67,11 +68,26 @@ def _empty_totals() -> dict:
 
 # ---- 窓（rate_limits） -----------------------------------------------------
 
+def _roll_forward(end: float, used_percentage: Optional[float], duration: float, now: float) -> Tuple[float, Optional[float]]:
+    """`end`（`resets_at`）が `now` より過去なら、`duration` ずつ先へ送って「今の窓」の
+    `end` にする（T-74 追補：リセットを過ぎた直後、まだ新しい `rate_limits` が来ていない
+    間は古い窓のまま——「リセットまで 0:00:00」でコストも旧窓のままになっていた）。
+    送ったら `used_percentage` は不明（`None`）にする——新しい `rate_limits` が来るまで
+    分からないため。`end >= now` ならそのまま返す。
+    """
+    if end >= now:
+        return end, used_percentage
+    periods = math.ceil((now - end) / duration)
+    return end + periods * duration, None
+
+
 def windows_from_status(status_dir: str, now: float) -> Dict[str, dict]:
     """`{'five_hour': {'end', 'used_percentage'}, 'seven_day': {...}}`。
 
     `status_dir` の `*.json` のうち `rate_limits` を持つ最新 mtime のファイルを選ぶ。
-    無い・個別のキーが無ければ `end=now`・`used_percentage=None`。
+    無い・個別のキーが無ければ `end=now`・`used_percentage=None`。`resets_at` が過去
+    （まだ新しい `rate_limits` が届く前にリセットを過ぎた）なら `_roll_forward` で
+    「今の窓」まで先へ送る。
     """
     best_path = None
     best_mtime = -1.0
@@ -101,6 +117,7 @@ def windows_from_status(status_dir: str, now: float) -> Dict[str, dict]:
         best_mtime = mtime
         rate_limits = data['rate_limits']
 
+    durations = {'five_hour': FIVE_HOUR_SECONDS, 'seven_day': SEVEN_DAY_SECONDS}
     result = {}
     for key in ('five_hour', 'seven_day'):
         rl = rate_limits.get(key) if best_path is not None else None
@@ -108,7 +125,8 @@ def windows_from_status(status_dir: str, now: float) -> Dict[str, dict]:
         if resets_at is not None:
             used = rl.get('used_percentage')
             used = used if isinstance(used, (int, float)) and not isinstance(used, bool) else None
-            result[key] = {'end': resets_at, 'used_percentage': used}
+            end, used = _roll_forward(resets_at, used, durations[key], now)
+            result[key] = {'end': end, 'used_percentage': used}
         else:
             result[key] = {'end': now, 'used_percentage': None}
     return result

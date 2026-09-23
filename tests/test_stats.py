@@ -133,6 +133,42 @@ class WindowsFromStatusTest(StatsTestBase):
         self.assertEqual(win['five_hour']['end'], now)
         self.assertIsNone(win['five_hour']['used_percentage'])
 
+    def test_resets_at_just_past_rolls_forward_one_period(self):
+        """T-74 追補：リセットを過ぎた直後（まだ新しい rate_limits が届く前）は、古い窓の
+        まま（`end` が過去）にしない——1 期分だけ先へ送り、使用率は不明にする。"""
+        now = 1_700_000_000.0
+        resets_at = now - 60  # 1 分前にリセットを過ぎている
+        self._status('s.json', {
+            'five_hour': {'resets_at': resets_at, 'used_percentage': 42},
+            'seven_day': {'resets_at': resets_at, 'used_percentage': 77},
+        }, mtime=now)
+        win = stats.windows_from_status(self.status_dir, now)
+        self.assertEqual(win['five_hour']['end'], resets_at + stats.FIVE_HOUR_SECONDS)
+        self.assertIsNone(win['five_hour']['used_percentage'])
+        self.assertEqual(win['seven_day']['end'], resets_at + stats.SEVEN_DAY_SECONDS)
+        self.assertIsNone(win['seven_day']['used_percentage'])
+
+    def test_resets_at_far_in_past_rolls_forward_multiple_periods(self):
+        now = 1_700_000_000.0
+        resets_at = now - 2 * stats.FIVE_HOUR_SECONDS - 100
+        self._status('s.json', {
+            'five_hour': {'resets_at': resets_at, 'used_percentage': 50},
+        }, mtime=now)
+        win = stats.windows_from_status(self.status_dir, now)
+        # 2 期分＋端数 100 秒 → 3 期分先へ送る。
+        self.assertEqual(win['five_hour']['end'], resets_at + 3 * stats.FIVE_HOUR_SECONDS)
+        self.assertGreaterEqual(win['five_hour']['end'], now)
+        self.assertIsNone(win['five_hour']['used_percentage'])
+
+    def test_resets_at_exactly_now_does_not_roll(self):
+        now = 1_700_000_000.0
+        self._status('s.json', {
+            'five_hour': {'resets_at': now, 'used_percentage': 10},
+        }, mtime=now)
+        win = stats.windows_from_status(self.status_dir, now)
+        self.assertEqual(win['five_hour']['end'], now)
+        self.assertEqual(win['five_hour']['used_percentage'], 10)
+
 
 class WindowBucketingTest(StatsTestBase):
     """窓内外の振り分け・重複排除・<synthetic> 除外・サイドチェーンの計上を
@@ -216,6 +252,33 @@ class WindowBucketingTest(StatsTestBase):
             for k in summed:
                 self.assertEqual(summed[k], w['total'][k])
             self.assertAlmostEqual(cost, w['total']['cost'])
+
+
+class ResetRolloverComputeTest(StatsTestBase):
+    """T-74 追補：リセットを過ぎた直後（新しい rate_limits がまだ来ていない）でも、
+    集計は「今の窓」（start=旧 end）だけを見る——旧窓のコストを引きずらない。"""
+
+    def test_cost_only_counts_activity_after_rolled_start(self):
+        old_end = 1_700_000_000.0
+        now = old_end + 60  # リセットの 1 分後、まだ新しい rate_limits が届いていない
+        self._status('s.json', {
+            'five_hour': {'resets_at': old_end, 'used_percentage': 88},
+        }, mtime=old_end)
+
+        model = 'claude-sonnet-5'
+        # 旧窓（リセット前）の使用：新しい窓には含まれないはず。
+        old_ts = old_end - 100
+        _write(os.path.join(self.proj, ID1 + '.jsonl'),
+               [_assistant(old_ts, 'm-old', model, {'input': 1000, 'output': 1000})])
+
+        out = self.compute(now=now)
+        five = out['windows']['five_hour']
+        self.assertEqual(five['start'], old_end)
+        self.assertEqual(five['end'], old_end + stats.FIVE_HOUR_SECONDS)
+        self.assertIsNone(five['used_percentage'])
+        self.assertEqual(five['total']['calls'], 0)
+        self.assertEqual(five['total']['cost'], 0.0)
+        self.assertEqual(five['sessions'], {})
 
 
 class SubagentAggregationTest(StatsTestBase):
