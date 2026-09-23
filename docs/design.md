@@ -34,6 +34,9 @@ agent-sessions/
 │   │   ├── name.ts            名前の分解・命名ダイアログの入力トークナイズ
 │   │   ├── keys.ts            Enter の分類・送信キーの動作決定・keybindings.json との整合
 │   │   ├── terminal-status.ts タブの状態を 1 つに決める純関数（`TerminalStatus`）
+│   │   ├── attention.ts       asking／waiting の集計（サイドのバッジ・マネージャー見出しの印）
+│   │   ├── compacted.ts       ~/.agents/sessions/compacted/ の監視（compact 直後の印）
+│   │   ├── autosave.ts        内蔵エディタの自動保存デバウンス（`SaveDebouncer`）
 │   │   ├── links.ts           出力中のパス検出と vault 内解決（純関数）
 │   │   ├── at-complete.ts     `@` 補完の検索語切出しと置換（純関数）
 │   │   ├── marks.ts           指示／応答のマーカー管理（純関数＋xterm 依存の薄い層）
@@ -111,6 +114,7 @@ agent-sessions/
 | `~/.agents/sessions/events.log` | フック 1 件 1 行 `{"event","session_id","transcript_path","ts"}` | `agent-sessions hook` |
 | `~/.agents/sessions/scan-cache.json` | 走査キャッシュ | `agent-sessions json scan` |
 | `~/.agents/sessions/stats-cache.json` | `json stats` の 10 分バケット・読取位置・重複排除用の直近 `message.id` | `agent-sessions json stats` |
+| `~/.agents/sessions/compacted/<id>.json` | compact 直後でまだ次の指示を送っていない印（中身は見ない、存在だけを見る） | `agent-sessions hook`（`_update_compacted`） |
 | `~/.claude/projects/<p>/<id>.jsonl` | transcript（真実源） | Claude Code（読むだけ） |
 | `~/.claude/sessions/<pid>.json` | 起動中の台帳と状態 | Claude Code（読むだけ） |
 
@@ -200,7 +204,7 @@ Unix ドメインソケット `~/.agents/sessions/daemon.sock`。両方向とも
 | `agent-sessions edit FILE` | 内蔵エディタの窓口（§7.4） |
 | `agent-sessions hook` | stdin の JSON を `events.log` に 1 行追記 |
 | `agent-sessions status` | stdin の JSON を `status/<session_id>.json` に書き、statusLine の 1 行を出力（Claude Code のステータス行になる。§12） |
-| `agent-sessions setup` | `~/.claude/settings.json` を読み、`settings.json.bak-<時刻>` を残してから、`hooks.Stop`・`hooks.SessionEnd` を `"$HOME/bin/agent-sessions" hook` に揃え（無ければ追加、他のフックは触らない）、`statusLine` が null か既定と違えば `{"type":"command","command":"$HOME/bin/agent-sessions status"}` を設定。結果を表示する |
+| `agent-sessions setup` | `~/.claude/settings.json` を読み、`settings.json.bak-<時刻>` を残してから、`hooks.Stop`（matcher `.*`）・`hooks.SessionEnd`（`.*`）・`hooks.SessionStart`（`compact`。compacted 印の「入る」、§7.5）・`hooks.UserPromptSubmit`（`.*`。compacted 印の「出る」）を `"$HOME/bin/agent-sessions" hook` に揃え（無ければ追加、既にあれば event＋matcher の一致で冪等、他のフックは触らない）、`statusLine` が null か既定と違えば `{"type":"command","command":"$HOME/bin/agent-sessions status"}` を設定。結果を表示する |
 
 TUI：一覧（グループ→単独→その他、折畳、`/` 絞込、`h` でアーカイブを見せる）と ⏎。「その他」に載るのは名前が無く `child` でないセッションだけ（`json scan` と同じ `items.py` の判定）。⏎ はデーモンに `id` があれば `attach`（終了済みなら `forget` して `--resume`）、無ければ `claude --resume ID` を `execvp`。デーモンを起動することはない。折畳の保存は §3.1 のロックの中で書く。管理操作は持たない。サイドパネル：`cols >= 60` なら幅 `clamp(cols×0.4, 30, 60)` で常に出す。`cols < 60` では `p` で「一覧」と「パネルのみ」を切り替える。
 
@@ -273,7 +277,7 @@ Claude Code は Ctrl+G で `$VISUAL` を、`spawnSync(cmd, [...args, tmpfile], {
 - `bin/agent-sessions-code`（sh、`exec "$(dirname "$0")/agent-sessions" edit "$@"`）。`install.sh` が `~/bin/agent-sessions-code` に symlink。名前に `code` を含めるのは上の判定に乗るため。デーモンが `start` の `env` に `VISUAL=<その絶対パス>` を足す（§4.2。パスに空白があってはならない）。
 - `agent-sessions edit FILE`（`agentsessions/cmd_edit.py`）：`~/.agents/sessions/plugin.sock` に接続し `{"op":"edit","file":FILE,"session":$AGENT_SESSIONS_ID,"cwd":…}` を送る。応答 `{"ok":true}` で 0。`{"ok":false,"error":"cancel"}` は 1 で終わる（vi は開かない。Claude は元の内容を使う）。`error` が `no-tab`／`busy`、接続できない、EOF・`ECONNRESET`（Obsidian のクラッシュを含む）なら**従来のエディタに倒す**：`$AGENT_SESSIONS_FALLBACK_EDITOR`、無ければ `vi` を `execvp`（同じ端末で開く）。応答が来るまで待つ（タイムアウト無し。Ctrl+C／`SIGTERM` で `{"op":"cancel"}` を送って 1）。
 - `edit-server.ts`：`~/.agents/sessions/plugin.sock` で listen（`onload` で古いソケットを unlink、`onunload` で close と unlink、作成後 `chmod 0600`）。フレームは `daemon-client.ts` の `encodeFrame`／`FrameDecoder` を共用（J のみ）。要求 `edit`：`session` に対応するターミナルビューを探す。無ければ `{"ok":false,"error":"no-tab"}`。あれば `view.openEditor(file, cwd)` を呼び、送る／取消の結果で応答して接続を閉じる。同じタブで編集中に 2 つ目が来たら `{"ok":false,"error":"busy"}`。接続が先に切れたら（claude 側の中断）編集領域を閉じる。**タブ側が先に閉じるとき**（`onClose`・プラグインの `onunload`・`plugin.sock` の close）は、進行中の編集に対して元の内容を一時ファイルへ書き戻し `cancel` を返してから閉じる。編集中の状態はビューの `pendingEdit` 1 つに集約し、閉じる経路すべてがそれを解決する。
-- `views/editor-pane.ts`：ターミナルビューの本体を上下に割る（上＝xterm 残り全部、下＝編集領域。高さは設定 `editorHeight`、既定 40%、最小 6 行。開閉で `fit()` を呼び直す）。編集領域は `<textarea>`（ネイティブのペースト・IME・Undo。Markdown の扱いは最小限）、等幅フォント。開いたら一時ファイルの内容を入れてフォーカス、末尾にカーソル。上部に 1 行のバー：ファイル名（basename）・「送る（送信キーの記号）」・「入力欄に戻る（Esc）」。自動保存は `input` を 300 ms デバウンスして tmp→rename。
+- `views/editor-pane.ts`：ターミナルビューの本体を上下に割る（上＝xterm 残り全部、下＝編集領域。高さは設定 `editorHeight`、既定 40%、最小 6 行。開閉で `fit()` を呼び直す）。編集領域は `<textarea>`（ネイティブのペースト・IME・Undo。Markdown の扱いは最小限）。フォント名・サイズは設定を使い、`applySettings(fontFamily, fontSize)` を `terminal.ts` の `applySettings()`（`settings-changed` のたび）から呼ぶので、エディタを開いたまま設定を変えても即反映する。読みやすさのため `.agent-sessions-editor-text` に `letter-spacing: var(--as-editor-letter-spacing, 0.03em)`・`line-height: var(--as-editor-line-height, 1.7)` を既定で当てる（ターミナル本体より字間・行間を広くとる）。開いたら一時ファイルの内容を入れてフォーカス、末尾にカーソル。上部に 1 行のバー：ファイル名（basename）・「送る（送信キーの記号）」・「入力欄に戻る（Esc）」。自動保存は `autosave.ts` の `SaveDebouncer`（`schedule`／`flush`／`cancel`。DOM にも obsidian にも依存しない純クラス）を使い、入力が 800 ms 止まったら tmp→rename で書く（IME 変換中の `input` は `onChanged()` を呼ばず `compositionend` で改めて呼ぶので、変換途中では保存しない）。「送る」「入力欄に戻る」は待っているタイマーを `flush()` してから即書く（`text === lastSaved` なら空振り）。「取消」（元の内容へ戻す経路）はタイマーを `cancel()` するだけで、別途 `original` を書き戻す。自動保存の書込み失敗は `Notice` を出さず `console.warn` のログだけにする（最短 800 ms 間隔で走りうる経路のため）。
   - **送る**：一時ファイルが `claude-prompt-` で始まるプロンプト編集なら、最後の内容を書いて `ok` を返した後（Claude が読み戻す 300 ms を置いて）`submitSequence()` を PTY へ送る。`/keybindings` など他のファイルは送信しない。
   - **入力欄に戻る**（Esc も同じ）：今の内容を書いて `ok` を返す（送信しない。Claude は非 0 でなく `ok` を受けて元の入力欄に戻る）。
   - キー：`Cmd+Enter`（または設定の送信キー）＝送る、`Esc`＝入力欄に戻る。IME 変換中（`isComposing`／`keyCode 229`）は無視。他は textarea の既定。`keydown` の伝播は止める（Obsidian のホットキーに渡さない。Cmd+V／C／X／Z／A はネイティブ動作）。`pendingEdit` がある間、ターミナル側の `attachCustomKeyEventHandler` は全部 `false` を返し、`onData` も捨てる（キーは PTY に送らない）。
@@ -296,14 +300,17 @@ Claude Code は Ctrl+G で `$VISUAL` を、`spawnSync(cmd, [...args, tmpfile], {
 | editing | 内蔵エディタが開いている | `pencil-line` | 青 |
 | idle | 接続中で待機（見た） | `square-terminal` | 通常色 |
 | detached | タブはあるが未接続（復元後、前面にする前） | `square-dashed` | 薄い色 |
+| compacted | `/compact` 完了直後（手動・自動とも）から、次の指示を送る／セッションが終わるまで（下記） | `archive-restore` | 青緑（動き無し） |
 | exited | claude が終了 | `circle-stop` | 薄い色 |
 | error | デーモン不通・claude 不在・起動失敗 | `triangle-alert` | 赤 |
 
-優先順：error＞exited＞asking＞editing＞connecting＞running-shell＞working＞waiting＞detached＞idle。アニメーションは `prefers-reduced-motion` で止める。
+優先順：error＞exited＞asking＞editing＞connecting＞running-shell＞working＞waiting＞compacted＞detached＞idle。アニメーションは `prefers-reduced-motion` で止める（`compacted` は元から動きが無い）。
 
-タブの状態は `plugin.terminalStatuses`（id → 状態）に集約し、同じ id のビューが複数あれば優先順の高い方。サイドパネル・マネージャーの行の印はタブがあればこの値、無ければ `Row` と registry から分かる範囲（working／running-shell／asking／exited／idle／detached）。アイコンは小さな点のまま、色と動きを揃える。tooltip に状態名。
+タブの状態は `plugin.terminalStatuses`（id → 状態）に集約し、同じ id のビューが複数あれば優先順の高い方。サイドパネル・マネージャーの行の印はタブがあればこの値、無ければ `Row` と registry から分かる範囲（working／running-shell／asking／compacted／exited／idle／detached）。行の印は状態アイコンそのもの（`TERMINAL_STATUS_ICON[status]`、`rowStatusMark`）で、タブ見出しと同じ絵柄・色・動き（`agent-sessions-status-<status>` クラスを共有）になる。tooltip に状態名。asking・waiting の行はさらに背景でも目立たせる（§8・§10.1）。
 
 `asking` の検出はフックを新設していない（T-77）：`~/.claude/sessions/<pid>.json` を実機で見ると、claude 自身が `status: "waiting"` と、理由を表す `waitingFor`（`"input needed"`・`"permission prompt"`・`"dialog open"` 等）を既に書いている——`registry.ts` はこのファイルを元から直接 watch しているので、生の値をそのまま通すだけで足りる（`RegistryEntry.waitingFor`・`Row.waitingFor` に持たせ、tooltip 等で使える）。公式ドキュメントの `Notification` フック（`notification_type`：`permission_prompt`・`idle_prompt`・`elicitation_dialog`・`agent_needs_input` 等）は一度きりのイベントで、こちらを使うと自前で状態を持ち直す必要があり、フックが届かない場合に取りこぼす。`status: "waiting"` は既に持続的な状態として書かれているので、そちらを使う方が単純で頑丈——`install.sh` にフックは足していない。
+
+`compacted` は `~/.claude/sessions/<pid>.json` に情報が無いため、フックで検出する。`SessionStart` は `source`（`startup`／`resume`／`clear`／`compact`／`fork`）を持ち、`compact` は手動の `/compact` と自動の文脈圧縮の両方に共通の値。圧縮そのものの前に鳴る `PreCompact` は一度きりで「完了」の合図には使えないため、`SessionStart`（`source=compact`。圧縮が終わってセッションが実質再開した時点）を「入る」の合図にする。`agentsessions/hooks.py` の `_update_compacted(data)` が `record_hook` から呼ばれ、`SessionStart`＋`source=compact` で `~/.agents/sessions/compacted/<session_id>.json` を tmp→rename で作り、`UserPromptSubmit`（次の指示）・`SessionEnd`（セッション終了）で消す。`setup` は `SessionStart` のフックを matcher `compact` に絞って登録する（無関係な起動のたびに呼ばれないように）。プラグインの `CompactedTracker`（`compacted.ts`。`registry.ts`・`statusline.ts` と同じ `fs.watch`＋200ms デバウンスの形）がこのディレクトリを監視し、中身は見ずファイルの有無だけを `has(id)` として持つ。`SessionIndex.compactedTracker` を `Row.compacted` に合成する。
 
 Obsidian 1.7 以降、前面にしたことのないタブは deferred view で、アイコンと題名は保存された値がそのまま使われる。`refreshDeferredTerminalTabs()`（`main.ts`）が `onLayoutReady`・`layout-change`・`index`／`registry` の変化のたびに、`leaf.view.title`（`DeferredView` が持つフィールド）とタブ見出し DOM（`.workspace-tab-header-inner-icon`・`.workspace-tab-header-inner-title`）の両方を直接書き換える。題名は `Row.name`（無ければ `sessionDisplayName`「無題 <id8>」。`name.ts` の純関数で、`views/terminal.ts` の `getDisplayText()` も同じ関数を使い、両者が同じ規則で名前を決めることを保証する）。
 
@@ -319,13 +326,13 @@ Obsidian 1.7 以降、前面にしたことのないタブは deferred view で�
 
 1. **ナビ行**：`＋`（新規セッションダイアログ）・`layout-grid`（セッションマネージャーをメインに開く。あればそこへ）・`⋯`（設定を開く・再走査・アーカイブを表示）。セッションに対する操作はここに置かない。
 2. **一覧**（`views/side-list.ts`。区分は見出し付き、空の区分は出さない）
-   - **開いているタブ**：ターミナルタブがあるセッション。タブの順。前面のタブの行は強調。クリックでそのタブを前面に。
+   - **開いているタブ**：ターミナルタブがあるセッション。タブの順。前面のタブの行は強調。クリックでそのタブを前面に。見出しの横に「入力待ち N・未読 M」のバッジ（`attentionCounts`。asking を「入力待ち」、waiting を「未読」と呼ぶ。0 件なら出さない）。クリックで最初の対象（asking 優先、無ければ waiting）を開く。件数は「開いているタブ」「起動中」「最近」の全体から数える（`attentionCounts(source, [...openTabs, ...running, ...recent])`）。
    - **起動中**：デーモンが持っていてタブが無いセッション。クリックで attach したタブを開く。
    - **最近**：それ以外を最終更新順に N 件（設定、既定 10）。アーカイブ済みと名前の無い子セッションは出さない。クリックで `--resume` のタブを開く。
-   - 行：状態の印（§7.5 と同じ状態・色）＋カテゴリのチップ（あれば、§11）＋カテゴリを除いた名前。「開いているタブ」「起動中」「最近」のどの区分も同じ表示。
+   - 行：状態の印（§7.5 と同じアイコン・色・動き）＋カテゴリのチップ（あれば、§11）＋カテゴリを除いた名前。「開いているタブ」「起動中」「最近」のどの区分も同じ表示。asking の行は淡い赤紫の背景＋左端 3px の色帯＋名前を太字、waiting の行はそれより弱いオレンジの背景（帯・太字は無し）で目立たせる。
    - **行を選択（クリックまたは矢印キー）するとその行に `⋯` が現れ**、`名前を変更`・`セッションを圧縮`（直近が `/compact` なら非活性）・`セッション解析結果`・`アーカイブ`⇄`アーカイブ解除`・（起動中なら）`セッションを終了`・`ID をコピー` を出す。右クリックでも同じメニュー。
 3. **詳細欄**（折畳可、`views/detail.ts`。§9）：一覧との間に 4px のドラッグハンドル（`mousedown`→`mousemove` で `sideDetailHeight` を更新、`mouseup` で保存。既定 220px、最小 80px）。
-4. **セッション制限**（`views/limits.ts`）：5h・7d のバー・使用率・「リセットまで h:mm:ss」（24 時間以上は「N 日 h:mm」）を 1 秒ごとに更新。`resets_at` が無ければ「—」。元は `~/.agents/sessions/status/*.json` のうち `rate_limits` を持つ最新 mtime のファイル（アカウント共通。前提：アカウントを切り替えて並行使用しない）。
+4. **セッション制限**（`views/limits.ts`）：5h・7d のバー・使用率・「リセットまで h:mm:ss」（24 時間以上は「N 日 h:mm」）を 1 秒ごとに更新。`resets_at` が無ければ「—」。元は `~/.agents/sessions/status/*.json` のうち `rate_limits` を持つ最新 mtime のファイル（アカウント共通。前提：アカウントを切り替えて並行使用しない）。リセット直後でまだ新しい `rate_limits` が届いていないときは、`rollForwardWindow`（§10.2 と同じ規則の純関数）が窓を先へ送って「今の窓」を表示する。1 秒ごとの再描画のたびに `Date.now()` で判定し直すので、リセットを過ぎた瞬間から自然に切り替わる。
 
 サイドパネルは `workspace` の `layout-change`・`active-leaf-change` と `registry`・`SessionIndex` の変化を購読して描き直す。
 
@@ -335,7 +342,7 @@ Obsidian 1.7 以降、前面にしたことのないタブは deferred view で�
 
 - 名前の上に小さなカテゴリのチップ（あれば、§11 の色）、`<h4>` はカテゴリを除いた名前だけ（`categoryAndLabel(row)`：`row.name` を `splitName` で分ける純関数）。
 - バッジ：モデル・エフォート（`statusInfo` から。無ければ「デフォルト」）・rc（○／●、§10.1 の判定と同じ見た目のチップ）。
-- コンテキスト使用率のドーナツ（SVG、`ctxPercent`）。
+- コンテキスト使用率のドーナツ（SVG、`ctxPercent`）。`row.compacted`（§7.5）が真なら、その右に小さな「compact 済み」ラベル（`.agent-sessions-detail-compacted`。文脈がリセットされていることを示す）。
 - 総トークン・総コスト：`json usage` を呼んで 60 秒キャッシュ（`totalTokens` ＝入力＋出力＋cache 読出＋cache 作成、`formatCost` ＝ `$x.xx`）。
 - 直近の指示・直近のツール・直近の応答（`-webkit-line-clamp: 6`、クリックで全文展開）・フォルダ・ID。
 
@@ -349,15 +356,16 @@ Obsidian 1.7 以降、前面にしたことのないタブは deferred view で�
 
 ### 10.1 木・一覧・その他・アーカイブ
 
-木は「グループ（見出し、折畳）→ カテゴリなし（見出し、折畳）→ その他のセッション（見出し、既定で折畳）→ アーカイブ（見出し、既定で折畳、ツールバーで表示切替）」の順（`tree.ts`／`views/manager-model.ts` の `flattenTree`）。各区分の中は最終更新順。
+木は「グループ（見出し、折畳）→ その他（見出し、既定で折畳）→ アーカイブ（見出し、既定で折畳、ツールバーで表示切替）」の順（`tree.ts`／`views/manager-model.ts` の `flattenTree`）。各区分の中は最終更新順。
 
 - グループはカテゴリ名（`splitName` の前半、`カテゴリ: 名前` の `カテゴリ`）ごとにまとまる。見出しはキャレット＋カテゴリのチップ（§11）＋件数＋その区分の 5h／7d のコスト合計（`categoryTotals`。列の位置に揃える）。実カテゴリの見出しはチップだけで、カテゴリ名をもう一度プレーンテキストでは出さない（チップの文字＝カテゴリ名のため）。
-- カテゴリの無い名前付きセッションは、他のグループと同じ見出し付きの区分（`NO_CATEGORY_GROUP`、ラベルは「カテゴリなし」）にまとめ、直前のグループの最後の行と続いて見えないよう見出し行に上罫線を付ける。「単独」という表現はしない（カテゴリだと誤認するため）。
-- 「その他のセッション」に載るのは名前が無く `json scan` の `child` が偽のものだけ（無名の子セッションは出さない。ラベルは「名前なし」）。
-- グループ・カテゴリなしの区分の中の行にはチップを付けない（見出しが既に示しているため）。カテゴリなし・その他のセッション・アーカイブの見出しは色を持たないため、チップではなく文字（「カテゴリなし」「名前なし」「アーカイブ」）で示す。
+- カテゴリの無い名前付きセッションと、名前も無く `json scan` の `child` が偽のセッションは、1 つの「その他」区分（`OTHER_GROUP`）にまとめ、最終更新順で混在させる。「単独」「カテゴリなし」「名前なし」のように分けた表現はしない（別のカテゴリだと誤認する・分ける理由が無いため）。無名の子セッションはここにも出さない。直前のグループの最後の行と続いて見えないよう、見出し行に上罫線を付ける。折畳の識別子は `OTHER_GROUP` 1 本（旧 `NO_CATEGORY_GROUP` の識別子で畳んであった場合も、後方互換で畳んだ扱いになる）。
+- グループ・その他の区分の中の行にはチップを付けない（見出しが既に示しているため）。その他・アーカイブの見出しは色を持たないため、チップではなく文字（「その他」「アーカイブ」）で示す。
 - 5h／7d の列見出しをクリックしてグループを外した平らな一覧に並べ替えたときだけ、見出しが無くなるため行ごとにチップを出す（唯一の色手がかりになるため）。
 
-行は状態の印（§7.5）・名前列（チップ＋名前、上記の規則）・最終更新・モデル・エフォート・5h のコスト・7d のコスト・フォルダ・⋯。モデル・エフォートは短い表記で出し、完全な値は tooltip、不明は空欄にする。行の高さは 32px 以上。列は `table-layout: fixed` の固定幅で重ならない。幅が足りないときはフォルダ→エフォート→モデル→5h の順に列を隠す。列見出しのクリックで並べ替え（最終更新＝既定のグループの木、5h／7d のコスト＝グループを外した一覧のコスト降順）。
+グループ・その他の見出しには、その区分の中（折畳んでいても）に asking／waiting のセッションがあれば、優先度の高い方（asking＞waiting）の印を付ける（`urgencyByGroupKey`（`attention.ts`）→ `renderGroupUrgencyMark`。アーカイブは数えない）。
+
+行は状態の印（§7.5。タブと同じアイコン・色・動き）・名前列（チップ＋名前、上記の規則）・最終更新・モデル・エフォート・5h のコスト・7d のコスト・フォルダ・⋯。モデル・エフォートは短い表記で出し、完全な値は tooltip、不明は空欄にする。行の高さは 32px 以上。列は `table-layout: fixed` の固定幅で重ならない。幅が足りないときはフォルダ→エフォート→モデル→5h の順に列を隠す。列見出しのクリックで並べ替え（最終更新＝既定のグループの木、5h／7d のコスト＝グループを外した一覧のコスト降順）。asking／waiting の行は §8 と同じ背景・帯で目立たせる。
 
 ツールバー：`＋`・`再走査`（`rotate-cw`）・絞込（名前の部分一致）・`⋯`（「アーカイブを表示」チェック）。行クリック → `openSession(id)`（タブがあればジャンプ）。↑↓ で行の移動、Enter で開く、`/` で絞込にフォーカス。行を選択すると `⋯`：`名前を変更`・`セッションを圧縮`・`セッション解析結果`・`アーカイブ`⇄`アーカイブ解除`・（起動中なら）`セッションを終了`・`ID をコピー`。右クリックも同じ。右の詳細パネルは `views/detail.ts`（§9）そのもの。
 
@@ -367,7 +375,7 @@ Obsidian 1.7 以降、前面にしたことのないタブは deferred view で�
 
 解析領域は上に統計の帯、下にカテゴリ別の横バー。
 
-**統計カード**：5 時間枠・7 日枠の 2 枚。見出しの横に「リセットまで …」（カウントダウン）。上段は使用率のバー。下段は 2×2 のラベル付きの小さな表——「コスト $22.90」「トークン 31.5M」「呼出 142 回」「セッション 2」（ラベルは薄い文字、値は太字）。各値に tooltip（例：トークン＝入力＋出力＋cache 読出＋cache 作成、この枠の中）。数値は `agent-sessions json stats`（§13.2）から。
+**統計カード**：5 時間枠・7 日枠の 2 枚。見出しの横に「リセットまで …」（カウントダウン）。上段は使用率のバー。下段は 2×2 のラベル付きの小さな表——「コスト $22.90」「トークン 31.5M」「呼出 142 回」「セッション 2」（ラベルは薄い文字、値は太字）。各値に tooltip（例：トークン＝入力＋出力＋cache 読出＋cache 作成、この枠の中）。数値は `agent-sessions json stats`（§13.2）から。窓がリセット時刻を過ぎているのに新しい `rate_limits` がまだ届いていないときは、Python 側の `_roll_forward`（§13.2）が窓を先送りした「今の窓」を返すので、カードは常に今の窓を表示する（先送りした窓は使用率が不明「—」になる）。
 
 **7 日枠のペース判定**：純関数 `weeklyPace`。経過率 `e`（今が窓の何割目か）から予測使用率＝使用率 `/ e` を出す。予測 ≤100 のときは「順調 — 枠の終わりに約 N%」。>100 のときは、このままのペースで使い切る時刻（`start + 経過 × 100 / 使用率`）と、残り期間を保たせるための目安（「残り 1 日あたり Z% 以下（約 $W／日）」）を出す。経過が 6 時間未満、または使用率が不明（`used_percentage` が無い）のときは判定しない（母数が小さすぎるため）。5 時間枠には出さない（1 日あたりの目安に意味がないため）。
 
@@ -410,6 +418,8 @@ Obsidian 1.7 以降、前面にしたことのないタブは deferred view で�
 ### 13.2 `agent-sessions json stats`
 
 出力：`{"windows":{"five_hour":W,"seven_day":W}}`、`W = {"start","end","used_percentage","total":{calls,input,output,cache_read,cache_create,cost},"sessions":{id:{calls,input,output,cache_read,cache_create,cost}}}`。`end` は `resets_at`（無ければ現在）、`start` は `end − 5h／7d`。`used_percentage` は rate_limits から（無ければ null）。
+
+`end`（`resets_at`）が現在時刻より過去（リセット直後で、まだ新しい `rate_limits` が届いていない）なら、`_roll_forward(end, used_percentage, duration, now)` が窓の長さ（5h／7d）ずつ `math.ceil((now - end) / duration)` 回分だけ先送りして「今の窓」の `end` にする（2 期分以上ずれていても対応）。先送りしたときは `used_percentage` を `null`（不明）にする——新しい `rate_limits` が届くまで実際の値は分からないため。`start` は新しい `end` から計算されるので、コスト集計も自動的に新しい窓の開始からだけになる（旧窓のコストを引きずらない）。プラグインのサイドパネル（`views/limits.ts`、§8）は `json stats` を経由せず `status/*.json` を直接読む独立実装なので、同じ規則の純関数 `rollForwardWindow(w, durationSeconds, now)` を別に持つ。
 
 集計：`~/.claude/projects/*/*.jsonl`（サイドチェーンの行も含める。サブエージェントの transcript が `<project>/<id>/` 配下にあれば親の id に加える）のうち mtime が 7d 窓の開始より新しいもの。`assistant` 行の `message.usage` を `message.id` で重複排除、`<synthetic>` 除外、`pricing.cost` でコスト。
 
@@ -493,8 +503,8 @@ cache 作成は 5 分＝入力×1.25、1 時間＝入力×2（`cache_creation.ep
 
 ## 19. テスト
 
-- **Python**（unittest、`-W error`。`tests/`）：`protocol`（フレームの分割・結合）、`daemon`（`cat` を子にした start/attach/replay/resize/kill/forget、バッファ上限、複数接続と最小サイズ、切断の後始末、終了済みへの attach、`exited.json` の書き出しと読み込み）、`store` のロック（2 プロセスで同時に書く。`categoryColors` の往復も含む）、`setup`（settings.json の置換と backup）、`cache`、`jsonout`、`pricing`（各表・1h・未知モデル）、`usage`（cost・tools・duration）、`stats`（窓・バケット・重複排除）、`edit`（偽ソケットサーバーで `ok:true`→0、`cancel`→1、`no-tab`／`busy`→fallback、接続不可／EOF→fallback）、`attach`。
-- **TypeScript**（vitest、`plugin/test/`）：`tree`・`manager-model`（開いているタブ／起動中／最近・グループ／カテゴリなし／その他／アーカイブの区分け、`categoryTotals`）、`links`・`at-complete`、`marks`、`keys`（`classifyEnter`・`resolveEnterAction`・`sendSequence`・`deriveSubmitKey`・`reconcileSubmitKey`）、`keybindings`（読解・書換・戻し）、`daemon-client`（フレーム）、`daemon-integration`、`statusline`・`limits`（整形・並べ替え）、`store`（読み書きとロック、tmp dir）、`category`（パレット番号の割当）、`name`（`tokenizeNameInput`・`filterCategories`・`sessionDisplayName`）、`detail`（`categoryAndLabel`）、`terminal-status`（`terminalStatus` の優先順・`asking`）、`ui-state`、`registry`、`index`（`waitForName` を含む）、`edit-server`（フレームの往復とハンドラの分岐）、`i18n`、`settings`、`usage`、`setup`、`tui-mode`、`side-list`、`key-role`、`dedupe`。`openSession` の多重呼出はモックの workspace で確認する。
+- **Python**（unittest、`-W error`。`tests/`）：`protocol`（フレームの分割・結合）、`daemon`（`cat` を子にした start/attach/replay/resize/kill/forget、バッファ上限、複数接続と最小サイズ、切断の後始末、終了済みへの attach、`exited.json` の書き出しと読み込み）、`store` のロック（2 プロセスで同時に書く。`categoryColors` の往復も含む）、`setup`（settings.json の置換と backup。`SessionStart`（matcher `compact`）・`UserPromptSubmit` の追加を含む）、`cache`、`jsonout`（`waiting_for` を条件付きで持つこと）、`live`（`waiting`／`waiting_for`／ラベル）、`pricing`（各表・1h・未知モデル）、`usage`（cost・tools・duration）、`stats`（窓・バケット・重複排除・`_roll_forward` の 1 期分／複数期分の先送りと境界）、`hooks`（`format_status_line`・送信キー記号・`_update_compacted` の書込と削除）、`edit`（偽ソケットサーバーで `ok:true`→0、`cancel`→1、`no-tab`／`busy`→fallback、接続不可／EOF→fallback）、`attach`。
+- **TypeScript**（vitest、`plugin/test/`）：`tree`・`manager-model`（開いているタブ／起動中／最近・グループ／その他／アーカイブの区分け、`categoryTotals`、`weeklyPace`・`formatWeekdayTime`・`shortModelName`）、`links`・`at-complete`、`marks`、`keys`（`classifyEnter`・`resolveEnterAction`・`sendSequence`・`deriveSubmitKey`・`reconcileSubmitKey`）、`keybindings`（読解・書換・戻し）、`daemon-client`（フレーム）、`daemon-integration`、`statusline`・`limits`（整形・並べ替え・`rollForwardWindow`）、`store`（読み書きとロック、tmp dir）、`category`（パレット番号の割当）、`name`（`tokenizeNameInput`・`filterCategories`・`sessionDisplayName`）、`detail`（`categoryAndLabel`）、`terminal-status`（`terminalStatus` の優先順・`asking`・`compacted`・アイコン対応表）、`attention`（`attentionCounts`・`urgencyByGroupKey`）、`compacted`（`CompactedTracker`）、`autosave`（`SaveDebouncer`）、`ui-state`、`registry`（`waitingFor` の素通し）、`index`（`waitForName`・`row.compacted` の合成を含む）、`edit-server`（フレームの往復とハンドラの分岐）、`i18n`、`settings`、`usage`、`setup`、`tui-mode`、`side-list`、`key-role`、`dedupe`。`openSession` の多重呼出はモックの workspace で確認する。
 - **手動**：`requirements.md` の「受け入れの確認」。実機での目視は崩れを指摘されたときと、Obsidian CLI で組立てにくい操作（右クリックメニューなど）に限る。
 
 ## 20. 検証の手段と Obsidian の注意点
