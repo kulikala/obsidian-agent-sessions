@@ -548,10 +548,15 @@ export class ManagerView extends ItemView {
 			const headTd = tr.createEl("td", { cls: "agent-sessions-manager-col-name", attr: { colspan: "3" } });
 			const head = headTd.createDiv({ cls: "agent-sessions-manager-group-head" });
 			head.createSpan({ cls: "agent-sessions-manager-caret", text: mrow.folded ? "▸" : "▾" });
+			// 実カテゴリは `mrow.label === mrow.key`（グループ名そのもの）なので、チップと
+			// 同じ文字をテキストでも出すと二重表示になる。チップだけにする——「カテゴリなし」
+			// 「名前なし」はチップの色を持たないので、従来どおり文字のラベルを出す
+			// （T-70 追補：見出し行の文字の重複解消）。
 			if (isRealCategoryKey(mrow.key)) {
 				renderCategoryChip(head, mrow.key, this.plugin.index.categoryColorIndex(mrow.key));
+			} else {
+				head.createSpan({ cls: "agent-sessions-manager-group-label", text: mrow.label });
 			}
-			head.createSpan({ cls: "agent-sessions-manager-group-label", text: mrow.label });
 			head.createSpan({ cls: "agent-sessions-manager-group-count", text: String(mrow.count) });
 			this.renderGroupCostCell(tr, "agent-sessions-manager-col-5h", "5h", mrow.key);
 			this.renderGroupCostCell(tr, "agent-sessions-manager-col-7d", "7d", mrow.key);

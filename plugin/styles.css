@@ -445,6 +445,9 @@
 
 .agent-sessions-manager-group-count {
 	flex: 0 0 auto;
+	/* 実カテゴリの見出しはチップだけ（`flex: 1 1 auto` のラベルが無い）になったので、
+	   常に右端へ寄せる（T-70 追補）。 */
+	margin-left: auto;
 	color: var(--text-faint);
 	font-weight: var(--font-normal);
 }
