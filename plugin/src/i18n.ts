@@ -222,7 +222,12 @@ const ja = {
 	"status.connecting": "接続中",
 	"status.working": "処理中",
 	"status.runningShell": "コマンド実行中",
+	// claude 自身の質問・許可プロンプト・elicitation 待ち（T-77）。「指示待ち」（waiting）より上。
+	"status.asking": "回答待ち",
 	"status.waiting": "指示待ち",
+	// compact 直後・まだ次の指示を送っていない（T-77 追補）。「指示待ち」より下——文脈が
+	// リセットされていることが分かるように別の状態にする。
+	"status.compacted": "compact 済み（文脈がリセットされています）",
 	"status.editing": "編集中",
 	"status.idle": "待機",
 	"status.detached": "未接続",
@@ -442,7 +447,9 @@ const en: Record<MessageKey, string> = {
 	"status.connecting": "Connecting",
 	"status.working": "Working",
 	"status.runningShell": "Running a command",
+	"status.asking": "Waiting for your answer",
 	"status.waiting": "Waiting for input",
+	"status.compacted": "Compacted (context was reset)",
 	"status.editing": "Editing",
 	"status.idle": "Idle",
 	"status.detached": "Not connected",

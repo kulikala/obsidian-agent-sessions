@@ -24,6 +24,7 @@ function row(overrides: Partial<Row> & Pick<Row, "id">): Row {
 		transcript: null,
 		status: null,
 		waitingFor: null,
+		compacted: false,
 		pid: null,
 		rc: false,
 		daemon: false,
@@ -42,6 +43,7 @@ function input(overrides: Partial<TerminalStatusInput> = {}): TerminalStatusInpu
 		connecting: false,
 		registryStatus: null,
 		waiting: false,
+		compacted: false,
 		attached: true,
 		...overrides,
 	};
@@ -58,6 +60,10 @@ describe("terminalStatus", () => {
 
 	it("busy→idle 後、前面にしていなければ waiting", () => {
 		expect(terminalStatus(input({ waiting: true }))).toBe("waiting");
+	});
+
+	it("compact 直後・未入力なら compacted（T-77 追補）", () => {
+		expect(terminalStatus(input({ compacted: true }))).toBe("compacted");
 	});
 
 	it("registry busy は working", () => {
@@ -136,6 +142,15 @@ describe("terminalStatus", () => {
 			expect(terminalStatus(input({ waiting: true, attached: true }))).toBe("waiting");
 		});
 
+		it("waiting は compacted より優先する（未読の入力待ちが先。T-77 追補）", () => {
+			expect(terminalStatus(input({ waiting: true, compacted: true }))).toBe("waiting");
+		});
+
+		it("compacted は detached・idle より優先する（T-77 追補）", () => {
+			expect(terminalStatus(input({ compacted: true, attached: false }))).toBe("compacted");
+			expect(terminalStatus(input({ compacted: true, attached: true }))).toBe("compacted");
+		});
+
 		it("detached は idle より優先する", () => {
 			expect(terminalStatus(input({ attached: false }))).toBe("detached");
 			expect(terminalStatus(input({ attached: true }))).toBe("idle");
@@ -173,6 +188,19 @@ describe("rowTerminalStatus（タブが無い行。D-66 追補）", () => {
 
 	it("exited は asking より優先する（T-77）", () => {
 		expect(rowTerminalStatus(row({ id: "a", status: "waiting", exited: 1700000000, daemon: true }))).toBe("exited");
+	});
+
+	it("row.compacted があれば compacted（タブが無くても分かる。T-77 追補）", () => {
+		expect(rowTerminalStatus(row({ id: "a", compacted: true, daemon: true }))).toBe("compacted");
+	});
+
+	it("compacted は detached より優先する（T-77 追補）", () => {
+		expect(rowTerminalStatus(row({ id: "a", compacted: true, daemon: false }))).toBe("compacted");
+	});
+
+	it("exited・asking は compacted より優先する（T-77 追補）", () => {
+		expect(rowTerminalStatus(row({ id: "a", compacted: true, exited: 1700000000, daemon: true }))).toBe("exited");
+		expect(rowTerminalStatus(row({ id: "a", compacted: true, status: "waiting", daemon: true }))).toBe("asking");
 	});
 
 	it("daemon（≈attached）が無ければ detached", () => {
@@ -216,5 +244,6 @@ describe("TERMINAL_STATUS_ICON（D-66・T-76：行の印もタブと同じアイ
 		expect(TERMINAL_STATUS_ICON.working).toBe("loader-circle");
 		expect(TERMINAL_STATUS_ICON.detached).toBe("square-dashed");
 		expect(TERMINAL_STATUS_ICON.asking).toBe("message-circle-question");
+		expect(TERMINAL_STATUS_ICON.compacted).toBe("archive-restore");
 	});
 });

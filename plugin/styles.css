@@ -1157,6 +1157,12 @@
 	display: inline-block;
 }
 
+/* compact 直後・まだ次の指示を送っていない（T-77 追補）。ctx がリセットされていて
+   「未読の入力待ち」（waiting）と紛れるので、落ち着いた青緑・動き無しで区別する。 */
+.agent-sessions-status-compacted {
+	color: var(--color-cyan, #2a9d8f);
+}
+
 .agent-sessions-status-editing {
 	color: var(--color-blue, dodgerblue);
 }

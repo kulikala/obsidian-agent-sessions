@@ -10,6 +10,7 @@ export type TerminalStatus =
 	| "running-shell"
 	| "asking"
 	| "waiting"
+	| "compacted"
 	| "editing"
 	| "idle"
 	| "detached"
@@ -35,11 +36,17 @@ export interface TerminalStatusInput {
 	registryStatus: "busy" | "shell" | "waiting" | "idle" | null | undefined;
 	/** `busy→idle` の後、まだそのタブを前面にしていない（claude 自身の `waiting` とは別。上参照）。 */
 	waiting: boolean;
+	/**
+	 * compact（手動 `/compact`・自動の文脈圧縮とも）の直後で、まだ次の指示を送っていない
+	 * （`CompactedTracker`。T-77 追補）。ctx がリセットされていて「未読の入力待ち」
+	 * （`waiting`）と紛れるので別の状態にする。
+	 */
+	compacted: boolean;
 	/** デーモンに attach 済み。 */
 	attached: boolean;
 }
 
-/** 優先順：error＞exited＞asking＞editing＞connecting＞running-shell＞working＞waiting＞detached＞idle。 */
+/** 優先順：error＞exited＞asking＞editing＞connecting＞running-shell＞working＞waiting＞compacted＞detached＞idle。 */
 export function terminalStatus(input: TerminalStatusInput): TerminalStatus {
 	if (input.error) {
 		return "error";
@@ -65,6 +72,9 @@ export function terminalStatus(input: TerminalStatusInput): TerminalStatus {
 	if (input.waiting) {
 		return "waiting";
 	}
+	if (input.compacted) {
+		return "compacted";
+	}
 	if (!input.attached) {
 		return "detached";
 	}
@@ -78,6 +88,7 @@ export const TERMINAL_STATUS_ICON: Record<TerminalStatus, string> = {
 	"running-shell": "terminal",
 	asking: "message-circle-question",
 	waiting: "bell-dot",
+	compacted: "archive-restore",
 	editing: "pencil-line",
 	idle: "square-terminal",
 	detached: "square-dashed",
@@ -96,6 +107,7 @@ export const ALL_TERMINAL_STATUSES: readonly TerminalStatus[] = [
 	"running-shell",
 	"asking",
 	"waiting",
+	"compacted",
 	"editing",
 	"idle",
 	"detached",
@@ -110,6 +122,7 @@ export const STATUS_LABEL_KEY: Record<TerminalStatus, MessageKey> = {
 	"running-shell": "status.runningShell",
 	asking: "status.asking",
 	waiting: "status.waiting",
+	compacted: "status.compacted",
 	editing: "status.editing",
 	idle: "status.idle",
 	detached: "status.detached",
@@ -127,6 +140,7 @@ const PRIORITY_ORDER: readonly TerminalStatus[] = [
 	"running-shell",
 	"working",
 	"waiting",
+	"compacted",
 	"detached",
 	"idle",
 ];
@@ -138,8 +152,9 @@ export function higherPriorityStatus(a: TerminalStatus, b: TerminalStatus): Term
 
 /**
  * タブが無い行の状態（分かる範囲。D-66 追補）：`row.status`（走査結果に合成済みの registry
- * 状態）・`row.exited`・`row.daemon` だけで決まる分——`working`・`running-shell`・`asking`・
- * `exited`・`idle`・`detached`（＝起動中でない）のどれかにしかならない。
+ * 状態）・`row.exited`・`row.daemon`・`row.compacted` だけで決まる分——`working`・
+ * `running-shell`・`asking`・`exited`・`compacted`・`idle`・`detached`（＝起動中でない）の
+ * どれかにしかならない。
  */
 export function rowTerminalStatus(row: Row): TerminalStatus {
 	return terminalStatus({
@@ -149,6 +164,7 @@ export function rowTerminalStatus(row: Row): TerminalStatus {
 		connecting: false,
 		registryStatus: row.status as "busy" | "shell" | "waiting" | "idle" | null | undefined,
 		waiting: false,
+		compacted: row.compacted,
 		attached: row.daemon,
 	});
 }

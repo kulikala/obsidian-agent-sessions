@@ -45,7 +45,8 @@ class TestReplaceOldHook(SetupTestBase):
             },
         })
         changes, new_settings = setup.run(self.path)
-        self.assertEqual(len(changes), 2)
+        # Stop・SessionEnd の移行（2）＋ SessionStart・UserPromptSubmit の新規追加（2、T-77 追補）。
+        self.assertEqual(len(changes), 4)
         self.assertEqual(
             new_settings['hooks']['Stop'][0]['hooks'][0]['command'],
             '"$HOME/bin/agent-sessions" hook',
@@ -53,6 +54,14 @@ class TestReplaceOldHook(SetupTestBase):
         self.assertEqual(
             new_settings['hooks']['SessionEnd'][0]['hooks'][0]['command'],
             '"$HOME/bin/agent-sessions" hook',
+        )
+        self.assertEqual(
+            new_settings['hooks']['SessionStart'],
+            [{'matcher': 'compact', 'hooks': [{'type': 'command', 'command': '"$HOME/bin/agent-sessions" hook'}]}],
+        )
+        self.assertEqual(
+            new_settings['hooks']['UserPromptSubmit'],
+            [{'matcher': '.*', 'hooks': [{'type': 'command', 'command': '"$HOME/bin/agent-sessions" hook'}]}],
         )
         self.assertEqual(
             new_settings['hooks']['PreToolUse'][0]['hooks'][0]['command'],
@@ -82,6 +91,14 @@ class TestAddWhenMissing(SetupTestBase):
         )
         self.assertEqual(
             new_settings['hooks']['SessionEnd'],
+            [{'matcher': '.*', 'hooks': [{'type': 'command', 'command': '"$HOME/bin/agent-sessions" hook'}]}],
+        )
+        self.assertEqual(
+            new_settings['hooks']['SessionStart'],
+            [{'matcher': 'compact', 'hooks': [{'type': 'command', 'command': '"$HOME/bin/agent-sessions" hook'}]}],
+        )
+        self.assertEqual(
+            new_settings['hooks']['UserPromptSubmit'],
             [{'matcher': '.*', 'hooks': [{'type': 'command', 'command': '"$HOME/bin/agent-sessions" hook'}]}],
         )
         self.assertTrue(any('追加' in c for c in changes))
@@ -139,6 +156,41 @@ class TestIdempotent(SetupTestBase):
         changes, _ = setup.run(self.path)
         self.assertEqual(changes, [])
         self.assertEqual(len(self._backups()), 1)  # 2 回目は書き込まないので backup も増えない
+
+
+class TestCompactedHooks(SetupTestBase):
+    """T-77 追補：compacted の印に要る SessionStart（matcher=compact）・UserPromptSubmit。"""
+
+    def test_session_start_gets_compact_matcher_not_catch_all(self):
+        self._write({})
+        _, new_settings = setup.run(self.path)
+        self.assertEqual(new_settings['hooks']['SessionStart'][0]['matcher'], 'compact')
+
+    def test_second_run_with_compact_matcher_already_present_reports_no_changes(self):
+        self._write({})
+        setup.run(self.path)
+        changes, _ = setup.run(self.path)
+        self.assertEqual(changes, [])
+
+    def test_session_start_with_different_matcher_gets_a_second_entry(self):
+        # 既存の SessionStart が別のマッチャー（例えば別ツールが足した startup 用）を
+        # 持っていても、compact 用のエントリを別に足す（既存を壊さない）。
+        self._write({
+            'hooks': {
+                'SessionStart': [
+                    {'matcher': 'startup', 'hooks': [{'type': 'command', 'command': 'echo hi'}]},
+                ],
+            },
+        })
+        changes, new_settings = setup.run(self.path)
+        self.assertTrue(any('SessionStart' in c for c in changes))
+        matchers = [e['matcher'] for e in new_settings['hooks']['SessionStart']]
+        self.assertEqual(sorted(matchers), ['compact', 'startup'])
+
+    def test_user_prompt_submit_gets_catch_all_matcher(self):
+        self._write({})
+        _, new_settings = setup.run(self.path)
+        self.assertEqual(new_settings['hooks']['UserPromptSubmit'][0]['matcher'], '.*')
 
 
 if __name__ == '__main__':

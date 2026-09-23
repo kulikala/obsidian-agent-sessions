@@ -11,14 +11,23 @@ DEFAULT_SETTINGS_PATH = os.path.expanduser('~/.claude/settings.json')
 _OLD_HOOK_MARKERS = ('bin/cs" hook', 'bin/cs hook')
 _NEW_HOOK_COMMAND = '"$HOME/bin/agent-sessions" hook'
 _NEW_STATUS_LINE = {'type': 'command', 'command': '"$HOME/bin/agent-sessions" status'}
-_HOOK_EVENTS = ('Stop', 'SessionEnd')
+# (event, matcher)。`SessionStart` は `compact`（`/compact`・自動の文脈圧縮の両方が
+# この値。T-77 追補：compacted の印の「入る」）に絞る——`Stop`・`SessionEnd` は元々
+# 個別のマッチャーを持たない催しなので `.*`。`UserPromptSubmit`（同追補：印の「出る」）も
+# マッチャー非対応なので `.*`。
+_HOOK_EVENTS = (
+    ('Stop', '.*'),
+    ('SessionEnd', '.*'),
+    ('SessionStart', 'compact'),
+    ('UserPromptSubmit', '.*'),
+)
 
 
 def _is_old_hook_command(command) -> bool:
     return isinstance(command, str) and any(m in command for m in _OLD_HOOK_MARKERS)
 
 
-def _update_hook_event(hooks_obj: dict, event: str) -> List[str]:
+def _update_hook_event(hooks_obj: dict, event: str, matcher: str) -> List[str]:
     changes: List[str] = []
     entries = hooks_obj.get(event)
     if not isinstance(entries, list):
@@ -36,11 +45,11 @@ def _update_hook_event(hooks_obj: dict, event: str) -> List[str]:
                 changes.append('hooks.%s: %r → %r' % (event, command, _NEW_HOOK_COMMAND))
                 h['command'] = _NEW_HOOK_COMMAND
                 already_current = True
-            elif command == _NEW_HOOK_COMMAND:
+            elif command == _NEW_HOOK_COMMAND and entry.get('matcher') == matcher:
                 already_current = True
     if not already_current:
-        entries.append({'matcher': '.*', 'hooks': [{'type': 'command', 'command': _NEW_HOOK_COMMAND}]})
-        changes.append('hooks.%s: 追加 %s' % (event, _NEW_HOOK_COMMAND))
+        entries.append({'matcher': matcher, 'hooks': [{'type': 'command', 'command': _NEW_HOOK_COMMAND}]})
+        changes.append('hooks.%s: 追加 matcher=%s %s' % (event, matcher, _NEW_HOOK_COMMAND))
     return changes
 
 
@@ -68,8 +77,8 @@ def compute_changes(settings: dict) -> List[str]:
         hooks_obj = {}
         settings['hooks'] = hooks_obj
     changes: List[str] = []
-    for event in _HOOK_EVENTS:
-        changes.extend(_update_hook_event(hooks_obj, event))
+    for event, matcher in _HOOK_EVENTS:
+        changes.extend(_update_hook_event(hooks_obj, event, matcher))
     line_change = _update_status_line(settings)
     if line_change:
         changes.append(line_change)

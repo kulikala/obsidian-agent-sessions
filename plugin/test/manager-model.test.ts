@@ -33,6 +33,7 @@ function row(overrides: Partial<Row> & Pick<Row, "id">): Row {
 		transcript: null,
 		status: null,
 		waitingFor: null,
+		compacted: false,
 		pid: null,
 		rc: false,
 		daemon: false,

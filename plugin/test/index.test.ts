@@ -48,6 +48,7 @@ describe("SessionIndex", () => {
 			eventsLogPath: join(dir, "events.log"),
 			sessionsDir: join(dir, "sessions"),
 			statusDir: join(dir, "status"),
+			compactedDir: join(dir, "compacted"),
 		};
 	});
 
@@ -294,6 +295,53 @@ describe("SessionIndex", () => {
 
 			expect(await index.waitForName("a", "新しい名前", 20, 5)).toBe(false);
 			expect(index.sessions.get("a")?.name).toBe("旧名");
+		});
+	});
+
+	describe("compacted（T-77 追補：compact 直後・未入力の印を row に合成する）", () => {
+		it("compactedDir に <id>.json があれば row.compacted が true", async () => {
+			mkdirSync(deps.compactedDir, { recursive: true });
+			writeFileSync(join(deps.compactedDir, "a.json"), JSON.stringify({ compactedAt: 1 }), "utf8");
+			scanImpl = async () => ({
+				sessions: [scanSession({ id: "a" }), scanSession({ id: "b" })],
+				store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+			});
+			const index = new SessionIndex(deps);
+			await index.scan();
+
+			expect(index.sessions.get("a")?.compacted).toBe(true);
+			expect(index.sessions.get("b")?.compacted).toBe(false);
+		});
+
+		it("印が無ければ compacted は false（デフォルト）", async () => {
+			scanImpl = async () => ({
+				sessions: [scanSession({ id: "a" })],
+				store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+			});
+			const index = new SessionIndex(deps);
+			await index.scan();
+
+			expect(index.sessions.get("a")?.compacted).toBe(false);
+		});
+
+		it("compactedTracker の change で change が発火し、印が消えれば row.compacted も false に戻る", async () => {
+			mkdirSync(deps.compactedDir, { recursive: true });
+			writeFileSync(join(deps.compactedDir, "a.json"), JSON.stringify({ compactedAt: 1 }), "utf8");
+			scanImpl = async () => ({
+				sessions: [scanSession({ id: "a" })],
+				store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+			});
+			const index = new SessionIndex(deps);
+			await index.scan();
+			expect(index.sessions.get("a")?.compacted).toBe(true);
+
+			let changes = 0;
+			index.onChange(() => changes++);
+			rmSync(join(deps.compactedDir, "a.json"));
+			index.compactedTracker.refresh();
+
+			expect(changes).toBe(1);
+			expect(index.sessions.get("a")?.compacted).toBe(false);
 		});
 	});
 });

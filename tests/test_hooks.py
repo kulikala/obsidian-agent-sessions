@@ -63,6 +63,89 @@ class TestRecordHook(unittest.TestCase):
         self.assertFalse(os.path.exists(self.events_log))
 
 
+class TestCompactedMark(unittest.TestCase):
+    # compact 直後・まだ次の指示を送っていないセッションの印（T-77 追補）。
+    # `record_hook` から `_update_compacted` を経由して COMPACTED_DIR に反映される。
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.events_log = os.path.join(self.tmpdir, 'events.log')
+        self.compacted_dir = os.path.join(self.tmpdir, 'compacted')
+        self.patchers = [
+            mock.patch.object(config, 'EVENTS_LOG', self.events_log),
+            mock.patch.object(config, 'COMPACTED_DIR', self.compacted_dir),
+        ]
+        for p in self.patchers:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _marker_path(self, session_id):
+        return os.path.join(self.compacted_dir, '%s.json' % session_id)
+
+    def test_session_start_with_source_compact_marks_the_session(self):
+        raw = json.dumps({
+            'session_id': 'a', 'hook_event_name': 'SessionStart', 'source': 'compact',
+        }).encode('utf-8')
+        hooks.record_hook(raw)
+        self.assertTrue(os.path.exists(self._marker_path('a')))
+        with open(self._marker_path('a'), encoding='utf-8') as f:
+            marker = json.load(f)
+        self.assertIn('compactedAt', marker)
+
+    def test_session_start_with_other_source_does_not_mark(self):
+        for source in ('startup', 'resume', 'clear', 'fork'):
+            raw = json.dumps({
+                'session_id': 'a', 'hook_event_name': 'SessionStart', 'source': source,
+            }).encode('utf-8')
+            hooks.record_hook(raw)
+            self.assertFalse(os.path.exists(self._marker_path('a')), 'source=%s' % source)
+
+    def test_user_prompt_submit_clears_the_mark(self):
+        os.makedirs(self.compacted_dir)
+        with open(self._marker_path('a'), 'w', encoding='utf-8') as f:
+            json.dump({'compactedAt': 1.0}, f)
+        raw = json.dumps({'session_id': 'a', 'hook_event_name': 'UserPromptSubmit'}).encode('utf-8')
+        hooks.record_hook(raw)
+        self.assertFalse(os.path.exists(self._marker_path('a')))
+
+    def test_session_end_clears_the_mark(self):
+        os.makedirs(self.compacted_dir)
+        with open(self._marker_path('a'), 'w', encoding='utf-8') as f:
+            json.dump({'compactedAt': 1.0}, f)
+        raw = json.dumps({'session_id': 'a', 'hook_event_name': 'SessionEnd'}).encode('utf-8')
+        hooks.record_hook(raw)
+        self.assertFalse(os.path.exists(self._marker_path('a')))
+
+    def test_clearing_when_no_mark_exists_does_not_raise(self):
+        raw = json.dumps({'session_id': 'a', 'hook_event_name': 'UserPromptSubmit'}).encode('utf-8')
+        hooks.record_hook(raw)  # 例外を投げなければ OK
+
+    def test_unrelated_events_leave_existing_mark_untouched(self):
+        os.makedirs(self.compacted_dir)
+        with open(self._marker_path('a'), 'w', encoding='utf-8') as f:
+            json.dump({'compactedAt': 1.0}, f)
+        raw = json.dumps({'session_id': 'a', 'hook_event_name': 'Stop'}).encode('utf-8')
+        hooks.record_hook(raw)
+        self.assertTrue(os.path.exists(self._marker_path('a')))
+
+    def test_marks_are_per_session(self):
+        raw_a = json.dumps({
+            'session_id': 'a', 'hook_event_name': 'SessionStart', 'source': 'compact',
+        }).encode('utf-8')
+        raw_b = json.dumps({
+            'session_id': 'b', 'hook_event_name': 'SessionStart', 'source': 'compact',
+        }).encode('utf-8')
+        hooks.record_hook(raw_a)
+        hooks.record_hook(raw_b)
+        clear_a = json.dumps({'session_id': 'a', 'hook_event_name': 'UserPromptSubmit'}).encode('utf-8')
+        hooks.record_hook(clear_a)
+        self.assertFalse(os.path.exists(self._marker_path('a')))
+        self.assertTrue(os.path.exists(self._marker_path('b')))
+
+
 class TestFormatStatusLine(unittest.TestCase):
     # session_id が無いときは live.live_sessions を呼ばない（rc は常に ○）ので、
     # このクラスの大半のテストは ps 等の実行環境に依存しない。

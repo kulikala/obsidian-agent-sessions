@@ -5,6 +5,7 @@
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import { assignCategoryColor, ensureCategoryColors } from "./category";
+import { CompactedTracker } from "./compacted";
 import { listCategories } from "./name";
 import { Registry } from "./registry";
 import { StatusLine } from "./statusline";
@@ -16,6 +17,8 @@ export interface Row extends ScanSession {
 	status: string | null;
 	/** `status === "waiting"`（claude 自身の「asking」）のときの理由（T-77）。それ以外は `null`。 */
 	waitingFor: string | null;
+	/** compact 直後・まだ次の指示を送っていないか（`CompactedTracker`。T-77 追補）。 */
+	compacted: boolean;
 	pid: number | null;
 	rc: boolean;
 	daemon: boolean;
@@ -32,6 +35,8 @@ export interface SessionIndexDeps {
 	eventsLogPath: string;
 	sessionsDir: string;
 	statusDir: string;
+	/** compact 直後の印の置き場（T-77 追補）。 */
+	compactedDir: string;
 }
 
 const RESCAN_INTERVAL_MS = 60000;
@@ -51,6 +56,7 @@ function rowFromScan(s: ScanSession, openTabIds: Set<string>, store: Store): Row
 		...s,
 		status: null,
 		waitingFor: null,
+		compacted: false,
 		pid: null,
 		rc: false,
 		daemon: false,
@@ -68,6 +74,8 @@ export class SessionIndex extends EventEmitter {
 	readonly sessions = new Map<string, Row>();
 	readonly registry: Registry;
 	readonly statusline: StatusLine;
+	/** compact 直後の印（T-77 追補）。 */
+	readonly compactedTracker: CompactedTracker;
 
 	private openTabIds = new Set<string>();
 	/** カテゴリ名 → パレット番号（`sessions.json` の `categoryColors` の写し。T-70）。 */
@@ -80,15 +88,21 @@ export class SessionIndex extends EventEmitter {
 	private eventsDebounce: ReturnType<typeof setTimeout> | null = null;
 	private registryUnsubscribe: () => void;
 	private registryIdleUnsubscribe: () => void;
+	private compactedUnsubscribe: () => void;
 	private liveDebounce: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(private deps: SessionIndexDeps) {
 		super();
 		this.registry = new Registry(deps.sessionsDir);
 		this.statusline = new StatusLine(deps.statusDir);
+		this.compactedTracker = new CompactedTracker(deps.compactedDir);
 		this.registryUnsubscribe = this.registry.onChange(() => {
 			this.applyRegistry();
 			this.scheduleLiveRefresh();
+			this.emit("change");
+		});
+		this.compactedUnsubscribe = this.compactedTracker.onChange(() => {
+			this.applyCompacted();
 			this.emit("change");
 		});
 		// busy→idle（/compact・/rename の送信が終わった直後を含む）で detail のキャッシュを
@@ -215,6 +229,7 @@ export class SessionIndex extends EventEmitter {
 		this.applyScanResult(result, only);
 		this.syncCategoryColors();
 		this.applyRegistry();
+		this.applyCompacted();
 		await this.refreshLive();
 		this.emit("change");
 	}
@@ -314,6 +329,7 @@ export class SessionIndex extends EventEmitter {
 	start(): () => void {
 		void this.rescan();
 		const stopRegistry = this.registry.watch();
+		const stopCompacted = this.compactedTracker.watch();
 		if (!this.eventsWatcher) {
 			try {
 				this.eventsWatcher = fs.watch(this.deps.eventsLogPath, () => this.scheduleEventsCheck());
@@ -323,6 +339,7 @@ export class SessionIndex extends EventEmitter {
 		}
 		return () => {
 			stopRegistry();
+			stopCompacted();
 			this.eventsWatcher?.close();
 			this.eventsWatcher = null;
 			if (this.eventsDebounce) {
@@ -335,6 +352,7 @@ export class SessionIndex extends EventEmitter {
 	dispose(): void {
 		this.registryUnsubscribe();
 		this.registryIdleUnsubscribe();
+		this.compactedUnsubscribe();
 		if (this.timer) {
 			clearInterval(this.timer);
 			this.timer = null;
@@ -444,6 +462,13 @@ export class SessionIndex extends EventEmitter {
 			row.waitingFor = entry?.waitingFor ?? null;
 			row.pid = entry?.pid ?? null;
 			row.rc = entry?.rc ?? false;
+		}
+	}
+
+	/** compact 直後の印を合成する（T-77 追補）。`applyRegistry` と同じ形。 */
+	private applyCompacted(): void {
+		for (const row of this.sessions.values()) {
+			row.compacted = this.compactedTracker.has(row.id);
 		}
 	}
 }

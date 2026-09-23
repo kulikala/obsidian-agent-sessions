@@ -128,6 +128,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			eventsLogPath: join(RUNTIME_DIR, "events.log"),
 			sessionsDir: join(homedir(), ".claude", "sessions"),
 			statusDir: join(RUNTIME_DIR, "status"),
+			compactedDir: join(RUNTIME_DIR, "compacted"),
 		});
 		this.app.workspace.onLayoutReady(() => {
 			this.stopIndex = this.index.start();
