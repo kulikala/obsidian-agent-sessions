@@ -140,11 +140,22 @@
 	background-color: var(--background-modifier-hover);
 }
 
+/* カテゴリのチップ（T-70。実際のカテゴリだけ——「単独」「その他」には付けない）＋ラベル。 */
 .agent-sessions-manager-category-bar-label {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	min-width: 0;
+	overflow: hidden;
+	font-size: var(--font-ui-smaller);
+}
+
+.agent-sessions-manager-category-bar-label-text {
+	flex: 1 1 auto;
+	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
-	font-size: var(--font-ui-smaller);
 }
 
 .agent-sessions-manager-category-bar-track {
@@ -262,6 +273,21 @@
 }
 
 .agent-sessions-manager-col-name {
+	overflow: hidden;
+}
+
+/* 名前列の中身：カテゴリのチップ（T-70。有れば）＋名前。チップは省略しない——名前の側が
+   `…` になる。 */
+.agent-sessions-manager-name-cell {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	min-width: 0;
+}
+
+.agent-sessions-manager-name-text {
+	flex: 1 1 auto;
+	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -492,16 +518,15 @@
 	background-color: currentColor;
 }
 
-/* カテゴリのチップ（名前の `': '` より前。色相はカテゴリ名のハッシュ。D-65）。
+/* カテゴリのチップ（名前の `': '` より前。色は `sessions.json` の `categoryColors` に固定
+   割り当てたパレット番号。T-70）。省略しない——`flex: 0 0 auto` で縮めず、`max-width` も
+   持たない。狭いときは隣の名前（`.agent-sessions-row-name`）の側が `…` になる。
    ダーク基調はそのまま（背景 40%/50%/.18・文字 45%/60%、実機でコントラスト比 6:1 以上を確認）。
    ライトは背景が白に近く同じ明度だと読めない（実機で 3.5:1 止まり）ため、文字を暗めに
    （45%/32%）落として 4.5:1 以上を確保する。 */
 .agent-sessions-row-chip {
 	flex: 0 0 auto;
-	max-width: 8em;
 	padding: 0 var(--size-4-1);
-	overflow: hidden;
-	text-overflow: ellipsis;
 	white-space: nowrap;
 	border-radius: var(--radius-s);
 	background-color: hsl(var(--as-chip-hue) 40% 50% / 0.18);
@@ -909,13 +934,75 @@
 	}
 }
 
-/* 終了画面：出力の上に重ねる帯 */
-/* ---- カテゴリ・名前のダイアログ（D-63）：組み立て後のプレビュー 1 行 ---- */
+/* ---- カテゴリ・名前のダイアログ（T-70）：1 つの入力枠に「チップ＋<input>」を繋げる ---- */
 
-.agent-sessions-name-preview {
-	margin: 0 0 var(--size-4-3);
-	color: var(--text-muted);
-	font-size: var(--font-ui-small);
+.agent-sessions-name-input {
+	position: relative;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--size-4-1);
+	width: 100%;
+	padding: var(--size-4-1) var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-form-field);
+}
+
+.agent-sessions-name-input:focus-within {
+	border-color: var(--background-modifier-border-focus, var(--interactive-accent));
+}
+
+.agent-sessions-name-input .agent-sessions-row-chip {
+	cursor: pointer;
+}
+
+.agent-sessions-name-input-field {
+	flex: 1 1 auto;
+	min-width: 4em;
+	height: 1.6em;
+	border: none !important;
+	outline: none !important;
+	background: transparent !important;
+	box-shadow: none !important;
+	padding: 0 !important;
+	margin: 0;
+}
+
+/* カテゴリの入力候補（既存カテゴリの候補、チップ付き。カテゴリ確定前だけ出す）。 */
+.agent-sessions-name-suggest {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: calc(100% + var(--size-2-2));
+	z-index: 50;
+	max-height: 14em;
+	overflow-y: auto;
+	padding: var(--size-2-1);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background-color: var(--background-primary);
+	box-shadow: var(--shadow-s);
+}
+
+.agent-sessions-name-suggest-item {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	padding: var(--size-2-1) var(--size-4-1);
+	border-radius: var(--radius-s);
+	cursor: pointer;
+}
+
+.agent-sessions-name-suggest-item.is-active,
+.agent-sessions-name-suggest-item:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.agent-sessions-name-suggest-item-label {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .agent-sessions-exit {

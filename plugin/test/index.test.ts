@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SessionIndex, type SessionIndexDeps } from "../src/index";
-import { updateStore } from "../src/store";
+import { loadStore, updateStore } from "../src/store";
 import type { Detail, LiveResult, ScanResult, ScanSession } from "../src/types";
 
 function scanSession(overrides: Partial<ScanSession> & Pick<ScanSession, "id">): ScanSession {
@@ -68,6 +68,24 @@ describe("SessionIndex", () => {
 		expect(row?.hasTab).toBe(false);
 		expect(row?.archived).toBe(false);
 		expect(row?.daemon).toBe(false);
+	});
+
+	it("scan で見つかったカテゴリに色番号を割り当て sessions.json へ書き戻す（T-70）", async () => {
+		scanImpl = async () => ({
+			sessions: [scanSession({ id: "a", name: "RIM: 会議" }), scanSession({ id: "b", name: "ZERO: 提案" })],
+			store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+		});
+		const index = new SessionIndex(deps);
+		await index.scan();
+
+		const rimColor = index.categoryColorIndex("RIM");
+		const zeroColor = index.categoryColorIndex("ZERO");
+		expect(rimColor).not.toBe(zeroColor);
+		expect(loadStore(deps.storePath).categoryColors).toEqual({ RIM: rimColor, ZERO: zeroColor });
+
+		// もう一度走査しても割当は変わらない（一度決めたら不変）。
+		await index.scan();
+		expect(index.categoryColorIndex("RIM")).toBe(rimColor);
 	});
 
 	it("scan が失敗したら前回の結果を保ち onError で通知する", async () => {

@@ -1,7 +1,7 @@
 // 行の描画・選択・行メニュー（サイドパネルとマネージャーで共用。§6.1・§6.2）。詳細欄は views/detail.ts。
 
-import { Menu, setTooltip, type App } from "obsidian";
-import { categoryHueDeg } from "../category";
+import { Menu, setTooltip } from "obsidian";
+import { renderCategoryChip } from "../chip";
 import type { Row } from "../index";
 import { t } from "../i18n";
 import type AgentSessionsPlugin from "../main";
@@ -97,6 +97,8 @@ export function rowLabel(row: Row): string {
 	return displayName(row);
 }
 
+export { renderCategoryChip };
+
 export function formatTime(epochSeconds: number): string {
 	if (!epochSeconds) {
 		return "";
@@ -172,8 +174,7 @@ export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptio
 	rowStatusMark(el, opts.plugin, row);
 	const category = categoryOf(row);
 	if (category) {
-		const chip = el.createSpan({ cls: "agent-sessions-row-chip", text: category });
-		chip.style.setProperty("--as-chip-hue", String(categoryHueDeg(category)));
+		renderCategoryChip(el, category, opts.plugin.index.categoryColorIndex(category));
 	}
 	el.createSpan({ cls: "agent-sessions-row-name", text: rowLabel(row) });
 	const time = formatTime(row.last_activity);
@@ -241,7 +242,6 @@ export function renderGroupHeader(
  * `onShowDetail` だけビューごと（詳細欄の描画先が違う）。
  */
 export function createRowActions(
-	app: App,
 	plugin: AgentSessionsPlugin,
 	onShowDetail: (id: string) => void,
 	onHideDetail?: () => void
@@ -252,7 +252,7 @@ export function createRowActions(
 			void plugin.openSession(id, { agent: row?.agent ?? "claude", cwd: row?.cwd ?? "" });
 		},
 		rename: (id, currentName) => {
-			new RenameSessionModal(app, plugin.index.categories(), currentName, (name) => void plugin.renameSession(id, name)).open();
+			new RenameSessionModal(plugin, currentName, (name) => void plugin.renameSession(id, name)).open();
 		},
 		compact: (id) => void plugin.compactSession(id),
 		toggleArchive: (row) => {

@@ -17,6 +17,10 @@ class Store:
     archived: List[dict] = field(default_factory=list)
     pendingRenames: Dict[str, str] = field(default_factory=dict)
     sessions: Dict[str, dict] = field(default_factory=dict)
+    # カテゴリ名 → パレット番号（0〜11）。一度決めたら変えない（プラグイン側
+    # `category.ts` の `assignCategoryColor`。T-70）。ここでは素通りさせるだけで、
+    # 割当のロジックは持たない。
+    categoryColors: Dict[str, int] = field(default_factory=dict)
     migratedFrom: Optional[dict] = None
 
 
@@ -27,6 +31,7 @@ def _to_dict(store: Store) -> dict:
         'archived': store.archived,
         'pendingRenames': store.pendingRenames,
         'sessions': store.sessions,
+        'categoryColors': store.categoryColors,
     }
     if store.migratedFrom is not None:
         out['migratedFrom'] = store.migratedFrom
@@ -40,6 +45,7 @@ def _from_dict(data: dict) -> Store:
         archived=list(data.get('archived', [])),
         pendingRenames=dict(data.get('pendingRenames', {})),
         sessions=dict(data.get('sessions', {})),
+        categoryColors=dict(data.get('categoryColors', {})),
         migratedFrom=data.get('migratedFrom'),
     )
 

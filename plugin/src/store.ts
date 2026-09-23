@@ -19,11 +19,14 @@ export interface Store {
 	/** 旧「未適用の名前変更」の控え。読んでそのまま書き戻すだけで、プラグインは使わない（D-42）。 */
 	pendingRenames: Record<string, string>;
 	sessions: Record<string, StoreSessionEntry>;
+	/** カテゴリ名 → パレット番号（0〜11）。一度決めたら変えない（`category.ts` の
+	 * `assignCategoryColor`。T-70）。サイド・マネージャーで同じカテゴリを同じ色にするための控え。 */
+	categoryColors: Record<string, number>;
 	migratedFrom?: MigratedFrom;
 }
 
 export function emptyStore(): Store {
-	return { version: 1, folded: [], archived: [], pendingRenames: {}, sessions: {} };
+	return { version: 1, folded: [], archived: [], pendingRenames: {}, sessions: {}, categoryColors: {} };
 }
 
 /** ロックが `timeoutMs`（既定 2 秒）で取れなかったときの例外。 */
@@ -40,6 +43,7 @@ function fromRecord(data: Record<string, unknown>): Store {
 		archived: Array.isArray(data.archived) ? (data.archived as ArchivedSession[]) : [],
 		pendingRenames: isRecord(data.pendingRenames) ? (data.pendingRenames as Record<string, string>) : {},
 		sessions: isRecord(data.sessions) ? (data.sessions as Record<string, StoreSessionEntry>) : {},
+		categoryColors: isRecord(data.categoryColors) ? (data.categoryColors as Record<string, number>) : {},
 	};
 	if (isRecord(data.migratedFrom)) {
 		store.migratedFrom = data.migratedFrom as unknown as MigratedFrom;
@@ -54,6 +58,7 @@ function toRecord(store: Store): Record<string, unknown> {
 		archived: store.archived,
 		pendingRenames: store.pendingRenames,
 		sessions: store.sessions,
+		categoryColors: store.categoryColors,
 	};
 	if (store.migratedFrom) {
 		out.migratedFrom = store.migratedFrom;

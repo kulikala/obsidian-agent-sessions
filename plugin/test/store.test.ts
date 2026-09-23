@@ -54,11 +54,21 @@ describe("loadStore / updateStore 往復", () => {
 			archived: [{ id: "a", name: "x", agent: "claude" }],
 			pendingRenames: { a: "new name" },
 			sessions: { a: { agent: "claude", cwd: "/v" } },
+			categoryColors: {},
 		});
 	});
 
 	it("無いファイルは空の Store", () => {
 		expect(loadStore(join(dir, "missing.json"))).toEqual(emptyStore());
+	});
+
+	it("categoryColors を落とさず書いたものをそのまま読める（T-70）", () => {
+		updateStore(storePath, (store) => {
+			store.categoryColors.RIM = 3;
+			store.categoryColors["スキル開発"] = 0;
+		});
+
+		expect(loadStore(storePath).categoryColors).toEqual({ RIM: 3, スキル開発: 0 });
 	});
 
 	it("親ディレクトリが無い状態から update できる（.agents/sessions/ がまだ無い vault）", () => {

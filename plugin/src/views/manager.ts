@@ -19,6 +19,7 @@ import {
 	categoryKeyOf,
 	categoryTotals,
 	flattenTree,
+	isRealCategoryKey,
 	moveSelection,
 	sessionCost,
 	sortRows,
@@ -28,7 +29,7 @@ import {
 	type ManagerRow,
 	type SortKey,
 } from "./manager-model";
-import { createRowActions, formatTime, rowLabel, rowStatusMark, showRowMenu, type RowActions } from "./rows";
+import { categoryOf, createRowActions, formatTime, renderCategoryChip, rowLabel, rowStatusMark, showRowMenu, type RowActions } from "./rows";
 
 const STATS_FETCH_INTERVAL_MS = 60000;
 const STATS_TICK_INTERVAL_MS = 1000;
@@ -320,7 +321,11 @@ export class ManagerView extends ItemView {
 
 	private renderCategoryBarItem(container: HTMLElement, entry: CategoryTotal, maxCost: number, windowCost: number): void {
 		const item = container.createDiv({ cls: "agent-sessions-manager-category-bar-item" });
-		item.createDiv({ cls: "agent-sessions-manager-category-bar-label", text: entry.label });
+		const labelWrap = item.createDiv({ cls: "agent-sessions-manager-category-bar-label" });
+		if (isRealCategoryKey(entry.key)) {
+			renderCategoryChip(labelWrap, entry.key, this.plugin.index.categoryColorIndex(entry.key));
+		}
+		labelWrap.createSpan({ cls: "agent-sessions-manager-category-bar-label-text", text: entry.label });
 		const track = item.createDiv({ cls: "agent-sessions-manager-category-bar-track" });
 		const barPct = maxCost > 0 ? (entry.cost / maxCost) * 100 : 0;
 		track.createDiv({ cls: "agent-sessions-manager-category-bar-fill" }).style.width = `${barPct}%`;
@@ -397,7 +402,7 @@ export class ManagerView extends ItemView {
 	}
 
 	private openNewSessionModal(): void {
-		new NewSessionModal(this.app, this.plugin.index.categories(), (name) => this.plugin.newSession(name || undefined)).open();
+		new NewSessionModal(this.plugin, (name) => this.plugin.newSession(name || undefined)).open();
 	}
 
 	private showMoreMenu(evt: MouseEvent): void {
@@ -426,7 +431,7 @@ export class ManagerView extends ItemView {
 		const tree = buildManagerTree(sessionRows, store);
 		this.rows = sortRows(flattenTree(tree, this.showArchived), this.sortKey, this.statsResult);
 		this.cursor = moveSelection(this.rows, this.cursor, 0);
-		this.actions = createRowActions(this.app, this.plugin, (id) => this.selectById(id));
+		this.actions = createRowActions(this.plugin, (id) => this.selectById(id));
 		// グループ見出し行の 5h／7d コスト合計（D-64）：表に出ている行（絞込後）だけを数える
 		// ——見出しの `count`（`flattenTree` が渡す `group.rows.length`）と揃える。
 		this.categoryTotalsByWindow = {
@@ -448,6 +453,9 @@ export class ManagerView extends ItemView {
 			const headTd = tr.createEl("td", { cls: "agent-sessions-manager-col-name", attr: { colspan: "3" } });
 			const head = headTd.createDiv({ cls: "agent-sessions-manager-group-head" });
 			head.createSpan({ cls: "agent-sessions-manager-caret", text: mrow.folded ? "▸" : "▾" });
+			if (isRealCategoryKey(mrow.key)) {
+				renderCategoryChip(head, mrow.key, this.plugin.index.categoryColorIndex(mrow.key));
+			}
 			head.createSpan({ cls: "agent-sessions-manager-group-label", text: mrow.label });
 			head.createSpan({ cls: "agent-sessions-manager-group-count", text: String(mrow.count) });
 			this.renderGroupCostCell(tr, "agent-sessions-manager-col-5h", "5h", mrow.key);
@@ -491,7 +499,13 @@ export class ManagerView extends ItemView {
 
 		const markTd = tr.createEl("td", { cls: "agent-sessions-manager-col-mark" });
 		rowStatusMark(markTd, this.plugin, row);
-		tr.createEl("td", { cls: "agent-sessions-manager-col-name", text: rowLabel(row) });
+		const nameTd = tr.createEl("td", { cls: "agent-sessions-manager-col-name" });
+		const nameWrap = nameTd.createDiv({ cls: "agent-sessions-manager-name-cell" });
+		const category = categoryOf(row);
+		if (category) {
+			renderCategoryChip(nameWrap, category, this.plugin.index.categoryColorIndex(category));
+		}
+		nameWrap.createSpan({ cls: "agent-sessions-manager-name-text", text: rowLabel(row) });
 		tr.createEl("td", { cls: "agent-sessions-manager-col-time", text: formatTime(row.last_activity) });
 		this.renderCostCell(tr, "agent-sessions-manager-col-5h", this.statsResult?.windows.five_hour, row.id);
 		this.renderCostCell(tr, "agent-sessions-manager-col-7d", this.statsResult?.windows.seven_day, row.id);

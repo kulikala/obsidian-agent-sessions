@@ -154,6 +154,12 @@ export function categoryKeyOf(row: Row): string {
 	return OTHER_GROUP;
 }
 
+/** `key` が実際のカテゴリ名か（「単独」「その他」「アーカイブ」の見出しではないか）。
+ * チップ（T-70）を出すかどうかの判定に使う。 */
+export function isRealCategoryKey(key: string): boolean {
+	return key !== SINGLE_CATEGORY && key !== OTHER_GROUP && key !== ARCHIVED_GROUP;
+}
+
 export interface CategoryTotal {
 	/** グループ名、または `OTHER_GROUP`／`SINGLE_CATEGORY`（表のグループ行の `key` と同じ値で
 	 * 引ければ揃う。「単独」はどの見出しとも一致しない——表に見出しが無いため）。 */

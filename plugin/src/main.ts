@@ -197,7 +197,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			id: "new-session",
 			name: t("action.newSession"),
 			callback: () => {
-				new NewSessionModal(this.app, this.index.categories(), (name) => this.newSession(name || undefined)).open();
+				new NewSessionModal(this, (name) => this.newSession(name || undefined)).open();
 			},
 		});
 

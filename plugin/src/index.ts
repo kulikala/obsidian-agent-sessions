@@ -4,10 +4,11 @@
 
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
+import { assignCategoryColor, ensureCategoryColors } from "./category";
 import { listCategories } from "./name";
 import { Registry } from "./registry";
 import { StatusLine } from "./statusline";
-import { loadStore, type Store } from "./store";
+import { loadStore, updateStore, type Store } from "./store";
 import type { Detail, LiveResult, ScanResult, ScanSession } from "./types";
 
 /** 走査結果（Python）に、起動中の台帳とタブの状態を合成した 1 行。 */
@@ -59,6 +60,8 @@ export class SessionIndex extends EventEmitter {
 	readonly statusline: StatusLine;
 
 	private openTabIds = new Set<string>();
+	/** カテゴリ名 → パレット番号（`sessions.json` の `categoryColors` の写し。T-70）。 */
+	private categoryColors: Record<string, number> = {};
 	private detailCache = new Map<string, Detail>();
 	private timer: ReturnType<typeof setInterval> | null = null;
 	private visibleCount = 0;
@@ -119,7 +122,20 @@ export class SessionIndex extends EventEmitter {
 	}
 
 	/**
-	 * `sessions.json` を読み直し、`archived` だけを再適用する。
+	 * `category` の表示色（パレット番号）。`sessions.json` に確定済みならそれ（不変）。
+	 * まだ確定していなければ（次の走査で `syncCategoryColors` が確定するまでの間の）見込みの
+	 * 番号を、書き戻さずその場で返す——ダイアログでカテゴリを入力中のプレビューに使う（T-70）。
+	 */
+	categoryColorIndex(category: string): number {
+		const existing = this.categoryColors[category];
+		if (existing !== undefined) {
+			return existing;
+		}
+		return assignCategoryColor({ ...this.categoryColors }, category);
+	}
+
+	/**
+	 * `sessions.json` を読み直し、`archived`・`categoryColors` を再適用する。
 	 * 走査をやり直さなくても、アーカイブ・折畳をすぐ画面に反映できる。
 	 */
 	refreshStore(): void {
@@ -127,7 +143,29 @@ export class SessionIndex extends EventEmitter {
 		for (const row of this.sessions.values()) {
 			row.archived = store.archived.some((a) => a.id === row.id);
 		}
+		this.categoryColors = { ...store.categoryColors };
 		this.emit("change");
+	}
+
+	/**
+	 * 今のセッション一覧に出てくるカテゴリのうち、まだ `sessions.json` の `categoryColors`
+	 * に無いものへ番号を割り当てて書き戻す（`category.ts` の `ensureCategoryColors`）。
+	 * 割り当てが無ければ何もしない（ロックを取らない）。ロックが取れなくても、UI は
+	 * `categoryColorIndex` の見込み割当でしのぎ、次の走査で改めて確定を試みる。
+	 */
+	private syncCategoryColors(): void {
+		const categories = this.categories();
+		if (categories.every((c) => this.categoryColors[c] !== undefined)) {
+			return;
+		}
+		try {
+			const updated = updateStore(this.deps.storePath, (store) => {
+				ensureCategoryColors(store.categoryColors, categories);
+			});
+			this.categoryColors = { ...updated.categoryColors };
+		} catch {
+			// 次の走査で改めて確定を試みる。
+		}
 	}
 
 	async getDetail(id: string): Promise<Detail> {
@@ -165,6 +203,7 @@ export class SessionIndex extends EventEmitter {
 			return;
 		}
 		this.applyScanResult(result, only);
+		this.syncCategoryColors();
 		this.applyRegistry();
 		await this.refreshLive();
 		this.emit("change");
@@ -309,6 +348,7 @@ export class SessionIndex extends EventEmitter {
 
 	private applyScanResult(result: ScanResult, only: string[] | undefined): void {
 		const store = loadStore(this.deps.storePath);
+		this.categoryColors = { ...store.categoryColors };
 		if (only && only.length > 0) {
 			for (const s of result.sessions) {
 				this.sessions.set(s.id, this.mergeRow(rowFromScan(s, this.openTabIds, store), this.sessions.get(s.id)));

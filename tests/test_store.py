@@ -30,9 +30,20 @@ class TestStoreRoundTrip(unittest.TestCase):
             archived=[{'id': 'a', 'name': 'x', 'agent': 'claude'}],
             pendingRenames={'a': 'new name'},
             sessions={'a': {'agent': 'claude', 'cwd': '/v'}},
+            categoryColors={'RIM': 3},
         )
         store.save(st, path=self.path)
         self.assertEqual(store.load(path=self.path), st)
+
+    def test_category_colors_round_trip(self):
+        """T-70: categoryColors を落とさない（TS 側が書いた割当を Python がそのまま通す）。"""
+        st = store.Store(categoryColors={'RIM': 3, 'スキル開発': 0})
+        store.save(st, path=self.path)
+        self.assertEqual(store.load(path=self.path).categoryColors, {'RIM': 3, 'スキル開発': 0})
+
+    def test_category_colors_defaults_to_empty_dict(self):
+        self.assertEqual(store.Store().categoryColors, {})
+        self.assertEqual(store.load(path=self.path).categoryColors, {})
 
     def test_missing_file_is_empty(self):
         missing = os.path.join(self.tmpdir, 'missing.json')

@@ -7,6 +7,7 @@ import {
 	categoryKeyOf,
 	categoryTotals,
 	flattenTree,
+	isRealCategoryKey,
 	moveSelection,
 	sessionCost,
 	sortRows,
@@ -233,6 +234,19 @@ describe("categoryKeyOf（D-64・D-65）", () => {
 
 	it("名前が無ければ「その他」（OTHER_GROUP）", () => {
 		expect(categoryKeyOf(row({ id: "1", name: null }))).toBe(OTHER_GROUP);
+	});
+});
+
+describe("isRealCategoryKey（T-70）", () => {
+	it("実際のカテゴリ名は真", () => {
+		expect(isRealCategoryKey("RIM")).toBe(true);
+		expect(isRealCategoryKey(categoryKeyOf(row({ id: "1", name: "RIM: 議事メモ" })))).toBe(true);
+	});
+
+	it("「単独」「その他」「アーカイブ」は偽", () => {
+		expect(isRealCategoryKey(categoryKeyOf(row({ id: "1", name: "単独のセッション" })))).toBe(false);
+		expect(isRealCategoryKey(OTHER_GROUP)).toBe(false);
+		expect(isRealCategoryKey(ARCHIVED_GROUP)).toBe(false);
 	});
 });
 

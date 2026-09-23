@@ -1,99 +1,226 @@
-// 新規セッション・名前を変更・確認のダイアログ（§6.6・§6.12・D-63）。
+// 新規セッション・名前を変更・確認のダイアログ（§6.6・§6.12・D-63・T-70）。
 
-import { AbstractInputSuggest, App, Modal, Setting, TextComponent } from "obsidian";
+import { App, Modal, Setting } from "obsidian";
+import type AgentSessionsPlugin from "./main";
+import { renderCategoryChip } from "./chip";
 import { t } from "./i18n";
-import { composeName } from "./name";
+import { composeName, filterCategories, tokenizeNameInput } from "./name";
 import { splitName } from "./tree";
 
-/** カテゴリ欄の入力候補（既存カテゴリ＋自由入力。§6.6・D-63）。 */
-class CategorySuggest extends AbstractInputSuggest<string> {
-	constructor(
-		app: App,
-		inputEl: HTMLInputElement,
-		private categories: string[]
-	) {
-		super(app, inputEl);
-	}
-
-	protected getSuggestions(query: string): string[] {
-		const q = query.trim().toLowerCase();
-		if (!q) {
-			return this.categories;
-		}
-		return this.categories.filter((c) => c.toLowerCase().includes(q));
-	}
-
-	renderSuggestion(value: string, el: HTMLElement): void {
-		el.setText(value);
-	}
+interface ComposedNameField {
+	getValue(): { category: string; name: string };
+	focus(): void;
 }
 
 /**
- * 「カテゴリ」「名前」2 欄＋プレビュー 1 行を組み立てる（新規セッション・名前を変更で共用）。
- * カテゴリ欄には既存カテゴリの候補を出す。確定はボタンだけ（Enter では確定しない）。
+ * カテゴリと名前を「1 つの入力欄」に見せる（T-70）：見た目は input 風の枠（div）の中に
+ * `[カテゴリのチップ（有れば）][<input>]` が繋がって並ぶ。`<input>` に「カテゴリ: 」と打つ
+ * （`tokenizeNameInput`）とその前の部分がチップになり、入力は残り（名前）に続く。名前が
+ * 空の状態で Backspace、またはチップのクリックで、チップはテキストへ戻って編集できる。
+ * カテゴリを入力中（まだチップになる前）は既存カテゴリの候補を出す（上下キー＋Enter／Tab／
+ * クリックで確定）。確定はダイアログのボタンだけ（この欄の Enter では確定しない——候補選択中の
+ * Enter は候補の確定）。
  */
-function buildNameFields(
-	app: App,
+function buildComposedNameField(
 	contentEl: HTMLElement,
 	categories: string[],
+	colorIndexFor: (category: string) => number,
 	initial: { category: string; name: string }
-): { getCategory: () => string; getName: () => string; focus: () => void } {
-	let categoryComponent!: TextComponent;
-	let nameComponent!: TextComponent;
-	let updatePreview: () => void = () => undefined;
+): ComposedNameField {
+	const setting = new Setting(contentEl).setName(t("modal.newSession.nameField"));
+	const boxEl = setting.controlEl.createDiv({ cls: "agent-sessions-name-input" });
+	const inputEl = boxEl.createEl("input", { type: "text", cls: "agent-sessions-name-input-field" });
+	const suggestEl = boxEl.createDiv({ cls: "agent-sessions-name-suggest" });
+	suggestEl.style.display = "none";
 
-	new Setting(contentEl).setName(t("dialog.category")).addText((text) => {
-		categoryComponent = text;
-		text.setValue(initial.category);
-		text.inputEl.addEventListener("input", () => updatePreview());
-		new CategorySuggest(app, text.inputEl, categories).onSelect(() => updatePreview());
-	});
-	new Setting(contentEl).setName(t("modal.newSession.nameField")).addText((text) => {
-		nameComponent = text;
-		text.setValue(initial.name);
-		text.inputEl.addEventListener("input", () => updatePreview());
+	let category = initial.category.trim();
+	let chipEl: HTMLElement | null = null;
+	let suggestItems: string[] = [];
+	let suggestEls: HTMLElement[] = [];
+	let highlighted = -1;
+
+	function renderChip(): void {
+		chipEl?.remove();
+		chipEl = null;
+		if (category) {
+			chipEl = renderCategoryChip(boxEl, category, colorIndexFor(category));
+			boxEl.insertBefore(chipEl, inputEl);
+			chipEl.addEventListener("click", () => revertChip());
+		}
+	}
+
+	/** チップをテキストへ戻し、また編集できるようにする（Backspace・クリック共通）。 */
+	function revertChip(): void {
+		if (!category) {
+			return;
+		}
+		const restored = category;
+		category = "";
+		inputEl.value = restored;
+		renderChip();
+		inputEl.focus();
+		inputEl.setSelectionRange(restored.length, restored.length);
+		openSuggestFor(restored);
+	}
+
+	function closeSuggest(): void {
+		suggestEl.empty();
+		suggestEl.style.display = "none";
+		suggestItems = [];
+		suggestEls = [];
+		highlighted = -1;
+	}
+
+	function applyHighlight(): void {
+		suggestEls.forEach((el, i) => el.toggleClass("is-active", i === highlighted));
+	}
+
+	function moveHighlight(delta: number): void {
+		if (suggestItems.length === 0) {
+			return;
+		}
+		highlighted = (highlighted + delta + suggestItems.length) % suggestItems.length;
+		applyHighlight();
+	}
+
+	function openSuggestFor(query: string): void {
+		const items = filterCategories(categories, query);
+		suggestItems = items;
+		suggestEls = [];
+		suggestEl.empty();
+		if (items.length === 0) {
+			suggestEl.style.display = "none";
+			highlighted = -1;
+			return;
+		}
+		suggestEl.style.display = "";
+		for (const cat of items) {
+			const itemEl = suggestEl.createDiv({ cls: "agent-sessions-name-suggest-item" });
+			renderCategoryChip(itemEl, cat, colorIndexFor(cat));
+			itemEl.createSpan({ cls: "agent-sessions-name-suggest-item-label", text: cat });
+			// mousedown（click ではなく）: 先に効かせないと、input の blur が先に起きて
+			// 候補が閉じてしまう（実機修正）。
+			itemEl.addEventListener("mousedown", (evt) => {
+				evt.preventDefault();
+				confirmCategory(cat);
+			});
+			itemEl.addEventListener("mouseenter", () => {
+				highlighted = suggestEls.indexOf(itemEl);
+				applyHighlight();
+			});
+			suggestEls.push(itemEl);
+		}
+		highlighted = 0;
+		applyHighlight();
+	}
+
+	function confirmCategory(cat: string): void {
+		category = cat;
+		inputEl.value = "";
+		closeSuggest();
+		renderChip();
+		inputEl.focus();
+	}
+
+	inputEl.addEventListener("input", () => {
+		if (category) {
+			return;
+		}
+		const token = tokenizeNameInput(inputEl.value);
+		if (token) {
+			category = token.category;
+			inputEl.value = token.rest;
+			closeSuggest();
+			renderChip();
+			return;
+		}
+		openSuggestFor(inputEl.value);
 	});
 
-	const previewEl = contentEl.createDiv({ cls: "agent-sessions-name-preview" });
-	updatePreview = (): void => {
-		const composed = composeName(categoryComponent.getValue(), nameComponent.getValue());
-		previewEl.setText(t("dialog.preview", { name: composed || t("common.none") }));
-	};
-	updatePreview();
+	inputEl.addEventListener("keydown", (evt) => {
+		if (!category && suggestItems.length > 0) {
+			if (evt.key === "ArrowDown") {
+				evt.preventDefault();
+				moveHighlight(1);
+				return;
+			}
+			if (evt.key === "ArrowUp") {
+				evt.preventDefault();
+				moveHighlight(-1);
+				return;
+			}
+			if ((evt.key === "Enter" || evt.key === "Tab") && highlighted >= 0) {
+				evt.preventDefault();
+				confirmCategory(suggestItems[highlighted]);
+				return;
+			}
+			if (evt.key === "Escape") {
+				evt.preventDefault();
+				closeSuggest();
+				return;
+			}
+		}
+		if (
+			evt.key === "Backspace" &&
+			category &&
+			inputEl.value === "" &&
+			inputEl.selectionStart === 0 &&
+			inputEl.selectionEnd === 0
+		) {
+			evt.preventDefault();
+			revertChip();
+			return;
+		}
+		if (evt.key === "Enter") {
+			// 確定はダイアログのボタンだけ（候補選択中の Enter は候補の確定。上で処理済み）。
+			evt.preventDefault();
+		}
+	});
+
+	inputEl.addEventListener("blur", () => {
+		window.setTimeout(() => closeSuggest(), 0);
+	});
+
+	inputEl.value = initial.name;
+	renderChip();
 
 	return {
-		getCategory: () => categoryComponent.getValue(),
-		getName: () => nameComponent.getValue(),
-		focus: () => nameComponent.inputEl.focus(),
+		getValue: () => ({ category, name: inputEl.value }),
+		focus: () => inputEl.focus(),
 	};
 }
 
-/** 新規セッション：「カテゴリ」「名前」の 2 欄＋プレビューと「開始」。確定はボタンだけ。 */
+/** 新規セッション：カテゴリ・名前を 1 つの入力欄で入れ、「開始」で確定する。 */
 export class NewSessionModal extends Modal {
-	private fields!: ReturnType<typeof buildNameFields>;
+	private field!: ComposedNameField;
 
 	constructor(
-		app: App,
-		private categories: string[],
+		private plugin: AgentSessionsPlugin,
 		private onSubmit: (name: string) => void
 	) {
-		super(app);
+		super(plugin.app);
 	}
 
 	onOpen(): void {
 		this.setTitle(t("modal.newSession.title"));
-		this.fields = buildNameFields(this.app, this.contentEl, this.categories, { category: "", name: "" });
+		this.field = buildComposedNameField(
+			this.contentEl,
+			this.plugin.index.categories(),
+			(category) => this.plugin.index.categoryColorIndex(category),
+			{ category: "", name: "" }
+		);
 		new Setting(this.contentEl).addButton((button) =>
 			button
 				.setButtonText(t("action.start"))
 				.setCta()
 				.onClick(() => this.submit())
 		);
-		window.setTimeout(() => this.fields.focus(), 0);
+		window.setTimeout(() => this.field.focus(), 0);
 	}
 
 	private submit(): void {
-		this.onSubmit(composeName(this.fields.getCategory(), this.fields.getName()));
+		const { category, name } = this.field.getValue();
+		this.onSubmit(composeName(category, name));
 		this.close();
 	}
 
@@ -103,26 +230,31 @@ export class NewSessionModal extends Modal {
 }
 
 /**
- * 名前を変更（§6.6・D-42・D-63）：いまの名前を `splitName` で「カテゴリ」「名前」2 欄に分けて入れる。
- * 「変更」「キャンセル」のボタンだけで確定する（Enter では確定しない）。
+ * 名前を変更（§6.6・D-42・D-63・T-70）：いまの名前を `splitName` でカテゴリ・名前に分け、
+ * 1 つの入力欄へチップ＋テキストで入れる。「変更」「キャンセル」のボタンだけで確定する
+ * （Enter では確定しない）。
  */
 export class RenameSessionModal extends Modal {
-	private fields!: ReturnType<typeof buildNameFields>;
+	private field!: ComposedNameField;
 
 	constructor(
-		app: App,
-		private categories: string[],
+		private plugin: AgentSessionsPlugin,
 		private currentName: string,
 		private onSubmit: (name: string) => void
 	) {
-		super(app);
+		super(plugin.app);
 	}
 
 	onOpen(): void {
 		this.setTitle(t("modal.renameSession.title"));
 		this.modalEl.addClass("agent-sessions-rename-modal");
 		const [category, name] = splitName(this.currentName);
-		this.fields = buildNameFields(this.app, this.contentEl, this.categories, { category: category ?? "", name });
+		this.field = buildComposedNameField(
+			this.contentEl,
+			this.plugin.index.categories(),
+			(c) => this.plugin.index.categoryColorIndex(c),
+			{ category: category ?? "", name }
+		);
 		new Setting(this.contentEl)
 			.addButton((button) => button.setButtonText(t("action.cancel")).onClick(() => this.close()))
 			.addButton((button) =>
@@ -132,12 +264,13 @@ export class RenameSessionModal extends Modal {
 					.onClick(() => this.submit())
 			);
 		window.setTimeout(() => {
-			this.fields.focus();
+			this.field.focus();
 		}, 0);
 	}
 
 	private submit(): void {
-		const value = composeName(this.fields.getCategory(), this.fields.getName());
+		const { category, name } = this.field.getValue();
+		const value = composeName(category, name);
 		if (value) {
 			this.onSubmit(value);
 		}

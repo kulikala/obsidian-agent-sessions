@@ -768,12 +768,7 @@ export class TerminalView extends ItemView {
 				.setTitle(t("action.rename"))
 				.setIcon("pencil")
 				.onClick(() => {
-					new RenameSessionModal(
-						this.app,
-						this.plugin.index.categories(),
-						this.getDisplayText(),
-						(name) => void this.plugin.renameSession(id, name)
-					).open();
+					new RenameSessionModal(this.plugin, this.getDisplayText(), (name) => void this.plugin.renameSession(id, name)).open();
 				})
 		);
 		menu.addItem((item) =>

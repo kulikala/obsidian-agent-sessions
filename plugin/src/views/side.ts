@@ -149,7 +149,7 @@ export class SideView extends ItemView {
 	}
 
 	private openNewSessionModal(): void {
-		new NewSessionModal(this.app, this.plugin.index.categories(), (name) => this.plugin.newSession(name || undefined)).open();
+		new NewSessionModal(this.plugin, (name) => this.plugin.newSession(name || undefined)).open();
 	}
 
 	private showMoreMenu(evt: MouseEvent): void {
@@ -233,7 +233,6 @@ export class SideView extends ItemView {
 		this.listEl.empty();
 		this.selection.clear();
 		const actions = createRowActions(
-			this.app,
 			this.plugin,
 			(id) => this.onHoverShow(id),
 			() => this.onHoverEnd()

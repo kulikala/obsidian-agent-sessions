@@ -154,8 +154,6 @@ const ja = {
 	"modal.newSession.title": "新規セッション",
 	"modal.newSession.nameField": "名前",
 	"modal.renameSession.title": "名前を変更",
-	"dialog.category": "カテゴリ",
-	"dialog.preview": "→ {name}",
 
 	// ---- サイドパネル（views/side.ts） ----
 	"section.openTabs": "開いているタブ",
@@ -369,8 +367,6 @@ const en: Record<MessageKey, string> = {
 	"modal.newSession.title": "New session",
 	"modal.newSession.nameField": "Name",
 	"modal.renameSession.title": "Rename",
-	"dialog.category": "Category",
-	"dialog.preview": "→ {name}",
 
 	"section.openTabs": "Open tabs",
 	"section.running": "Running",
