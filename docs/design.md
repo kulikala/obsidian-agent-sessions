@@ -462,3 +462,70 @@ Claude Code は `~/.claude/keybindings.json`（`$CLAUDE_CONFIG_DIR` 配下。vau
 #### 12.2.7 文書・記録
 
 - `docs/design.md` §6・§10・§11 を更新、`docs/requirements.md` の R-S6・R-S8・R-T5b を現状に合わせる。README。`plan/04-実行記録.md` に I-60〜I-69。
+
+## 13. 改修（段 6：2026-09-23 の指示）
+
+### 13.1 事実
+
+- Claude Code の `Chat` の既定：`enter`＝送信、`\x1b\r`（meta+enter）＝改行（実機で確認済み）。`keybindings.json` に `enter: chat:newline`・`meta+enter: chat:submit` を書くと逆になる。端末は Cmd／Ctrl／Shift+Enter を区別して送れないので、プラグインが Enter の組合せをすべて横取りして `\r` か `\x1b\r` を送る。
+- Obsidian の言語は `window.localStorage.getItem("language")`（`"ja"` 等。null は英語）。
+- 外部エディタの一時ファイル名は `claude-prompt-<uuid>.md`（プロンプト編集）。`/memory`・`/keybindings` などは実ファイルを開く。
+- rate limits の窓：`status/*.json` の `rate_limits.five_hour.resets_at`・`seven_day.resets_at`（epoch 秒）。窓の開始＝`resets_at − 5h`／`− 7d`。
+
+### 13.2 作り
+
+#### D-50 送信キー（与件 3）
+
+- 設定は **送信キー** 1 つ：`enter`（既定）／`shift+enter`／`ctrl+enter`／`alt+enter`（Option）／`cmd+enter`。改行キーの設定は廃止。
+- ターミナルは Enter の組合せ（IME 中を除く）をすべて横取りする：
+  - `submitKey === 'enter'`：Enter → `\r`（送信）、修飾つき Enter → `\x1b\r`（改行）。`keybindings.json` の自分の 2 鍵（`enter: chat:newline`・`meta+enter: chat:submit`）は消す。
+  - `submitKey !== 'enter'`：押したキーが送信キー → `\x1b\r`（送信）、それ以外の Enter → `\r`（改行）。`keybindings.json` の `Chat` に 2 鍵を書く（他の鍵は触らない）。
+- 送信列 `submitSequence()` ＝ `submitKey === 'enter' ? '\r' : '\x1b\r'`（コマンド送信・内蔵エディタの「送る」も使う）。
+- 起動時に `keybindings.json` から導出：`enter: chat:newline` があり、`cmd+enter`／`super+enter` があれば `cmd+enter`、無ければ `alt+enter`。`enter` が無い／`chat:submit` なら `enter`。旧設定 `newlineKey`・旧 `submitKey` の値は捨てて導出し直す。
+- 設定画面の説明：「Enter 以外を選ぶと、Enter は改行になります。そのため `~/.claude/keybindings.json` に書き込みます（他のターミナルアプリで起動した claude にも効きます）」。
+
+#### D-51 内蔵エディタの送る／取消（与件 8）
+
+- 送る：内容を書き、`ok` を返す（exit 0）。一時ファイルが `claude-prompt-` で始まるなら、Claude が読み戻した後（300 ms 後）に `submitSequence()` を PTY へ送る。それ以外のファイル（`/keybindings` など）は送信しない。
+- 取消：**今の内容を書いて** `ok` を返す（exit 0、送信しない）。「取消」は「入力欄に戻る」と改名。Esc も同じ。
+- 「送る」ボタンの表記は送信キーに合わせる（例「送る（⌘⏎）」「送る（⏎）」）。
+- タブを閉じたとき・claude 側が切れたときの扱い（元の内容で cancel）は今のまま。
+
+#### D-52 詳細のバッジ（与件 1）
+
+- rc のチップはモデル・エフォートと同じ見た目。中の ○／● だけ、接続中は `var(--color-green)`、未接続は `var(--text-faint)`。
+
+#### D-53 サイドタブ（与件 7）
+
+- ⋯ メニュー：再走査 → 設定を開く。
+
+#### D-54 セッションマネージャーの役割（与件 4・5・6）
+
+マネージャーは **利用状況の分析** の画面。サイドタブは **今の作業**（開いているタブ・起動中・最近）の画面。
+
+- 上部に統計の帯：5 時間枠・7 日枠の 2 枚のカード。各カードに使用率（バー）、リセットまでの残り（カウントダウン）、枠内のコスト（$）・トークン（入力＋出力＋cache）・呼出数・動いたセッション数。
+- 表の列：印・名前・最終更新・5h のコスト・7d のコスト・フォルダ・⋯。列見出しのクリックで並べ替え（最終更新＝既定でグループの木、5h／7d のコスト＝グループを外した一覧の降順）。枠内に使用が無いセッションのコストは空欄。
+- 行の高さ 32px 以上。列は `table-layout: fixed` の固定幅（印 24・最終更新 88・5h 72・7d 72・フォルダ 120・⋯ 28、名前は残り）で重ならない。幅が足りなければフォルダ → 5h の順に列を隠す。
+- 右の詳細パネルは残す。
+
+#### D-55 `agent-sessions json stats`（与件 6）
+
+- 出力：`{"windows":{"five_hour":W,"seven_day":W}}`、`W = {"start","end","used_percentage","total":{calls,input,output,cache_read,cache_create,cost},"sessions":{id:{calls,input,output,cache_read,cache_create,cost}}}`。`end` は `resets_at`（無ければ現在）、`start` は `end − 5h／7d`。`used_percentage` は rate_limits から（無ければ null）。
+- 集計：`~/.claude/projects/*/*.jsonl`（サイドチェーンの行も含める。サブエージェントの transcript が `<project>/<id>/` 配下にあれば親の id に加える）のうち mtime が 7d 窓の開始より新しいもの。`assistant` 行の `message.usage` を `message.id` で重複排除、`<synthetic>` 除外、`pricing.cost` でコスト。
+- キャッシュ：ファイル毎に 10 分単位のバケット（`{bucket_start: {calls,…,cost}}`）と読んだ位置（`offset`）・直近の `message.id` 200 件を `~/.agents/sessions/stats-cache.json` に持つ。サイズが増えていれば `offset` から続きだけ読む（transcript は追記のみ）。窓の合計はバケットから（10 分の粒度）。
+- 2 回目以降は 1 秒未満。
+
+#### D-56 言語（与件 2）
+
+- `manifest.json` の `description` は英語：`Open and manage Claude Code sessions as terminal tabs in Obsidian.`
+- 設定「言語」：自動（Obsidian に合わせる）／日本語／English。既定は自動（`localStorage.language` が `ja` なら日本語、他は英語）。
+- `src/i18n.ts`：`t(key, vars?)`。辞書は `ja`・`en`。UI の文字列（ビュー・メニュー・ダイアログ・設定・通知・モーダル・ツールチップ）はすべて `t()` を通す。言語を変えたらビューを描き直す（`settings-changed`）。
+- Python 側（TUI・CLI）の文字列は対象外。
+
+#### 起動時の送信キー（実装で決めた点）
+
+`keybindings.json` の 2 鍵からは Shift／Ctrl／Cmd のどれを選んだかは区別できない。起動時は `reconcileSubmitKey`：ファイルの状態（Enter＝改行か）と設定の enter／それ以外が合っていれば設定を保ち、食い違うときだけファイルから導いた値にする。
+
+#### Obsidian の Modal の `selection`
+
+`Modal.open()` は閉じるときに戻す選択範囲を `this.selection` に書く。Modal のサブクラスで同名のフィールドを使わない。

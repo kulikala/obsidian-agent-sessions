@@ -25,16 +25,16 @@ Obsidian の「コミュニティプラグイン」で Agent Sessions を有効�
 | 場所 | できること |
 |---|---|
 | サイドパネル（右） | ナビ（＋＝新規セッション、マネージャー、⋯＝設定・再走査）／一覧「開いているタブ → 起動中 → 最近」（行の `⋯`・右クリック：名前を変更・セッションを圧縮・セッション解析結果・アーカイブ・セッションを終了・ID をコピー）／詳細（モデル・エフォート・rc、コンテキストの円グラフ、総トークン・総コスト、直近の指示・応答）／セッション制限（5h・7d とリセットまでの時間）。一覧と詳細の境はドラッグで動く |
-| セッションマネージャー | 表（印・名前・最終更新・フォルダ）＋右の詳細。↑↓／Enter／`/`。⋯ に「アーカイブを表示」。開いても claude は起動しない |
-| ターミナル | 1 セッション＝1 タブ。ヘッダに `@`（現在のノートを挿入）・前の指示・次の指示・最後の応答。改行キーは設定（既定 Shift+Enter。Enter を改行にするときは送信キーも選ぶ）。Cmd +/−/0 でフォントサイズ。出力中の vault 内パスはクリックで開く |
-| Ctrl+G | プロンプト入力中に Ctrl+G で、同じタブの下に編集領域が開く（`$VISUAL` は `~/bin/agent-sessions-code`）。ペースト・IME・Undo はそのまま、`@` でファイル補完、Cmd+Enter で送る、Esc で取消。ターミナルは上に見えたまま。タブが無いときは `vi`（`AGENT_SESSIONS_FALLBACK_EDITOR`）に倒れる |
+| セッションマネージャー | 利用状況の分析：5 時間枠・7 日枠の統計、表（最終更新・5h／7d のコスト・フォルダ、見出しで並べ替え）＋右の詳細。↑↓／Enter／`/`。⋯ に「アーカイブを表示」。開いても claude は起動しない |
+| ターミナル | 1 セッション＝1 タブ。ヘッダに `@`（現在のノートを挿入）・前の指示・次の指示・最後の応答。送信キーは設定（既定 Enter。それ以外の Enter の組合せは改行）。Cmd +/−/0 でフォントサイズ。出力中の vault 内パスはクリックで開く |
+| Ctrl+G | プロンプト入力中に Ctrl+G で、同じタブの下に編集領域が開く（`$VISUAL` は `~/bin/agent-sessions-code`）。ペースト・IME・Undo はそのまま、`@` でファイル補完、「送る」で即送信、Esc（入力欄に戻る）で内容を保って戻る。ターミナルは上に見えたまま。タブが無いときは `vi`（`AGENT_SESSIONS_FALLBACK_EDITOR`）に倒れる |
 | セッション解析結果 | 行メニューから。コスト・トークン・ターン数・期間のカード、入力／出力／ツールのバー、ターン表（コスト付き）。行をクリックして区間を選び、Markdown でコピー |
-| 設定 | フォント・サイズ・余白（ゆったり／小さめ／なし）・改行キー・送信キー（Enter を改行にするときだけ `~/.claude/keybindings.json` の `Chat` に書く）・最近の件数・指示待ちの通知・パス |
+| 設定 | フォント・サイズ・余白（ゆったり／小さめ／なし）・送信キー（Enter 以外にするときは `~/.claude/keybindings.json` の `Chat` に書く）・言語（自動／日本語／English）・最近の件数・指示待ちの通知・パス |
 
 ```sh
 agent-sessions                 # TUI。⏎ で起動中なら attach、そうでなければ claude --resume
 agent-sessions attach ID       # 端末から attach（Ctrl+\ で detach）
-agent-sessions json scan|live|detail ID|usage ID [--from ISO --to ISO]
+agent-sessions json scan|live|detail ID|usage ID [--from ISO --to ISO]|stats
 agent-sessions daemon --detach
 agent-sessions setup --dry-run # settings.json に入れる変更を見る
 ```
