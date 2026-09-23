@@ -931,10 +931,10 @@
 /* ---- 編集領域（D-22）：本体を上下に割って下に置く ---- */
 
 /* 高さは設定 `editorHeight` を上限とし、ターミナルの最小 8 行（`min-height`）を優先して縮む。
-   編集領域の下限は 4 行＋バー。 */
+   編集領域の下限は 4 行＋バー（行の高さは `.agent-sessions-editor-text` の line-height と合わせる。T-75）。 */
 .agent-sessions-terminal-editor {
 	flex: 0 1 var(--as-editor-height, 40%);
-	min-height: calc(4 * 1.5em + 2.4em);
+	min-height: calc(4em * var(--as-editor-line-height, 1.7) + 2.4em);
 	display: flex;
 	flex-direction: column;
 	margin-top: var(--size-4-2);
@@ -964,7 +964,9 @@
 	min-height: 0;
 	width: 100%;
 	resize: none;
-	line-height: 1.5;
+	/* ターミナルの詰まった行間よりゆったり目に（T-75。和文と英数の混じる文面で読みやすい値）。 */
+	line-height: var(--as-editor-line-height, 1.7);
+	letter-spacing: var(--as-editor-letter-spacing, 0.03em);
 	background-color: var(--background-primary);
 	color: var(--text-normal);
 	border: 1px solid var(--background-modifier-border);

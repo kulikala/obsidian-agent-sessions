@@ -314,6 +314,8 @@ export class TerminalView extends ItemView {
 		this.terminal.options.fontFamily = s.fontFamily;
 		this.terminal.options.fontSize = this.fontSize ?? s.fontSize;
 		this.terminal.options.scrollback = s.scrollback;
+		// 編集領域（D-22）が開いていれば、そのフォントも今の設定に合わせる（T-75）。
+		this.pendingEdit?.applySettings(s.fontFamily, this.fontSize ?? s.fontSize);
 		if (this.bodyEl) {
 			this.bodyEl.style.setProperty("--as-pad", `${PADDING_PX[s.padding] ?? PADDING_PX.comfortable}px`);
 		}

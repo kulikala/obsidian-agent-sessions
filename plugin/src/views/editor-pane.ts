@@ -9,6 +9,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { prepareFuzzySearch, type App, type TFile } from "obsidian";
 import { applyCompletion, findAtQuery, relPathFor, type AtQuery } from "../at-complete";
+import { SaveDebouncer } from "../autosave";
 import { t } from "../i18n";
 import { classifyEnter, SUBMIT_KEY_SYMBOLS } from "../keys";
 import type { SubmitKey } from "../settings";
@@ -24,7 +25,8 @@ export interface EditorPaneDeps {
 	submitKey: SubmitKey;
 }
 
-const AUTOSAVE_MS = 300;
+/** 入力が落ち着いてから一時ファイルへ書くまでの間（T-75）。`SaveDebouncer` が持つ。 */
+const AUTOSAVE_MS = 800;
 const MAX_CANDIDATES = 8;
 
 /** tmp に書いて rename。`file` と同じディレクトリに tmp を置く。 */
@@ -46,7 +48,8 @@ function writeAtomic(file: string, text: string): void {
 export class EditorPane {
 	private textarea: HTMLTextAreaElement | null = null;
 	private listEl: HTMLElement | null = null;
-	private saveTimer: ReturnType<typeof setTimeout> | null = null;
+	/** 自動保存の debounce（T-75。`schedule`＝入力のたび延長、`flush`＝確定で即書く）。 */
+	private saveDebouncer = new SaveDebouncer(AUTOSAVE_MS, () => this.writeCurrent());
 	private resolve: ((result: EditResult) => void) | null = null;
 	private file = "";
 	private cwd = "";
@@ -71,6 +74,20 @@ export class EditorPane {
 		return this.resolve !== null;
 	}
 
+	/**
+	 * 設定が変わったら、開いているエディタのフォントも合わせる（T-75）。`open()` のとき渡した
+	 * `deps.fontFamily`／`fontSize` はそのときの値のまま固定されるので、`terminal.ts` の
+	 * `applySettings()`（`settings-changed` のたび）から呼んで追いかける。
+	 */
+	applySettings(fontFamily: string, fontSize: number): void {
+		this.deps.fontFamily = fontFamily;
+		this.deps.fontSize = fontSize;
+		if (this.textarea) {
+			this.textarea.style.fontFamily = fontFamily;
+			this.textarea.style.fontSize = `${fontSize}px`;
+		}
+	}
+
 	/** 領域を組み立て、`initial` を入れてフォーカス。送る／入力欄に戻る／取消／中断で解決する。 */
 	open(file: string, cwd: string, initial: string): Promise<EditResult> {
 		this.file = file;
@@ -88,42 +105,40 @@ export class EditorPane {
 		});
 	}
 
-	/** 送る：最後の内容を書いてから閉じる。 */
+	/** 送る：待っている自動保存があれば解除し、最後の内容を即書いてから閉じる。 */
 	send(): void {
 		if (!this.resolve) {
 			return;
 		}
-		this.clearSaveTimer();
-		this.writeCurrent();
+		this.saveDebouncer.flush();
 		this.finish("send");
 	}
 
-	/** 入力欄に戻る：今の内容を書いてから閉じる（送信はしない）。 */
+	/** 入力欄に戻る：待っている自動保存があれば解除し、今の内容を即書いてから閉じる（送信はしない）。 */
 	returnToInput(): void {
 		if (!this.resolve) {
 			return;
 		}
-		this.clearSaveTimer();
-		this.writeCurrent();
+		this.saveDebouncer.flush();
 		this.finish("return");
 	}
 
-	/** 取消（タブを閉じた）：元の内容を書き戻してから閉じる。 */
+	/** 取消（タブを閉じた）：待っている自動保存は捨て、元の内容を書き戻してから閉じる。 */
 	cancel(): void {
 		if (!this.resolve) {
 			return;
 		}
-		this.clearSaveTimer();
+		this.saveDebouncer.cancel();
 		this.write(this.original);
 		this.finish("cancel");
 	}
 
-	/** 中断（相手が消えた）：書かずに閉じる。 */
+	/** 中断（相手が消えた）：待っている自動保存は捨て、書かずに閉じる。 */
 	abort(): void {
 		if (!this.resolve) {
 			return;
 		}
-		this.clearSaveTimer();
+		this.saveDebouncer.cancel();
 		this.finish("cancel");
 	}
 
@@ -187,23 +202,8 @@ export class EditorPane {
 	// ---- 保存 -------------------------------------------------------------------
 
 	private onChanged(): void {
-		this.scheduleSave();
+		this.saveDebouncer.schedule();
 		this.updateSuggestions();
-	}
-
-	private scheduleSave(): void {
-		this.clearSaveTimer();
-		this.saveTimer = setTimeout(() => {
-			this.saveTimer = null;
-			this.writeCurrent();
-		}, AUTOSAVE_MS);
-	}
-
-	private clearSaveTimer(): void {
-		if (this.saveTimer) {
-			clearTimeout(this.saveTimer);
-			this.saveTimer = null;
-		}
 	}
 
 	private writeCurrent(): void {
@@ -213,6 +213,13 @@ export class EditorPane {
 		this.write(this.textarea.value);
 	}
 
+	/**
+	 * 書き込み失敗（ディスクが読み取り専用・権限が無い等）は `Notice` を出さずログだけにする
+	 * （T-75。もとからの動作を保つ）。自動保存は 800ms ごとに走りうる経路なので、失敗するたび
+	 * 通知を出すと入力中に割り込みが連発しかねない。`send`／`returnToInput` の確定書き込みも
+	 * 同じ `write()` を通るため確定時も静かに失敗しうるが、これは自動保存を足す前からの
+	 * 挙動で今回の範囲の外——通知するなら確定の失敗だけを別扱いする設計判断が要る。
+	 */
 	private write(text: string): void {
 		if (text === this.lastSaved) {
 			return;
@@ -375,7 +382,7 @@ export class EditorPane {
 		textarea.value = out.text;
 		textarea.setSelectionRange(out.cursor, out.cursor);
 		this.closeSuggestions();
-		this.scheduleSave();
+		this.saveDebouncer.schedule();
 		textarea.focus();
 	}
 }
