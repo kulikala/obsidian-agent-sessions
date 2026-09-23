@@ -19,7 +19,7 @@ Run and manage [Claude Code](https://claude.com/claude-code) sessions as termina
 
 ## Requirements
 
-- macOS. Windows is not supported; Linux is untested.
+- Tested on macOS. Linux is untested but expected to work, since the plugin only relies on a Unix PTY and a Unix domain socket. Windows is not natively supported.
 - Obsidian desktop, version 1.7.2 or later (`isDesktopOnly`, since the plugin spawns processes and opens Unix sockets).
 - Python 3.9+ using only the standard library, normally at `/usr/bin/python3` (the path is configurable in the plugin settings).
 - The [Claude Code](https://claude.com/claude-code) CLI, installed and either on your `PATH` or pointed to from the plugin settings.
@@ -33,18 +33,22 @@ There is no packaged release yet, so the plugin is installed from a local clone.
 git clone <this-repository> agent-sessions
 cd agent-sessions
 (cd plugin && npm install && npm run build)
-./install.sh
+./install.sh /path/to/your/vault
 ```
+
+The vault path is required — either as the first argument to `install.sh` or via the `AGENT_SESSIONS_VAULT` environment variable (`AGENT_SESSIONS_VAULT=/path/to/your/vault ./install.sh`).
 
 `install.sh`:
 
 - symlinks `bin/agent-sessions` and `bin/agent-sessions-code` into `~/bin`;
-- symlinks `plugin/` into `<vault>/.obsidian/plugins/agent-sessions` (the vault defaults to a fixed path; override it by setting `AGENT_SESSIONS_VAULT` before running the script);
+- symlinks `plugin/` into `<vault>/.obsidian/plugins/agent-sessions`;
 - runs `agent-sessions setup`, which **modifies `~/.claude/settings.json`** (a backup is written first, as `settings.json.bak-<timestamp>`): it adds or updates the `Stop`, `SessionEnd`, `SessionStart` (matcher `compact`), and `UserPromptSubmit` hooks to point at `agent-sessions hook`, and sets `statusLine` to `agent-sessions status`. It only ever touches entries it recognizes as its own; other hooks are left alone.
 
 Then enable **Agent Sessions** under Obsidian's Community plugins.
 
 Changing the **submit key** setting away from the default (Enter) additionally makes the plugin write to `~/.claude/keybindings.json` (the `Chat` context) so that Claude Code's own keybindings match — this affects Claude Code everywhere, including sessions started outside Obsidian. Reverting the setting removes only the two keys the plugin added.
+
+Once the plugin has started at least once, the `agent-sessions` CLI can be run from outside Obsidian without repeating the vault path: it reads the vault location from `~/.agents/sessions/vault.json`, which the plugin keeps up to date.
 
 ## Usage
 
@@ -106,3 +110,7 @@ AGENT_SESSIONS_BIN=$PWD/../bin/agent-sessions npm test   # also run the tests th
 cd ..
 /usr/bin/python3 -W error -m unittest discover -s tests -t .   # Python (standard library only)
 ```
+
+## License
+
+MIT, see [`LICENSE`](LICENSE). `plugin/main.js` bundles xterm.js and its addons (also MIT); their license text and copyright notices are in [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).

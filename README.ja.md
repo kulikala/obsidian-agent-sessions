@@ -19,7 +19,7 @@
 
 ## 必要なもの
 
-- macOS。Windows は対象外、Linux は未検証。
+- macOS で動作確認。Linux は未検証（Unix の pty・Unix ソケットを使うので動く見込み）。Windows はネイティブ非対応。
 - Obsidian desktop、1.7.2 以降（`isDesktopOnly`。プロセスの起動と Unix ソケットを使うため）。
 - 標準ライブラリのみを使う Python 3.9 以降。通常は `/usr/bin/python3`（パスはプラグインの設定で変更できる）。
 - [Claude Code](https://claude.com/claude-code) CLI（インストール済みで `PATH` にあるか、プラグインの設定でパスを指定する）。
@@ -33,18 +33,22 @@
 git clone <このリポジトリ> agent-sessions
 cd agent-sessions
 (cd plugin && npm install && npm run build)
-./install.sh
+./install.sh /path/to/your/vault
 ```
+
+vault のパスは必須——`install.sh` の第 1 引数として渡すか、環境変数 `AGENT_SESSIONS_VAULT` で指定する（`AGENT_SESSIONS_VAULT=/path/to/your/vault ./install.sh`）。
 
 `install.sh` が行うこと：
 
 - `bin/agent-sessions`・`bin/agent-sessions-code` を `~/bin` に symlink する。
-- `plugin/` を `<vault>/.obsidian/plugins/agent-sessions` に symlink する（vault は既定で固定のパスを使う。スクリプトを実行する前に `AGENT_SESSIONS_VAULT` を設定すれば変えられる）。
+- `plugin/` を `<vault>/.obsidian/plugins/agent-sessions` に symlink する。
 - `agent-sessions setup` を実行する。これは **`~/.claude/settings.json` を書き換える**（先に `settings.json.bak-<時刻>` としてバックアップを残す）：`Stop`・`SessionEnd`・`SessionStart`（matcher `compact`）・`UserPromptSubmit` の各フックを `agent-sessions hook` に向けて追加・更新し、`statusLine` を `agent-sessions status` に設定する。自分が付けたと分かるエントリだけを触り、他のフックはそのまま残す。
 
 その後、Obsidian の「コミュニティプラグイン」で **Agent Sessions** を有効にする。
 
 **送信キー**の設定を既定（Enter）以外に変えると、Claude Code 自身のキー割当と揃えるため、プラグインは `~/.claude/keybindings.json`（`Chat` コンテキスト）にも書き込む——これは Obsidian の外で起動した Claude Code を含め、Claude Code 全体に効く。設定を元に戻すと、プラグインが足した 2 つの鍵だけが消える。
+
+プラグインが一度でも起動していれば、Obsidian の外で `agent-sessions` CLI を使うときも vault のパスを重ねて指定する必要はない——`~/.agents/sessions/vault.json`（プラグインが最新に保つ）から vault の場所を読む。
 
 ## 使い方
 
@@ -106,3 +110,7 @@ AGENT_SESSIONS_BIN=$PWD/../bin/agent-sessions npm test   # 実デーモンを使
 cd ..
 /usr/bin/python3 -W error -m unittest discover -s tests -t .   # Python（標準ライブラリのみ）
 ```
+
+## ライセンス
+
+MIT。全文は [`LICENSE`](LICENSE)。`plugin/main.js` には xterm.js とそのアドオン（同じく MIT）が同梱されており、そのライセンス全文と著作権表示は [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) にある。

@@ -4,6 +4,6 @@
 	"version": "0.1.0",
 	"minAppVersion": "1.7.2",
 	"description": "Open and manage Claude Code sessions as terminal tabs in Obsidian.",
-	"author": "kulikala",
+	"author": "Kaz Namba",
 	"isDesktopOnly": true
 }
