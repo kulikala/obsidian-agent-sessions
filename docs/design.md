@@ -529,3 +529,68 @@ Claude Code は `~/.claude/keybindings.json`（`$CLAUDE_CONFIG_DIR` 配下。vau
 #### Obsidian の Modal の `selection`
 
 `Modal.open()` は閉じるときに戻す選択範囲を `this.selection` に書く。Modal のサブクラスで同名のフィールドを使わない。
+
+## 14. 改修（段 7：2026-09-23 夜の指示）
+
+### 14.1 事実
+
+- カテゴリ＝名前の `: ` より前（`tree.ts` の `splitName`。TUI・マネージャーのグループと同じ）。
+- 最終更新の列：`col` 104px、`td` の padding 左右 8px、等幅 13px の「09-23 20:31」（11 文字）で内容が溢れている。
+- 統計カードの下段は「$22.90　31.5M　142 回　2 セッション」とラベルなしで並んでいる。
+- タブのアイコンは今 `bot`（通常）／`message-circle`（指示待ち）／`circle-off`（終了）と、クラス `agent-sessions-busy`・`agent-sessions-waiting`。マネージャーのアイコンも `bot` 系で見分けにくい。
+
+### 14.2 作り
+
+#### D-60 rc（与件 1）
+- rc の状態が不明（台帳なし＝`null`）のときも ○。接続中だけ ●（緑）。詳細のバッジ、ステータス行とも。
+
+#### D-61 最終更新の列（与件 2）
+- 列幅 120px（padding 込み）、`white-space: nowrap`。実機で「MM-DD HH:MM」が切れないことを測る（`scrollWidth <= clientWidth`）。
+
+#### D-62 統計カードの下段（与件 3）
+- 下段を 2×2 のラベル付きの小さな表にする：「コスト $22.90」「トークン 31.5M」「呼出 142 回」「セッション 2」。ラベルは薄い文字、値は太字。カードの見出しの横に「リセットまで …」。各値に tooltip（例：トークン＝入力＋出力＋cache 読出＋cache 作成、この枠の中）。
+
+#### D-63 カテゴリの入力（与件 4）
+- 新規セッション・名前を変更のダイアログを「カテゴリ」「名前」の 2 欄にする。カテゴリは既存のカテゴリを候補に出す入力（`<datalist>`、または Obsidian の `AbstractInputSuggest`）で、新しいカテゴリも打てる。空ならカテゴリなし。
+- 結果の名前は `カテゴリ: 名前`（カテゴリが空なら `名前`）。名前変更ではいまの名前を `splitName` で 2 欄に分けて入れる。
+- プレビュー 1 行（「→ スキル開発: セッション管理」）。確定はボタンだけ（Enter で確定しない、今のまま）。
+
+#### D-64 カテゴリごとの集計（与件 5）
+- マネージャーの表のグループ見出し行に、そのカテゴリの 5h・7d のコストの合計（列の位置に揃える）とセッション数を出す。
+- 統計の帯の下に「カテゴリ別（7 日枠）」の横バー：コストの上位 8 カテゴリ（カテゴリなし＝「単独」、名前なし＝「その他」）、値は $ と割合。クリックでそのグループへスクロールして開く。
+- 純関数 `categoryTotals(rows, stats, window)` を `manager-model.ts` に。
+
+#### D-65 サイドタブの「最近」（与件 6）
+- 各行はカテゴリをチップ（小さな角丸、薄い背景、カテゴリ名から決まる色相の淡い色）、その後にカテゴリを除いた名前。カテゴリなしはチップなし。「開いているタブ」「起動中」の行も同じ表示に揃える。
+- 色：カテゴリ名のハッシュ → 色相 12 通り、`hsl(h 40% 50% / 0.18)` の背景と `hsl(h 45% 60%)` の文字（明暗テーマ両方で読める値を実機で確認）。
+
+#### D-66 タブのアイコン（与件 7）
+
+ビューのアイコン：
+- セッションマネージャー：`layout-dashboard`
+- サイドパネル：`list-tree`（リボン・サイドバーのタブ）
+- ターミナル：状態で変わる（下表）。基本形は `square-terminal`。
+
+ターミナルの状態（`TerminalStatus`、1 つに決める純関数 `terminalStatus(input)`）：
+
+| 状態 | 条件 | アイコン | 色・動き |
+|---|---|---|---|
+| connecting | attach／start の途中 | `loader` | 薄い色・回転 |
+| working | registry の状態が `busy` | `loader-circle` | アクセント色・回転 |
+| running-shell | registry の状態が `shell`（ツールのコマンド実行中） | `terminal` | 黄・点滅（opacity） |
+| waiting | `busy→idle` の後、まだそのタブを前面にしていない | `bell-dot` | オレンジ・脈動（scale） |
+| editing | 内蔵エディタが開いている | `pencil-line` | 青 |
+| idle | 接続中で待機（見た） | `square-terminal` | 通常色 |
+| detached | タブはあるが未接続（復元後、前面にする前） | `square-dashed` | 薄い色 |
+| exited | claude が終了 | `circle-stop` | 薄い色 |
+| error | デーモン不通・claude 不在・起動失敗 | `triangle-alert` | 赤 |
+
+- 優先順：error ＞ exited ＞ editing ＞ connecting ＞ running-shell ＞ working ＞ waiting ＞ detached ＞ idle。
+- アニメーションは `prefers-reduced-motion` で止める。
+- サイドパネル・マネージャーの行の印も同じ状態と色（アイコンは小さな点のまま、色と動きを揃える）。tooltip に状態名。
+
+#### 実装で決めた点
+
+- タブの状態は `plugin.terminalStatuses`（id → 状態）に集約し、同じ id のビューが複数あれば優先順の高い方。行の印はタブがあればこの値、無ければ `Row` と registry から分かる範囲（working／running-shell／exited／idle／detached）。
+- Obsidian 1.7 以降、前面にしたことのないタブは deferred view で、アイコンは保存された値が使われる。`refreshDeferredTerminalIcons()` がタブ見出しのアイコンを直接書き換える（`onLayoutReady`・`layout-change`・index／registry の変化）。
+- カテゴリ別の帯はコスト 0 のカテゴリを出さない。全部 0 なら「この枠の使用はありません」。
