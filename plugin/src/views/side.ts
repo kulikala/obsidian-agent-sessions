@@ -333,6 +333,7 @@ export class SideView extends ItemView {
 			statusInfo: this.plugin.index.statusline.get(id),
 			rc: this.plugin.index.registry.get(id)?.rc ?? null,
 			fetchUsage: () => usage(this.plugin.agentSessionsPath(), id),
+			categoryColorIndex: (category) => this.plugin.index.categoryColorIndex(category),
 		};
 		renderDetail(this.detailEl, ctx);
 	}

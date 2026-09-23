@@ -5,6 +5,7 @@
 import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
 import type AgentSessionsPlugin from "../main";
 import { stats, usage } from "../backend";
+import { paletteHueDeg } from "../category";
 import { t } from "../i18n";
 import { NewSessionModal } from "../modals";
 import { VIEW_TYPE_TERMINAL } from "../open-session";
@@ -403,16 +404,23 @@ export class ManagerView extends ItemView {
 		const item = container.createDiv({ cls: "agent-sessions-manager-category-bar-item" });
 		const labelWrap = item.createDiv({ cls: "agent-sessions-manager-category-bar-label" });
 		const isReal = isRealCategoryKey(entry.key);
-		if (isReal) {
+		const hueDeg = isReal ? paletteHueDeg(this.plugin.index.categoryColorIndex(entry.key)) : null;
+		if (hueDeg !== null) {
+			// 実際のカテゴリはチップ 1 つだけでラベルを表す——チップの文字＝カテゴリ名なので、
+			// 別にテキストを重ねて出さない（文字の重複解消。T-70 追補）。
 			renderCategoryChip(labelWrap, entry.key, this.plugin.index.categoryColorIndex(entry.key));
+		} else {
+			// 「カテゴリなし」「名前なし」はチップに出す色が無いので、地の文字で出す。
+			labelWrap.createSpan({ cls: "agent-sessions-manager-category-bar-label-text", text: entry.label });
 		}
-		labelWrap.createSpan({ cls: "agent-sessions-manager-category-bar-label-text", text: entry.label });
 		const track = item.createDiv({ cls: "agent-sessions-manager-category-bar-track" });
 		const barPct = maxCost > 0 ? (entry.cost / maxCost) * 100 : 0;
-		// 「カテゴリなし」「名前なし」はチップを付けない代わりに、バーも灰色にして区別する
-		// （T-70 追補）。
+		// バーの色もチップと同じ色相にする（T-70 追補）。「カテゴリなし」「名前なし」はチップが
+		// 無いので、バーも灰色のまま区別する。
 		const fill = track.createDiv({ cls: "agent-sessions-manager-category-bar-fill" });
-		if (!isReal) {
+		if (hueDeg !== null) {
+			fill.style.setProperty("--as-chip-hue", String(hueDeg));
+		} else {
 			fill.addClass("is-neutral");
 		}
 		fill.style.width = `${barPct}%`;
@@ -589,7 +597,10 @@ export class ManagerView extends ItemView {
 		const nameTd = tr.createEl("td", { cls: "agent-sessions-manager-col-name" });
 		const nameWrap = nameTd.createDiv({ cls: "agent-sessions-manager-name-cell" });
 		const category = categoryOf(row);
-		if (category) {
+		// 見出し（グループ・カテゴリなし・名前なし）の下に居る行（`indent`）は、その見出しが
+		// 既にカテゴリを 1 回出しているので行にはチップを付けない（重複表示の解消。T-70 追補）。
+		// 見出しの無い並び（5h／7d で並べ替えたとき）だけ、行にチップを付ける。
+		if (category && !mrow.indent) {
 			renderCategoryChip(nameWrap, category, this.plugin.index.categoryColorIndex(category));
 		}
 		nameWrap.createSpan({ cls: "agent-sessions-manager-name-text", text: rowLabel(row) });
@@ -759,6 +770,7 @@ export class ManagerView extends ItemView {
 			statusInfo: this.plugin.index.statusline.get(id),
 			rc: this.plugin.index.registry.get(id)?.rc ?? null,
 			fetchUsage: () => usage(this.plugin.agentSessionsPath(), id),
+			categoryColorIndex: (category) => this.plugin.index.categoryColorIndex(category),
 		};
 		renderDetail(this.detailEl, ctx);
 	}

@@ -114,6 +114,8 @@ function buildComposedNameField(
 		applyHighlight();
 	}
 
+	/** 候補から確定（クリック・Enter／Tab）：認識したそのタイミングで入力欄は空にする
+	 * （T-70 追補：入力した文字がそのまま残ると挙動が分かりにくい、との指摘）。 */
 	function confirmCategory(cat: string): void {
 		category = cat;
 		inputEl.value = "";
@@ -128,6 +130,10 @@ function buildComposedNameField(
 		}
 		const token = tokenizeNameInput(inputEl.value);
 		if (token) {
+			// `:` の確定・`：`＋空白のどちらも同じ規則（`tokenizeNameInput`）で判定する。
+			// 貼り付けで「カテゴリ: 名前」が一括で入っても同じ `input` イベントを通るので、
+			// 経路によらず認識した瞬間にカテゴリ・区切り文字を rest から取り除く
+			// （T-70 追補：入力した文字がそのまま残ると挙動が分かりにくい、との指摘）。
 			category = token.category;
 			inputEl.value = token.rest;
 			closeSuggest();

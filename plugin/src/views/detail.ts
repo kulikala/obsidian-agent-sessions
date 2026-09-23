@@ -2,9 +2,11 @@
 // 名前・バッジ（モデル／エフォート／rc）・コンテキスト使用率のドーナツ・総トークン／
 // 総コスト・直近の指示／応答（クリックで展開）・ツール・フォルダ・ID を描く。
 
+import { renderCategoryChip } from "../chip";
 import type { Row } from "../index";
 import { t } from "../i18n";
 import type { StatusInfo } from "../statusline";
+import { splitName } from "../tree";
 import type { Detail, UsageResult, UsageTotal } from "../types";
 import { formatK } from "../usage";
 
@@ -16,6 +18,10 @@ export interface DetailContext {
 	rc: boolean | null;
 	/** `json usage` を呼ぶ関数。呼出側（`side.ts`・`manager.ts`）が `agentSessionsPath` を持つ。 */
 	fetchUsage: () => Promise<UsageResult>;
+	/** カテゴリのチップ色（パレット番号）。呼出側が `SessionIndex.categoryColorIndex` を渡す
+	 * （T-70 追補：名前の上に小さくチップ、名前はカテゴリを除いた部分にする——一覧・帯と
+	 * 同じ色で、文字の重複はしない）。 */
+	categoryColorIndex: (category: string) => number;
 }
 
 const USAGE_TTL_MS = 60000;
@@ -33,6 +39,15 @@ export function formatCost(cost: number): string {
 
 function displayName(row: Row): string {
 	return row.name || row.label || t("common.untitled", { id: row.id.slice(0, 8) });
+}
+
+/** 名前欄に出す「カテゴリ（有れば）」「カテゴリを除いた名前」の組（T-70 追補）。 */
+export function categoryAndLabel(row: Row): { category: string | null; label: string } {
+	if (row.name) {
+		const [category, rest] = splitName(row.name);
+		return { category, label: rest };
+	}
+	return { category: null, label: displayName(row) };
 }
 
 /** `obsidian` の `setIcon`／`setTooltip` は遅延 require（`rows.ts` の `require("electron")` と同じ理由：
@@ -150,7 +165,12 @@ export function renderDetail(container: HTMLElement, ctx: DetailContext | null):
 	const { row, detail, statusInfo, rc } = ctx;
 	container.dataset.rowId = row.id;
 
-	container.createEl("h4", { cls: "agent-sessions-detail-name", text: displayName(row) });
+	const { category, label } = categoryAndLabel(row);
+	if (category) {
+		const catEl = container.createDiv({ cls: "agent-sessions-detail-category" });
+		renderCategoryChip(catEl, category, ctx.categoryColorIndex(category));
+	}
+	container.createEl("h4", { cls: "agent-sessions-detail-name", text: label });
 	renderBadges(container, statusInfo, rc);
 
 	const statsRow = container.createDiv({ cls: "agent-sessions-detail-stats" });

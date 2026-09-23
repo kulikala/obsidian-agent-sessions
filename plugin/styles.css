@@ -165,13 +165,20 @@
 	overflow: hidden;
 }
 
+/* バーの色はチップと同じ色相にする（`--as-chip-hue` をチップと同じ式で。T-70 追補）。
+   実カテゴリでなければ（「カテゴリなし」「名前なし」）`--as-chip-hue` を置かず、
+   `.is-neutral` の灰色になる。 */
 .agent-sessions-manager-category-bar-fill {
 	height: 100%;
-	background-color: var(--text-accent);
+	background-color: hsl(var(--as-chip-hue, 0) 45% 60%);
 }
 
-/* 「カテゴリなし」「名前なし」はチップを付けない代わりに灰色（T-70 追補）。 */
-.agent-sessions-manager-category-bar-fill.is-neutral {
+.theme-light .agent-sessions-manager-category-bar-fill {
+	background-color: hsl(var(--as-chip-hue, 0) 45% 32%);
+}
+
+.agent-sessions-manager-category-bar-fill.is-neutral,
+.theme-light .agent-sessions-manager-category-bar-fill.is-neutral {
 	background-color: var(--text-faint);
 }
 
@@ -635,6 +642,11 @@
 	min-height: 0;
 	min-width: 0;
 	border-top: 1px solid var(--background-modifier-border);
+}
+
+/* カテゴリのチップ（名前の上に小さく。T-70 追補）。 */
+.agent-sessions-detail-category {
+	margin-bottom: var(--size-2-1);
 }
 
 .agent-sessions-detail-name {

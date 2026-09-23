@@ -83,6 +83,19 @@ describe("tokenizeNameInput（T-70：命名ダイアログの単一入力欄）"
 	it("カテゴリ側の前後の空白は落とす", () => {
 		expect(tokenizeNameInput(" カテゴリ :名前")).toEqual({ category: "カテゴリ", rest: "名前" });
 	});
+
+	it("区切りを認識したら、カテゴリ名・区切り文字はどちらも rest に残らない（T-70 追補：" +
+		"『入力した文字がそのまま残ってしまう』の解消。貼り付けで一括入力された場合も同じ規則で処理される）", () => {
+		const half = tokenizeNameInput("スキル開発: 資料の見直し");
+		expect(half).toEqual({ category: "スキル開発", rest: "資料の見直し" });
+		expect(half?.rest.includes("スキル開発")).toBe(false);
+		expect(half?.rest.includes(":")).toBe(false);
+
+		const full = tokenizeNameInput("スキル開発： 資料の見直し");
+		expect(full).toEqual({ category: "スキル開発", rest: "資料の見直し" });
+		expect(full?.rest.includes("スキル開発")).toBe(false);
+		expect(full?.rest.includes("：")).toBe(false);
+	});
 });
 
 describe("filterCategories（T-70）", () => {
