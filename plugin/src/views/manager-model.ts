@@ -185,3 +185,14 @@ export function categoryTotals(rows: Row[], stats: StatsResult | null, window: "
 	}
 	return [...buckets.values()];
 }
+
+/**
+ * カテゴリ別バーに出す上位 `n` 件（D-64 追補）：コストが 0 のカテゴリ（その枠に使用が無い）
+ * は除く——「7 日枠で動いていない」ことは帯では言わない。残りをコスト降順で並べる。
+ */
+export function topCategoryTotals(totals: CategoryTotal[], n: number): CategoryTotal[] {
+	return totals
+		.filter((c) => c.cost > 0)
+		.sort((a, b) => b.cost - a.cost)
+		.slice(0, n);
+}

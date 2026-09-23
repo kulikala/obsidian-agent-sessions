@@ -22,6 +22,7 @@ import {
 	moveSelection,
 	sessionCost,
 	sortRows,
+	topCategoryTotals,
 	windowSummary,
 	type CategoryTotal,
 	type ManagerRow,
@@ -281,10 +282,14 @@ export class ManagerView extends ItemView {
 		});
 
 		const allRows = [...this.plugin.index.sessions.values()];
-		const totals = categoryTotals(allRows, this.statsResult, "7d").sort((a, b) => b.cost - a.cost);
-		const top = totals.slice(0, CATEGORY_BAR_TOP_N);
+		const totals = categoryTotals(allRows, this.statsResult, "7d");
+		// コスト 0（この枠で動いていない）のカテゴリは並べない（実機修正：D-64 追補）。
+		const top = topCategoryTotals(totals, CATEGORY_BAR_TOP_N);
 		if (top.length === 0) {
-			this.categoryBarEl.createDiv({ cls: "agent-sessions-manager-category-bar-empty", text: "—" });
+			this.categoryBarEl.createDiv({
+				cls: "agent-sessions-manager-category-bar-empty",
+				text: t("stats.categoryBar.empty"),
+			});
 			return;
 		}
 

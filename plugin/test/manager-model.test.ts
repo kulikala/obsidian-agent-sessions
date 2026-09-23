@@ -10,7 +10,9 @@ import {
 	moveSelection,
 	sessionCost,
 	sortRows,
+	topCategoryTotals,
 	windowSummary,
+	type CategoryTotal,
 	type ManagerRow,
 } from "../src/views/manager-model";
 
@@ -273,5 +275,25 @@ describe("categoryTotals（D-64）", () => {
 	it("window に使用が無ければコストは 0", () => {
 		const rows: Row[] = [row({ id: "1", name: "RIM: 議事メモ" })];
 		expect(categoryTotals(rows, null, "5h")).toEqual([{ key: "RIM", label: "RIM", cost: 0, count: 1 }]);
+	});
+});
+
+describe("topCategoryTotals（D-64 追補）", () => {
+	function total(key: string, cost: number): CategoryTotal {
+		return { key, label: key, cost, count: 1 };
+	}
+
+	it("コスト 0 のカテゴリは除く", () => {
+		const totals = [total("RIM", 0), total("ZERO", 5), total("その他", 0)];
+		expect(topCategoryTotals(totals, 8)).toEqual([total("ZERO", 5)]);
+	});
+
+	it("残りをコスト降順で並べ、上位 n 件に絞る", () => {
+		const totals = [total("A", 1), total("B", 3), total("C", 2)];
+		expect(topCategoryTotals(totals, 2)).toEqual([total("B", 3), total("C", 2)]);
+	});
+
+	it("全部 0 なら空配列", () => {
+		expect(topCategoryTotals([total("A", 0), total("B", 0)], 8)).toEqual([]);
 	});
 });
