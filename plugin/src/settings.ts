@@ -2,11 +2,13 @@
 
 export type Padding = "comfortable" | "compact" | "none";
 
-/** 改行として送るキー（§6.8・D-41）。`enter` を選ぶと keybindings.json に書く。 */
-export type NewlineKey = "enter" | "meta+enter" | "ctrl+enter" | "shift+enter" | "super+enter";
+/**
+ * 送信キー（§6.8・D-50）。`enter` 以外を選ぶと Enter は改行になり、keybindings.json に書く。
+ * `alt+enter` は Option+Enter、`cmd+enter` は Command+Enter。
+ */
+export type SubmitKey = "enter" | "shift+enter" | "ctrl+enter" | "alt+enter" | "cmd+enter";
 
-/** `newlineKey === 'enter'` のときに送信として使うキー。 */
-export type SubmitKey = "meta+enter" | "ctrl+enter" | "shift+enter" | "super+enter";
+export const SUBMIT_KEYS: readonly SubmitKey[] = ["enter", "shift+enter", "ctrl+enter", "alt+enter", "cmd+enter"];
 
 export interface AgentSessionsSettings {
 	fontFamily: string;
@@ -20,9 +22,7 @@ export interface AgentSessionsSettings {
 	scrollback: number;
 	/** 編集領域の高さ（本体に対する %）。 */
 	editorHeight: number;
-	/** 改行として送るキー（既定 shift+enter）。 */
-	newlineKey: NewlineKey;
-	/** `newlineKey === 'enter'` のときの送信キー（既定 super+enter）。 */
+	/** 送信キー（既定 enter）。起動時に keybindings.json から導き直す。 */
 	submitKey: SubmitKey;
 	/** サイドパネルの詳細領域の高さ（px、§6.9・D-43）。 */
 	sideDetailHeight: number;
@@ -39,7 +39,22 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	pythonPath: "",
 	scrollback: 5000,
 	editorHeight: 40,
-	newlineKey: "shift+enter",
-	submitKey: "super+enter",
+	submitKey: "enter",
 	sideDetailHeight: 220,
 };
+
+/**
+ * 保存データを既定値に重ねる。廃止した `newlineKey` と、今の `SubmitKey` に無い旧 `submitKey`
+ * （`super+enter`・`meta+enter` など）は捨てる（起動時に keybindings.json から導き直す。D-50）。
+ */
+export function mergeSettings(data: unknown): AgentSessionsSettings {
+	const saved = (typeof data === "object" && data !== null ? { ...(data as Record<string, unknown>) } : {}) as Record<
+		string,
+		unknown
+	>;
+	delete saved.newlineKey;
+	if (!SUBMIT_KEYS.includes(saved.submitKey as SubmitKey)) {
+		delete saved.submitKey;
+	}
+	return Object.assign({}, DEFAULT_SETTINGS, saved) as AgentSessionsSettings;
+}

@@ -1,4 +1,4 @@
-// 改行キー（D-41・§6.8）。`~/.claude/keybindings.json`（正しくは `$CLAUDE_CONFIG_DIR`
+// 送信キー（D-50・§6.8）。`~/.claude/keybindings.json`（正しくは `$CLAUDE_CONFIG_DIR`
 // 配下）の `Chat` コンテキストの `enter`・`meta+enter` を読み書きする。
 // Claude Code 全体の設定で、vault の `.claude/` は読まない。
 
@@ -13,7 +13,7 @@ export interface EnterModeInfo {
 	raw?: string;
 }
 
-export interface ApplyNewlineKeyResult {
+export interface ApplySubmitKeyResult {
 	/** 一致しない鍵が残っていて手で直す必要があるときの文言。 */
 	warning?: string;
 }
@@ -32,7 +32,7 @@ interface KeybindingsFile {
 const SCHEMA_URL = "https://www.schemastore.org/claude-code-keybindings.json";
 const DOCS_URL = "https://code.claude.com/docs/en/keybindings";
 
-/** `newlineKey === 'enter'` のときに `Chat` へ書く 2 鍵（§6.8・D-41）。 */
+/** `submitKey !== 'enter'` のときに `Chat` へ書く 2 鍵（§6.8・D-50）。 */
 const ENTER_KEYS: Record<string, string> = {
 	enter: "chat:newline",
 	"meta+enter": "chat:submit",
@@ -96,8 +96,8 @@ export function readEnterMode(filePath: string): EnterModeInfo {
 }
 
 /**
- * `Chat` コンテキストの生の鍵一覧を読む（§6.8・D-41 追補）。`deriveKeysFromKeybindings`
- * が `cmd+enter`／`super+enter`／`meta+enter` の有無から送信キーを導くのに使う。
+ * `Chat` コンテキストの生の鍵一覧を読む（§6.8・D-50）。`deriveSubmitKey` が `enter` と
+ * `cmd+enter`／`super+enter` の有無から送信キーを導くのに使う。
  * ファイルが無い・読めない・`Chat` ブロックが無いときは `undefined`。
  */
 export function readChatBindings(filePath: string): Record<string, string> | undefined {
@@ -115,17 +115,17 @@ export function readChatBindings(filePath: string): Record<string, string> | und
 }
 
 /**
- * 改行キーの設定を `keybindings.json` に反映する（§6.8・D-41）。
- * - `newlineKey === 'enter'`：`Chat` ブロック（無ければ作る）に `enter: chat:newline`・
+ * 送信キーの設定を `keybindings.json` に反映する（§6.8・D-50）。
+ * - `submitKey !== 'enter'`：`Chat` ブロック（無ければ作る）に `enter: chat:newline`・
  *   `meta+enter: chat:submit` の 2 鍵を入れる。他の鍵・他のコンテキストは触らない。
  *   `$schema`・`$docs` が無ければ足す。
- * - それ以外：この 2 鍵のうち、自分が書いた値と一致するものだけ消す。空になった
+ * - `submitKey === 'enter'`：この 2 鍵のうち、自分が書いた値と一致するものだけ消す。空になった
  *   `Chat` ブロックは消す。一致しない鍵は残し `warning` を返す。
  *
  * ファイルが読めない（壊れている）ときは書かずに `warning` を返す。
  */
-export function applyNewlineKey(filePath: string, newlineKey: string): ApplyNewlineKeyResult {
-	const writing = newlineKey === "enter";
+export function applySubmitKey(filePath: string, submitKey: string): ApplySubmitKeyResult {
+	const writing = submitKey !== "enter";
 
 	let text: string | null;
 	try {

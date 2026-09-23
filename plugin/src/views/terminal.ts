@@ -10,7 +10,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { BackendError, loginEnv, resolveClaude } from "../backend";
 import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../daemon-client";
-import { classifyEnter, resolveEnterAction } from "../keys";
+import { classifyEnter, resolveEnterAction, sendSequence } from "../keys";
 import { buildAtToken, selectionLineRange, VaultLinkProvider } from "../links";
 import { submitSequence } from "../main";
 import type AgentSessionsPlugin from "../main";
@@ -539,11 +539,22 @@ export class TerminalView extends ItemView {
 		}
 	}
 
-	/** 送信キーが押されたとき（§6.8・D-41）：送信列を書き、指示マーカーを記録する。ジャンプ
+	/** 送信キーが押されたとき（§6.8・D-50）：送信列を書き、指示マーカーを記録する。ジャンプ
 	 * の指示マーカーはここが唯一の記録場所（`onData` からは記録しない。§6.7）。 */
 	private sendSubmit(): void {
 		this.sendInput(Buffer.from(submitSequence(this.plugin.settings), "binary"));
 		this.marks.markInstruction();
+	}
+
+	/**
+	 * 内蔵エディタの「送る」の後（D-51）：編集領域が閉じていれば送信する。`main.ts` が
+	 * Claude の読み戻しを待ってから呼ぶ。
+	 */
+	submitPrompt(): void {
+		if (this.pendingEdit || this.closed) {
+			return;
+		}
+		this.sendSubmit();
 	}
 
 	/** `start` 直後の出力を控える（`--resume` の失敗判定に使う。§7）。 */
@@ -587,7 +598,7 @@ export class TerminalView extends ItemView {
 	// ---- 編集領域（D-21・D-22） -----------------------------------------------------
 
 	/**
-	 * `agent-sessions edit` からの要求。本体を上下に割って下に編集領域を開き、送る／取消で
+	 * `agent-sessions edit` からの要求。本体を上下に割って下に編集領域を開き、送る／入力欄に戻る／取消で
 	 * 解決する。編集中に 2 つ目が来たら `busy`。
 	 */
 	async openEditor(file: string, cwd: string): Promise<EditResult | "busy"> {
@@ -601,6 +612,7 @@ export class TerminalView extends ItemView {
 			vaultPath: this.plugin.vaultPath(),
 			fontFamily: s.fontFamily,
 			fontSize: this.fontSize ?? s.fontSize,
+			submitKey: s.submitKey,
 		});
 		this.pendingEdit = pane;
 		this.applyTerminalMinHeight();
@@ -776,24 +788,17 @@ export class TerminalView extends ItemView {
 			}
 			return true;
 		}
-		const enterAction = resolveEnterAction(classifyEnter(ev), {
-			newlineKey: this.plugin.settings.newlineKey,
-			submitKey: this.plugin.settings.submitKey,
-		});
+		// Enter の組合せはすべて横取りし、送信か改行の列を自分で送る（D-50）。
+		const submitKey = this.plugin.settings.submitKey;
+		const enterAction = resolveEnterAction(classifyEnter(ev), submitKey);
 		if (enterAction !== "passthrough") {
 			ev.preventDefault();
 			ev.stopPropagation();
 			if (ev.type === "keydown") {
-				switch (enterAction) {
-					case "newline":
-						this.sendInput(Buffer.from("\x1b\r", "binary"));
-						break;
-					case "submit":
-						this.sendSubmit();
-						break;
-					case "raw-enter":
-						this.sendInput(Buffer.from("\r", "binary"));
-						break;
+				if (enterAction === "submit") {
+					this.sendSubmit();
+				} else {
+					this.sendInput(Buffer.from(sendSequence("newline", submitKey), "binary"));
 				}
 			}
 			return false;

@@ -12,14 +12,14 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { detail, live, loginEnv, resolveAgentSessionsPath, resolveClaude, scan } from "./backend";
 import { DaemonClient, defaultSockPath, ensureDaemon } from "./daemon-client";
-import { EditServer, type EditReply, type EditRequest } from "./edit-server";
+import { EditServer, editReplyFor, submitsAfterEdit, type EditReply, type EditRequest } from "./edit-server";
 import { SessionIndex } from "./index";
-import { applyNewlineKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./keybindings";
-import { deriveKeysFromKeybindings } from "./keys";
+import { applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./keybindings";
+import { reconcileSubmitKey, sendSequence } from "./keys";
 import { buildAtToken, selectionLineRange } from "./links";
 import { ConfirmModal, NewSessionModal, RenameSessionModal } from "./modals";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./open-session";
-import { AgentSessionsSettings, DEFAULT_SETTINGS, type NewlineKey, type SubmitKey } from "./settings";
+import { AgentSessionsSettings, DEFAULT_SETTINGS, mergeSettings, SUBMIT_KEYS, type SubmitKey } from "./settings";
 import { migrateFromMarkdown, StoreLockError, updateStore } from "./store";
 import { claudeSettingsPath, readFullscreenTui } from "./tui-mode";
 import type { ArchivedSession, DaemonSession } from "./types";
@@ -36,6 +36,8 @@ const STASH = "\x13";
 /** bracketed paste の囲み。コマンドをこれで入れると `/` の補完が開かず一括で入る。 */
 const PASTE_BEGIN = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
+/** 内蔵エディタの「送る」から送信列までの間（Claude が一時ファイルを読み戻すのを待つ。D-51）。 */
+const SUBMIT_AFTER_EDIT_MS = 300;
 /** `registry` の状態を待つ上限（D-42）。 */
 const WAIT_IDLE_MS = 60000;
 /** 送信後に `busy` を経るのを待つ上限。`/rename` のように busy にならないコマンドはここで諦める。 */
@@ -51,12 +53,12 @@ function messageOf(err: unknown): string {
 }
 
 /**
- * 送信キーが押されたときに送る列（§6.8・D-41）。`newlineKey === 'enter'` なら
- * `enter` 自体が改行に回っているので `\x1b\r`（meta+enter＝送信）、それ以外は `\r`。
- * `views/terminal.ts` の `sendSubmit()` と、D-42 のコマンド送信の両方から使う純関数。
+ * 送信列（§6.8・D-50）。`submitKey === 'enter'` なら `\r`、それ以外は Enter が改行に回って
+ * いるので `\x1b\r`（meta+enter＝送信）。`views/terminal.ts` の `sendSubmit()`・D-42 の
+ * コマンド送信・内蔵エディタの「送る」（D-51）から使う純関数。
  */
 export function submitSequence(settings: AgentSessionsSettings): string {
-	return settings.newlineKey === "enter" ? "\x1b\r" : "\r";
+	return sendSequence("submit", settings.submitKey);
 }
 
 export default class AgentSessionsPlugin extends Plugin {
@@ -88,7 +90,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.registerEvent(this.events.on("settings-changed", () => this.refreshTuiMode()));
 		// keybindings.json が既に改行キーを持っていれば（他のツール・ユーザーが手で書いた場合を
 		// 含む）、プラグインの設定をそれに合わせる（§6.8・D-41 追補。keybindings.json 自体は書かない）。
-		await this.syncNewlineKeyFromKeybindings();
+		await this.syncSubmitKeyFromKeybindings();
 
 		// 旧 `claude-sessions.md` の取り込み（§3）。`sessions.json` が既にあれば何もしない。
 		try {
@@ -191,7 +193,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+		this.settings = mergeSettings(await this.loadData());
 	}
 
 	async saveSettings(): Promise<void> {
@@ -205,21 +207,16 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * `keybindings.json` の `Chat` を読んで、設定の `newlineKey`／`submitKey` をそれに合わせる
-	 * （§6.8・D-41 追補）。`keybindings.json` 自体は書かない。変更したら `true` を返す
-	 * （設定タブの「ファイルに合わせる」ボタンからも呼ぶ）。
+	 * `keybindings.json` の `Chat` を読んで、設定の `submitKey` をそれに合わせる（§6.8・D-50）。
+	 * `keybindings.json` 自体は書かない。変更したら `true` を返す（設定タブの「ファイルに
+	 * 合わせる」ボタンからも呼ぶ）。
 	 */
-	async syncNewlineKeyFromKeybindings(): Promise<boolean> {
-		const chatBindings = readChatBindings(this.keybindingsPath());
-		const derived = deriveKeysFromKeybindings(chatBindings, {
-			newlineKey: this.settings.newlineKey,
-			submitKey: this.settings.submitKey,
-		});
-		if (!derived) {
+	async syncSubmitKeyFromKeybindings(): Promise<boolean> {
+		const next = reconcileSubmitKey(readChatBindings(this.keybindingsPath()), this.settings.submitKey);
+		if (next === this.settings.submitKey) {
 			return false;
 		}
-		this.settings.newlineKey = derived.newlineKey;
-		this.settings.submitKey = derived.submitKey;
+		this.settings.submitKey = next;
 		await this.saveSettings();
 		return true;
 	}
@@ -306,8 +303,10 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * `edit` 要求（D-21）：セッションのターミナルビューを探し（無ければ `no-tab`）、編集領域を
-	 * 開いて結果で応答する。claude 側が切れたら（`onAbort`）編集領域を閉じ、応答は返さない。
+	 * `edit` 要求（D-21・D-51）：セッションのターミナルビューを探し（無ければ `no-tab`）、編集領域を
+	 * 開いて結果で応答する。送る／入力欄に戻るは `ok`、取消（タブを閉じた）は `cancel`。
+	 * 送るでプロンプト編集（`claude-prompt-*`）なら、Claude が読み戻すのを待って送信列を送る。
+	 * claude 側が切れたら（`onAbort`）編集領域を閉じ、応答は返さない。
 	 */
 	private handleEdit(req: EditRequest, reply: EditReply): void {
 		const view = this.findTerminalView(req.session);
@@ -326,10 +325,10 @@ export default class AgentSessionsPlugin extends Plugin {
 				if (aborted) {
 					return;
 				}
-				if (result === "send") {
-					reply(true);
-				} else {
-					reply(false, result);
+				const { ok, error } = editReplyFor(result);
+				reply(ok, error);
+				if (result === "send" && submitsAfterEdit(req.file)) {
+					window.setTimeout(() => view.submitPrompt(), SUBMIT_AFTER_EDIT_MS);
 				}
 			})
 			.catch((err) => {
@@ -498,7 +497,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 	}
 
-	/** 退避 → bracketed paste でコマンド → 送信列（`\r`、`newlineKey === 'enter'` なら `\x1b\r`）。 */
+	/** 退避 → bracketed paste でコマンド → 送信列（`\r`、`submitKey !== 'enter'` なら `\x1b\r`）。 */
 	private commandBytes(text: string): Buffer {
 		return Buffer.from(STASH + PASTE_BEGIN + text + PASTE_END + submitSequence(this.settings), "utf8");
 	}
@@ -774,7 +773,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 					})
 			);
 
-		this.renderNewlineKeySetting(containerEl);
+		this.renderSubmitKeySetting(containerEl);
 
 		new Setting(containerEl)
 			.setName("最近の件数（サイドパネル）")
@@ -853,19 +852,12 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			);
 	}
 
-	private static readonly NEWLINE_KEY_LABELS: Record<NewlineKey, string> = {
-		enter: "Enter",
-		"meta+enter": "Meta+Enter（Option+Enter）",
-		"ctrl+enter": "Ctrl+Enter",
-		"shift+enter": "Shift+Enter",
-		"super+enter": "Super+Enter（Cmd+Enter）",
-	};
-
 	private static readonly SUBMIT_KEY_LABELS: Record<SubmitKey, string> = {
-		"meta+enter": "Meta+Enter（Option+Enter）",
-		"ctrl+enter": "Ctrl+Enter",
+		enter: "Enter",
 		"shift+enter": "Shift+Enter",
-		"super+enter": "Super+Enter（Cmd+Enter）",
+		"ctrl+enter": "Ctrl+Enter",
+		"alt+enter": "Option+Enter",
+		"cmd+enter": "Cmd+Enter",
 	};
 
 	/** 現在の keybindings.json の Chat の enter の表示だけに使う（変更には使わない、§6.8）。 */
@@ -883,13 +875,13 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		}
 	}
 
-	/** 改行キー・送信キー（§6.8・D-41）。開くたびに `keybindings.json` を読んで現在値を出す。 */
-	private renderNewlineKeySetting(containerEl: HTMLElement): void {
+	/** 送信キー（§6.8・D-50）。開くたびに `keybindings.json` を読んで現在値を出す。 */
+	private renderSubmitKeySetting(containerEl: HTMLElement): void {
 		const keybindingsPath = this.plugin.keybindingsPath();
 
-		const applyAndSave = (next: NewlineKey) => {
-			const result = applyNewlineKey(keybindingsPath, next);
-			this.plugin.settings.newlineKey = next;
+		const applyAndSave = (next: SubmitKey) => {
+			const result = applySubmitKey(keybindingsPath, next);
+			this.plugin.settings.submitKey = next;
 			void this.plugin.saveSettings();
 			if (result.warning) {
 				new Notice(result.warning);
@@ -897,24 +889,26 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			this.display();
 		};
 
-		const setting = new Setting(containerEl)
-			.setName("改行キー")
-			.setDesc(
-				`Option+Enter は常に改行になります（ターミナルが meta+enter を送るため）。${this.currentEnterBindingText(keybindingsPath)}`
-			);
+		const setting = new Setting(containerEl).setName("送信キー");
+		setting.descEl.createDiv({
+			text: "Enter 以外を選ぶと、Enter は改行になります。そのため ~/.claude/keybindings.json に書き込みます（他のターミナルアプリで起動した claude にも効きます）",
+		});
+		setting.descEl.createDiv({ text: this.currentEnterBindingText(keybindingsPath) });
 		setting.addDropdown((dropdown) => {
-			dropdown.addOptions(AgentSessionsSettingTab.NEWLINE_KEY_LABELS);
-			dropdown.setValue(this.plugin.settings.newlineKey);
+			for (const key of SUBMIT_KEYS) {
+				dropdown.addOption(key, AgentSessionsSettingTab.SUBMIT_KEY_LABELS[key]);
+			}
+			dropdown.setValue(this.plugin.settings.submitKey);
 			dropdown.onChange((value) => {
-				const next = value as NewlineKey;
-				const current = this.plugin.settings.newlineKey;
+				const next = value as SubmitKey;
+				const current = this.plugin.settings.submitKey;
 				if (next === current) {
 					return;
 				}
-				if (next === "enter") {
+				if (next !== "enter") {
 					new ConfirmModal(
 						this.app,
-						"Claude Code の keybindings.json に書きます。他のターミナルアプリで起動した claude にも効きます",
+						"Enter を改行にするため、Claude Code の keybindings.json に書きます。他のターミナルアプリで起動した claude にも効きます",
 						"書き込む",
 						() => applyAndSave(next)
 					).open();
@@ -926,29 +920,18 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			});
 		});
 
-		this.renderNewlineKeyMismatch(containerEl, keybindingsPath);
-
-		if (this.plugin.settings.newlineKey === "enter") {
-			new Setting(containerEl).setName("送信キー").addDropdown((dropdown) => {
-				dropdown.addOptions(AgentSessionsSettingTab.SUBMIT_KEY_LABELS);
-				dropdown.setValue(this.plugin.settings.submitKey);
-				dropdown.onChange(async (value) => {
-					this.plugin.settings.submitKey = value as SubmitKey;
-					await this.plugin.saveSettings();
-				});
-			});
-		}
+		this.renderSubmitKeyMismatch(containerEl, keybindingsPath);
 	}
 
 	/**
-	 * `keybindings.json` の `Chat.enter` と設定の `newlineKey` が食い違っているとき
-	 * （例：ファイルは `chat:newline` なのに設定は `enter` 以外のまま）に警告を出す
-	 * （§6.8・D-41 追補）。「ファイルに合わせる」で `syncNewlineKeyFromKeybindings()` を実行する。
+	 * `keybindings.json` の `Chat.enter` と設定の `submitKey` が食い違っているとき
+	 * （例：ファイルは `chat:newline` なのに設定は `enter` のまま）に警告を出す
+	 * （§6.8・D-50）。「ファイルに合わせる」で `syncSubmitKeyFromKeybindings()` を実行する。
 	 */
-	private renderNewlineKeyMismatch(containerEl: HTMLElement, keybindingsPath: string): void {
+	private renderSubmitKeyMismatch(containerEl: HTMLElement, keybindingsPath: string): void {
 		const info = readEnterMode(keybindingsPath);
-		const newlineKey = this.plugin.settings.newlineKey;
-		const mismatched = (info.mode === "newline" && newlineKey !== "enter") || (info.mode === "submit" && newlineKey === "enter");
+		const submitKey = this.plugin.settings.submitKey;
+		const mismatched = (info.mode === "newline" && submitKey === "enter") || (info.mode === "submit" && submitKey !== "enter");
 		if (!mismatched) {
 			return;
 		}
@@ -960,7 +943,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		});
 		setting.addButton((button) =>
 			button.setButtonText("ファイルに合わせる").onClick(async () => {
-				const changed = await this.plugin.syncNewlineKeyFromKeybindings();
+				const changed = await this.plugin.syncSubmitKeyFromKeybindings();
 				if (changed) {
 					new Notice("keybindings.json に合わせました");
 				}

@@ -7,7 +7,7 @@ import * as net from "node:net";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { encodeFrame, FrameDecoder } from "../src/daemon-client";
-import { EditServer, type EditRequest, type EditReply } from "../src/edit-server";
+import { EditServer, editReplyFor, submitsAfterEdit, type EditOutcome, type EditRequest, type EditReply } from "../src/edit-server";
 
 interface Client {
 	socket: net.Socket;
@@ -167,5 +167,47 @@ describe("EditServer（D-21）", () => {
 		client.send(editBody());
 		expect(await client.responses).toEqual([{ ok: true, seq: 1 }]);
 		again.stop();
+	});
+});
+
+describe("editReplyFor・submitsAfterEdit（D-51）", () => {
+	it("送る・入力欄に戻るは ok、取消・busy はその名のエラー", () => {
+		expect(editReplyFor("send")).toEqual({ ok: true });
+		expect(editReplyFor("return")).toEqual({ ok: true });
+		expect(editReplyFor("cancel")).toEqual({ ok: false, error: "cancel" });
+		expect(editReplyFor("busy")).toEqual({ ok: false, error: "busy" });
+	});
+
+	it("送信列を続けるのはプロンプト編集の一時ファイルだけ", () => {
+		expect(submitsAfterEdit("/var/folders/x/T/claude-prompt-1234-abcd.md")).toBe(true);
+		expect(submitsAfterEdit("/Users/x/.claude/keybindings.json")).toBe(false);
+		expect(submitsAfterEdit("/v/CLAUDE.md")).toBe(false);
+		expect(submitsAfterEdit("/tmp/claude-prompt-dir/notes.md")).toBe(false);
+	});
+
+	it("ソケット越しに、送る／入力欄に戻るは ok:true、取消は ok:false,error:cancel が届く", async () => {
+		const dir = `/tmp/as-${process.pid}-${randomBytes(3).toString("hex")}`;
+		mkdirSync(dir, { recursive: true });
+		const sockPath = join(dir, "p.sock");
+		const server = new EditServer();
+		server.onEdit((req, reply) => {
+			const { ok, error } = editReplyFor(req.session as EditOutcome);
+			reply(ok, error);
+		});
+		await server.start(sockPath);
+		try {
+			for (const [outcome, expected] of [
+				["send", { ok: true, seq: 1 }],
+				["return", { ok: true, seq: 1 }],
+				["cancel", { ok: false, error: "cancel", seq: 1 }],
+			] as const) {
+				const client = await connect(sockPath);
+				client.send(editBody(outcome));
+				expect(await client.responses).toEqual([expected]);
+			}
+		} finally {
+			server.stop();
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });

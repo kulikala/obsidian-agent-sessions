@@ -20,6 +20,25 @@ export interface EditRequest {
 }
 
 export type EditReply = (ok: boolean, error?: string) => void;
+
+/**
+ * 編集領域の結果（D-51）。`send`＝送る、`return`＝入力欄に戻る（内容を保って確定・送信しない）、
+ * `cancel`＝タブを閉じた（元の内容）、`busy`＝既に編集中。
+ */
+export type EditOutcome = "send" | "return" | "cancel" | "busy";
+
+/** 結果から応答を決める：送る／入力欄に戻るは `ok`（exit 0）、それ以外はその名のエラー。 */
+export function editReplyFor(outcome: EditOutcome): { ok: boolean; error?: string } {
+	if (outcome === "send" || outcome === "return") {
+		return { ok: true };
+	}
+	return { ok: false, error: outcome };
+}
+
+/** 送るの後に送信列を送るか：プロンプト編集の一時ファイル（`claude-prompt-*`）だけ（D-51）。 */
+export function submitsAfterEdit(file: string): boolean {
+	return path.basename(file).startsWith("claude-prompt-");
+}
 export type EditHandler = (req: EditRequest, reply: EditReply) => void;
 
 interface Conn {

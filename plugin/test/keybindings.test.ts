@@ -2,7 +2,8 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { applyNewlineKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "../src/keybindings";
+import { applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "../src/keybindings";
+import { deriveSubmitKey, reconcileSubmitKey } from "../src/keys";
 
 describe("readEnterMode", () => {
 	let dir: string;
@@ -99,7 +100,7 @@ describe("readChatBindings", () => {
 	});
 });
 
-describe("applyNewlineKey", () => {
+describe("applySubmitKey", () => {
 	let dir: string;
 	let filePath: string;
 
@@ -112,8 +113,8 @@ describe("applyNewlineKey", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("enter：ファイルが無ければ作り、2 鍵と $schema/$docs を入れる", () => {
-		const result = applyNewlineKey(filePath, "enter");
+	it("enter 以外：ファイルが無ければ作り、2 鍵と $schema/$docs を入れる", () => {
+		const result = applySubmitKey(filePath, "cmd+enter");
 		expect(result).toEqual({});
 
 		const data = JSON.parse(readFileSync(filePath, "utf8"));
@@ -126,15 +127,15 @@ describe("applyNewlineKey", () => {
 		});
 	});
 
-	it("enter 以外：ファイルが無ければ何もしない（作らない）", () => {
-		const result = applyNewlineKey(filePath, "shift+enter");
+	it("enter：ファイルが無ければ何もしない（作らない）", () => {
+		const result = applySubmitKey(filePath, "enter");
 		expect(result).toEqual({});
 		expect(() => readFileSync(filePath, "utf8")).toThrow();
 	});
 
-	it("enter → shift+enter で 2 鍵が消え、空になった Chat ブロックごと消える", () => {
-		applyNewlineKey(filePath, "enter");
-		const result = applyNewlineKey(filePath, "shift+enter");
+	it("cmd+enter → enter で 2 鍵が消え、空になった Chat ブロックごと消える", () => {
+		applySubmitKey(filePath, "cmd+enter");
+		const result = applySubmitKey(filePath, "enter");
 		expect(result).toEqual({});
 
 		const data = JSON.parse(readFileSync(filePath, "utf8"));
@@ -152,14 +153,14 @@ describe("applyNewlineKey", () => {
 			})
 		);
 
-		applyNewlineKey(filePath, "enter");
+		applySubmitKey(filePath, "cmd+enter");
 		let data = JSON.parse(readFileSync(filePath, "utf8"));
 		let chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
 		expect(chat.bindings["ctrl+j"]).toBe("chat:newline");
 		expect(chat.bindings.enter).toBe("chat:newline");
 		expect(data.bindings.find((b: { context: string }) => b.context === "Other").bindings).toEqual({ a: "b" });
 
-		applyNewlineKey(filePath, "shift+enter");
+		applySubmitKey(filePath, "enter");
 		data = JSON.parse(readFileSync(filePath, "utf8"));
 		chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
 		// 自分で足していない ctrl+j は残る。Chat ブロックも残る（空でないので）。
@@ -172,7 +173,7 @@ describe("applyNewlineKey", () => {
 			JSON.stringify({ bindings: [{ context: "Chat", bindings: { enter: "chat:clear", "meta+enter": "chat:submit" } }] })
 		);
 
-		const result = applyNewlineKey(filePath, "shift+enter");
+		const result = applySubmitKey(filePath, "enter");
 		expect(result.warning).toContain("enter");
 		const data = JSON.parse(readFileSync(filePath, "utf8"));
 		const chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
@@ -182,9 +183,75 @@ describe("applyNewlineKey", () => {
 
 	it("壊れた JSON には書かず warning を返す", () => {
 		writeFileSync(filePath, "{not json");
-		const result = applyNewlineKey(filePath, "enter");
+		const result = applySubmitKey(filePath, "cmd+enter");
 		expect(result.warning).toBeTruthy();
 		expect(readFileSync(filePath, "utf8")).toBe("{not json");
+	});
+
+	it("enter 以外の送信キーはどれも同じ 2 鍵を書く（alt+enter・shift+enter・ctrl+enter）", () => {
+		for (const submitKey of ["alt+enter", "shift+enter", "ctrl+enter"]) {
+			applySubmitKey(filePath, submitKey);
+			const data = JSON.parse(readFileSync(filePath, "utf8"));
+			const chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
+			expect(chat.bindings).toEqual({ enter: "chat:newline", "meta+enter": "chat:submit" });
+			applySubmitKey(filePath, "enter");
+		}
+	});
+
+	it("enter へ戻すと、実機と同じ形（cmd+enter を足したもの）から自分の 2 鍵だけ消える", () => {
+		writeFileSync(
+			filePath,
+			JSON.stringify({
+				bindings: [
+					{ context: "Chat", bindings: { enter: "chat:newline", "meta+enter": "chat:submit", "cmd+enter": "chat:submit" } },
+				],
+			})
+		);
+		applySubmitKey(filePath, "enter");
+		const data = JSON.parse(readFileSync(filePath, "utf8"));
+		const chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
+		expect(chat.bindings).toEqual({ "cmd+enter": "chat:submit" });
+	});
+});
+
+describe("deriveSubmitKey（D-50）", () => {
+	it("実機の {enter:chat:newline, meta+enter:chat:submit, cmd+enter:chat:submit} → cmd+enter", () => {
+		expect(
+			deriveSubmitKey({ enter: "chat:newline", "meta+enter": "chat:submit", "cmd+enter": "chat:submit" })
+		).toBe("cmd+enter");
+	});
+
+	it("super+enter でも cmd+enter", () => {
+		expect(deriveSubmitKey({ enter: "chat:newline", "super+enter": "chat:submit" })).toBe("cmd+enter");
+	});
+
+	it("{enter:chat:newline, meta+enter:chat:submit} → alt+enter", () => {
+		expect(deriveSubmitKey({ enter: "chat:newline", "meta+enter": "chat:submit" })).toBe("alt+enter");
+	});
+
+	it("空・無し・enter が chat:submit → enter", () => {
+		expect(deriveSubmitKey({})).toBe("enter");
+		expect(deriveSubmitKey(undefined)).toBe("enter");
+		expect(deriveSubmitKey({ enter: "chat:submit", "cmd+enter": "chat:submit" })).toBe("enter");
+	});
+});
+
+describe("reconcileSubmitKey（D-50）", () => {
+	const newlineMode = { enter: "chat:newline", "meta+enter": "chat:submit" };
+
+	it("ファイルが Enter＝改行で設定も enter 以外なら、設定を保つ（shift/ctrl はファイルから区別できない）", () => {
+		expect(reconcileSubmitKey(newlineMode, "shift+enter")).toBe("shift+enter");
+		expect(reconcileSubmitKey(newlineMode, "cmd+enter")).toBe("cmd+enter");
+	});
+
+	it("ファイルが Enter＝改行で設定が enter なら、導いた値", () => {
+		expect(reconcileSubmitKey(newlineMode, "enter")).toBe("alt+enter");
+		expect(reconcileSubmitKey({ ...newlineMode, "cmd+enter": "chat:submit" }, "enter")).toBe("cmd+enter");
+	});
+
+	it("ファイルが既定で設定が enter 以外なら enter", () => {
+		expect(reconcileSubmitKey(undefined, "cmd+enter")).toBe("enter");
+		expect(reconcileSubmitKey({}, "enter")).toBe("enter");
 	});
 });
 
