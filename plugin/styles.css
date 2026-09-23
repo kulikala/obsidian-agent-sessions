@@ -842,6 +842,18 @@
 	margin-bottom: var(--size-4-2);
 }
 
+/* `/compact` 直後は ctx がリセットされていて他と紛れる——ctx の横に小さく出す
+   （T-76 追補）。 */
+.agent-sessions-detail-compacted {
+	flex: 0 0 auto;
+	padding: 0 var(--size-4-1);
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-border);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	white-space: nowrap;
+}
+
 .agent-sessions-donut svg {
 	display: block;
 }

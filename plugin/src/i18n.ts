@@ -426,6 +426,7 @@ const en: Record<MessageKey, string> = {
 	"group.other": "Other",
 	"manager.analysis.title": "Analysis",
 
+	"detail.compacted": "Compacted",
 	"detail.totalTokens": "Total tokens",
 	"detail.totalCost": "Total cost",
 	"detail.lastUser": "Last instruction",
