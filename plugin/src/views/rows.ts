@@ -1,12 +1,12 @@
 // 行の描画・選択・行メニュー（サイドパネルとマネージャーで共用。§6.1・§6.2）。詳細欄は views/detail.ts。
 
-import { Menu, setTooltip } from "obsidian";
+import { Menu, setIcon, setTooltip } from "obsidian";
 import { renderCategoryChip } from "../chip";
 import type { Row } from "../index";
 import { t } from "../i18n";
 import type AgentSessionsPlugin from "../main";
 import { RenameSessionModal } from "../modals";
-import { resolveRowStatus, STATUS_LABEL_KEY, terminalStatusClass } from "../terminal-status";
+import { resolveRowStatus, STATUS_LABEL_KEY, terminalStatusClass, TERMINAL_STATUS_ICON } from "../terminal-status";
 import { splitName } from "../tree";
 
 export interface RowActions {
@@ -63,13 +63,15 @@ export class RowSelection {
 }
 
 /**
- * 状態の印（小さな点）を 1 つ作って積む：タブが開いていれば `plugin.terminalStatuses`
- * の実際の状態、無ければ `Row` だけから分かる範囲（`resolveRowStatus`）。タブのアイコンと
- * 同じ色・動きの CSS クラス、tooltip も状態名で揃える（D-66 追補）。
+ * 状態の印を 1 つ作って積む：タブが開いていれば `plugin.terminalStatuses` の実際の状態、
+ * 無ければ `Row` だけから分かる範囲（`resolveRowStatus`）。タブ見出しと同じアイコン
+ * （`TERMINAL_STATUS_ICON`）・色・動きの CSS クラス、tooltip も状態名で揃える
+ * （D-66 追補・T-76：色の点から、タブと同じ lucide アイコンに変えた）。
  */
 export function rowStatusMark(container: HTMLElement, plugin: AgentSessionsPlugin, row: Row): HTMLElement {
 	const status = resolveRowStatus(plugin, row);
 	const mark = container.createSpan({ cls: `agent-sessions-row-mark ${terminalStatusClass(status)}` });
+	setIcon(mark, TERMINAL_STATUS_ICON[status]);
 	setTooltip(mark, t(STATUS_LABEL_KEY[status]));
 	return mark;
 }

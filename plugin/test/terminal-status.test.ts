@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { Row } from "../src/index";
 import {
+	ALL_TERMINAL_STATUSES,
 	higherPriorityStatus,
 	resolveRowStatus,
 	rowTerminalStatus,
 	terminalStatus,
+	TERMINAL_STATUS_ICON,
 	type TerminalStatus,
 	type TerminalStatusInput,
 } from "../src/terminal-status";
@@ -172,5 +174,21 @@ describe("resolveRowStatus（タブあり／なし。D-66 追補）", () => {
 	it("タブが無ければ rowTerminalStatus に落ちる", () => {
 		const source = { terminalStatuses: new Map<string, TerminalStatus>() };
 		expect(resolveRowStatus(source, row({ id: "a", daemon: true, status: "busy" }))).toBe("working");
+	});
+});
+
+describe("TERMINAL_STATUS_ICON（D-66・T-76：行の印もタブと同じアイコンを使う）", () => {
+	it("全ての状態にアイコン名がある（空文字・重複を持たない）", () => {
+		const names = ALL_TERMINAL_STATUSES.map((s) => TERMINAL_STATUS_ICON[s]);
+		for (const name of names) {
+			expect(name.length).toBeGreaterThan(0);
+		}
+		expect(new Set(names).size).toBe(names.length);
+	});
+
+	it("行の印（rowStatusMark・T-76）はこの表からアイコン名を引く——タブ見出しと同じ", () => {
+		expect(TERMINAL_STATUS_ICON.idle).toBe("square-terminal");
+		expect(TERMINAL_STATUS_ICON.working).toBe("loader-circle");
+		expect(TERMINAL_STATUS_ICON.detached).toBe("square-dashed");
 	});
 });

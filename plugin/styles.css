@@ -643,16 +643,23 @@
 	opacity: 0.6;
 }
 
-/* 状態の色は `color`（`agent-sessions-status-<status>`。D-66・D-66 追補）で決め、
-   `background-color: currentColor` で点を塗る——タブのアイコンと同じクラス・同じ動きを
-   そのまま流用できる。 */
+/* 状態のアイコン（タブ見出しと同じ lucide、`setIcon`。T-76：色の点から差し替えた）。
+   色・動きは `color`（`agent-sessions-status-<status>`。D-66・D-66 追補）で決め、
+   アイコンの stroke（currentColor）に流用する——タブのアイコンと同じクラス・同じ動きを
+   そのまま共有できる。行の高さ・列幅は変えない（14px、マネージャーの印の列 24px に収まる）。 */
 .agent-sessions-row-mark {
-	width: 0.6em;
-	height: 0.6em;
-	border-radius: 50%;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 14px;
+	height: 14px;
 	flex: 0 0 auto;
 	color: var(--text-faint);
-	background-color: currentColor;
+}
+
+.agent-sessions-row-mark svg {
+	width: 14px;
+	height: 14px;
 }
 
 /* カテゴリのチップ（名前の `': '` より前。色は `sessions.json` の `categoryColors` に固定
