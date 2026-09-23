@@ -4,7 +4,7 @@
 
 import type { Row } from "../index";
 import { t } from "../i18n";
-import { OTHER_GROUP, type ManagerTree } from "../tree";
+import { OTHER_GROUP, splitName, type ManagerTree } from "../tree";
 import type { StatsResult, StatsWindow } from "../types";
 
 /** 折畳の対象にならない特別なグループ鍵（アーカイブの見出し）。 */
@@ -136,4 +136,52 @@ export function windowSummary(w: StatsWindow): WindowSummary {
 		tokens: w.total.input + w.total.output + w.total.cache_read + w.total.cache_create,
 		sessionCount: Object.keys(w.sessions).length,
 	};
+}
+
+/** グループ名を持たない名前付きセッション（`singles`）のカテゴリ鍵。表には群の見出しが無い
+ * （`flattenTree` 参照）ので、実際のグループ名や `OTHER_GROUP` とは衝突しない値にする。 */
+const SINGLE_CATEGORY = "__single__";
+
+/**
+ * `row` のカテゴリ鍵（D-64・D-65）：名前があればグループ部分（無ければ `SINGLE_CATEGORY`）、
+ * 名前が無ければ `OTHER_GROUP`。`flattenTree` の分類（グループ／単独／その他）と揃える。
+ */
+export function categoryKeyOf(row: Row): string {
+	if (row.name) {
+		const [group] = splitName(row.name);
+		return group ?? SINGLE_CATEGORY;
+	}
+	return OTHER_GROUP;
+}
+
+export interface CategoryTotal {
+	/** グループ名、または `OTHER_GROUP`／`SINGLE_CATEGORY`（表のグループ行の `key` と同じ値で
+	 * 引ければ揃う。「単独」はどの見出しとも一致しない——表に見出しが無いため）。 */
+	key: string;
+	/** 画面に出す文字列（「単独」「その他」はここで日本語化する）。 */
+	label: string;
+	cost: number;
+	count: number;
+}
+
+/**
+ * カテゴリ（グループ名。無ければ「単独」、名前が無ければ「その他」）ごとの、`window` 内の
+ * コスト合計とセッション数（D-64）。アーカイブ済みと無名の子セッションは数えない
+ * （`buildManagerTree` の `active`・`othersRows` と同じ絞り込み）。
+ */
+export function categoryTotals(rows: Row[], stats: StatsResult | null, window: "5h" | "7d"): CategoryTotal[] {
+	const w = windowOf(stats, window);
+	const buckets = new Map<string, CategoryTotal>();
+	for (const row of rows) {
+		if (row.archived || (!row.name && row.child)) {
+			continue;
+		}
+		const key = categoryKeyOf(row);
+		const label = key === SINGLE_CATEGORY ? t("category.single") : key === OTHER_GROUP ? t("category.other") : key;
+		const bucket = buckets.get(key) ?? { key, label, cost: 0, count: 0 };
+		bucket.cost += sessionCost(w, row.id) ?? 0;
+		bucket.count += 1;
+		buckets.set(key, bucket);
+	}
+	return [...buckets.values()];
 }

@@ -115,7 +115,8 @@ export class StatusLine extends EventEmitter {
  * `Opus 5 · high · ctx 42% · rc ● · 5h 37% · 7d 12%`。
  * モデル・エフォートが無ければ「デフォルト」、他の値が無ければ `—`。
  * `rc` は `~/.claude/sessions` の `bridgeSessionId` の有無（`registry.ts` の
- * `RegistryEntry.rc`）。台帳自体が無ければ `null` を渡し `rc —` になる。
+ * `RegistryEntry.rc`）。台帳自体が無ければ `null` を渡す——接続中（`true`）だけ `rc ●`、
+ * それ以外（`false`・`null`）は `rc ○`（D-60）。
  */
 /** `effort` は文字列（`high`）でも `{level: "high"}` でも来る。 */
 function effortOf(v: unknown): unknown {
@@ -129,7 +130,7 @@ export function formatStatus(info: StatusInfo | null, rc: boolean | null): strin
 	const model = info?.model ?? t("common.default");
 	const effort = info?.effort ?? t("common.default");
 	const ctx = info?.ctxPercent != null ? `ctx ${Math.round(info.ctxPercent)}%` : "ctx —";
-	const rcMark = rc === null ? "rc —" : rc ? "rc ●" : "rc ○";
+	const rcMark = rc ? "rc ●" : "rc ○";
 	const five = info?.fiveHour != null ? `5h ${Math.round(info.fiveHour)}%` : "5h —";
 	const seven = info?.sevenDay != null ? `7d ${Math.round(info.sevenDay)}%` : "7d —";
 	return [model, effort, ctx, rcMark, five, seven].join(" · ");

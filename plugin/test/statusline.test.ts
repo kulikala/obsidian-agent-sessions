@@ -79,8 +79,14 @@ describe("formatStatus", () => {
 		).toContain("rc ○");
 	});
 
+	it("rc が null（台帳なし）でも ○（D-60。● は接続中だけ）", () => {
+		expect(
+			formatStatus({ model: "Opus 5", effort: "high", ctxPercent: 42, fiveHour: 37, sevenDay: 12 }, null)
+		).toContain("rc ○");
+	});
+
 	it("モデル・エフォートが無ければデフォルト、他が無ければ —", () => {
-		expect(formatStatus(null, null)).toBe("デフォルト · デフォルト · ctx — · rc — · 5h — · 7d —");
+		expect(formatStatus(null, null)).toBe("デフォルト · デフォルト · ctx — · rc ○ · 5h — · 7d —");
 	});
 
 	it("info はあるが一部だけ欠ける", () => {

@@ -1,10 +1,12 @@
 // 行の描画・選択・行メニュー（サイドパネルとマネージャーで共用。§6.1・§6.2）。詳細欄は views/detail.ts。
 
 import { Menu, type App } from "obsidian";
+import { categoryHueDeg } from "../category";
 import type { Row } from "../index";
 import { t } from "../i18n";
 import type AgentSessionsPlugin from "../main";
 import { RenameSessionModal } from "../modals";
+import { splitName } from "../tree";
 
 export interface RowActions {
 	openSession(id: string): void;
@@ -72,6 +74,25 @@ export function statusMark(row: Row): string {
 
 export function displayName(row: Row): string {
 	return row.name || row.label || t("common.untitled", { id: row.id.slice(0, 8) });
+}
+
+/** `row` のカテゴリ（名前の `': '` より前。`tree.ts` の `splitName` と同じ）。無ければ `null`。 */
+export function categoryOf(row: Row): string | null {
+	if (!row.name) {
+		return null;
+	}
+	return splitName(row.name)[0];
+}
+
+/**
+ * 表・一覧に出す名前：カテゴリが有ればそれを除いた分（`splitName` の 2 要素目）、
+ * 無ければ `displayName`（`label`／無題）に落ちる（D-65。マネージャーの表と一覧で共用）。
+ */
+export function rowLabel(row: Row): string {
+	if (row.name) {
+		return splitName(row.name)[1];
+	}
+	return displayName(row);
 }
 
 export function formatTime(epochSeconds: number): string {
@@ -147,7 +168,12 @@ export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptio
 	}
 
 	el.createSpan({ cls: `agent-sessions-row-mark ${statusMark(row)}` });
-	el.createSpan({ cls: "agent-sessions-row-name", text: displayName(row) });
+	const category = categoryOf(row);
+	if (category) {
+		const chip = el.createSpan({ cls: "agent-sessions-row-chip", text: category });
+		chip.style.setProperty("--as-chip-hue", String(categoryHueDeg(category)));
+	}
+	el.createSpan({ cls: "agent-sessions-row-name", text: rowLabel(row) });
 	const time = formatTime(row.last_activity);
 	if (time) {
 		el.createSpan({ cls: "agent-sessions-row-time", text: time });
@@ -224,7 +250,7 @@ export function createRowActions(
 			void plugin.openSession(id, { agent: row?.agent ?? "claude", cwd: row?.cwd ?? "" });
 		},
 		rename: (id, currentName) => {
-			new RenameSessionModal(app, currentName, (name) => void plugin.renameSession(id, name)).open();
+			new RenameSessionModal(app, plugin.index.categories(), currentName, (name) => void plugin.renameSession(id, name)).open();
 		},
 		compact: (id) => void plugin.compactSession(id),
 		toggleArchive: (row) => {

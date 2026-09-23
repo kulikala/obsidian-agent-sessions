@@ -4,6 +4,8 @@ import { OTHER_GROUP, type ManagerTree } from "../src/tree";
 import type { StatsResult, StatsUsage, StatsWindow } from "../src/types";
 import {
 	ARCHIVED_GROUP,
+	categoryKeyOf,
+	categoryTotals,
 	flattenTree,
 	moveSelection,
 	sessionCost,
@@ -213,5 +215,63 @@ describe("windowSummary（D-54）", () => {
 
 	it("sessions が空なら 0", () => {
 		expect(windowSummary(statsWindow()).sessionCount).toBe(0);
+	});
+});
+
+describe("categoryKeyOf（D-64・D-65）", () => {
+	it("グループ名付きの名前はグループ部分", () => {
+		expect(categoryKeyOf(row({ id: "1", name: "RIM: 議事メモ" }))).toBe("RIM");
+	});
+
+	it("グループの無い名前は「単独」扱い（実際のグループ名とは衝突しない値）", () => {
+		const key = categoryKeyOf(row({ id: "1", name: "単独のセッション" }));
+		expect(key).not.toBe("RIM");
+		expect(key).toBe(categoryKeyOf(row({ id: "2", name: "別の単独" })));
+	});
+
+	it("名前が無ければ「その他」（OTHER_GROUP）", () => {
+		expect(categoryKeyOf(row({ id: "1", name: null }))).toBe(OTHER_GROUP);
+	});
+});
+
+describe("categoryTotals（D-64）", () => {
+	it("グループごとにコストとセッション数を合計する", () => {
+		const rows: Row[] = [
+			row({ id: "1", name: "RIM: 議事メモ" }),
+			row({ id: "2", name: "RIM: 別件" }),
+			row({ id: "3", name: "ZERO: 提案" }),
+		];
+		const stats: StatsResult = {
+			windows: {
+				five_hour: statsWindow(),
+				seven_day: statsWindow({ sessions: { "1": usage(1), "2": usage(2), "3": usage(5) } }),
+			},
+		};
+		const totals = categoryTotals(rows, stats, "7d");
+		const rim = totals.find((c) => c.key === "RIM");
+		const zero = totals.find((c) => c.key === "ZERO");
+		expect(rim).toEqual({ key: "RIM", label: "RIM", cost: 3, count: 2 });
+		expect(zero).toEqual({ key: "ZERO", label: "ZERO", cost: 5, count: 1 });
+	});
+
+	it("グループの無い名前は「単独」、名前の無いセッションは「その他」にまとまる", () => {
+		const rows: Row[] = [row({ id: "1", name: "単独" }), row({ id: "2", name: null })];
+		const totals = categoryTotals(rows, null, "5h");
+		expect(totals.map((c) => c.label).sort()).toEqual(["その他", "単独"]);
+	});
+
+	it("アーカイブ済み・無名の子セッションは数えない", () => {
+		const rows: Row[] = [
+			row({ id: "1", name: "RIM: 議事メモ", archived: true }),
+			row({ id: "2", name: null, child: true }),
+			row({ id: "3", name: "RIM: 現存分" }),
+		];
+		const totals = categoryTotals(rows, null, "5h");
+		expect(totals).toEqual([{ key: "RIM", label: "RIM", cost: 0, count: 1 }]);
+	});
+
+	it("window に使用が無ければコストは 0", () => {
+		const rows: Row[] = [row({ id: "1", name: "RIM: 議事メモ" })];
+		expect(categoryTotals(rows, null, "5h")).toEqual([{ key: "RIM", label: "RIM", cost: 0, count: 1 }]);
 	});
 });

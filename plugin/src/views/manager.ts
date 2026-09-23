@@ -3,48 +3,40 @@
 // （状態の印・名前・時刻の整形、⋯ の行メニュー）は `rows.ts` を再利用する。
 
 import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
-import type { Row } from "../index";
 import type AgentSessionsPlugin from "../main";
 import { stats, usage } from "../backend";
 import { t } from "../i18n";
 import { NewSessionModal } from "../modals";
 import { VIEW_TYPE_TERMINAL } from "../open-session";
 import { loadStore } from "../store";
-import { buildManagerTree, splitName } from "../tree";
+import { buildManagerTree } from "../tree";
 import type { StatsResult, StatsWindow } from "../types";
 import { formatK } from "../usage";
 import { formatCost, renderDetail, type DetailContext } from "./detail";
 import { formatCountdown } from "./limits";
 import {
 	ARCHIVED_GROUP,
+	categoryKeyOf,
+	categoryTotals,
 	flattenTree,
 	moveSelection,
 	sessionCost,
 	sortRows,
 	windowSummary,
+	type CategoryTotal,
 	type ManagerRow,
 	type SortKey,
 } from "./manager-model";
-import { createRowActions, displayName, formatTime, showRowMenu, statusMark, type RowActions } from "./rows";
+import { createRowActions, formatTime, rowLabel, showRowMenu, statusMark, type RowActions } from "./rows";
 
 const STATS_FETCH_INTERVAL_MS = 60000;
 const STATS_TICK_INTERVAL_MS = 1000;
 
 const COLUMN_COUNT = 7;
+/** カテゴリ別の横バー（D-64）に出す上位カテゴリの数。 */
+const CATEGORY_BAR_TOP_N = 8;
 
 export const VIEW_TYPE_MANAGER = "agent-sessions-manager";
-
-/**
- * 表の名前列に出す文字列。名前が有ればグループ名を除いた分（`splitName` の 2 要素目、
- * TUI と同じ）——グループに属さない名前ならそのまま全体になる。名前が無ければ
- * `displayName`（`label`／無題）に落ちる。
- */
-function rowLabel(row: Row): string {
-	if (row.name) {
-		return splitName(row.name)[1];
-	}
-	return displayName(row);
-}
 
 export class ManagerView extends ItemView {
 	private plugin: AgentSessionsPlugin;
@@ -69,6 +61,12 @@ export class ManagerView extends ItemView {
 	private actions!: RowActions;
 	/** 前面のターミナルタブのセッション（詳細パネルの既定表示に使う）。 */
 	private frontId: string | null = null;
+	/** グループ見出し行の 5h／7d コスト合計（`render()` で作り直す。`categoryKeyOf` の鍵。D-64）。 */
+	private categoryTotalsByWindow: Record<"5h" | "7d", Map<string, CategoryTotal>> = {
+		"5h": new Map(),
+		"7d": new Map(),
+	};
+	private categoryBarEl!: HTMLElement;
 
 	constructor(leaf: WorkspaceLeaf, plugin: AgentSessionsPlugin) {
 		super(leaf);
@@ -84,14 +82,20 @@ export class ManagerView extends ItemView {
 	}
 
 	getIcon(): string {
-		return "bot";
+		return "layout-dashboard";
 	}
 
 	async onOpen(): Promise<void> {
 		this.contentEl.addClass("agent-sessions-manager");
 		this.buildSkeleton();
 
-		this.register(this.plugin.index.onChange(() => this.render()));
+		// セッション一覧が変わるたび、表だけでなくカテゴリ別バーも作り直す（D-64）——
+		// `stats()`（daemon）の解決がセッション走査より早く終わっても、走査が終わり次第
+		// 追いつく（実機修正：走査未完了のまま `refreshStats()` が先に解決すると空になっていた）。
+		this.register(this.plugin.index.onChange(() => {
+			this.renderCategoryBar();
+			this.render();
+		}));
 		this.register(this.plugin.index.onError((message) => new Notice(t("notice.scanFailed", { message }))));
 		this.register(this.plugin.index.registry.onChange(() => this.render()));
 		this.register(this.plugin.index.statusline.onChange(() => this.refreshDetail()));
@@ -135,6 +139,7 @@ export class ManagerView extends ItemView {
 			this.statsResult = null;
 		}
 		this.renderStatsBar();
+		this.renderCategoryBar();
 		this.render();
 	}
 
@@ -152,6 +157,7 @@ export class ManagerView extends ItemView {
 
 	private buildSkeleton(): void {
 		this.buildStatsBar();
+		this.buildCategoryBar();
 		this.buildToolbar();
 
 		const body = this.contentEl.createDiv({ cls: "agent-sessions-manager-body" });
@@ -216,9 +222,17 @@ export class ManagerView extends ItemView {
 		this.renderStatsCard(this.statsBarEl, t("stats.sevenDay"), this.statsResult?.windows.seven_day ?? null);
 	}
 
+	/** カード見出しの横に「リセットまで…」、下段はラベル付き 2×2（D-62）。 */
 	private renderStatsCard(container: HTMLElement, label: string, w: StatsWindow | null): void {
 		const card = container.createDiv({ cls: "agent-sessions-manager-stats-card" });
-		card.createDiv({ cls: "agent-sessions-manager-stats-title", text: label });
+
+		const head = card.createDiv({ cls: "agent-sessions-manager-stats-head" });
+		head.createSpan({ cls: "agent-sessions-manager-stats-title", text: label });
+		const countdown = w ? formatCountdown(w.end - Date.now() / 1000) : null;
+		head.createSpan({
+			cls: "agent-sessions-manager-stats-countdown",
+			text: countdown != null ? t("stats.resetsIn", { countdown }) : "—",
+		});
 
 		const barWrap = card.createDiv({ cls: "agent-sessions-manager-stats-bar" });
 		const pct = w?.used_percentage != null ? Math.min(100, Math.max(0, w.used_percentage)) : 0;
@@ -227,21 +241,91 @@ export class ManagerView extends ItemView {
 		const pctText = w?.used_percentage != null ? `${Math.round(w.used_percentage)}%` : "—";
 		card.createDiv({ cls: "agent-sessions-manager-stats-pct", text: pctText });
 
-		const countdown = w ? formatCountdown(w.end - Date.now() / 1000) : null;
-		card.createDiv({
-			cls: "agent-sessions-manager-stats-countdown",
-			text: countdown != null ? t("stats.resetsIn", { countdown }) : "—",
+		const summary = w ? windowSummary(w) : null;
+		const metrics = card.createDiv({ cls: "agent-sessions-manager-stats-metrics" });
+		this.renderMetric(metrics, t("stats.metric.cost"), w ? formatCost(w.total.cost) : "—", t("stats.metric.costTip"));
+		this.renderMetric(
+			metrics,
+			t("stats.metric.tokens"),
+			summary ? formatK(summary.tokens) : "—",
+			t("stats.metric.tokensTip")
+		);
+		this.renderMetric(metrics, t("stats.metric.calls"), w ? formatK(w.total.calls) : "—", t("stats.metric.callsTip"));
+		this.renderMetric(
+			metrics,
+			t("stats.metric.sessions"),
+			summary ? String(summary.sessionCount) : "—",
+			t("stats.metric.sessionsTip")
+		);
+	}
+
+	/** ラベル（薄）＋値（太字）の 1 マス。tooltip にその値の定義（D-62）。 */
+	private renderMetric(container: HTMLElement, label: string, value: string, tooltip: string): void {
+		const cell = container.createDiv({ cls: "agent-sessions-manager-stats-metric" });
+		cell.createDiv({ cls: "agent-sessions-manager-stats-metric-label", text: label });
+		cell.createDiv({ cls: "agent-sessions-manager-stats-metric-value", text: value });
+		setTooltip(cell, tooltip);
+	}
+
+	/** 統計の帯の下：「カテゴリ別（7 日枠）」の横バー（コスト上位 8。D-64）。 */
+	private buildCategoryBar(): void {
+		this.categoryBarEl = this.contentEl.createDiv({ cls: "agent-sessions-manager-category-bar" });
+		this.renderCategoryBar();
+	}
+
+	private renderCategoryBar(): void {
+		this.categoryBarEl.empty();
+		this.categoryBarEl.createDiv({
+			cls: "agent-sessions-manager-category-bar-title",
+			text: t("stats.categoryBar.title"),
 		});
 
-		const metrics = card.createDiv({ cls: "agent-sessions-manager-stats-metrics" });
-		if (w) {
-			const summary = windowSummary(w);
-			metrics.createSpan({ text: formatCost(w.total.cost) });
-			metrics.createSpan({ text: formatK(summary.tokens) });
-			metrics.createSpan({ text: t("stats.calls", { count: formatK(w.total.calls) }) });
-			metrics.createSpan({ text: t("stats.sessions", { count: summary.sessionCount }) });
-		} else {
-			metrics.createSpan({ text: "—" });
+		const allRows = [...this.plugin.index.sessions.values()];
+		const totals = categoryTotals(allRows, this.statsResult, "7d").sort((a, b) => b.cost - a.cost);
+		const top = totals.slice(0, CATEGORY_BAR_TOP_N);
+		if (top.length === 0) {
+			this.categoryBarEl.createDiv({ cls: "agent-sessions-manager-category-bar-empty", text: "—" });
+			return;
+		}
+
+		const windowCost = this.statsResult?.windows.seven_day.total.cost ?? 0;
+		const maxCost = Math.max(...top.map((c) => c.cost), 0);
+		const list = this.categoryBarEl.createDiv({ cls: "agent-sessions-manager-category-bar-list" });
+		for (const entry of top) {
+			this.renderCategoryBarItem(list, entry, maxCost, windowCost);
+		}
+	}
+
+	private renderCategoryBarItem(container: HTMLElement, entry: CategoryTotal, maxCost: number, windowCost: number): void {
+		const item = container.createDiv({ cls: "agent-sessions-manager-category-bar-item" });
+		item.createDiv({ cls: "agent-sessions-manager-category-bar-label", text: entry.label });
+		const track = item.createDiv({ cls: "agent-sessions-manager-category-bar-track" });
+		const barPct = maxCost > 0 ? (entry.cost / maxCost) * 100 : 0;
+		track.createDiv({ cls: "agent-sessions-manager-category-bar-fill" }).style.width = `${barPct}%`;
+		const share = windowCost > 0 ? Math.round((entry.cost / windowCost) * 100) : 0;
+		item.createDiv({
+			cls: "agent-sessions-manager-category-bar-value",
+			text: `${formatCost(entry.cost)}（${share}%）`,
+		});
+		this.registerDomEvent(item, "click", () => this.scrollToCategory(entry.key));
+	}
+
+	/** カテゴリ別バーのクリック：そのグループへスクロールして開く。見出しが無いカテゴリ
+	 * （「単独」）は、そのカテゴリの最初のセッション行を選んでスクロールする（D-64）。 */
+	private scrollToCategory(key: string): void {
+		const groupIdx = this.rows.findIndex((r) => r.kind === "group" && r.key === key);
+		if (groupIdx >= 0) {
+			const group = this.rows[groupIdx] as Extract<ManagerRow, { kind: "group" }>;
+			if (group.folded) {
+				this.toggleFold(group);
+			}
+			const idx = this.rows.findIndex((r) => r.kind === "group" && r.key === key);
+			this.rowEls[idx]?.scrollIntoView({ block: "nearest" });
+			return;
+		}
+		const sessionIdx = this.rows.findIndex((r) => r.kind === "session" && categoryKeyOf(r.row) === key);
+		if (sessionIdx >= 0) {
+			this.selectIndex(sessionIdx);
 		}
 	}
 
@@ -291,7 +375,7 @@ export class ManagerView extends ItemView {
 	}
 
 	private openNewSessionModal(): void {
-		new NewSessionModal(this.app, (name) => this.plugin.newSession(name || undefined)).open();
+		new NewSessionModal(this.app, this.plugin.index.categories(), (name) => this.plugin.newSession(name || undefined)).open();
 	}
 
 	private showMoreMenu(evt: MouseEvent): void {
@@ -321,6 +405,12 @@ export class ManagerView extends ItemView {
 		this.rows = sortRows(flattenTree(tree, this.showArchived), this.sortKey, this.statsResult);
 		this.cursor = moveSelection(this.rows, this.cursor, 0);
 		this.actions = createRowActions(this.app, this.plugin, (id) => this.selectById(id));
+		// グループ見出し行の 5h／7d コスト合計（D-64）：表に出ている行（絞込後）だけを数える
+		// ——見出しの `count`（`flattenTree` が渡す `group.rows.length`）と揃える。
+		this.categoryTotalsByWindow = {
+			"5h": new Map(categoryTotals(sessionRows, this.statsResult, "5h").map((c) => [c.key, c])),
+			"7d": new Map(categoryTotals(sessionRows, this.statsResult, "7d").map((c) => [c.key, c])),
+		};
 
 		this.tableBodyEl.empty();
 		this.rowEls = this.rows.map((mrow, index) => this.renderRow(mrow, index));
@@ -331,11 +421,17 @@ export class ManagerView extends ItemView {
 	private renderRow(mrow: ManagerRow, index: number): HTMLTableRowElement {
 		if (mrow.kind === "group") {
 			const tr = this.tableBodyEl.createEl("tr", { cls: "agent-sessions-manager-row is-group" });
-			const td = tr.createEl("td", { attr: { colspan: String(COLUMN_COUNT) } });
-			const head = td.createDiv({ cls: "agent-sessions-manager-group-head" });
+			// 見出し・折畳の三角・件数はマーク／名前／最終更新の 3 列分（時刻は持たない）。
+			// 5h・7d はそのカテゴリの合計を列の位置に揃える（D-64）。
+			const headTd = tr.createEl("td", { cls: "agent-sessions-manager-col-name", attr: { colspan: "3" } });
+			const head = headTd.createDiv({ cls: "agent-sessions-manager-group-head" });
 			head.createSpan({ cls: "agent-sessions-manager-caret", text: mrow.folded ? "▸" : "▾" });
 			head.createSpan({ cls: "agent-sessions-manager-group-label", text: mrow.label });
 			head.createSpan({ cls: "agent-sessions-manager-group-count", text: String(mrow.count) });
+			this.renderGroupCostCell(tr, "agent-sessions-manager-col-5h", "5h", mrow.key);
+			this.renderGroupCostCell(tr, "agent-sessions-manager-col-7d", "7d", mrow.key);
+			tr.createEl("td", { cls: "agent-sessions-manager-col-folder" });
+			tr.createEl("td", { cls: "agent-sessions-manager-col-menu" });
 			tr.addEventListener("click", () => {
 				this.cursor = index;
 				this.wrapEl.focus();
@@ -404,6 +500,15 @@ export class ManagerView extends ItemView {
 		tr.createEl("td", {
 			cls: `${cls} agent-sessions-manager-col-num`,
 			text: cost != null ? formatCost(cost) : "",
+		});
+	}
+
+	/** グループ見出し行の 5h／7d の列 1 セル：そのカテゴリの合計（無ければ空欄。D-64）。 */
+	private renderGroupCostCell(tr: HTMLTableRowElement, cls: string, window: "5h" | "7d", key: string): void {
+		const entry = this.categoryTotalsByWindow[window].get(key);
+		tr.createEl("td", {
+			cls: `${cls} agent-sessions-manager-col-num`,
+			text: entry && entry.cost > 0 ? formatCost(entry.cost) : "",
 		});
 	}
 

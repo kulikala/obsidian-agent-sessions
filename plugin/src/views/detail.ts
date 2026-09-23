@@ -104,9 +104,10 @@ function renderBadges(container: HTMLElement, statusInfo: StatusInfo | null, rc:
 	row.createSpan({ cls: "agent-sessions-badge", text: statusInfo?.effort ?? t("common.default") });
 	const rcBadge = row.createSpan({ cls: "agent-sessions-badge" });
 	rcBadge.appendText("rc ");
+	// 台帳が無い（`null`）ときも ○。接続中（`true`）だけ ●（D-60）。
 	const dot = rcBadge.createSpan({
 		cls: "agent-sessions-badge-rc-dot",
-		text: rc === null ? "—" : rc ? "●" : "○",
+		text: rc ? "●" : "○",
 	});
 	dot.toggleClass("is-connected", !!rc);
 }
