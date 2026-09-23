@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { formatCountdown, pickLatestLimits, type RawLimitsFile } from "../src/views/limits";
+import {
+	FIVE_HOUR_SECONDS,
+	SEVEN_DAY_SECONDS,
+	formatCountdown,
+	pickLatestLimits,
+	rollForwardWindow,
+	type RawLimitsFile,
+} from "../src/views/limits";
 
 describe("pickLatestLimits（D-43）", () => {
 	it("rate_limits を持つ最新 mtime のファイルから five_hour・seven_day を取る", () => {
@@ -42,6 +49,47 @@ describe("pickLatestLimits（D-43）", () => {
 	it("該当ファイルが無ければ null", () => {
 		expect(pickLatestLimits([])).toBeNull();
 		expect(pickLatestLimits([{ mtimeMs: 1 }])).toBeNull();
+	});
+});
+
+describe("rollForwardWindow（T-74 追補）", () => {
+	it("resetsAt が now より未来ならそのまま", () => {
+		const w = { usedPercentage: 42, resetsAt: 2000 };
+		expect(rollForwardWindow(w, FIVE_HOUR_SECONDS, 1000)).toEqual(w);
+	});
+
+	it("resetsAt がちょうど now でも先送りしない", () => {
+		const w = { usedPercentage: 42, resetsAt: 1000 };
+		expect(rollForwardWindow(w, FIVE_HOUR_SECONDS, 1000)).toEqual(w);
+	});
+
+	it("resetsAt が過去なら 1 期分先へ送り、usedPercentage は null にする", () => {
+		const resetsAt = 1_700_000_000;
+		const now = resetsAt + 60; // 1 分前にリセットを過ぎている
+		const w = { usedPercentage: 88, resetsAt };
+		expect(rollForwardWindow(w, FIVE_HOUR_SECONDS, now)).toEqual({
+			usedPercentage: null,
+			resetsAt: resetsAt + FIVE_HOUR_SECONDS,
+		});
+	});
+
+	it("2 期分以上ずれていても必要な回数だけ先へ送る", () => {
+		const resetsAt = 1_700_000_000;
+		const now = resetsAt + 2 * SEVEN_DAY_SECONDS + 100;
+		const w = { usedPercentage: 50, resetsAt };
+		expect(rollForwardWindow(w, SEVEN_DAY_SECONDS, now)).toEqual({
+			usedPercentage: null,
+			resetsAt: resetsAt + 3 * SEVEN_DAY_SECONDS,
+		});
+	});
+
+	it("resetsAt が無ければそのまま（先送りできない）", () => {
+		const w = { usedPercentage: 10, resetsAt: null };
+		expect(rollForwardWindow(w, FIVE_HOUR_SECONDS, 1_700_000_000)).toEqual(w);
+	});
+
+	it("w が null ならそのまま null", () => {
+		expect(rollForwardWindow(null, FIVE_HOUR_SECONDS, 1_700_000_000)).toBeNull();
 	});
 });
 

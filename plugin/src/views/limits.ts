@@ -9,9 +9,16 @@ import * as path from "node:path";
 import { t } from "../i18n";
 
 export interface RateLimitWindow {
-	usedPercentage: number;
+	/** `null` は「リセットを過ぎたばかりで、まだ新しい rate_limits が届いていない」
+	 * （`rollForwardWindow` が先送りした直後。T-74 追補）。 */
+	usedPercentage: number | null;
 	resetsAt: number | null;
 }
+
+/** 5 時間枠・7 日枠の長さ（秒）。`agentsessions/stats.py` の `FIVE_HOUR_SECONDS`・
+ * `SEVEN_DAY_SECONDS` と同じ値（Python 側と共有はできないので、ここでも持つ）。 */
+export const FIVE_HOUR_SECONDS = 5 * 60 * 60;
+export const SEVEN_DAY_SECONDS = 7 * 24 * 60 * 60;
 
 export interface LimitsInfo {
 	fiveHour: RateLimitWindow | null;
@@ -53,6 +60,21 @@ export function pickLatestLimits(files: RawLimitsFile[]): LimitsInfo | null {
 		fiveHour: windowOf(latest.rate_limits?.five_hour),
 		sevenDay: windowOf(latest.rate_limits?.seven_day),
 	};
+}
+
+/**
+ * `w.resetsAt` が `now` より過去なら、`durationSeconds`（5 時間枠／7 日枠の長さ）ずつ
+ * 先へ送って「今の窓」の `resetsAt` にする（T-74 追補：`agentsessions/stats.py` の
+ * `_roll_forward` と同じ規則）。リセットを過ぎた直後、まだ新しい `rate_limits` が
+ * 届いていない間は `usedPercentage` を `null`（不明）にする。`w` が `null`、または
+ * `resetsAt` が無ければそのまま返す（先送りできないため）。
+ */
+export function rollForwardWindow(w: RateLimitWindow | null, durationSeconds: number, now: number): RateLimitWindow | null {
+	if (!w || w.resetsAt == null || w.resetsAt >= now) {
+		return w;
+	}
+	const periods = Math.ceil((now - w.resetsAt) / durationSeconds);
+	return { usedPercentage: null, resetsAt: w.resetsAt + periods * durationSeconds };
 }
 
 /** `h:mm:ss`（0 未満は 0 に丸める）。24 時間以上は秒を落として `N 日 h:mm` にする（D-54）。 */
@@ -125,18 +147,21 @@ export class LimitsView {
 	}
 
 	private render(): void {
-		this.renderWindow(this.fiveHourEl, "5h", this.info?.fiveHour ?? null);
-		this.renderWindow(this.sevenDayEl, "7d", this.info?.sevenDay ?? null);
+		// 1 秒毎に呼ばれるたび、`now` を最新にして先送りを判定し直す（T-74 追補）——
+		// `reload()` の間隔に関わらず、リセットを過ぎた瞬間から常に「今の窓」を出す。
+		const now = Date.now() / 1000;
+		this.renderWindow(this.fiveHourEl, "5h", rollForwardWindow(this.info?.fiveHour ?? null, FIVE_HOUR_SECONDS, now));
+		this.renderWindow(this.sevenDayEl, "7d", rollForwardWindow(this.info?.sevenDay ?? null, SEVEN_DAY_SECONDS, now));
 	}
 
 	private renderWindow(el: HTMLElement, label: string, w: RateLimitWindow | null): void {
 		el.empty();
 		el.createSpan({ cls: "agent-sessions-limits-label", text: label });
 		const barWrap = el.createDiv({ cls: "agent-sessions-limits-bar" });
-		const pct = w ? Math.min(100, Math.max(0, w.usedPercentage)) : 0;
+		const pct = w?.usedPercentage != null ? Math.min(100, Math.max(0, w.usedPercentage)) : 0;
 		const bar = barWrap.createDiv({ cls: "agent-sessions-limits-bar-fill" });
 		bar.style.width = `${pct}%`;
-		el.createSpan({ cls: "agent-sessions-limits-pct", text: w ? `${Math.round(w.usedPercentage)}%` : "—" });
+		el.createSpan({ cls: "agent-sessions-limits-pct", text: w?.usedPercentage != null ? `${Math.round(w.usedPercentage)}%` : "—" });
 		const countdown = w?.resetsAt != null ? formatCountdown(w.resetsAt - Date.now() / 1000) : null;
 		el.createSpan({
 			cls: "agent-sessions-limits-countdown",
