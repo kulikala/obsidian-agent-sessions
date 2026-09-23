@@ -17,7 +17,68 @@
 	min-height: 0;
 }
 
-/* ---- マネージャー：ツールバー・本体・表（D-44） ---- */
+/* ---- マネージャー：統計の帯（D-54） ---- */
+
+.agent-sessions-manager-stats {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: var(--size-4-2);
+	padding: var(--size-4-3);
+	flex: 0 0 auto;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.agent-sessions-manager-stats-card {
+	min-width: 0;
+	padding: var(--size-4-2) var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background: var(--background-secondary);
+}
+
+.agent-sessions-manager-stats-title {
+	margin-bottom: var(--size-4-1);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+}
+
+.agent-sessions-manager-stats-bar {
+	height: 6px;
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-border);
+	overflow: hidden;
+}
+
+.agent-sessions-manager-stats-bar-fill {
+	height: 100%;
+	background-color: var(--text-accent);
+}
+
+.agent-sessions-manager-stats-pct {
+	margin-top: var(--size-2-1);
+	font-variant-numeric: tabular-nums;
+	font-weight: var(--font-semibold);
+}
+
+.agent-sessions-manager-stats-countdown {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.agent-sessions-manager-stats-metrics {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-3);
+	margin-top: var(--size-4-1);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+}
+
+/* ---- マネージャー：ツールバー・本体・表（D-44・D-54） ---- */
 
 .agent-sessions-manager-toolbar {
 	display: flex;
@@ -58,10 +119,36 @@
 	font-size: var(--font-ui-small);
 }
 
+.agent-sessions-manager-row th,
 .agent-sessions-manager-row td {
-	padding: var(--size-2-1) var(--size-4-2);
+	/* 行の高さ 32px 以上（padding + line-height。D-54）。 */
+	padding: var(--size-4-2);
+	line-height: 1.4;
 	border-bottom: 1px solid var(--background-modifier-border);
 	white-space: nowrap;
+}
+
+.agent-sessions-manager-row th {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+	background: var(--background-primary);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	text-align: left;
+}
+
+.agent-sessions-manager-th-sort {
+	cursor: pointer;
+}
+
+.agent-sessions-manager-th-sort:hover {
+	color: var(--text-normal);
+}
+
+.agent-sessions-manager-th-sort.is-sorted {
+	color: var(--text-accent);
 }
 
 .agent-sessions-manager-row:hover {
@@ -82,7 +169,7 @@
 }
 
 .agent-sessions-manager-col-mark {
-	width: 20px;
+	width: 24px;
 }
 
 .agent-sessions-manager-col-name {
@@ -92,10 +179,26 @@
 }
 
 .agent-sessions-manager-col-time {
-	width: 82px;
+	width: 88px;
 	font-family: var(--font-monospace);
 	color: var(--text-muted);
+	overflow: hidden;
+	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+.agent-sessions-manager-col-5h,
+.agent-sessions-manager-col-7d {
+	width: 72px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.agent-sessions-manager-col-num {
+	text-align: right;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-muted);
 }
 
 .agent-sessions-manager-col-folder {
@@ -113,14 +216,25 @@
 	cursor: pointer;
 }
 
-/* 狭い（表の描画域が 600px 未満の）ときはフォルダ列を隠す。`colspan` の見出し行は
-   残りの列数に自動で収まる。 */
+/* 幅が足りないときは フォルダ → 5h の順に列を隠す（`col` と `td` の両方。D-54）。 */
 @container (max-width: 599px) {
 	.agent-sessions-manager-table col.agent-sessions-manager-col-folder {
 		display: none;
 	}
 
-	.agent-sessions-manager-row td.agent-sessions-manager-col-folder {
+	.agent-sessions-manager-row td.agent-sessions-manager-col-folder,
+	.agent-sessions-manager-row th.agent-sessions-manager-col-folder {
+		display: none;
+	}
+}
+
+@container (max-width: 459px) {
+	.agent-sessions-manager-table col.agent-sessions-manager-col-5h {
+		display: none;
+	}
+
+	.agent-sessions-manager-row td.agent-sessions-manager-col-5h,
+	.agent-sessions-manager-row th.agent-sessions-manager-col-5h {
 		display: none;
 	}
 }
@@ -354,9 +468,12 @@
 	font-size: var(--font-ui-smaller);
 }
 
-.agent-sessions-badge-rc.is-active {
-	background-color: var(--background-modifier-success, var(--background-modifier-hover));
-	color: var(--text-success, var(--text-accent));
+.agent-sessions-badge-rc-dot {
+	color: var(--text-faint);
+}
+
+.agent-sessions-badge-rc-dot.is-connected {
+	color: var(--color-green);
 }
 
 .agent-sessions-detail-stats {

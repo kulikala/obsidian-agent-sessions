@@ -4,7 +4,7 @@
 import { execFile } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import type { Detail, LiveResult, ScanResult, UsageResult } from "./types";
+import type { Detail, LiveResult, ScanResult, StatsResult, UsageResult } from "./types";
 
 /** `json` サブコマンドが失敗したときの例外。stderr の先頭行を message に持つ。 */
 export class BackendError extends Error {}
@@ -68,6 +68,11 @@ export async function usage(agentSessionsPath: string, id: string, from?: string
 		args.push("--to", to);
 	}
 	return runJson(agentSessionsPath, args) as Promise<UsageResult>;
+}
+
+/** `json stats`（D-54・D-55）：5 時間・7 日の枠の使用状況。 */
+export async function stats(agentSessionsPath: string): Promise<StatsResult> {
+	return runJson(agentSessionsPath, ["stats"]) as Promise<StatsResult>;
 }
 
 const LOGIN_ENV_KEYS = ["PATH", "LANG", "HOME", "USER", "TMPDIR", "CLAUDE_CONFIG_DIR"] as const;

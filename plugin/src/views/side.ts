@@ -114,15 +114,15 @@ export class SideView extends ItemView {
 		const menu = new Menu();
 		menu.addItem((item) =>
 			item
-				.setTitle("設定を開く")
-				.setIcon("settings")
-				.onClick(() => this.plugin.openSettings())
-		);
-		menu.addItem((item) =>
-			item
 				.setTitle("再走査")
 				.setIcon("refresh-cw")
 				.onClick(() => void this.plugin.index.rescan())
+		);
+		menu.addItem((item) =>
+			item
+				.setTitle("設定を開く")
+				.setIcon("settings")
+				.onClick(() => this.plugin.openSettings())
 		);
 		menu.showAtMouseEvent(evt);
 	}

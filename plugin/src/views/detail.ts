@@ -101,11 +101,13 @@ function renderBadges(container: HTMLElement, statusInfo: StatusInfo | null, rc:
 	const row = container.createDiv({ cls: "agent-sessions-detail-badges" });
 	row.createSpan({ cls: "agent-sessions-badge", text: statusInfo?.model ?? "デフォルト" });
 	row.createSpan({ cls: "agent-sessions-badge", text: statusInfo?.effort ?? "デフォルト" });
-	const rcBadge = row.createSpan({ cls: "agent-sessions-badge agent-sessions-badge-rc", text: rc ? "rc ●" : "rc ○" });
-	rcBadge.toggleClass("is-active", !!rc);
-	if (rc === null) {
-		rcBadge.setText("rc —");
-	}
+	const rcBadge = row.createSpan({ cls: "agent-sessions-badge" });
+	rcBadge.appendText("rc ");
+	const dot = rcBadge.createSpan({
+		cls: "agent-sessions-badge-rc-dot",
+		text: rc === null ? "—" : rc ? "●" : "○",
+	});
+	dot.toggleClass("is-connected", !!rc);
 }
 
 /** クリックで折畳／展開する 1 枚のカード（`-webkit-line-clamp: 6`）。 */

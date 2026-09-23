@@ -1,7 +1,16 @@
 import { describe, expect, it } from "vitest";
 import type { Row } from "../src/index";
 import { OTHER_GROUP, type ManagerTree } from "../src/tree";
-import { ARCHIVED_GROUP, flattenTree, moveSelection, type ManagerRow } from "../src/views/manager-model";
+import type { StatsResult, StatsUsage, StatsWindow } from "../src/types";
+import {
+	ARCHIVED_GROUP,
+	flattenTree,
+	moveSelection,
+	sessionCost,
+	sortRows,
+	windowSummary,
+	type ManagerRow,
+} from "../src/views/manager-model";
 
 function row(overrides: Partial<Row> & Pick<Row, "id">): Row {
 	return {
@@ -121,5 +130,88 @@ describe("moveSelection（D-44）", () => {
 
 	it("cur が -1（未選択）から下へ行くと先頭に入る", () => {
 		expect(moveSelection(rows, -1, 1)).toBe(0);
+	});
+});
+
+function usage(cost: number): StatsUsage {
+	return { calls: 1, input: 0, output: 0, cache_read: 0, cache_create: 0, cost };
+}
+
+function statsWindow(overrides: Partial<StatsWindow> = {}): StatsWindow {
+	return {
+		start: 0,
+		end: 100,
+		used_percentage: null,
+		total: { calls: 0, input: 0, output: 0, cache_read: 0, cache_create: 0, cost: 0 },
+		sessions: {},
+		...overrides,
+	};
+}
+
+describe("sessionCost（D-54）", () => {
+	it("枠が無ければ null", () => {
+		expect(sessionCost(null, "1")).toBeNull();
+	});
+
+	it("枠内にそのセッションの使用が無ければ null", () => {
+		const w = statsWindow({ sessions: { "1": usage(2.5) } });
+		expect(sessionCost(w, "2")).toBeNull();
+	});
+
+	it("有ればそのコスト", () => {
+		const w = statsWindow({ sessions: { "1": usage(2.5) } });
+		expect(sessionCost(w, "1")).toBe(2.5);
+	});
+});
+
+describe("sortRows（D-54）", () => {
+	it("updated はそのまま（グループの木の並び）を返す", () => {
+		const rows: ManagerRow[] = [{ kind: "session", row: row({ id: "1" }), indent: false }];
+		expect(sortRows(rows, "updated", null)).toBe(rows);
+	});
+
+	it("5h／7d はグループを外し、枠内のコストの降順に並べる。使用の無い行は下", () => {
+		const g1 = row({ id: "1" });
+		const g2 = row({ id: "2" });
+		const single = row({ id: "3" });
+		const rows: ManagerRow[] = [
+			{ kind: "group", key: "G", label: "G", count: 2, folded: false },
+			{ kind: "session", row: g1, indent: true },
+			{ kind: "session", row: g2, indent: true },
+			{ kind: "session", row: single, indent: false },
+			{ kind: "archived-orphan", id: "9", name: "旧" },
+		];
+		const stats: StatsResult = {
+			windows: {
+				five_hour: statsWindow({ sessions: { "1": usage(1), "3": usage(5) } }),
+				seven_day: statsWindow(),
+			},
+		};
+		const sorted = sortRows(rows, "5h", stats);
+		expect(sorted.map((r) => (r.kind === "session" ? r.row.id : r.kind))).toEqual(["3", "1", "2"]);
+		expect(sorted.every((r) => r.kind === "session" && r.indent === false)).toBe(true);
+	});
+
+	it("stats が無ければ全行が使用無し扱い（渡された順のまま）", () => {
+		const rows: ManagerRow[] = [
+			{ kind: "session", row: row({ id: "1" }), indent: true },
+			{ kind: "session", row: row({ id: "2" }), indent: false },
+		];
+		const sorted = sortRows(rows, "7d", null);
+		expect(sorted.map((r) => (r.kind === "session" ? r.row.id : null))).toEqual(["1", "2"]);
+	});
+});
+
+describe("windowSummary（D-54）", () => {
+	it("トークンは入力＋出力＋cache 読出＋cache 作成、セッション数は sessions のキー数", () => {
+		const w = statsWindow({
+			total: { calls: 3, input: 10, output: 20, cache_read: 5, cache_create: 1, cost: 1.23 },
+			sessions: { a: usage(1), b: usage(2) },
+		});
+		expect(windowSummary(w)).toEqual({ tokens: 36, sessionCount: 2 });
+	});
+
+	it("sessions が空なら 0", () => {
+		expect(windowSummary(statsWindow()).sessionCount).toBe(0);
 	});
 });

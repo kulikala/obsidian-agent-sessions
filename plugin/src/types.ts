@@ -123,3 +123,30 @@ export interface UsageResult {
 	from: number | null;
 	to: number | null;
 }
+
+/** `json stats` の窓・セッション別の集計 1 件（D-54・D-55）。 */
+export interface StatsUsage {
+	calls: number;
+	input: number;
+	output: number;
+	cache_read: number;
+	cache_create: number;
+	cost: number;
+}
+
+/** `json stats` の 1 つの枠（5 時間・7 日）（D-55）。`start`／`end` は epoch 秒。 */
+export interface StatsWindow {
+	start: number;
+	end: number;
+	used_percentage: number | null;
+	total: StatsUsage;
+	sessions: Record<string, StatsUsage>;
+}
+
+/** `json stats` の出力全体（D-54・D-55）。 */
+export interface StatsResult {
+	windows: {
+		five_hour: StatsWindow;
+		seven_day: StatsWindow;
+	};
+}
