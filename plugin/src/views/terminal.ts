@@ -1,7 +1,7 @@
 // ターミナル（§6.3）・1 セッション＝1 タブ（§6.4）・アイコンの状態（§6.5）・
 // エラー処理（§7）。xterm 5.x を `DaemonClient` に繋ぐ。
 
-import { ItemView, Notice, setIcon, type Menu, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
+import { ItemView, Notice, setIcon, setTooltip, type Menu, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
 import * as fs from "node:fs";
 import { join } from "node:path";
 import { Terminal } from "@xterm/xterm";
@@ -10,7 +10,7 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
 import { BackendError, loginEnv, resolveClaude } from "../backend";
 import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../daemon-client";
-import { t } from "../i18n";
+import { t, type MessageKey } from "../i18n";
 import { classifyEnter, resolveEnterAction, sendSequence } from "../keys";
 import { buildAtToken, selectionLineRange, VaultLinkProvider } from "../links";
 import { submitSequence } from "../main";
@@ -19,9 +19,23 @@ import { MarkTracker, type MarkerHandle, type MarkerSource } from "../marks";
 import { RenameSessionModal } from "../modals";
 import { VIEW_TYPE_TERMINAL } from "../open-session";
 import type { Padding } from "../settings";
+import { ALL_TERMINAL_STATUSES, TERMINAL_STATUS_ICON, terminalStatus, terminalStatusClass } from "../terminal-status";
 import { readObsidianTheme } from "../theme";
 import type { DaemonSession } from "../types";
 import { EditorPane, type EditResult } from "./editor-pane";
+
+/** 状態名を tooltip に出す（`status.*`。D-66）。 */
+const STATUS_LABEL_KEY: Record<ReturnType<typeof terminalStatus>, MessageKey> = {
+	connecting: "status.connecting",
+	working: "status.working",
+	"running-shell": "status.runningShell",
+	waiting: "status.waiting",
+	editing: "status.editing",
+	idle: "status.idle",
+	detached: "status.detached",
+	exited: "status.exited",
+	error: "status.error",
+};
 
 export { VIEW_TYPE_TERMINAL };
 
@@ -145,7 +159,7 @@ export class TerminalView extends ItemView {
 	}
 
 	getIcon(): string {
-		return this.icon || "bot";
+		return this.icon || "square-terminal";
 	}
 
 	/** サイドパネル・マネージャーが名前変更や圧縮の対象を探すのに使う。 */
@@ -196,6 +210,7 @@ export class TerminalView extends ItemView {
 		this.fresh = s.fresh === true;
 		await super.setState(state, result);
 		this.refreshName();
+		this.updateIcon();
 		this.applySettings();
 		// 同じ `id` の別 leaf があっても自分を畳まない（D-42）：右／下に分割・タブの複製で
 		// 複数のビューが同じセッションに attach する。`openSession` は既存タブへ移動するので
@@ -422,6 +437,7 @@ export class TerminalView extends ItemView {
 			return;
 		}
 		this.attaching = true;
+		this.updateIcon();
 		try {
 			const client = await ensureDaemon(this.plugin.sockPath(), this.plugin.agentSessionsPath());
 			if (this.closed) {
@@ -441,6 +457,7 @@ export class TerminalView extends ItemView {
 			this.showExit(this.reasonOf(err));
 		} finally {
 			this.attaching = false;
+			this.updateIcon();
 		}
 	}
 
@@ -624,12 +641,14 @@ export class TerminalView extends ItemView {
 		this.applyTerminalMinHeight();
 		this.editorEl.show();
 		this.scheduleFit();
+		this.updateIcon();
 		try {
 			return await pane.open(file, cwd, initial);
 		} finally {
 			if (this.pendingEdit === pane) {
 				this.pendingEdit = null;
 			}
+			this.updateIcon();
 			this.applyTerminalMinHeight();
 			this.editorEl.hide();
 			if (!this.closed) {
@@ -753,7 +772,12 @@ export class TerminalView extends ItemView {
 				.setTitle(t("action.rename"))
 				.setIcon("pencil")
 				.onClick(() => {
-					new RenameSessionModal(this.app, this.getDisplayText(), (name) => void this.plugin.renameSession(id, name)).open();
+					new RenameSessionModal(
+						this.app,
+						this.plugin.index.categories(),
+						this.getDisplayText(),
+						(name) => void this.plugin.renameSession(id, name)
+					).open();
 				})
 		);
 		menu.addItem((item) =>
@@ -903,6 +927,7 @@ export class TerminalView extends ItemView {
 	private async restart(fresh: boolean): Promise<void> {
 		this.hideExit();
 		this.attaching = true;
+		this.updateIcon();
 		try {
 			const client = this.client ?? (await this.openClient());
 			await client.forget(this.id).catch(() => undefined);
@@ -914,6 +939,7 @@ export class TerminalView extends ItemView {
 			this.showExit(this.reasonOf(err));
 		} finally {
 			this.attaching = false;
+			this.updateIcon();
 		}
 	}
 
@@ -977,27 +1003,26 @@ export class TerminalView extends ItemView {
 		return row?.exited != null;
 	}
 
-	private isBusy(): boolean {
-		const status = this.plugin.index.registry.get(this.id)?.status;
-		return status === "busy" || status === "shell";
+	/** デーモン不通・claude 不在・起動失敗（`exited` は別に扱う。D-66）。 */
+	private isErrorState(): boolean {
+		return !!this.exitReason && this.exitReason.kind !== "exited";
 	}
 
-	/** `bot`／busy アニメ／`message-circle`／`circle-off`（§6.3）。 */
+	/** タブ見出しのアイコン（`terminalStatus`・D-66）。状態ごとにアイコン・色・動きのクラスが変わる。 */
 	private updateIcon(): void {
 		if (this.closed) {
 			return;
 		}
-		let icon = "bot";
-		let busy = false;
-		let waiting = false;
-		if (this.isExited()) {
-			icon = "circle-off";
-		} else if (this.isBusy()) {
-			busy = true;
-		} else if (this.waiting) {
-			icon = "message-circle";
-			waiting = true;
-		}
+		const status = terminalStatus({
+			error: this.isErrorState(),
+			exited: this.isExited(),
+			editing: !!this.pendingEdit,
+			connecting: this.attaching,
+			registryStatus: this.plugin.index.registry.get(this.id)?.status as "busy" | "shell" | "idle" | null | undefined,
+			waiting: this.waiting,
+			attached: this.attached,
+		});
+		const icon = TERMINAL_STATUS_ICON[status];
 		if (icon !== this.icon) {
 			this.icon = icon;
 			this.updateHeader();
@@ -1006,8 +1031,10 @@ export class TerminalView extends ItemView {
 		if (!iconEl) {
 			return;
 		}
-		iconEl.toggleClass("agent-sessions-busy", busy);
-		iconEl.toggleClass("agent-sessions-waiting", waiting);
+		for (const s of ALL_TERMINAL_STATUSES) {
+			iconEl.toggleClass(terminalStatusClass(s), s === status);
+		}
+		setTooltip(iconEl, t(STATUS_LABEL_KEY[status]));
 	}
 
 	private headerIconEl(): HTMLElement | null {

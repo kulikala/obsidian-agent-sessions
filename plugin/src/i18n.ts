@@ -154,6 +154,8 @@ const ja = {
 	"modal.newSession.title": "新規セッション",
 	"modal.newSession.nameField": "名前",
 	"modal.renameSession.title": "名前を変更",
+	"dialog.category": "カテゴリ",
+	"dialog.preview": "→ {name}",
 
 	// ---- サイドパネル（views/side.ts） ----
 	"section.openTabs": "開いているタブ",
@@ -199,6 +201,17 @@ const ja = {
 	// ---- ターミナル終了画面（views/terminal.ts） ----
 	"exit.exited": "セッションは終了しました（{code}）",
 	"exit.disconnected": "デーモンとの接続が切れました",
+
+	// ---- タブ・行の状態（views/terminal.ts の `terminalStatus`。D-66） ----
+	"status.connecting": "接続中",
+	"status.working": "処理中",
+	"status.runningShell": "コマンド実行中",
+	"status.waiting": "指示待ち",
+	"status.editing": "編集中",
+	"status.idle": "待機",
+	"status.detached": "未接続",
+	"status.exited": "終了",
+	"status.error": "エラー",
 
 	// ---- セッション解析結果モーダル（usage-modal.ts） ----
 	"usage.title": "セッション解析結果：{name}",
@@ -355,6 +368,8 @@ const en: Record<MessageKey, string> = {
 	"modal.newSession.title": "New session",
 	"modal.newSession.nameField": "Name",
 	"modal.renameSession.title": "Rename",
+	"dialog.category": "Category",
+	"dialog.preview": "→ {name}",
 
 	"section.openTabs": "Open tabs",
 	"section.running": "Running",
@@ -392,6 +407,16 @@ const en: Record<MessageKey, string> = {
 
 	"exit.exited": "The session has ended ({code})",
 	"exit.disconnected": "Disconnected from the daemon",
+
+	"status.connecting": "Connecting",
+	"status.working": "Working",
+	"status.runningShell": "Running a command",
+	"status.waiting": "Waiting for input",
+	"status.editing": "Editing",
+	"status.idle": "Idle",
+	"status.detached": "Not connected",
+	"status.exited": "Exited",
+	"status.error": "Error",
 
 	"usage.title": "Session analytics: {name}",
 	"usage.loading": "Loading…",

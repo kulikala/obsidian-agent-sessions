@@ -4,6 +4,7 @@
 
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
+import { listCategories } from "./name";
 import { Registry } from "./registry";
 import { StatusLine } from "./statusline";
 import { loadStore, type Store } from "./store";
@@ -110,6 +111,11 @@ export class SessionIndex extends EventEmitter {
 			row.hasTab = this.openTabIds.has(row.id);
 		}
 		this.emit("change");
+	}
+
+	/** 全セッションの名前から、ダイアログの「カテゴリ」欄に出す候補（D-63）。 */
+	categories(): string[] {
+		return listCategories([...this.sessions.values()].map((row) => row.name));
 	}
 
 	/**

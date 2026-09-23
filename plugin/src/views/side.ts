@@ -51,7 +51,7 @@ export class SideView extends ItemView {
 	}
 
 	getIcon(): string {
-		return "bot";
+		return "list-tree";
 	}
 
 	async onOpen(): Promise<void> {
@@ -128,7 +128,7 @@ export class SideView extends ItemView {
 	}
 
 	private openNewSessionModal(): void {
-		new NewSessionModal(this.app, (name) => this.plugin.newSession(name || undefined)).open();
+		new NewSessionModal(this.app, this.plugin.index.categories(), (name) => this.plugin.newSession(name || undefined)).open();
 	}
 
 	private showMoreMenu(evt: MouseEvent): void {

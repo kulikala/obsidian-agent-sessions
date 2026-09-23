@@ -139,7 +139,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.registerView(VIEW_TYPE_MANAGER, (leaf) => new ManagerView(leaf, this));
 		this.registerView(VIEW_TYPE_TERMINAL, (leaf) => new TerminalView(leaf, this));
 
-		this.addRibbonIcon("bot", "Agent Sessions", () => {
+		this.addRibbonIcon("list-tree", "Agent Sessions", () => {
 			void this.openSidePanel();
 		});
 
@@ -172,7 +172,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			id: "new-session",
 			name: t("action.newSession"),
 			callback: () => {
-				new NewSessionModal(this.app, (name) => this.newSession(name || undefined)).open();
+				new NewSessionModal(this.app, this.index.categories(), (name) => this.newSession(name || undefined)).open();
 			},
 		});
 

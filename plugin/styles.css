@@ -837,7 +837,8 @@
 	background-color: var(--background-modifier-hover);
 }
 
-/* タブ見出しのアイコン：busy の間は点滅 */
+/* タブ見出し・行の印のアイコン：状態ごとの色・動き（`terminal-status.ts`・D-66）。
+   行側（side.ts・manager.ts・rows.ts）への適用はここのクラスを付けるだけで済む。 */
 @keyframes agent-sessions-pulse {
 	0%,
 	100% {
@@ -848,23 +849,82 @@
 	}
 }
 
-.agent-sessions-busy {
+@keyframes agent-sessions-spin {
+	from {
+		transform: rotate(0deg);
+	}
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@keyframes agent-sessions-pulse-scale {
+	0%,
+	100% {
+		transform: scale(1);
+	}
+	50% {
+		transform: scale(1.25);
+	}
+}
+
+.agent-sessions-status-connecting {
+	color: var(--text-faint);
+	animation: agent-sessions-spin 1s linear infinite;
+}
+
+.agent-sessions-status-working {
+	color: var(--text-accent);
+	animation: agent-sessions-spin 1s linear infinite;
+}
+
+.agent-sessions-status-running-shell {
+	color: var(--color-yellow, gold);
 	animation: agent-sessions-pulse 1.2s ease-in-out infinite;
 }
 
-.agent-sessions-waiting {
-	color: var(--text-accent);
+.agent-sessions-status-waiting {
+	color: var(--color-orange, darkorange);
+	animation: agent-sessions-pulse-scale 1.2s ease-in-out infinite;
+	display: inline-block;
+}
+
+.agent-sessions-status-editing {
+	color: var(--color-blue, dodgerblue);
+}
+
+.agent-sessions-status-idle {
+	color: var(--text-normal);
+}
+
+.agent-sessions-status-detached {
+	color: var(--text-faint);
+}
+
+.agent-sessions-status-exited {
+	color: var(--text-faint);
+}
+
+.agent-sessions-status-error {
+	color: var(--text-error);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.agent-sessions-status-connecting,
+	.agent-sessions-status-working,
+	.agent-sessions-status-running-shell,
+	.agent-sessions-status-waiting {
+		animation: none;
+	}
 }
 
 /* 終了画面：出力の上に重ねる帯 */
-/* ---- 名前を変更（D-42）：入力欄を左右いっぱいに ---- */
+/* ---- カテゴリ・名前のダイアログ（D-63）：組み立て後のプレビュー 1 行 ---- */
 
-.agent-sessions-rename-field {
-	margin-bottom: var(--size-4-3);
-}
-
-.agent-sessions-rename-input {
-	width: 100%;
+.agent-sessions-name-preview {
+	margin: 0 0 var(--size-4-3);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
 }
 
 .agent-sessions-exit {
