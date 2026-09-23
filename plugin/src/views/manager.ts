@@ -4,10 +4,12 @@
 
 import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
 import type AgentSessionsPlugin from "../main";
+import { urgencyByGroupKey, type GroupUrgency } from "../attention";
 import { stats, usage } from "../backend";
 import { paletteHueDeg } from "../category";
 import { getLang, t } from "../i18n";
 import { NewSessionModal } from "../modals";
+import { resolveRowStatus, TERMINAL_STATUS_ICON } from "../terminal-status";
 import { VIEW_TYPE_TERMINAL } from "../open-session";
 import { loadStore } from "../store";
 import { buildManagerTree } from "../tree";
@@ -76,6 +78,8 @@ export class ManagerView extends ItemView {
 		"5h": new Map(),
 		"7d": new Map(),
 	};
+	/** グループ鍵ごとの asking／waiting の有無（`render()` で作り直す。T-78）。 */
+	private groupUrgency: Map<string, GroupUrgency> = new Map();
 	private categoryBarEl!: HTMLElement;
 	/** `terminal-status` のデバウンス用タイマー（D-66 追補）。 */
 	private statusRenderTimer: ReturnType<typeof setTimeout> | null = null;
@@ -597,6 +601,9 @@ export class ManagerView extends ItemView {
 			"5h": new Map(categoryTotals(sessionRows, this.statsResult, "5h").map((c) => [c.key, c])),
 			"7d": new Map(categoryTotals(sessionRows, this.statsResult, "7d").map((c) => [c.key, c])),
 		};
+		// グループ見出しの asking／waiting の印（T-78）：折畳んでいても中の状態を示すため、
+		// 絞込後の全セッション（`flattenTree` に渡した木を作る前）から数える。
+		this.groupUrgency = urgencyByGroupKey(this.plugin, sessionRows, categoryKeyOf);
 
 		this.tableBodyEl.empty();
 		this.rowEls = this.rows.map((mrow, index) => this.renderRow(mrow, index));
@@ -620,6 +627,10 @@ export class ManagerView extends ItemView {
 				renderCategoryChip(head, mrow.key, this.plugin.index.categoryColorIndex(mrow.key));
 			} else {
 				head.createSpan({ cls: "agent-sessions-manager-group-label", text: mrow.label });
+			}
+			const urgency = this.groupUrgency.get(mrow.key);
+			if (urgency) {
+				this.renderGroupUrgencyMark(head, urgency);
 			}
 			head.createSpan({ cls: "agent-sessions-manager-group-count", text: String(mrow.count) });
 			// モデル・エフォートはセッション単位の値なので、見出し行は空にする（T-74）。
@@ -664,6 +675,13 @@ export class ManagerView extends ItemView {
 		}
 		if (row.archived) {
 			tr.addClass("is-archived");
+		}
+		// asking（答えを待っている）・waiting（busy→idle の後まだ見ていない）の行を目立たせる（T-78）。
+		const attentionStatus = resolveRowStatus(this.plugin, row);
+		if (attentionStatus === "asking") {
+			tr.addClass("is-asking");
+		} else if (attentionStatus === "waiting") {
+			tr.addClass("is-waiting");
 		}
 
 		const markTd = tr.createEl("td", { cls: "agent-sessions-manager-col-mark" });
@@ -719,6 +737,14 @@ export class ManagerView extends ItemView {
 	private renderShortValueCell(tr: HTMLTableRowElement, cls: string, short: string, full: string | null): void {
 		const td = tr.createEl("td", { cls, text: short });
 		setTooltip(td, full ?? t("common.unknown"));
+	}
+
+	/** グループ見出しの小さな印：中に asking／waiting の行があれば（T-78）。並び順は変えない
+	 * ——折畳んでいても分かるように、見出しにだけ付ける。 */
+	private renderGroupUrgencyMark(head: HTMLElement, urgency: GroupUrgency): void {
+		const mark = head.createSpan({ cls: `agent-sessions-group-urgency agent-sessions-status-${urgency}` });
+		setIcon(mark, TERMINAL_STATUS_ICON[urgency]);
+		setTooltip(mark, urgency === "asking" ? t("attention.askingInGroup") : t("attention.waitingInGroup"));
 	}
 
 	/** グループ見出し行の 5h／7d の列 1 セル：そのカテゴリの合計（無ければ空欄。D-64）。 */

@@ -161,6 +161,12 @@ const ja = {
 	"section.running": "起動中",
 	"section.recent": "最近",
 
+	// ---- アテンションの印（サイドのバッジ・マネージャーの見出し。T-78） ----
+	"attention.asking": "入力待ち {count}",
+	"attention.waiting": "未読 {count}",
+	"attention.askingInGroup": "入力待ちのセッションがあります",
+	"attention.waitingInGroup": "未読のセッションがあります",
+
 	// ---- マネージャー（views/manager.ts・manager-model.ts） ----
 	"table.name": "名前",
 	"table.updated": "最終更新",
@@ -382,6 +388,11 @@ const en: Record<MessageKey, string> = {
 	"section.openTabs": "Open tabs",
 	"section.running": "Running",
 	"section.recent": "Recent",
+
+	"attention.asking": "Needs input {count}",
+	"attention.waiting": "Unread {count}",
+	"attention.askingInGroup": "Has a session waiting for input",
+	"attention.waitingInGroup": "Has an unread session",
 
 	"table.name": "Name",
 	"table.updated": "Last updated",

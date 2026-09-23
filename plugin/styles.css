@@ -351,6 +351,39 @@
 	opacity: 0.6;
 }
 
+/* asking・waiting の行（サイドと同じ考え方。T-78）。`<tr>` ではなく `<td>` に付ける——
+   `border-collapse: collapse` の表では `<tr>` 自体の背景・罫線が安定しないため。 */
+.agent-sessions-manager-row.is-asking td {
+	background-color: hsl(320 70% 50% / 0.14);
+}
+
+.agent-sessions-manager-row.is-asking td:first-child {
+	border-left: 3px solid var(--color-pink, #d6409f);
+}
+
+.agent-sessions-manager-row.is-asking .agent-sessions-manager-name-text {
+	font-weight: var(--font-semibold);
+}
+
+.agent-sessions-manager-row.is-waiting td {
+	background-color: hsl(30 80% 50% / 0.1);
+}
+
+/* グループ見出しの asking／waiting の小さな印（T-78）。サイズは件数と同じ並びに収める。 */
+.agent-sessions-group-urgency {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 14px;
+	height: 14px;
+	flex: 0 0 auto;
+}
+
+.agent-sessions-group-urgency svg {
+	width: 14px;
+	height: 14px;
+}
+
 .agent-sessions-manager-row.is-indented .agent-sessions-manager-col-name {
 	padding-left: var(--size-4-4);
 }
@@ -608,6 +641,37 @@
 	cursor: default;
 }
 
+/* 「入力待ち N」「未読 M」のバッジ（開いているタブの見出しの横。T-78）。0 件のときは
+   呼出側が作らない。クリックで最初の asking（無ければ waiting）のセッションを開く。 */
+.agent-sessions-attention-badge {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	margin-left: auto;
+}
+
+.agent-sessions-attention-badge.is-clickable {
+	cursor: pointer;
+}
+
+.agent-sessions-attention-badge-item {
+	padding: 0 var(--size-4-1);
+	border-radius: var(--radius-s);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	white-space: nowrap;
+}
+
+.agent-sessions-attention-badge-item.is-asking {
+	background-color: hsl(320 70% 50% / 0.18);
+	color: var(--color-pink, #d6409f);
+}
+
+.agent-sessions-attention-badge-item.is-waiting {
+	background-color: hsl(30 80% 50% / 0.14);
+	color: var(--color-orange, darkorange);
+}
+
 .agent-sessions-group-header {
 	cursor: pointer;
 }
@@ -641,6 +705,23 @@
 
 .agent-sessions-row.is-archived {
 	opacity: 0.6;
+}
+
+/* asking（AskUserQuestion・許可プロンプト等で答えを待っている）・waiting（busy→idle の後、
+   まだ見ていない＝未読）の行を目立たせる（T-78）。asking が最優先——赤紫系の帯＋左端の
+   色帯＋名前を太字。waiting はそれより弱いオレンジ系の背景だけ。 */
+.agent-sessions-row.is-asking {
+	background-color: hsl(320 70% 50% / 0.14);
+	border-left: 3px solid var(--color-pink, #d6409f);
+	padding-left: calc(var(--size-4-3) - 3px);
+}
+
+.agent-sessions-row.is-asking .agent-sessions-row-name {
+	font-weight: var(--font-semibold);
+}
+
+.agent-sessions-row.is-waiting {
+	background-color: hsl(30 80% 50% / 0.1);
 }
 
 /* 状態のアイコン（タブ見出しと同じ lucide、`setIcon`。T-76：色の点から差し替えた）。

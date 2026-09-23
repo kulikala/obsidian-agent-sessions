@@ -174,6 +174,13 @@ export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptio
 	}
 
 	rowStatusMark(el, opts.plugin, row);
+	// asking（答えを待っている）・waiting（busy→idle の後まだ見ていない）の行を目立たせる（T-78）。
+	const attentionStatus = resolveRowStatus(opts.plugin, row);
+	if (attentionStatus === "asking") {
+		el.addClass("is-asking");
+	} else if (attentionStatus === "waiting") {
+		el.addClass("is-waiting");
+	}
 	const category = categoryOf(row);
 	if (category) {
 		renderCategoryChip(el, category, opts.plugin.index.categoryColorIndex(category));

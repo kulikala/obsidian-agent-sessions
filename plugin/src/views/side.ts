@@ -3,6 +3,7 @@
 
 import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
 import type AgentSessionsPlugin from "../main";
+import { attentionCounts, type AttentionCounts } from "../attention";
 import { usage } from "../backend";
 import { t } from "../i18n";
 import { VIEW_TYPE_TERMINAL } from "../open-session";
@@ -238,7 +239,10 @@ export class SideView extends ItemView {
 			() => this.onHoverEnd()
 		);
 		const list = computeSideList(this.plugin.index.sessions, this.terminalLeaves(), this.plugin.settings.recentCount);
-		this.renderSection(this.listEl, t("section.openTabs"), list.openTabs, actions);
+		// 要対応（asking・waiting）の数は一覧全体（開いているタブ＋起動中＋最近）から数える
+		// （T-78）。「開いているタブ」の見出しの横にバッジを出す。
+		const attention = attentionCounts(this.plugin, [...list.openTabs, ...list.running, ...list.recent]);
+		this.renderSection(this.listEl, t("section.openTabs"), list.openTabs, actions, attention);
 		this.renderSection(this.listEl, t("section.running"), list.running, actions);
 		this.renderSection(this.listEl, t("section.recent"), list.recent, actions);
 		if (!this.hovering) {
@@ -246,17 +250,55 @@ export class SideView extends ItemView {
 		}
 	}
 
-	private renderSection(container: HTMLElement, title: string, rows: Row[], actions: RowActions): void {
-		if (rows.length === 0) {
+	private renderSection(
+		container: HTMLElement,
+		title: string,
+		rows: Row[],
+		actions: RowActions,
+		attention?: AttentionCounts
+	): void {
+		const hasAttention = !!attention && (attention.asking > 0 || attention.waiting > 0);
+		if (rows.length === 0 && !hasAttention) {
 			return;
 		}
-		container.createDiv({ cls: "agent-sessions-section-title", text: title });
+		const titleEl = container.createDiv({ cls: "agent-sessions-section-title" });
+		titleEl.createSpan({ text: title });
+		if (attention && hasAttention) {
+			this.renderAttentionBadge(titleEl, attention);
+		}
 		for (const row of rows) {
 			renderRow(container, row, {
 				front: row.id === this.frontId,
 				selection: this.selection,
 				actions,
 				plugin: this.plugin,
+			});
+		}
+	}
+
+	/** 「入力待ち N」「未読 M」の小さなバッジ（T-78）。クリックで最初の asking
+	 * （無ければ waiting）のセッションを開く。 */
+	private renderAttentionBadge(container: HTMLElement, attention: AttentionCounts): void {
+		const badge = container.createSpan({ cls: "agent-sessions-attention-badge" });
+		if (attention.asking > 0) {
+			badge.createSpan({
+				cls: "agent-sessions-attention-badge-item is-asking",
+				text: t("attention.asking", { count: attention.asking }),
+			});
+		}
+		if (attention.waiting > 0) {
+			badge.createSpan({
+				cls: "agent-sessions-attention-badge-item is-waiting",
+				text: t("attention.waiting", { count: attention.waiting }),
+			});
+		}
+		const jumpToId = attention.jumpToId;
+		if (jumpToId) {
+			badge.addClass("is-clickable");
+			this.registerDomEvent(badge, "click", (evt) => {
+				evt.stopPropagation();
+				const row = this.plugin.index.sessions.get(jumpToId);
+				void this.plugin.openSession(jumpToId, { agent: row?.agent ?? "claude", cwd: row?.cwd ?? "" });
 			});
 		}
 	}
