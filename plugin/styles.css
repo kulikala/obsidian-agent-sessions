@@ -193,8 +193,7 @@
 }
 
 /* バーの色はチップと同じ色相にする（`--as-chip-hue` をチップと同じ式で。T-70 追補）。
-   実カテゴリでなければ（「カテゴリなし」「名前なし」）`--as-chip-hue` を置かず、
-   `.is-neutral` の灰色になる。 */
+   実カテゴリでなければ（「その他」）`--as-chip-hue` を置かず、`.is-neutral` の灰色になる。 */
 .agent-sessions-manager-category-bar-fill {
 	height: 100%;
 	background-color: hsl(var(--as-chip-hue, 0) 45% 60%);
@@ -519,7 +518,7 @@
 }
 
 /* 区分の見出し行。直前の行（前のグループの最後の行など）と続いて見えないよう、上に
-   少し余白を持たせる（T-70 追補：「カテゴリなし」が最後のカテゴリと連続して見える指摘）。 */
+   少し余白を持たせる。 */
 .agent-sessions-manager-row.is-group td {
 	background-color: var(--background-secondary);
 	cursor: pointer;

@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { SessionIndex, type SessionIndexDeps } from "../src/index";
+import { mergeRow, SessionIndex, type Row, type SessionIndexDeps } from "../src/index";
 import { loadStore, updateStore } from "../src/store";
 import type { Detail, LiveResult, ScanResult, ScanSession } from "../src/types";
 
@@ -24,6 +24,65 @@ function scanSession(overrides: Partial<ScanSession> & Pick<ScanSession, "id">):
 function emptyLive(): LiveResult {
 	return { live: {}, daemon: { running: false, sessions: [] } };
 }
+
+function row(overrides: Partial<Row> & Pick<Row, "id">): Row {
+	return {
+		agent: "claude",
+		name: null,
+		group: null,
+		label: null,
+		cwd: "/v",
+		folder: "v",
+		last_activity: 0,
+		child: false,
+		transcript: null,
+		status: null,
+		waitingFor: null,
+		compacted: false,
+		pid: null,
+		rc: false,
+		daemon: false,
+		exited: null,
+		hasTab: false,
+		archived: false,
+		...overrides,
+	};
+}
+
+describe("mergeRow（走査で作った Row に前の Row の起動中情報を引き継ぐ。T-79）", () => {
+	it("前の Row が無ければ走査結果のまま", () => {
+		const fresh = row({ id: "a", waitingFor: null, compacted: false });
+		expect(mergeRow(fresh, undefined)).toBe(fresh);
+	});
+
+	it("status・pid・rc・daemon・exited を前の Row から引き継ぐ", () => {
+		const fresh = row({ id: "a" });
+		const previous = row({ id: "a", status: "busy", pid: 123, rc: true, daemon: true, exited: 1700000000 });
+		const merged = mergeRow(fresh, previous);
+		expect(merged.status).toBe("busy");
+		expect(merged.pid).toBe(123);
+		expect(merged.rc).toBe(true);
+		expect(merged.daemon).toBe(true);
+		expect(merged.exited).toBe(1700000000);
+	});
+
+	it("waitingFor・compacted も前の Row から引き継ぐ——applyRegistry／applyCompacted が" +
+		"当て直すまでの間に asking・compacted の印が一瞬消えないようにする", () => {
+		const fresh = row({ id: "a", waitingFor: null, compacted: false });
+		const previous = row({ id: "a", waitingFor: "permission prompt", compacted: true });
+		const merged = mergeRow(fresh, previous);
+		expect(merged.waitingFor).toBe("permission prompt");
+		expect(merged.compacted).toBe(true);
+	});
+
+	it("走査結果側の値（name・folder 等）は前の Row で上書きしない", () => {
+		const fresh = row({ id: "a", name: "新しい名前", folder: "new-folder" });
+		const previous = row({ id: "a", name: "古い名前", folder: "old-folder" });
+		const merged = mergeRow(fresh, previous);
+		expect(merged.name).toBe("新しい名前");
+		expect(merged.folder).toBe("new-folder");
+	});
+});
 
 describe("SessionIndex", () => {
 	let dir: string;

@@ -6,13 +6,11 @@ import type { Store } from "./store";
 
 /**
  * 「その他」区分の識別子（`store.folded` のキー）。カテゴリの無い名前付きセッションと、
- * 名前の無いセッションをまとめて 1 つの区分にする（T-74 追補：以前は「カテゴリなし」
- * 「名前なし」の 2 区分に分かれていたが、分ける意味が無いため統合した）。
+ * 名前の無いセッションをまとめた 1 つの区分。
  */
 export const OTHER_GROUP = "その他のセッション";
-/** 旧「カテゴリなし」区分の識別子（T-70 追補で導入、T-74 追補で `OTHER_GROUP` に統合）。
- * 以前のバージョンでこちらだけ畳んであった場合の後方互換のためだけに読む
- * （`buildManagerTree` の折畳判定）。新規に書き込むことはもう無い。 */
+/** 旧バージョンの `sessions.json` がこの識別子で畳んでいることがある。
+ * `buildManagerTree` の折畳判定で読むためだけに残している——新規に書き込むことは無い。 */
 const LEGACY_NO_CATEGORY_GROUP = "__no_category__";
 
 const GROUP_SEP = ": ";
@@ -124,8 +122,7 @@ export function buildManagerTree(rows: Row[], store: Store): ManagerTree {
 
 	return {
 		groups,
-		// 旧「カテゴリなし」（`LEGACY_NO_CATEGORY_GROUP`）だけが畳んであった場合も、統合後の
-		// 「その他」は畳んだ扱いにする（後方互換）。
+		// `LEGACY_NO_CATEGORY_GROUP` で畳んであっても「その他」は畳んだ扱いにする（後方互換）。
 		others: {
 			folded: store.folded.includes(OTHER_GROUP) || store.folded.includes(LEGACY_NO_CATEGORY_GROUP),
 			rows: otherRows,

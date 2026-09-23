@@ -55,8 +55,9 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 };
 
 /**
- * 保存データを既定値に重ねる。廃止した `newlineKey` と、今の `SubmitKey` に無い旧 `submitKey`
- * （`super+enter`・`meta+enter` など）は捨てる（起動時に keybindings.json から導き直す。D-50）。
+ * 保存データを既定値に重ねる。今の型に無いキー（`newlineKey`）や、今の `SubmitKey` に
+ * 無い値（`super+enter`・`meta+enter` など）が保存データに残っていても捨てる
+ * （起動時に keybindings.json から導き直す。D-50）。
  */
 export function mergeSettings(data: unknown): AgentSessionsSettings {
 	const saved = (typeof data === "object" && data !== null ? { ...(data as Record<string, unknown>) } : {}) as Record<

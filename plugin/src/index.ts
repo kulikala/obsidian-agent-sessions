@@ -67,6 +67,30 @@ function rowFromScan(s: ScanSession, openTabIds: Set<string>, store: Store): Row
 }
 
 /**
+ * 走査で作った Row（`fresh`）に、既存 Row（`previous`）が持っていた `status`・
+ * `waitingFor`・`pid`・`rc`・`daemon`・`exited`・`compacted` を引き継ぐ。走査結果
+ * （`json scan`）はこれらを知らないため（`rowFromScan` はどれも既定値で埋める）、
+ * `applyScanResult` の直後に必ず `applyRegistry`／`applyCompacted` が呼ばれて
+ * registry・`CompactedTracker` の今の値へ当て直すが、`mergeRow` 自身も前の Row から
+ * 引き継いでおくことで、途中の状態が矛盾しない（asking・compacted の印が一瞬消えない）。
+ */
+export function mergeRow(fresh: Row, previous: Row | undefined): Row {
+	if (!previous) {
+		return fresh;
+	}
+	return {
+		...fresh,
+		status: previous.status,
+		waitingFor: previous.waitingFor,
+		pid: previous.pid,
+		rc: previous.rc,
+		daemon: previous.daemon,
+		exited: previous.exited,
+		compacted: previous.compacted,
+	};
+}
+
+/**
  * 走査結果（`json scan`）・起動中（`json live`）・タブの状態を 1 つの
  * `Map<id, Row>` に合成する。3 つのビューがこれを 1 つ共有して購読する（§6.2）。
  */
@@ -408,33 +432,18 @@ export class SessionIndex extends EventEmitter {
 		this.categoryColors = { ...store.categoryColors };
 		if (only && only.length > 0) {
 			for (const s of result.sessions) {
-				this.sessions.set(s.id, this.mergeRow(rowFromScan(s, this.openTabIds, store), this.sessions.get(s.id)));
+				this.sessions.set(s.id, mergeRow(rowFromScan(s, this.openTabIds, store), this.sessions.get(s.id)));
 			}
 		} else {
 			const next = new Map<string, Row>();
 			for (const s of result.sessions) {
-				next.set(s.id, this.mergeRow(rowFromScan(s, this.openTabIds, store), this.sessions.get(s.id)));
+				next.set(s.id, mergeRow(rowFromScan(s, this.openTabIds, store), this.sessions.get(s.id)));
 			}
 			this.sessions.clear();
 			for (const [id, row] of next) {
 				this.sessions.set(id, row);
 			}
 		}
-	}
-
-	/** 走査で作った Row に、既存 Row が持っていた起動中情報を引き継ぐ。 */
-	private mergeRow(fresh: Row, previous: Row | undefined): Row {
-		if (!previous) {
-			return fresh;
-		}
-		return {
-			...fresh,
-			status: previous.status,
-			pid: previous.pid,
-			rc: previous.rc,
-			daemon: previous.daemon,
-			exited: previous.exited,
-		};
 	}
 
 	/** 行を書き換え、1 件でも `daemon`／`exited` が変わったら真を返す。 */
