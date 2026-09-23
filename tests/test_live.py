@@ -58,3 +58,21 @@ class TestLive(unittest.TestCase):
 
     def test_unknown_status_label(self):
         self.assertEqual(Live(SID1, 1, status='').label, '起動中')
+
+    def test_waiting_status_and_waiting_for(self):
+        # claude 自身が AskUserQuestion・許可プロンプト等で書く値（T-77）。
+        write(self.dir, 11, sid=SID1, status='waiting', waitingFor='input needed')
+        live = live_sessions(self.dir, claude_pids={11})
+        self.assertEqual(live[SID1].status, 'waiting')
+        self.assertEqual(live[SID1].waiting_for, 'input needed')
+        self.assertEqual(live[SID1].label, '回答待ち')
+
+    def test_waiting_is_not_busy(self):
+        write(self.dir, 11, sid=SID1, status='waiting', waitingFor='permission prompt')
+        live = live_sessions(self.dir, claude_pids={11})
+        self.assertFalse(live[SID1].busy)
+
+    def test_waiting_for_defaults_to_empty_string(self):
+        write(self.dir, 11, sid=SID1, status='idle')
+        live = live_sessions(self.dir, claude_pids={11})
+        self.assertEqual(live[SID1].waiting_for, '')

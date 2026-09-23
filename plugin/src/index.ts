@@ -14,6 +14,8 @@ import type { Detail, LiveResult, ScanResult, ScanSession } from "./types";
 /** 走査結果（Python）に、起動中の台帳とタブの状態を合成した 1 行。 */
 export interface Row extends ScanSession {
 	status: string | null;
+	/** `status === "waiting"`（claude 自身の「asking」）のときの理由（T-77）。それ以外は `null`。 */
+	waitingFor: string | null;
 	pid: number | null;
 	rc: boolean;
 	daemon: boolean;
@@ -48,6 +50,7 @@ function rowFromScan(s: ScanSession, openTabIds: Set<string>, store: Store): Row
 	return {
 		...s,
 		status: null,
+		waitingFor: null,
 		pid: null,
 		rc: false,
 		daemon: false,
@@ -438,6 +441,7 @@ export class SessionIndex extends EventEmitter {
 		for (const row of this.sessions.values()) {
 			const entry = this.registry.get(row.id);
 			row.status = entry?.status ?? null;
+			row.waitingFor = entry?.waitingFor ?? null;
 			row.pid = entry?.pid ?? null;
 			row.rc = entry?.rc ?? false;
 		}

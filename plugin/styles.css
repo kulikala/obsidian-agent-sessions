@@ -1131,6 +1131,14 @@
 	animation: agent-sessions-pulse 1.2s ease-in-out infinite;
 }
 
+/* claude 自身が答えを待っている（AskUserQuestion・許可プロンプト等。T-77）。`waiting`
+   （ターンは終わったが未読）より優先度が高いので、赤紫系で区別する。 */
+.agent-sessions-status-asking {
+	color: var(--color-pink, #d6428e);
+	animation: agent-sessions-pulse-scale 1.2s ease-in-out infinite;
+	display: inline-block;
+}
+
 .agent-sessions-status-waiting {
 	color: var(--color-orange, darkorange);
 	animation: agent-sessions-pulse-scale 1.2s ease-in-out infinite;
@@ -1161,6 +1169,7 @@
 	.agent-sessions-status-connecting,
 	.agent-sessions-status-working,
 	.agent-sessions-status-running-shell,
+	.agent-sessions-status-asking,
 	.agent-sessions-status-waiting {
 		animation: none;
 	}

@@ -1012,7 +1012,13 @@ export class TerminalView extends ItemView {
 			exited: this.isExited(),
 			editing: !!this.pendingEdit,
 			connecting: this.attaching,
-			registryStatus: this.plugin.index.registry.get(this.id)?.status as "busy" | "shell" | "idle" | null | undefined,
+			registryStatus: this.plugin.index.registry.get(this.id)?.status as
+				| "busy"
+				| "shell"
+				| "waiting"
+				| "idle"
+				| null
+				| undefined,
 			waiting: this.waiting,
 			attached: this.attached,
 		});

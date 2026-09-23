@@ -41,6 +41,34 @@ describe("Registry", () => {
 		expect(registry.get("b")?.rc).toBe(false);
 	});
 
+	it("waitingFor を素通しする（T-77。claude 自身が status:'waiting' のときに書く理由）", () => {
+		writeSession(dir, "a.json", { pid: process.pid, sessionId: "a", status: "waiting", waitingFor: "input needed" });
+		writeSession(dir, "b.json", { pid: process.pid, sessionId: "b", status: "idle" });
+
+		const registry = new Registry(dir);
+
+		expect(registry.get("a")?.status).toBe("waiting");
+		expect(registry.get("a")?.waitingFor).toBe("input needed");
+		expect(registry.get("b")?.waitingFor).toBeUndefined();
+	});
+
+	it("waiting は busy/shell とは違うので onIdle／onBusy を発火しない", () => {
+		writeSession(dir, "a.json", { pid: process.pid, sessionId: "a", status: "busy" });
+		const registry = new Registry(dir);
+
+		const idled: string[] = [];
+		const busied: string[] = [];
+		registry.onIdle((id) => idled.push(id));
+		registry.onBusy((id) => busied.push(id));
+
+		writeSession(dir, "a.json", { pid: process.pid, sessionId: "a", status: "waiting", waitingFor: "permission prompt" });
+		registry.refresh();
+
+		expect(idled).toEqual([]);
+		expect(busied).toEqual([]);
+		expect(registry.get("a")?.status).toBe("waiting");
+	});
+
 	it("壊れた JSON のファイルは無視して他は読む", () => {
 		writeFileSync(join(dir, "broken.json"), "{not json", "utf8");
 		writeSession(dir, "ok.json", { pid: process.pid, sessionId: "ok", status: "idle" });

@@ -12,6 +12,9 @@ STATUS_LABEL = {
     'busy': '実行中',
     'shell': 'コマンド実行中',
     'idle': '待機中',
+    # claude 自身がダイアログの返答待ちのときに書く値（AskUserQuestion・許可プロンプト・
+    # elicitation 等。T-77）。`waiting_for` にその理由が入る。
+    'waiting': '回答待ち',
 }
 
 
@@ -19,11 +22,12 @@ STATUS_LABEL = {
 class Live:
     session_id: str
     pid: int
-    status: str = ''            # 'busy' | 'shell' | 'idle' | ''
+    status: str = ''            # 'busy' | 'shell' | 'idle' | 'waiting' | ''
     updated_at: float = 0.0     # epoch 秒
     entrypoint: str = ''
     kind: str = ''
     rc: bool = False            # リモート制御（bridgeSessionId）下にあるか
+    waiting_for: str = ''       # status == 'waiting' のときの理由（T-77）。それ以外は ''
 
     @property
     def label(self) -> str:
@@ -99,7 +103,8 @@ def live_sessions(sessions_dir: Optional[str] = None,
         live = Live(session_id=sid, pid=pid, status=d.get('status') or '',
                     updated_at=float(updated) / 1000.0,
                     entrypoint=d.get('entrypoint') or '', kind=d.get('kind') or '',
-                    rc=bool(d.get('bridgeSessionId')))
+                    rc=bool(d.get('bridgeSessionId')),
+                    waiting_for=d.get('waitingFor') or '')
         prev = out.get(sid)
         if prev is None or live.updated_at >= prev.updated_at:
             out[sid] = live

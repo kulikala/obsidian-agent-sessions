@@ -2,7 +2,15 @@
 //
 // 各ファイルは 1 プロセスの台帳（`pid, sessionId, cwd, startedAt, procStart,
 // version, kind, entrypoint, name, nameSource, updatedAt, status, statusUpdatedAt,
-// bridgeSessionId, messagingSocketPath`）。pid が死んでいる台帳は無視する。
+// bridgeSessionId, messagingSocketPath, waitingFor`）。pid が死んでいる台帳は無視する。
+//
+// `status` は Claude Code 自身が書く生の値（`busy`・`shell`・`idle` に加えて、実機で
+// `waiting` も確認した。T-77）。`waiting` は AskUserQuestion・許可プロンプト・elicitation・
+// モデル切替の確認など「ダイアログを開いて答えを待っている」ときに Claude Code が自分で
+// 付ける値で、`waitingFor` にその理由（`"input needed"`・`"permission prompt"`・
+// `"dialog open"` 等、実行ファイルの文字列から採取。公式ドキュメントに payload の詳細な
+// 記述は無い）が添う。ターンが終わっただけの通常の待機（次の指示を待つだけ）は `idle` の
+// ままで、`waiting` にはならない——`terminal-status.ts` の `asking` はここへ足す。
 
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
@@ -13,6 +21,8 @@ export interface RegistryEntry {
 	pid: number;
 	rc: boolean;
 	updatedAt: number;
+	/** `status === "waiting"` のときの理由（T-77）。無ければ `undefined`。 */
+	waitingFor?: string;
 }
 
 interface RawSessionRecord {
@@ -22,6 +32,7 @@ interface RawSessionRecord {
 	updatedAt?: unknown;
 	statusUpdatedAt?: unknown;
 	bridgeSessionId?: unknown;
+	waitingFor?: unknown;
 }
 
 function isAlive(pid: number): boolean {
@@ -65,6 +76,7 @@ function readEntries(sessionsDir: string): Map<string, RegistryEntry> {
 					: typeof raw.statusUpdatedAt === "number"
 						? raw.statusUpdatedAt
 						: 0,
+			waitingFor: typeof raw.waitingFor === "string" ? raw.waitingFor : undefined,
 		});
 	}
 	return out;

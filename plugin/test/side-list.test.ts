@@ -14,6 +14,7 @@ function row(overrides: Partial<Row> & Pick<Row, "id">): Row {
 		child: false,
 		transcript: null,
 		status: null,
+		waitingFor: null,
 		pid: null,
 		rc: false,
 		daemon: false,

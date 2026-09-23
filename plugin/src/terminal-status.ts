@@ -8,6 +8,7 @@ export type TerminalStatus =
 	| "connecting"
 	| "working"
 	| "running-shell"
+	| "asking"
 	| "waiting"
 	| "editing"
 	| "idle"
@@ -24,21 +25,30 @@ export interface TerminalStatusInput {
 	editing: boolean;
 	/** attach／start の途中。 */
 	connecting: boolean;
-	/** registry の状態（`busy`・`shell`・`idle`。台帳が無ければ `null`）。 */
-	registryStatus: "busy" | "shell" | "idle" | null | undefined;
-	/** `busy→idle` の後、まだそのタブを前面にしていない。 */
+	/**
+	 * registry の状態——claude 自身が `~/.claude/sessions/<pid>.json` に書く生の値
+	 * （台帳が無ければ `null`）。`waiting` は claude 自身の値で、AskUserQuestion・許可
+	 * プロンプト・elicitation 等「ダイアログを開いて答えを待っている」ときに立つ（T-77・
+	 * `registry.ts` 冒頭）。下の `waiting`（bool）フィールドとは別物——名前が同じだけで
+	 * 意味が違う（そちらは「ターンは終わったが、まだこのタブを見ていない」）。
+	 */
+	registryStatus: "busy" | "shell" | "waiting" | "idle" | null | undefined;
+	/** `busy→idle` の後、まだそのタブを前面にしていない（claude 自身の `waiting` とは別。上参照）。 */
 	waiting: boolean;
 	/** デーモンに attach 済み。 */
 	attached: boolean;
 }
 
-/** 優先順：error＞exited＞editing＞connecting＞running-shell＞working＞waiting＞detached＞idle。 */
+/** 優先順：error＞exited＞asking＞editing＞connecting＞running-shell＞working＞waiting＞detached＞idle。 */
 export function terminalStatus(input: TerminalStatusInput): TerminalStatus {
 	if (input.error) {
 		return "error";
 	}
 	if (input.exited) {
 		return "exited";
+	}
+	if (input.registryStatus === "waiting") {
+		return "asking";
 	}
 	if (input.editing) {
 		return "editing";
@@ -66,6 +76,7 @@ export const TERMINAL_STATUS_ICON: Record<TerminalStatus, string> = {
 	connecting: "loader",
 	working: "loader-circle",
 	"running-shell": "terminal",
+	asking: "message-circle-question",
 	waiting: "bell-dot",
 	editing: "pencil-line",
 	idle: "square-terminal",
@@ -83,6 +94,7 @@ export const ALL_TERMINAL_STATUSES: readonly TerminalStatus[] = [
 	"connecting",
 	"working",
 	"running-shell",
+	"asking",
 	"waiting",
 	"editing",
 	"idle",
@@ -96,6 +108,7 @@ export const STATUS_LABEL_KEY: Record<TerminalStatus, MessageKey> = {
 	connecting: "status.connecting",
 	working: "status.working",
 	"running-shell": "status.runningShell",
+	asking: "status.asking",
 	waiting: "status.waiting",
 	editing: "status.editing",
 	idle: "status.idle",
@@ -108,6 +121,7 @@ export const STATUS_LABEL_KEY: Record<TerminalStatus, MessageKey> = {
 const PRIORITY_ORDER: readonly TerminalStatus[] = [
 	"error",
 	"exited",
+	"asking",
 	"editing",
 	"connecting",
 	"running-shell",
@@ -124,8 +138,8 @@ export function higherPriorityStatus(a: TerminalStatus, b: TerminalStatus): Term
 
 /**
  * タブが無い行の状態（分かる範囲。D-66 追補）：`row.status`（走査結果に合成済みの registry
- * 状態）・`row.exited`・`row.daemon` だけで決まる分——`working`・`running-shell`・`exited`・
- * `idle`・`detached`（＝起動中でない）のどれかにしかならない。
+ * 状態）・`row.exited`・`row.daemon` だけで決まる分——`working`・`running-shell`・`asking`・
+ * `exited`・`idle`・`detached`（＝起動中でない）のどれかにしかならない。
  */
 export function rowTerminalStatus(row: Row): TerminalStatus {
 	return terminalStatus({
@@ -133,7 +147,7 @@ export function rowTerminalStatus(row: Row): TerminalStatus {
 		exited: row.exited != null,
 		editing: false,
 		connecting: false,
-		registryStatus: row.status as "busy" | "shell" | "idle" | null | undefined,
+		registryStatus: row.status as "busy" | "shell" | "waiting" | "idle" | null | undefined,
 		waiting: false,
 		attached: row.daemon,
 	});

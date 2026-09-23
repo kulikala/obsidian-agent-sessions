@@ -23,6 +23,7 @@ function row(overrides: Partial<Row> & Pick<Row, "id">): Row {
 		child: false,
 		transcript: null,
 		status: null,
+		waitingFor: null,
 		pid: null,
 		rc: false,
 		daemon: false,
@@ -63,6 +64,10 @@ describe("terminalStatus", () => {
 		expect(terminalStatus(input({ registryStatus: "busy" }))).toBe("working");
 	});
 
+	it("registry waiting（claude 自身が AskUserQuestion・許可プロンプト等で書く値）は asking（T-77）", () => {
+		expect(terminalStatus(input({ registryStatus: "waiting" }))).toBe("asking");
+	});
+
 	it("registry shell は running-shell", () => {
 		expect(terminalStatus(input({ registryStatus: "shell" }))).toBe("running-shell");
 	});
@@ -95,6 +100,16 @@ describe("terminalStatus", () => {
 		it("exited は editing より優先する", () => {
 			expect(terminalStatus(input({ exited: true, editing: true, connecting: true, registryStatus: "busy" }))).toBe(
 				"exited"
+			);
+		});
+
+		it("exited は asking より優先する（T-77）", () => {
+			expect(terminalStatus(input({ exited: true, registryStatus: "waiting" }))).toBe("exited");
+		});
+
+		it("asking は editing・connecting・waiting（bool）より優先する（T-77）", () => {
+			expect(terminalStatus(input({ registryStatus: "waiting", editing: true, connecting: true, waiting: true }))).toBe(
+				"asking"
 			);
 		});
 
@@ -150,6 +165,16 @@ describe("rowTerminalStatus（タブが無い行。D-66 追補）", () => {
 		expect(rowTerminalStatus(row({ id: "a", status: "shell", daemon: true }))).toBe("running-shell");
 	});
 
+	it("registry waiting は asking（タブが無くても claude 自身の値で分かる。T-77）", () => {
+		expect(rowTerminalStatus(row({ id: "a", status: "waiting", waitingFor: "input needed", daemon: true }))).toBe(
+			"asking"
+		);
+	});
+
+	it("exited は asking より優先する（T-77）", () => {
+		expect(rowTerminalStatus(row({ id: "a", status: "waiting", exited: 1700000000, daemon: true }))).toBe("exited");
+	});
+
 	it("daemon（≈attached）が無ければ detached", () => {
 		expect(rowTerminalStatus(row({ id: "a", daemon: false }))).toBe("detached");
 	});
@@ -190,5 +215,6 @@ describe("TERMINAL_STATUS_ICON（D-66・T-76：行の印もタブと同じアイ
 		expect(TERMINAL_STATUS_ICON.idle).toBe("square-terminal");
 		expect(TERMINAL_STATUS_ICON.working).toBe("loader-circle");
 		expect(TERMINAL_STATUS_ICON.detached).toBe("square-dashed");
+		expect(TERMINAL_STATUS_ICON.asking).toBe("message-circle-question");
 	});
 });

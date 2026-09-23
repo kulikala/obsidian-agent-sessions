@@ -7,7 +7,7 @@ import threading
 import unittest
 from unittest import mock
 
-from agentsessions import config, jsonout, protocol, store
+from agentsessions import config, jsonout, live, protocol, store
 
 ID1 = '11111111-1111-1111-1111-111111111111'
 ID2 = '22222222-2222-2222-2222-222222222222'
@@ -199,6 +199,30 @@ class TestLiveOutput(JsonoutTestBase):
             os.unlink(sock_path)
 
         self.assertEqual(out['daemon'], {'running': False, 'sessions': []})
+
+    def test_waiting_session_includes_waiting_for(self):
+        # claude 自身が AskUserQuestion・許可プロンプト等で書く status/waitingFor（T-77）。
+        # ps の cmdline に "claude" が無い（このテストプロセス自身の pid の）ので、
+        # `_claude_pids` を None にして `_alive` だけの判定に落とす。
+        with open(os.path.join(self.sessions_dir, '1.json'), 'w') as f:
+            json.dump({'pid': os.getpid(), 'sessionId': ID1, 'status': 'waiting',
+                       'waitingFor': 'input needed', 'statusUpdatedAt': 1000}, f)
+        sock_path = os.path.join(self.tmp, 'no-such.sock')
+        with mock.patch.object(config, 'SOCK_PATH', sock_path), \
+                mock.patch.object(live, '_claude_pids', return_value=None):
+            out = jsonout.live_output()
+        self.assertEqual(out['live'][ID1]['status'], '回答待ち')
+        self.assertEqual(out['live'][ID1]['waiting_for'], 'input needed')
+
+    def test_idle_session_omits_waiting_for(self):
+        with open(os.path.join(self.sessions_dir, '1.json'), 'w') as f:
+            json.dump({'pid': os.getpid(), 'sessionId': ID1, 'status': 'idle',
+                       'statusUpdatedAt': 1000}, f)
+        sock_path = os.path.join(self.tmp, 'no-such.sock')
+        with mock.patch.object(config, 'SOCK_PATH', sock_path), \
+                mock.patch.object(live, '_claude_pids', return_value=None):
+            out = jsonout.live_output()
+        self.assertNotIn('waiting_for', out['live'][ID1])
 
 
 if __name__ == '__main__':

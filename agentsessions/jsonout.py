@@ -148,6 +148,8 @@ def live_output() -> dict:
             'pid': l.pid,
             'rc': l.rc,
             'updated_at': l.updated_at,
+            # claude 自身が status == 'waiting' のときに書く理由（T-77）。それ以外は書かない。
+            **({'waiting_for': l.waiting_for} if l.waiting_for else {}),
         }
         for sid, l in live_map.items()
     }

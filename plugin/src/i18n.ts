@@ -200,6 +200,7 @@ const ja = {
 	"manager.analysis.title": "解析",
 
 	// ---- 詳細ビュー（views/detail.ts） ----
+	"detail.compacted": "compact 済み",
 	"detail.totalTokens": "総トークン",
 	"detail.totalCost": "総コスト",
 	"detail.lastUser": "直近の指示",

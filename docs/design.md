@@ -291,16 +291,19 @@ Claude Code は Ctrl+G で `$VISUAL` を、`spawnSync(cmd, [...args, tmpfile], {
 | connecting | attach／start の途中 | `loader` | 薄い色・回転 |
 | working | registry の状態が `busy` | `loader-circle` | アクセント色・回転 |
 | running-shell | registry の状態が `shell`（ツールのコマンド実行中） | `terminal` | 黄・点滅（opacity） |
-| waiting | `busy→idle` の後、まだそのタブを前面にしていない | `bell-dot` | オレンジ・脈動（scale） |
+| asking | registry の状態が `waiting`（claude 自身が `~/.claude/sessions/<pid>.json` に書く値。AskUserQuestion・許可プロンプト・elicitation・モデル切替の確認等、ダイアログを開いて答えを待っている。T-77） | `message-circle-question` | 赤紫・脈動（scale） |
+| waiting | `busy→idle` の後、まだそのタブを前面にしていない（claude 自身の `waiting` とは別物・名前が重なるだけ） | `bell-dot` | オレンジ・脈動（scale） |
 | editing | 内蔵エディタが開いている | `pencil-line` | 青 |
 | idle | 接続中で待機（見た） | `square-terminal` | 通常色 |
 | detached | タブはあるが未接続（復元後、前面にする前） | `square-dashed` | 薄い色 |
 | exited | claude が終了 | `circle-stop` | 薄い色 |
 | error | デーモン不通・claude 不在・起動失敗 | `triangle-alert` | 赤 |
 
-優先順：error＞exited＞editing＞connecting＞running-shell＞working＞waiting＞detached＞idle。アニメーションは `prefers-reduced-motion` で止める。
+優先順：error＞exited＞asking＞editing＞connecting＞running-shell＞working＞waiting＞detached＞idle。アニメーションは `prefers-reduced-motion` で止める。
 
-タブの状態は `plugin.terminalStatuses`（id → 状態）に集約し、同じ id のビューが複数あれば優先順の高い方。サイドパネル・マネージャーの行の印はタブがあればこの値、無ければ `Row` と registry から分かる範囲（working／running-shell／exited／idle／detached）。アイコンは小さな点のまま、色と動きを揃える。tooltip に状態名。
+タブの状態は `plugin.terminalStatuses`（id → 状態）に集約し、同じ id のビューが複数あれば優先順の高い方。サイドパネル・マネージャーの行の印はタブがあればこの値、無ければ `Row` と registry から分かる範囲（working／running-shell／asking／exited／idle／detached）。アイコンは小さな点のまま、色と動きを揃える。tooltip に状態名。
+
+`asking` の検出はフックを新設していない（T-77）：`~/.claude/sessions/<pid>.json` を実機で見ると、claude 自身が `status: "waiting"` と、理由を表す `waitingFor`（`"input needed"`・`"permission prompt"`・`"dialog open"` 等）を既に書いている——`registry.ts` はこのファイルを元から直接 watch しているので、生の値をそのまま通すだけで足りる（`RegistryEntry.waitingFor`・`Row.waitingFor` に持たせ、tooltip 等で使える）。公式ドキュメントの `Notification` フック（`notification_type`：`permission_prompt`・`idle_prompt`・`elicitation_dialog`・`agent_needs_input` 等）は一度きりのイベントで、こちらを使うと自前で状態を持ち直す必要があり、フックが届かない場合に取りこぼす。`status: "waiting"` は既に持続的な状態として書かれているので、そちらを使う方が単純で頑丈——`install.sh` にフックは足していない。
 
 Obsidian 1.7 以降、前面にしたことのないタブは deferred view で、アイコンと題名は保存された値がそのまま使われる。`refreshDeferredTerminalTabs()`（`main.ts`）が `onLayoutReady`・`layout-change`・`index`／`registry` の変化のたびに、`leaf.view.title`（`DeferredView` が持つフィールド）とタブ見出し DOM（`.workspace-tab-header-inner-icon`・`.workspace-tab-header-inner-title`）の両方を直接書き換える。題名は `Row.name`（無ければ `sessionDisplayName`「無題 <id8>」。`name.ts` の純関数で、`views/terminal.ts` の `getDisplayText()` も同じ関数を使い、両者が同じ規則で名前を決めることを保証する）。
 
@@ -491,7 +494,7 @@ cache 作成は 5 分＝入力×1.25、1 時間＝入力×2（`cache_creation.ep
 ## 19. テスト
 
 - **Python**（unittest、`-W error`。`tests/`）：`protocol`（フレームの分割・結合）、`daemon`（`cat` を子にした start/attach/replay/resize/kill/forget、バッファ上限、複数接続と最小サイズ、切断の後始末、終了済みへの attach、`exited.json` の書き出しと読み込み）、`store` のロック（2 プロセスで同時に書く。`categoryColors` の往復も含む）、`setup`（settings.json の置換と backup）、`cache`、`jsonout`、`pricing`（各表・1h・未知モデル）、`usage`（cost・tools・duration）、`stats`（窓・バケット・重複排除）、`edit`（偽ソケットサーバーで `ok:true`→0、`cancel`→1、`no-tab`／`busy`→fallback、接続不可／EOF→fallback）、`attach`。
-- **TypeScript**（vitest、`plugin/test/`）：`tree`・`manager-model`（開いているタブ／起動中／最近・グループ／カテゴリなし／その他／アーカイブの区分け、`categoryTotals`）、`links`・`at-complete`、`marks`、`keys`（`classifyEnter`・`resolveEnterAction`・`sendSequence`・`deriveSubmitKey`・`reconcileSubmitKey`）、`keybindings`（読解・書換・戻し）、`daemon-client`（フレーム）、`daemon-integration`、`statusline`・`limits`（整形・並べ替え）、`store`（読み書きとロック、tmp dir）、`category`（パレット番号の割当）、`name`（`tokenizeNameInput`・`filterCategories`・`sessionDisplayName`）、`detail`（`categoryAndLabel`）、`terminal-status`（`terminalStatus` の優先順）、`ui-state`、`registry`、`index`（`waitForName` を含む）、`edit-server`（フレームの往復とハンドラの分岐）、`i18n`、`settings`、`usage`、`setup`、`tui-mode`、`side-list`、`key-role`、`dedupe`。`openSession` の多重呼出はモックの workspace で確認する。
+- **TypeScript**（vitest、`plugin/test/`）：`tree`・`manager-model`（開いているタブ／起動中／最近・グループ／カテゴリなし／その他／アーカイブの区分け、`categoryTotals`）、`links`・`at-complete`、`marks`、`keys`（`classifyEnter`・`resolveEnterAction`・`sendSequence`・`deriveSubmitKey`・`reconcileSubmitKey`）、`keybindings`（読解・書換・戻し）、`daemon-client`（フレーム）、`daemon-integration`、`statusline`・`limits`（整形・並べ替え）、`store`（読み書きとロック、tmp dir）、`category`（パレット番号の割当）、`name`（`tokenizeNameInput`・`filterCategories`・`sessionDisplayName`）、`detail`（`categoryAndLabel`）、`terminal-status`（`terminalStatus` の優先順・`asking`）、`ui-state`、`registry`、`index`（`waitForName` を含む）、`edit-server`（フレームの往復とハンドラの分岐）、`i18n`、`settings`、`usage`、`setup`、`tui-mode`、`side-list`、`key-role`、`dedupe`。`openSession` の多重呼出はモックの workspace で確認する。
 - **手動**：`requirements.md` の「受け入れの確認」。実機での目視は崩れを指摘されたときと、Obsidian CLI で組立てにくい操作（右クリックメニューなど）に限る。
 
 ## 20. 検証の手段と Obsidian の注意点
