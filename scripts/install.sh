@@ -4,7 +4,7 @@
 # The vault has no default — pass it via the env var AGENT_SESSIONS_VAULT or as the
 # first argument.
 set -e
-HERE="$(cd "$(dirname "$0")" && pwd)"
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
 
 VAULT="${AGENT_SESSIONS_VAULT:-}"
 if [ -z "$VAULT" ] && [ $# -gt 0 ]; then

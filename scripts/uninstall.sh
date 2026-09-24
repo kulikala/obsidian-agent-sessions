@@ -9,7 +9,7 @@
 # --purge  also delete the runtime dir (~/.agents/sessions/) and the ledger
 #          (<vault>/.agents/sessions/)
 set -e
-HERE="$(cd "$(dirname "$0")" && pwd)"
+HERE="$(cd "$(dirname "$0")/.." && pwd)"
 AS="$HERE/bin/agent-sessions"
 
 VAULT="${AGENT_SESSIONS_VAULT:-}"
