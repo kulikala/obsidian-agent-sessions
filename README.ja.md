@@ -33,10 +33,10 @@
 git clone <このリポジトリ> agent-sessions
 cd agent-sessions
 (cd plugin && npm install && npm run build)
-./install.sh /path/to/your/vault
+./scripts/install.sh /path/to/your/vault
 ```
 
-vault のパスは必須——`install.sh` の第 1 引数として渡すか、環境変数 `AGENT_SESSIONS_VAULT` で指定する（`AGENT_SESSIONS_VAULT=/path/to/your/vault ./install.sh`）。
+vault のパスは必須——`install.sh` の第 1 引数として渡すか、環境変数 `AGENT_SESSIONS_VAULT` で指定する（`AGENT_SESSIONS_VAULT=/path/to/your/vault ./scripts/install.sh`）。
 
 `install.sh` が行うこと：
 
@@ -92,7 +92,7 @@ agent-sessions setup [--dry-run]
 ## アンインストール
 
 ```sh
-"<このリポジトリのパス>/uninstall.sh" "<vault>"
+"<このリポジトリのパス>/scripts/uninstall.sh" "<vault>"
 ```
 
 これに加えて、Obsidian の「コミュニティプラグイン」で **Agent Sessions** を無効化・削除する。

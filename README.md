@@ -33,10 +33,10 @@ There is no packaged release yet, so the plugin is installed from a local clone.
 git clone <this-repository> agent-sessions
 cd agent-sessions
 (cd plugin && npm install && npm run build)
-./install.sh /path/to/your/vault
+./scripts/install.sh /path/to/your/vault
 ```
 
-The vault path is required — either as the first argument to `install.sh` or via the `AGENT_SESSIONS_VAULT` environment variable (`AGENT_SESSIONS_VAULT=/path/to/your/vault ./install.sh`).
+The vault path is required — either as the first argument to `install.sh` or via the `AGENT_SESSIONS_VAULT` environment variable (`AGENT_SESSIONS_VAULT=/path/to/your/vault ./scripts/install.sh`).
 
 `install.sh`:
 
@@ -92,7 +92,7 @@ See [`docs/design.md`](docs/design.md) for the full design and [`docs/requiremen
 ## Uninstall
 
 ```sh
-"<path to this repo>/uninstall.sh" "<vault>"
+"<path to this repo>/scripts/uninstall.sh" "<vault>"
 ```
 
 Also disable and remove **Agent Sessions** from Obsidian's Community plugins.
