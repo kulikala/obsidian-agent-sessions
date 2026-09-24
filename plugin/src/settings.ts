@@ -1,28 +1,28 @@
-// 設定の型と既定値（§6.9）。obsidian には依存しない（純粋なデータ定義）。
+// Settings types and defaults. Doesn't depend on `obsidian` (plain data definitions only).
 
 import type { LanguageSetting } from "./i18n";
 
 export type Padding = "comfortable" | "compact" | "none";
 
 /**
- * 送信キー（§6.8・D-50）。`enter` 以外を選ぶと Enter は改行になり、keybindings.json に書く。
- * `alt+enter` は Option+Enter、`cmd+enter` は Command+Enter。
+ * The submit key. Choosing anything other than `enter` makes Enter insert a newline instead,
+ * and writes to keybindings.json. `alt+enter` is Option+Enter, `cmd+enter` is Command+Enter.
  */
 export type SubmitKey = "enter" | "shift+enter" | "ctrl+enter" | "alt+enter" | "cmd+enter";
 
 export const SUBMIT_KEYS: readonly SubmitKey[] = ["enter", "shift+enter", "ctrl+enter", "alt+enter", "cmd+enter"];
 
 /**
- * 非 macOS の送信キーの選択肢（§6.9 非macOS対応）。`cmd+enter`（Command＝非 macOS では Super）は
- * ブラウザに安定して届かない（ウィンドウマネージャに奪われうる）ので出さない。
+ * The submit-key choices on non-macOS. `cmd+enter` (Command — on non-macOS that's Super) isn't
+ * offered, since it doesn't reliably reach the browser (a window manager can grab it first).
  */
 export const SUBMIT_KEYS_NON_MAC: readonly SubmitKey[] = ["enter", "shift+enter", "ctrl+enter", "alt+enter"];
 
 const FONT_FAMILY_MAC = 'Menlo, "Hiragino Sans", monospace';
-/** Menlo は Linux に無いので、非 macOS は幅の揃う等幅フォント＋CJK フォールバックにする。 */
+/** Menlo doesn't exist on Linux, so non-macOS gets a monospace font with even CJK width plus a fallback. */
 const FONT_FAMILY_NON_MAC = '"DejaVu Sans Mono", "Noto Sans Mono CJK JP", monospace';
 
-/** 既定のフォント（§6.9 非macOS対応。§15）。 */
+/** The default font. */
 export function defaultFontFamily(isMac: boolean): string {
 	return isMac ? FONT_FAMILY_MAC : FONT_FAMILY_NON_MAC;
 }
@@ -36,17 +36,17 @@ export interface AgentSessionsSettings {
 	claudePath: string;
 	agentSessionsPath: string;
 	scrollback: number;
-	/** 編集領域の高さ（本体に対する %）。 */
+	/** The editor pane's height, as a % of the body. */
 	editorHeight: number;
-	/** 送信キー（既定 enter）。起動時に keybindings.json から導き直す。 */
+	/** The submit key (default `enter`). Re-derived from keybindings.json at startup. */
 	submitKey: SubmitKey;
-	/** サイドパネルの詳細領域の高さ（px、§6.9・D-43）。 */
+	/** The side panel's detail area height (px). */
 	sideDetailHeight: number;
-	/** 表示言語（§6.9・D-56）。既定は自動（Obsidian の言語に合わせる）。 */
+	/** The display language. Default is `auto` (follows Obsidian's own language). */
 	language: LanguageSetting;
-	/** マネージャー下部・解析領域（統計の帯＋カテゴリ別バー）の高さ（px。T-70 追補）。 */
+	/** The manager's bottom analytics area (usage bar + per-category bar) height (px). */
 	managerAnalysisHeight: number;
-	/** マネージャーの解析領域を畳んであるか（T-70 追補）。 */
+	/** Whether the manager's analytics area is collapsed. */
 	managerAnalysisCollapsed: boolean;
 }
 
@@ -68,14 +68,14 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 };
 
 /**
- * 保存データを既定値に重ねる。今の型に無いキー（`newlineKey`）や、今の `SubmitKey` に
- * 無い値（`super+enter`・`meta+enter` など）が保存データに残っていても捨てる
- * （起動時に keybindings.json から導き直す。D-50）。
+ * Layers saved data over the defaults. Drops keys that aren't in the current type (`newlineKey`)
+ * and values that aren't in the current `SubmitKey` (`super+enter`, `meta+enter`, etc.), even if
+ * they're left over in saved data — those get re-derived from keybindings.json at startup.
  *
- * `isMac`（既定 `true`）は非 macOS 対応（§6.9・§15）：非 macOS では選択肢に無い
- * `cmd+enter` が保存データに残っていても捨て（既定 `enter` に戻る）、`fontFamily` が
- * 保存データに無いとき（新規インストール）だけ非 macOS 向けの既定フォントを使う——
- * 一度でも保存された `fontFamily` はプラットフォームが変わっても書き換えない。
+ * `isMac` (default `true`): on non-macOS, drops a leftover `cmd+enter` in saved data (falling
+ * back to `enter`), and uses the non-macOS default font only when `fontFamily` is absent from
+ * saved data (a fresh install) — a `fontFamily` that was ever saved is never overwritten just
+ * because the platform changed.
  */
 export function mergeSettings(data: unknown, isMac = true): AgentSessionsSettings {
 	const saved = (typeof data === "object" && data !== null ? { ...(data as Record<string, unknown>) } : {}) as Record<

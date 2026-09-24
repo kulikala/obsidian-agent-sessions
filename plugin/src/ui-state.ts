@@ -1,6 +1,6 @@
-// 送信キーの記号を `~/.agents/sessions/ui.json` へ書く（T-71）。Python 側の
-// `format_status_line` が読み、statusLine に付ける。obsidian には依存しない純粋な I/O。
-// 書き方は `store.ts` の `saveStore` と同じ（tmp に書いて rename）。
+// Writes the submit-key symbol to `~/.agents/sessions/ui.json`. Read by the Python side's
+// `format_status_line`, which attaches it to the statusLine. Plain I/O with no dependency on
+// `obsidian`. Writes the same way `store.ts`'s `saveStore` does (tmp, then rename).
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -13,9 +13,9 @@ export interface UiState {
 }
 
 /**
- * `runtimeDir`（`~/.agents/sessions`）へ `ui.json` を書く。`onload`・`saveSettings` から呼ぶ。
- * `isMac`（既定 `true`）は非 macOS 対応（§14）：非 macOS は statusLine 用の短い文字表記
- * （`C-⏎` など）を書く。
+ * Writes `ui.json` into `runtimeDir` (`~/.agents/sessions`). Called from `onload` and
+ * `saveSettings`. `isMac` (default `true`): on non-macOS, writes the short text form used for
+ * the statusLine (e.g. `C-⏎`).
  */
 export function writeUiState(runtimeDir: string, submitKey: SubmitKey, isMac = true): void {
 	fs.mkdirSync(runtimeDir, { recursive: true });

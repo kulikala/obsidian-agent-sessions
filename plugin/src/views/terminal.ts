@@ -1,5 +1,5 @@
-// ターミナル（§6.3）・1 セッション＝1 タブ（§6.4）・アイコンの状態（§6.5）・
-// エラー処理（§7）。xterm 5.x を `DaemonClient` に繋ぐ。
+// The terminal: one session per tab, tab icon state, and error handling. Connects xterm 5.x to
+// `DaemonClient`.
 
 import {
 	ItemView,
@@ -48,21 +48,21 @@ export interface TerminalState {
 	agent: string;
 	cwd: string;
 	fontSize?: number;
-	/** 新規セッション。最初の `start` が済むまで残り、`--session-id` で起動する。 */
+	/** A brand-new session. Stays true until the first `start` completes, and starts with `--session-id`. */
 	fresh?: boolean;
 }
 
 const PADDING_PX: Record<Padding, number> = { comfortable: 12, compact: 4, none: 0 };
 const RESIZE_DEBOUNCE_MS = 50;
-/** `start` からこの時間内の `exit` は起動の失敗とみなす（§7）。 */
+/** An `exit` within this long after `start` is treated as a startup failure. */
 const EARLY_EXIT_MS = 3000;
 const RESUME_FAILURE_PATTERNS = ["No conversation found", "not found"];
 const FONT_SIZE_MIN = 6;
 const FONT_SIZE_MAX = 40;
-/** 編集領域の高さ（%）の下限・上限。上限として効き、ターミナルの最小行数が優先する。 */
+/** Min/max for the editor pane's height (%). Acts as a ceiling — the terminal's minimum row count takes priority. */
 const EDITOR_HEIGHT_MIN = 10;
 const EDITOR_HEIGHT_MAX = 90;
-/** 編集領域を開いている間にターミナルへ残す最小行数。 */
+/** Minimum rows left for the terminal while the editor pane is open. */
 const TERMINAL_MIN_ROWS = 8;
 
 type ExitReason =
@@ -88,12 +88,12 @@ export class TerminalView extends ItemView {
 	private terminal: Terminal;
 	private fit = new FitAddon();
 	private bodyEl!: HTMLElement;
-	/** xterm を載せる要素。編集領域が開くと縮む。 */
+	/** The element xterm renders into. Shrinks when the editor pane opens. */
 	private termEl!: HTMLElement;
-	/** 編集領域（D-22）。閉じている間は隠す。 */
+	/** The editor pane. Hidden while closed. */
 	private editorEl!: HTMLElement;
 	private exitEl!: HTMLElement;
-	/** 進行中の編集。閉じる経路すべてがこれを解決する（D-21）。 */
+	/** The in-progress edit, if any. Every closing path resolves this. */
 	private pendingEdit: EditorPane | null = null;
 	private opened = false;
 	private closed = false;
@@ -111,9 +111,9 @@ export class TerminalView extends ItemView {
 	private waiting = false;
 	private displayName = "";
 
-	/** ジャンプ（§6.7）：指示・応答の先頭を覚える。xterm のマーカーは `markerSource()` で包む。 */
+	/** Jump: remembers where instructions and responses start. xterm's markers are wrapped by `markerSource()`. */
 	private marks: MarkTracker;
-	/** ヘッダのジャンプ 3 つ。fullscreen のときは tooltip を差し替える（D-42）。 */
+	/** The header's three jump buttons. Their tooltips swap out when in fullscreen. */
 	private jumpActions: { prev?: HTMLElement; next?: HTMLElement; last?: HTMLElement } = {};
 
 	constructor(
@@ -134,7 +134,7 @@ export class TerminalView extends ItemView {
 		this.marks = new MarkTracker(this.markerSource());
 	}
 
-	/** xterm の `registerMarker` を `MarkerSource` に包む（`marks.ts` は xterm に依存しない）。 */
+	/** Wraps xterm's `registerMarker` as a `MarkerSource` (`marks.ts` has no dependency on xterm). */
 	private markerSource(): MarkerSource {
 		return {
 			registerMarker: (): MarkerHandle | undefined => {
@@ -166,22 +166,22 @@ export class TerminalView extends ItemView {
 		return this.icon || "square-terminal";
 	}
 
-	/** サイドパネル・マネージャーが名前変更や圧縮の対象を探すのに使う。 */
+	/** Used by the side panel and manager to find the target for renaming or compacting. */
 	get sessionId(): string {
 		return this.id;
 	}
 
-	/** `@` 挿入から、そのまま PTY へ書く。 */
+	/** Writes straight to the PTY, used by `@` insertion. */
 	sendCommand(text: string): void {
 		this.sendInput(Buffer.from(text, "utf8"));
 	}
 
-	/** `main.ts` の `sendCommand`（D-42）から、組み立て済みのバイト列を PTY へ書く。 */
+	/** Writes an already-assembled byte sequence to the PTY, called from `main.ts`'s `sendCommand`. */
 	sendBytes(bytes: Buffer): void {
 		this.sendInput(bytes);
 	}
 
-	/** デーモンに attach 済みか（`main.ts` の `sendCommand` が経路①を選ぶ条件）。 */
+	/** Whether this tab is attached to the daemon (the condition `main.ts`'s `sendCommand` uses to pick its first route). */
 	isAttached(): boolean {
 		return !!this.client && this.attached;
 	}
@@ -216,9 +216,9 @@ export class TerminalView extends ItemView {
 		this.refreshName();
 		this.updateIcon();
 		this.applySettings();
-		// 同じ `id` の別 leaf があっても自分を畳まない（D-42）：右／下に分割・タブの複製で
-		// 複数のビューが同じセッションに attach する。`openSession` は既存タブへ移動するので
-		// 重複は分割からしか生まれない。
+		// Don't close self even if another leaf has the same `id`: splitting right/down or
+		// duplicating a tab lets multiple views attach to the same session. `openSession` moves
+		// to an existing tab, so duplicates can only come from a split.
 		this.app.workspace.onLayoutReady(() => {
 			if (this.closed) {
 				return;
@@ -240,7 +240,7 @@ export class TerminalView extends ItemView {
 		this.terminal.loadAddon(new Unicode11Addon());
 		this.terminal.unicode.activeVersion = "11";
 		this.terminal.attachCustomKeyEventHandler((ev) => this.handleKey(ev));
-		// 編集領域（D-21）を開いている間は、IME の確定文字やペーストも PTY へ流さない。
+		// While the editor pane is open, don't forward anything to the PTY — including IME-confirmed characters and paste.
 		const onData = this.terminal.onData((data) => {
 			if (this.pendingEdit) {
 				return;
@@ -311,19 +311,19 @@ export class TerminalView extends ItemView {
 		}
 		this.disconnect();
 		this.terminal.dispose();
-		// このビュー分を除いて合成し直す（同じ id の他のビューが無ければ消える。D-66 追補）。
+		// Recompute without this view (disappears if no other view shares the same id).
 		this.plugin.refreshTerminalStatus(this.id);
 	}
 
-	// ---- 設定・テーマ ---------------------------------------------------------
+	// ---- Settings and theme ---------------------------------------------------------
 
-	/** フォント・サイズ（タブ毎の値があればそれ）・余白・スクロールバックを当てて `fit()`。 */
+	/** Applies font, size (the per-tab value if set), padding, and scrollback, then `fit()`. */
 	applySettings(): void {
 		const s = this.plugin.settings;
 		this.terminal.options.fontFamily = s.fontFamily;
 		this.terminal.options.fontSize = this.fontSize ?? s.fontSize;
 		this.terminal.options.scrollback = s.scrollback;
-		// 編集領域（D-22）が開いていれば、そのフォントも今の設定に合わせる（T-75）。
+		// If the editor pane is open, bring its font in line with the current settings too.
 		this.pendingEdit?.applySettings(s.fontFamily, this.fontSize ?? s.fontSize);
 		if (this.bodyEl) {
 			this.bodyEl.style.setProperty("--as-pad", `${PADDING_PX[s.padding] ?? PADDING_PX.comfortable}px`);
@@ -337,13 +337,13 @@ export class TerminalView extends ItemView {
 		this.applyJumpTooltips();
 		this.updateHeader();
 		if (this.exitReason) {
-			// 言語が変わったとき、終了画面が出ていれば描き直す（§6.9・D-56）。
+			// If the exit screen is showing when the language changes, redraw it.
 			this.showExit(this.exitReason);
 		}
 		this.scheduleFit();
 	}
 
-	/** fullscreen（Claude が自分でスクロールを持つ）なら、ジャンプの説明を画面送りの言葉にする。 */
+	/** In fullscreen mode (Claude handles its own scrolling), the jump buttons' tooltips describe paging instead. */
 	private applyJumpTooltips(): void {
 		const full = this.plugin.isFullscreenTui();
 		const labels = full
@@ -354,7 +354,7 @@ export class TerminalView extends ItemView {
 		}
 	}
 
-	/** xterm のセル高さ（描画サービスの実測。未測なら fontSize から概算）。 */
+	/** xterm's cell height (measured by the render service; estimated from fontSize if not yet measured). */
 	private cellHeight(): number {
 		const core = (this.terminal as unknown as { _core?: { _renderService?: { dimensions?: { css?: { cell?: { height?: number } } } } } })._core;
 		const measured = core?._renderService?.dimensions?.css?.cell?.height;
@@ -364,7 +364,7 @@ export class TerminalView extends ItemView {
 		return Math.ceil((this.fontSize ?? this.plugin.settings.fontSize) * 1.3);
 	}
 
-	/** 編集領域を開いている間、ターミナルに最小 8 行を確保する。 */
+	/** Keeps at least `TERMINAL_MIN_ROWS` rows for the terminal while the editor pane is open. */
 	private applyTerminalMinHeight(): void {
 		if (!this.termEl) {
 			return;
@@ -390,7 +390,7 @@ export class TerminalView extends ItemView {
 		this.app.workspace.requestSaveLayout();
 	}
 
-	// ---- サイズ -----------------------------------------------------------------
+	// ---- Sizing -----------------------------------------------------------------
 
 	private scheduleFit(): void {
 		if (this.resizeTimer) {
@@ -417,7 +417,7 @@ export class TerminalView extends ItemView {
 		this.maybeAttach();
 	}
 
-	/** 大きさが 0 でなくなってから xterm を DOM に載せる（隠れたまま開くと文字幅が測れない）。 */
+	/** Mounts xterm into the DOM only once the size is nonzero (opening it while hidden means character width can't be measured). */
 	private openTerminal(): void {
 		this.terminal.open(this.termEl);
 		this.opened = true;
@@ -426,12 +426,12 @@ export class TerminalView extends ItemView {
 			webgl.onContextLoss(() => webgl.dispose());
 			this.terminal.loadAddon(webgl);
 		} catch (err) {
-			console.log("agent-sessions: WebGL が使えないため canvas で描く", err);
+			console.log("agent-sessions: WebGL unavailable, falling back to canvas", err);
 		}
 		this.applyTheme();
 	}
 
-	// ---- 接続 -------------------------------------------------------------------
+	// ---- Connecting -------------------------------------------------------------------
 
 	private maybeAttach(): void {
 		if (this.id && this.opened && this.lastSize.width > 0 && this.lastSize.height > 0) {
@@ -439,7 +439,7 @@ export class TerminalView extends ItemView {
 		}
 	}
 
-	/** デーモンに繋ぎ、`id` があれば `attach`、無ければ `start` → `attach`（§6.3）。 */
+	/** Connects to the daemon: `attach` if `id` already exists there, otherwise `start` then `attach`. */
 	async ensureAttached(): Promise<void> {
 		if (this.closed || this.attaching || this.client || this.exitReason) {
 			return;
@@ -509,10 +509,10 @@ export class TerminalView extends ItemView {
 
 	private async startSession(client: DaemonClient, fresh: boolean): Promise<void> {
 		const claude = await resolveClaude(this.plugin.settings.claudePath, Platform.isMacOS);
-		// `VISUAL` は内蔵エディタ（D-20）。`EDITOR` は触らない。`AGENT_SESSIONS_VAULT`
-		// は claude 自身のフック・statusLine（agent-sessions hook/status）が vault を
-		// 見失わないように（T-80。デーモンは env をそのまま execvpe に渡すだけなので、
-		// ここで入れておかないと env にも vault.json にも無い環境では効かない）。
+		// `VISUAL` is for the built-in editor; `EDITOR` is left alone. `AGENT_SESSIONS_VAULT` is
+		// here so claude's own hooks/statusLine (agent-sessions hook/status) don't lose track of
+		// the vault — the daemon just passes `env` straight through to execvpe, so without this
+		// it wouldn't work in an environment that has it in neither `env` nor vault.json.
 		const env = {
 			...(await loginEnv(Platform.isMacOS)),
 			VISUAL: this.plugin.visualPath(),
@@ -564,7 +564,7 @@ export class TerminalView extends ItemView {
 		}
 	}
 
-	// ---- 入出力 -----------------------------------------------------------------
+	// ---- Input/output -----------------------------------------------------------------
 
 	private sendInput(bytes: Buffer): void {
 		if (!this.client || !this.attached) {
@@ -577,16 +577,18 @@ export class TerminalView extends ItemView {
 		}
 	}
 
-	/** 送信キーが押されたとき（§6.8・D-50）：送信列を書き、指示マーカーを記録する。ジャンプ
-	 * の指示マーカーはここが唯一の記録場所（`onData` からは記録しない。§6.7）。 */
+	/**
+	 * When the submit key is pressed: writes the submit sequence and records an instruction
+	 * marker for jump. This is the only place an instruction marker gets recorded (not from `onData`).
+	 */
 	private sendSubmit(): void {
 		this.sendInput(Buffer.from(submitSequence(this.plugin.settings), "binary"));
 		this.marks.markInstruction();
 	}
 
 	/**
-	 * 内蔵エディタの「送る」の後（D-51）：編集領域が閉じていれば送信する。`main.ts` が
-	 * Claude の読み戻しを待ってから呼ぶ。
+	 * Called after the built-in editor's "send", once the editor pane has closed: submits if
+	 * so. `main.ts` calls this after waiting for Claude to read the file back.
 	 */
 	submitPrompt(): void {
 		if (this.pendingEdit || this.closed) {
@@ -595,7 +597,7 @@ export class TerminalView extends ItemView {
 		this.sendSubmit();
 	}
 
-	/** `start` 直後の出力を控える（`--resume` の失敗判定に使う。§7）。 */
+	/** Keeps a copy of output right after `start` (used to detect `--resume` failing). */
 	private noteEarly(buf: Buffer): void {
 		if (this.startedAt && Date.now() - this.startedAt <= EARLY_EXIT_MS) {
 			this.earlyOutput = (this.earlyOutput + buf.toString("utf8")).slice(-4096);
@@ -607,7 +609,7 @@ export class TerminalView extends ItemView {
 		this.terminal.write(buf);
 	}
 
-	/** 再生（`R`）はまとめて 1 回で書き、書き終わってから `scrollToBottom()`。 */
+	/** Replay (`R`) is written as one batch, then `scrollToBottom()` once it's done. */
 	private onReplayed(): void {
 		const chunks = this.replayChunks;
 		this.replayChunks = null;
@@ -633,11 +635,11 @@ export class TerminalView extends ItemView {
 		this.showExit({ kind: "exited", code, resumeFailed });
 	}
 
-	// ---- 編集領域（D-21・D-22） -----------------------------------------------------
+	// ---- Editor pane -----------------------------------------------------
 
 	/**
-	 * `agent-sessions edit` からの要求。本体を上下に割って下に編集領域を開き、送る／入力欄に戻る／取消で
-	 * 解決する。編集中に 2 つ目が来たら `busy`。
+	 * An `agent-sessions edit` request: splits the body and opens the editor pane below it,
+	 * resolving via send / back to prompt / cancel. Returns `busy` if a second request comes in while one is open.
 	 */
 	async openEditor(file: string, cwd: string): Promise<EditResult | "busy"> {
 		if (this.pendingEdit || this.closed) {
@@ -674,32 +676,32 @@ export class TerminalView extends ItemView {
 		}
 	}
 
-	/** claude 側が切れた：編集領域を閉じ、`pendingEdit` を `cancel` で解決する（応答は返さない）。 */
+	/** claude's side disconnected: closes the editor pane and resolves `pendingEdit` with `cancel` (no reply is sent). */
 	abortEditor(): void {
 		this.pendingEdit?.abort();
 	}
 
-	/** タブ側が閉じる：元の内容を書き戻して `cancel` で解決する（応答は `main.ts` が返す）。 */
+	/** The tab side is closing: writes the original content back and resolves with `cancel` (the reply is sent by `main.ts`). */
 	cancelEditor(): void {
 		this.pendingEdit?.cancel();
 	}
 
-	// ---- リンク・`@`・ジャンプ（§6.7） --------------------------------------------
+	// ---- Links, `@`, jump --------------------------------------------
 
-	/** `@` の相対パスの基準・`start` の cwd。state の `cwd` が空なら vault（D-42）。 */
+	/** The base for `@`'s relative path and `start`'s cwd. Falls back to the vault if state's `cwd` is empty. */
 	getCwd(): string {
 		return this.cwd || this.plugin.vaultPath();
 	}
 
-	/** ヘッダの `@` や `main.ts` のコマンドから、このターミナルへ入力フォーカスを移す。 */
+	/** Moves input focus to this terminal, from the header's `@` or a `main.ts` command. */
 	focusTerminal(): void {
 		this.terminal.focus();
 	}
 
 	/**
-	 * 最後に前面だったノートを `@path[#Lx-y] ` としてこのターミナルへ書き、フォーカスを移す。
-	 * `workspace.activeEditor` はターミナルにフォーカスがあると null なので、`main.ts` が
-	 * 覚えている Markdown ビューを使う（§6.7・D-42）。
+	 * Writes the last-frontmost note to this terminal as `@path[#Lx-y] ` and moves focus to it.
+	 * `workspace.activeEditor` is null while the terminal has focus, so this uses the Markdown
+	 * view `main.ts` remembers instead.
 	 */
 	private insertActiveNoteAt(): void {
 		const md = this.plugin.lastMarkdownView();
@@ -714,7 +716,7 @@ export class TerminalView extends ItemView {
 		this.focusTerminal();
 	}
 
-	/** 応答マーカー（§6.7）：`registry` の `busy`（初回観測を含む）でカーソル行に打つ。 */
+	/** Response marker: placed at the cursor row when `registry` reports `busy` (including the first time it's observed). */
 	private onBusyMark(id: string): void {
 		if (id === this.id) {
 			this.marks.onBusy();
@@ -722,14 +724,15 @@ export class TerminalView extends ItemView {
 	}
 
 	/**
-	 * 表示の先頭行（バッファ内の絶対行）。`marks.prev/next` はこれより上／下の指示マーカーを返す。
-	 * マーカーの `line` も絶対行なので、`scrollToLine` にそのまま渡せる。
+	 * The topmost visible row (an absolute row within the buffer). `marks.prev/next` return the
+	 * nearest instruction marker above/below this. A marker's `line` is also an absolute row, so
+	 * it can be passed straight to `scrollToLine`.
 	 */
 	private viewportY(): number {
 		return this.terminal.buffer.active.viewportY;
 	}
 
-	/** `line`（絶対行）を表示の先頭にする。`null`（該当なし）なら何もしない。 */
+	/** Scrolls so `line` (an absolute row) is at the top. Does nothing if `line` is `null` (no match). */
 	private jumpTo(line: number | null): void {
 		if (line === null) {
 			return;
@@ -738,9 +741,10 @@ export class TerminalView extends ItemView {
 		this.focusTerminal();
 	}
 
-	// fullscreen（`tui: "fullscreen"`）では Claude が全面を描き直してスクロールを自分で持ち、
-	// xterm のスクロールバックに何も溜まらない（`buffer.length === rows`）。マーカー方式は成り立たない
-	// ので、Claude の `Scroll` コンテキストのキー（PageUp／PageDown／End）を送る。
+	// In fullscreen mode (`tui: "fullscreen"`), Claude redraws the whole screen and owns
+	// scrolling itself, so nothing accumulates in xterm's scrollback (`buffer.length === rows`).
+	// The marker approach doesn't work there, so these send Claude's `Scroll` context keys
+	// (PageUp/PageDown/End) instead.
 
 	private jumpPrev(): void {
 		if (this.plugin.isFullscreenTui()) {
@@ -769,18 +773,18 @@ export class TerminalView extends ItemView {
 		this.jumpTo(this.marks.lastResponse());
 	}
 
-	// ---- ⋯ メニュー（D-42） ---------------------------------------------------------
+	// ---- ⋯ menu ---------------------------------------------------------
 
 	/**
-	 * Obsidian 標準の項目（右／下に分割を含む）の後に、区切り線とセッションの操作を足す。
-	 * 「セッションを圧縮」の非活性は `index.getCachedDetail` の `last_command`（同期。未取得なら活性のまま
-	 * にし、`compactSession` 側が改めて判定する）。
+	 * Adds a separator and the session actions after Obsidian's standard items (including split
+	 * right/down). "Compact session" is disabled based on `index.getCachedDetail`'s
+	 * `last_command` (synchronous — stays enabled if not yet fetched, and `compactSession` itself checks again).
 	 */
 	onPaneMenu(menu: Menu, source: "more-options" | "tab-header" | string): void {
 		super.onPaneMenu(menu, source);
 		const id = this.id;
 		const lastCommand = this.plugin.index.getCachedDetail(id)?.last_command ?? null;
-		// 未取得なら次に開くときのために取っておく。
+		// If not yet fetched, kick off a fetch for next time this opens.
 		void this.plugin.index.getDetail(id).catch(() => undefined);
 		menu.addSeparator();
 		menu.addItem((item) =>
@@ -814,10 +818,10 @@ export class TerminalView extends ItemView {
 		);
 	}
 
-	// ---- キー -------------------------------------------------------------------
+	// ---- Keys -------------------------------------------------------------------
 
 	private handleKey(ev: KeyboardEvent): boolean {
-		// 編集領域を開いている間は、何も xterm に渡さない（IME を含む。D-21・D-42）。
+		// While the editor pane is open, nothing is passed to xterm (including IME input).
 		if (this.pendingEdit) {
 			return false;
 		}
@@ -829,7 +833,7 @@ export class TerminalView extends ItemView {
 			}
 			return true;
 		}
-		// Enter の組合せはすべて横取りし、送信か改行の列を自分で送る（D-50）。
+		// Intercept every Enter combination and send the submit or newline sequence ourselves.
 		const submitKey = this.plugin.settings.submitKey;
 		const enterAction = resolveEnterAction(classifyEnter(ev), submitKey);
 		if (enterAction !== "passthrough") {
@@ -855,14 +859,16 @@ export class TerminalView extends ItemView {
 			}
 			return true;
 		}
-		// 非 macOS：Obsidian の修飾キーは Ctrl。claude も Ctrl+C・D・G・R・O・S・L・T 等を
-		// 使うため、素の Ctrl は既定でターミナルへ渡し（下の最終形と同じ）、一部の組合せだけ
-		// Obsidian・コピー貼り付け・フォントサイズに回す（`classifyCtrlKeyNonMac`）。
+		// Non-macOS: Obsidian's modifier key is Ctrl. claude also uses combinations like
+		// Ctrl+C/D/G/R/O/S/L/T, so plain Ctrl combinations go to the terminal by default (same
+		// as the final fallback below), and only a few combinations are routed to Obsidian,
+		// copy/paste, or font size (`classifyCtrlKeyNonMac`).
 		if (!Platform.isMacOS) {
 			const role = classifyCtrlKeyNonMac(ev);
 			if (role === "obsidian") {
-				// xterm には渡さない（`false`）が、伝播は止めない——preventDefault も呼ばず、
-				// そのまま Obsidian のホットキーへ（macOS の Cmd 付きキーと同じ考え方）。
+				// Not passed to xterm (`false`), but propagation isn't stopped — no
+				// preventDefault either, so it goes straight to Obsidian's hotkeys (same idea as
+				// Cmd-held keys on macOS).
 				return false;
 			}
 			if (role !== "passthrough" && role !== "terminal") {
@@ -903,17 +909,18 @@ export class TerminalView extends ItemView {
 	}
 
 	/**
-	 * 非 macOS の Ctrl+Shift+W／Ctrl+Shift+P（タブを閉じる・コマンドパレット）。Obsidian の
-	 * 既定のホットキーは素の Ctrl+W／Ctrl+P 側に付いていて（claude の入力欄と衝突するため
-	 * こちらには渡さない）、キーイベントを渡すだけでは発火しないので `app.commands`
-	 * （Commands API。`obsidian` の公開の型には無い内部 API）を直接呼ぶ。
+	 * Non-macOS Ctrl+Shift+W/Ctrl+Shift+P (close tab / command palette). Obsidian's default
+	 * hotkeys for these are bound to plain Ctrl+W/Ctrl+P (which we don't forward there, since
+	 * they'd collide with claude's input line), so merely passing the key event through doesn't
+	 * trigger them — this calls `app.commands` directly (the Commands API, an internal API not
+	 * in `obsidian`'s public types).
 	 */
 	private runObsidianCommand(id: string): void {
 		const commands = (this.app as unknown as { commands?: { executeCommandById(id: string): boolean } }).commands;
 		commands?.executeCommandById(id);
 	}
 
-	/** フォントサイズの拡大・縮小・既定に戻す（Cmd +／−／0、非 macOS の Ctrl+Shift+=／−／0）。 */
+	/** Zooms the font in/out or resets it (Cmd +/-/0, or on non-macOS Ctrl+Shift+=/-/0). */
 	private zoomFont(direction: "in" | "out" | "reset"): void {
 		if (direction === "reset") {
 			this.setFontSize(this.plugin.settings.fontSize);
@@ -924,8 +931,9 @@ export class TerminalView extends ItemView {
 	}
 
 	/**
-	 * Ctrl+Shift+C（非 macOS）：選択があればクリップボードへコピーする。macOS の Cmd+C は
-	 * ネイティブの `copy` イベント（xterm 自身が拾う）に任せているのでここは通らない。
+	 * Ctrl+Shift+C (non-macOS): copies the selection to the clipboard, if there is one. macOS's
+	 * Cmd+C is left to the native `copy` event (which xterm itself handles), so this code path
+	 * doesn't run there.
 	 */
 	private async copySelection(): Promise<void> {
 		const text = this.terminal.getSelection();
@@ -935,21 +943,21 @@ export class TerminalView extends ItemView {
 		try {
 			await navigator.clipboard.writeText(text);
 		} catch (err) {
-			console.warn("agent-sessions: クリップボードへコピーできない", err);
+			console.warn("agent-sessions: couldn't copy to the clipboard", err);
 		}
 	}
 
 	/**
-	 * Ctrl+Shift+V（非 macOS）：クリップボードの文字列を PTY へ送る。claude 側が bracketed
-	 * paste を有効にしていれば（`terminal.modes.bracketedPasteMode`）同じ囲みを付ける
-	 * （§6 の bracketed paste と同じ理由。`/` の補完が誤って開くのを防ぐ）。
+	 * Ctrl+Shift+V (non-macOS): sends the clipboard's text to the PTY. If claude has enabled
+	 * bracketed paste (`terminal.modes.bracketedPasteMode`), wraps it the same way (same reason
+	 * as the bracketed paste used for command sending: avoid accidentally opening `/` completion).
 	 */
 	private async pasteFromClipboard(): Promise<void> {
 		let text: string;
 		try {
 			text = await navigator.clipboard.readText();
 		} catch (err) {
-			console.warn("agent-sessions: クリップボードを読めない", err);
+			console.warn("agent-sessions: couldn't read the clipboard", err);
 			return;
 		}
 		if (!text) {
@@ -959,7 +967,7 @@ export class TerminalView extends ItemView {
 		this.sendInput(Buffer.from(wrapped, "utf8"));
 	}
 
-	// ---- 終了画面 ---------------------------------------------------------------
+	// ---- Exit screen ---------------------------------------------------------------
 
 	private showExit(reason: ExitReason): void {
 		if (this.closed) {
@@ -1021,13 +1029,13 @@ export class TerminalView extends ItemView {
 		this.exitEl.hide();
 	}
 
-	/** 繋ぎ直す（デーモンに `id` があれば attach、無ければ start）。 */
+	/** Reconnects (attach if the daemon already has `id`, otherwise start). */
 	private async retry(): Promise<void> {
 		this.hideExit();
 		await this.ensureAttached();
 	}
 
-	/** 再開：`forget` → `start`（`--resume`、`fresh` なら `--session-id`）→ `attach`。 */
+	/** Restart: `forget` → `start` (`--resume`, or `--session-id` if `fresh`) → `attach`. */
 	private async restart(fresh: boolean): Promise<void> {
 		this.hideExit();
 		this.attaching = true;
@@ -1054,7 +1062,7 @@ export class TerminalView extends ItemView {
 		return client;
 	}
 
-	/** 閉じる：終了済みなら `forget` してからタブを畳む。 */
+	/** Closes: sends `forget` first if the session has already exited, then closes the tab. */
 	private async closeTab(forget: boolean): Promise<void> {
 		if (forget && this.client) {
 			await this.client.forget(this.id).catch(() => undefined);
@@ -1062,7 +1070,7 @@ export class TerminalView extends ItemView {
 		this.leaf.detach();
 	}
 
-	// ---- 題名とアイコン -----------------------------------------------------------
+	// ---- Title and icon -----------------------------------------------------------
 
 	private onIndexChange(): void {
 		this.refreshName();
@@ -1107,14 +1115,14 @@ export class TerminalView extends ItemView {
 		return row?.exited != null;
 	}
 
-	/** デーモン不通・claude 不在・起動失敗（`exited` は別に扱う。D-66）。 */
+	/** Daemon unreachable, claude missing, or a start failure (`exited` is handled separately). */
 	private isErrorState(): boolean {
 		return !!this.exitReason && this.exitReason.kind !== "exited";
 	}
 
 	/**
-	 * 今の状態（`terminalStatus`・D-66）。`updateIcon()` と、行の印と合成する
-	 * `main.ts` の `refreshTerminalStatus()`（`currentStatus()` 経由。D-66 追補）で使う。
+	 * The current status (`terminalStatus`). Used by `updateIcon()`, and by `main.ts`'s
+	 * `refreshTerminalStatus()` (via `currentStatus()`) when combining it with row markers.
 	 */
 	private computeStatus(): TerminalStatus {
 		return terminalStatus({
@@ -1135,17 +1143,17 @@ export class TerminalView extends ItemView {
 		});
 	}
 
-	/** 今の状態（公開版。`main.ts` の `refreshTerminalStatus()` が読む。D-66 追補）。 */
+	/** The current status (public version, read by `main.ts`'s `refreshTerminalStatus()`). */
 	currentStatus(): TerminalStatus {
 		return this.computeStatus();
 	}
 
-	/** 閉じていないか（`main.ts` の `refreshTerminalStatus()` が複数ビューを合成するのに使う。D-66 追補）。 */
+	/** Whether this view is still open (used by `main.ts`'s `refreshTerminalStatus()` when combining several views). */
 	isOpen(): boolean {
 		return !this.closed;
 	}
 
-	/** タブ見出しのアイコン（`terminalStatus`・D-66）。状態ごとにアイコン・色・動きのクラスが変わる。 */
+	/** The tab header's icon (`terminalStatus`). Icon, color, and motion classes vary by state. */
 	private updateIcon(): void {
 		if (this.closed) {
 			return;
@@ -1173,8 +1181,9 @@ export class TerminalView extends ItemView {
 	}
 
 	/**
-	 * タブ見出しとビュー上部の見出し（`.view-header-title`）の題名・アイコンを描き直す。
-	 * `updateHeader` は公開型に無い。ビュー上部の見出しは `updateHeader` が触らない。
+	 * Redraws the title and icon on both the tab header and the view's own header
+	 * (`.view-header-title`). `updateHeader` isn't in the public types, and it doesn't touch the
+	 * view's own header, so that's updated separately below.
 	 */
 	private updateHeader(): void {
 		const leaf = this.leaf as unknown as { updateHeader?: () => void };

@@ -54,20 +54,20 @@ import { TerminalView } from "./views/terminal";
 export { VIEW_TYPE_SIDE, VIEW_TYPE_MANAGER, VIEW_TYPE_TERMINAL };
 
 const RUNTIME_DIR = join(homedir(), ".agents", "sessions");
-/** Ctrl+S＝Claude Code の `chat:stash`（下書きの退避。次の送信の後に Claude が自動で戻す。D-42）。 */
+/** Ctrl+S = Claude Code's `chat:stash` (stashes the draft; Claude restores it automatically after the next submit). */
 const STASH = "\x13";
-/** bracketed paste の囲み。コマンドをこれで入れると `/` の補完が開かず一括で入る。 */
+/** Bracketed paste markers. Wrapping a command in these lets it go in as one block without opening `/` completion. */
 const PASTE_BEGIN = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
-/** 内蔵エディタの「送る」から送信列までの間（Claude が一時ファイルを読み戻すのを待つ。D-51）。 */
+/** Gap between the built-in editor's "send" and the submit sequence (lets Claude read the temp file back first). */
 const SUBMIT_AFTER_EDIT_MS = 300;
-/** `registry` の状態を待つ上限（D-42）。 */
+/** Upper bound while waiting for `registry`'s state. */
 const WAIT_IDLE_MS = 60000;
-/** 送信後に `busy` を経るのを待つ上限。`/rename` のように busy にならないコマンドはここで諦める。 */
+/** Upper bound while waiting to see `busy` after sending. Commands that never go busy (like `/rename`) give up after this. */
 const WAIT_BUSY_MS = 10000;
-/** 裏で起動したセッションの `/exit` から `exit` イベントまでの上限。 */
+/** Upper bound from a headless session's `/exit` to its `exit` event. */
 const WAIT_EXIT_MS = 30000;
-/** 裏で起動するときの端末の大きさ（画面は無い）。 */
+/** Terminal size used when starting headless (no screen). */
 const HEADLESS_COLS = 120;
 const HEADLESS_ROWS = 40;
 
@@ -76,9 +76,9 @@ function messageOf(err: unknown): string {
 }
 
 /**
- * 送信列（§6.8・D-50）。`submitKey === 'enter'` なら `\r`、それ以外は Enter が改行に回って
- * いるので `\x1b\r`（meta+enter＝送信）。`views/terminal.ts` の `sendSubmit()`・D-42 の
- * コマンド送信・内蔵エディタの「送る」（D-51）から使う純関数。
+ * The submit sequence. `\r` when `submitKey === 'enter'`; otherwise Enter has been swapped to
+ * mean newline, so this is `\x1b\r` (meta+enter = submit). A pure function used by
+ * `views/terminal.ts`'s `sendSubmit()`, command sending, and the built-in editor's "send".
  */
 export function submitSequence(settings: AgentSessionsSettings): string {
 	return sendSequence("submit", settings.submitKey);
@@ -86,28 +86,28 @@ export function submitSequence(settings: AgentSessionsSettings): string {
 
 export default class AgentSessionsPlugin extends Plugin {
 	settings: AgentSessionsSettings = DEFAULT_SETTINGS;
-	/** プラグイン内のイベント（`settings-changed`・`terminal-status`）。 */
+	/** Events internal to the plugin (`settings-changed`, `terminal-status`). */
 	events = new Events();
-	/** 走査結果＋起動中＋タブの合成。`registry`・`statusline` もこの中に 1 つずつ。 */
+	/** Combines the scan results with what's running and what's open in a tab. Holds one `registry` and one `statusline`. */
 	index!: SessionIndex;
 	/**
-	 * 各セッションのターミナルタブの状態（D-66 追補）。行の印（サイド・マネージャー）が
-	 * `resolveRowStatus` で読む。タブが無い id はここに無い（`refreshTerminalStatus` が消す）。
+	 * Each session's terminal-tab state. Row markers (side panel, manager) read this via
+	 * `resolveRowStatus`. An id with no tab isn't in here (`refreshTerminalStatus` removes it).
 	 */
 	terminalStatuses = new Map<string, TerminalStatus>();
 	private stopIndex: (() => void) | null = null;
 	private opener!: SessionOpener<WorkspaceLeaf>;
-	/** `agent-sessions edit` からの要求を受けるソケット（D-21）。 */
+	/** The socket that receives `agent-sessions edit` requests. */
 	private editServer = new EditServer();
-	/** 終了済みセッションの後始末（§6.5）のデバウンス。 */
+	/** Debounce for cleaning up exited sessions. */
 	private cleanupExitedTimer: ReturnType<typeof setTimeout> | null = null;
-	/** 最後に前面だった Markdown ビュー（§6.7・D-42）。ターミナルにフォーカスがあると `activeEditor` は null になるため。 */
+	/** The last-frontmost Markdown view. `activeEditor` is null while the terminal has focus, so this is tracked separately. */
 	private lastMarkdown: MarkdownView | null = null;
-	/** 裏で起動中のセッション（D-42 経路③）。`notifyIdle` の対象から外す。 */
+	/** Sessions started headless (in the background). Excluded from `notifyIdle`. */
 	private headless = new Set<string>();
-	/** Claude Code の `tui` が `fullscreen` か（起動時と `settings-changed` のたびに読み直す）。 */
+	/** Whether Claude Code's `tui` is `fullscreen` (re-read at startup and on every `settings-changed`). */
 	private fullscreenTui = false;
-	/** `openSession` の進行中の呼出（§6.4）。 */
+	/** In-flight `openSession` calls. */
 	get opening(): Map<string, Promise<WorkspaceLeaf>> {
 		return this.opener.opening;
 	}
@@ -117,17 +117,18 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.applyLanguage();
 		this.refreshTuiMode();
 		this.registerEvent(this.events.on("settings-changed", () => this.refreshTuiMode()));
-		// keybindings.json が既に改行キーを持っていれば（他のツール・ユーザーが手で書いた場合を
-		// 含む）、プラグインの設定をそれに合わせる（§6.8・D-41 追補。keybindings.json 自体は書かない）。
+		// If keybindings.json already has Enter mapped to a newline (including when another tool
+		// or the user wrote it by hand), bring the plugin's setting in line with it (without
+		// writing to keybindings.json itself).
 		await this.syncSubmitKeyFromKeybindings();
 		this.syncUiState();
 		this.syncVaultState();
 
-		// 旧 `claude-sessions.md` の取り込み（§3）。`sessions.json` が既にあれば何もしない。
+		// Import from the old `claude-sessions.md`. Does nothing if `sessions.json` already exists.
 		try {
 			migrateFromMarkdown(join(this.vaultPath(), "claude-sessions.md"), this.storePath());
 		} catch (err) {
-			console.warn("agent-sessions: claude-sessions.md の取り込みに失敗", err);
+			console.warn("agent-sessions: failed to import claude-sessions.md", err);
 		}
 
 		this.index = new SessionIndex({
@@ -147,7 +148,7 @@ export default class AgentSessionsPlugin extends Plugin {
 
 		this.register(this.index.registry.onIdle((id) => this.notifyIdle(id)));
 
-		// 最後に前面だった Markdown ビューを覚える（`@` 挿入の対象。§6.7・D-42）。
+		// Remember the last-frontmost Markdown view (the target for `@` insertion).
 		this.registerEvent(
 			this.app.workspace.on("active-leaf-change", (leaf) => {
 				if (leaf?.view instanceof MarkdownView) {
@@ -156,24 +157,24 @@ export default class AgentSessionsPlugin extends Plugin {
 			})
 		);
 
-		// 終了済みの後始末（§6.5）：タブの無い終了済みセッションに `forget` を送る。
+		// Clean up exited sessions: sends `forget` for exited sessions that have no tab.
 		this.app.workspace.onLayoutReady(() => this.scheduleCleanupExited());
 		this.registerEvent(this.app.workspace.on("layout-change", () => this.scheduleCleanupExited()));
 
 		this.editServer.onEdit((req, reply) => this.handleEdit(req, reply));
 		this.editServer.start(this.pluginSockPath()).catch((err) => {
-			console.warn("agent-sessions: plugin.sock を開けない", err);
+			console.warn("agent-sessions: couldn't open plugin.sock", err);
 		});
 
 		this.registerView(VIEW_TYPE_SIDE, (leaf) => new SideView(leaf, this));
 		this.registerView(VIEW_TYPE_MANAGER, (leaf) => new ManagerView(leaf, this));
 		this.registerView(VIEW_TYPE_TERMINAL, (leaf) => new TerminalView(leaf, this));
 
-		// deferred（復元直後などでまだ前面にしていない、TerminalView が読み込まれていない）
-		// タブのアイコン・題名（D-66 追補 2・T-72）：ビューが無い間は `updateIcon()`・`updateHeader()`
-		// が届かないので、ここでタブ見出しの DOM を直接、分かる範囲（`rowTerminalStatus`・
-		// `Row.name`。台帳が無ければ `detached`・「無題」）で直す。`TerminalView` が読み込まれれば
-		// `updateIcon()`・`refreshName()` が引き継ぐ。
+		// Deferred tabs' icon and title (a tab restored but not yet brought to front, so its
+		// `TerminalView` hasn't loaded): with no view to call `updateIcon()`/`updateHeader()`,
+		// patch the tab header's DOM directly here with what's known (`rowTerminalStatus`,
+		// `Row.name`; falls back to `detached`/"Untitled" without a ledger entry). Once
+		// `TerminalView` loads, `updateIcon()`/`refreshName()` take over.
 		this.app.workspace.onLayoutReady(() => this.refreshDeferredTerminalTabs());
 		this.registerEvent(this.app.workspace.on("layout-change", () => this.refreshDeferredTerminalTabs()));
 		this.register(this.index.onChange(() => this.refreshDeferredTerminalTabs()));
@@ -184,13 +185,13 @@ export default class AgentSessionsPlugin extends Plugin {
 		});
 
 		this.registerCommands();
-		// コマンド名は言語が変わるたびに描き直す（同じ id で `addCommand` し直すと上書きされる）。
+		// Redraw command names whenever the language changes (re-calling `addCommand` with the same id overwrites it).
 		this.registerEvent(this.events.on("settings-changed", () => this.registerCommands()));
 
 		this.addSettingTab(new AgentSessionsSettingTab(this.app, this));
 	}
 
-	/** コマンドパレットの項目（§6.9・D-56）。言語が変わるたびに同じ id で呼び直し、名前を描き直す。 */
+	/** Command palette entries. Re-registered under the same ids whenever the language changes, to redraw their names. */
 	private registerCommands(): void {
 		this.addCommand({
 			id: "open-side-panel",
@@ -226,12 +227,12 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	onunload(): void {
-		// 進行中の編集は元の内容に戻して `cancel` を返し、それからソケットを閉じる（D-21）。
+		// Resolve any in-progress edit with `cancel` (writing the original content back), then close the socket.
 		for (const view of this.terminalViews()) {
 			view.cancelEditor();
 		}
 		this.editServer.stop();
-		// registerView の leaf は Obsidian が畳む。
+		// Leaves from registerView are closed by Obsidian itself.
 		this.stopIndex?.();
 		this.stopIndex = null;
 		this.index.dispose();
@@ -252,49 +253,51 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * 送信キーの記号を `ui.json` へ書く（T-71）。statusLine（Python 側の `format_status_line`）が
-	 * 読む。`AGENT_SESSIONS_ID` で起動したセッションだけが付ける対象なので、ここでは無条件に書く。
+	 * Writes the submit-key symbol to `ui.json`, read by the statusLine (the Python side's
+	 * `format_status_line`). Only sessions started with `AGENT_SESSIONS_ID` set actually attach
+	 * it, so this writes unconditionally.
 	 */
 	private syncUiState(): void {
 		try {
 			writeUiState(RUNTIME_DIR, this.settings.submitKey, Platform.isMacOS);
 		} catch (err) {
-			console.warn("agent-sessions: ui.json を書けない", err);
+			console.warn("agent-sessions: couldn't write ui.json", err);
 		}
 	}
 
 	/**
-	 * vault の場所を `vault.json` へ書く（T-80）。python 側（`agentsessions/config.py` の
-	 * `_resolve_vault`）が env の次にここを読み、Obsidian の外（TUI・CLI・デーモンから
-	 * spawn する claude）でも vault を見失わない。vault は起動中に変わらないので、
-	 * `onload` の 1 回だけ書けば足りる。
+	 * Writes the vault's location to `vault.json`. The Python side (`_resolve_vault` in
+	 * `agentsessions/config.py`) reads this after the env var, so vault location isn't lost
+	 * outside Obsidian (TUI, CLI, or claude spawned by the daemon). The vault doesn't change
+	 * while running, so writing this once in `onload` is enough.
 	 */
 	private syncVaultState(): void {
 		try {
 			writeVaultState(RUNTIME_DIR, this.vaultPath());
 		} catch (err) {
-			console.warn("agent-sessions: vault.json を書けない", err);
+			console.warn("agent-sessions: couldn't write vault.json", err);
 		}
 	}
 
 	/**
-	 * 表示言語（§6.9・D-56）：設定の `language` と Obsidian の言語（`localStorage.language`）から
-	 * `t()` の現在値を決める。`onload` の最初と、設定タブで言語を変えたときに呼ぶ
-	 * （呼んだ後に `saveSettings()` すれば `settings-changed` で各ビューが描き直す）。
+	 * Display language: derives `t()`'s current value from the setting's `language` and
+	 * Obsidian's own language (`localStorage.language`). Called first thing in `onload`, and
+	 * whenever the language setting changes (call `saveSettings()` afterward so
+	 * `settings-changed` redraws every view).
 	 */
 	applyLanguage(): void {
 		setLang(resolveLang(this.settings.language, readObsidianLang()));
 	}
 
-	/** `keybindings.json` の置き場（§6.8）。`AgentSessionsSettingTab` もここを使う。 */
+	/** Where `keybindings.json` lives. Also used by `AgentSessionsSettingTab`. */
 	keybindingsPath(): string {
 		return defaultKeybindingsPath(homedir(), process.env.CLAUDE_CONFIG_DIR);
 	}
 
 	/**
-	 * `keybindings.json` の `Chat` を読んで、設定の `submitKey` をそれに合わせる（§6.8・D-50）。
-	 * `keybindings.json` 自体は書かない。変更したら `true` を返す（設定タブの「ファイルに
-	 * 合わせる」ボタンからも呼ぶ）。
+	 * Reads `keybindings.json`'s `Chat` block and brings the `submitKey` setting in line with
+	 * it, without writing to `keybindings.json` itself. Returns `true` if it changed anything
+	 * (also called from the settings tab's "match the file" button).
 	 */
 	async syncSubmitKeyFromKeybindings(): Promise<boolean> {
 		const next = reconcileSubmitKey(readChatBindings(this.keybindingsPath()), this.settings.submitKey);
@@ -306,14 +309,15 @@ export default class AgentSessionsPlugin extends Plugin {
 		return true;
 	}
 
-	/** セッションのタブを開く（§6.4）。既にあれば前面に出すだけ。 */
+	/** Opens a session's tab. Just brings it to front if it's already open. */
 	openSession(id: string, opts: OpenSessionOptions = {}): Promise<WorkspaceLeaf> {
 		return this.opener.open(id, opts);
 	}
 
 	/**
-	 * Claude Code が全画面レイアウト（`~/.claude/settings.json` の `tui: "fullscreen"`）か。
-	 * ターミナルのジャンプは、これが真ならマーカーではなく Claude のスクロールキーで動く（D-42）。
+	 * Whether Claude Code is in fullscreen layout (`tui: "fullscreen"` in
+	 * `~/.claude/settings.json`). When true, the terminal's jump buttons work via Claude's own
+	 * scroll keys instead of markers.
 	 */
 	isFullscreenTui(): boolean {
 		return this.fullscreenTui;
@@ -324,8 +328,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * 最後に前面だった Markdown ビュー（§6.7・D-42）。閉じられていれば `null`。
-	 * まだ何も前面になっていなければ、今アクティブな Markdown ビュー。
+	 * The last-frontmost Markdown view. `null` if it's been closed. If nothing has been in
+	 * front yet, falls back to whichever Markdown view is currently active.
 	 */
 	lastMarkdownView(): MarkdownView | null {
 		const alive = (view: MarkdownView | null): view is MarkdownView =>
@@ -338,8 +342,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * 最後に前面だったノートを `@path[#Lx-y] ` として、対象のターミナルへ書く（§6.7）。
-	 * 対象は前面のターミナルビュー、無ければ開いているタブの最初。
+	 * Writes the last-frontmost note to the target terminal as `@path[#Lx-y] `. The target is
+	 * the frontmost terminal view, or failing that, the first open terminal tab.
 	 */
 	insertNoteAt(): void {
 		const md = this.lastMarkdownView();
@@ -360,7 +364,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		view.focusTerminal();
 	}
 
-	/** 前面のターミナルビュー（タブが見えているもの）。無ければ開いているタブの最初。 */
+	/** The frontmost terminal view (whichever tab is visible). Falls back to the first open tab. */
 	private frontTerminalView(): TerminalView | undefined {
 		const views = this.app.workspace
 			.getLeavesOfType(VIEW_TYPE_TERMINAL)
@@ -373,14 +377,14 @@ export default class AgentSessionsPlugin extends Plugin {
 		return defaultSockPath();
 	}
 
-	/** `agent-sessions edit` が繋ぐソケット（D-20）。 */
+	/** The socket `agent-sessions edit` connects to. */
 	pluginSockPath(): string {
 		return join(RUNTIME_DIR, "plugin.sock");
 	}
 
 	/**
-	 * `start` の `env` に入れる `VISUAL`（D-20）：設定 `agentSessionsPath` が空なら
-	 * `~/bin/agent-sessions-code`、指定があればその隣の `agent-sessions-code`。
+	 * The `VISUAL` value put into `start`'s `env`: `~/bin/agent-sessions-code` if the
+	 * `agentSessionsPath` setting is empty, otherwise `agent-sessions-code` next to it.
 	 */
 	visualPath(): string {
 		const configured = this.settings.agentSessionsPath;
@@ -388,10 +392,11 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * `edit` 要求（D-21・D-51）：セッションのターミナルビューを探し（無ければ `no-tab`）、編集領域を
-	 * 開いて結果で応答する。送る／入力欄に戻るは `ok`、取消（タブを閉じた）は `cancel`。
-	 * 送るでプロンプト編集（`claude-prompt-*`）なら、Claude が読み戻すのを待って送信列を送る。
-	 * claude 側が切れたら（`onAbort`）編集領域を閉じ、応答は返さない。
+	 * An `edit` request: finds the session's terminal view (replying `no-tab` if there isn't
+	 * one), opens the editor pane, and replies with the result. Send/back to prompt reply `ok`;
+	 * cancel (the tab closed) replies `cancel`. On send for a prompt edit (`claude-prompt-*`),
+	 * waits for Claude to read the file back before sending the submit sequence. If claude's
+	 * side disconnects (`onAbort`), closes the editor pane without sending a reply.
 	 */
 	private handleEdit(req: EditRequest, reply: EditReply): void {
 		const view = this.findTerminalView(req.session);
@@ -417,7 +422,7 @@ export default class AgentSessionsPlugin extends Plugin {
 				}
 			})
 			.catch((err) => {
-				console.warn("agent-sessions: 編集領域を開けない", err);
+				console.warn("agent-sessions: couldn't open the editor pane", err);
 				if (!aborted) {
 					reply(false, "no-tab");
 				}
@@ -432,7 +437,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		return (this.app.vault.adapter as FileSystemAdapter).getBasePath();
 	}
 
-	/** このプラグインの設定タブを開く。`app.setting` は公開型に無い。 */
+	/** Opens this plugin's settings tab. `app.setting` isn't in the public types. */
 	openSettings(): void {
 		const setting = (this.app as unknown as { setting?: { open(): void; openTabById(id: string): void } }).setting;
 		setting?.open();
@@ -443,7 +448,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		return join(this.vaultPath(), ".agents", "sessions", "sessions.json");
 	}
 
-	/** マネージャーのタブを開く（無ければメインエリアに作る。あれば前面へ）。 */
+	/** Opens the manager tab (creates it in the main area if it doesn't exist, otherwise brings it to front). */
 	async openManagerTab(): Promise<WorkspaceLeaf> {
 		const { workspace } = this.app;
 		const existing = workspace.getLeavesOfType(VIEW_TYPE_MANAGER)[0];
@@ -472,13 +477,13 @@ export default class AgentSessionsPlugin extends Plugin {
 		workspace.revealLeaf(leaf);
 	}
 
-	// ---- セッションの操作（§6.6）。`updateStore` の `StoreLockError` はここで Notice にする（§7）。 --------
+	// ---- Session actions. `updateStore`'s `StoreLockError` is turned into a `Notice` here. --------
 
 	/**
-	 * 新規セッション：uuid を作り `sessions.json` に控えてからタブを開く。名前があれば、
-	 * タブの `start` で claude が `idle` になってから `/rename` を送る（D-42。未適用の控えは持たない）。
-	 * 送った後は `index.waitForName` で `Row.name` に反映されるまで待つ（T-72。タブの題名は
-	 * 反映され次第、購読側が自分で描き直す）。
+	 * New session: creates a uuid, records it in `sessions.json`, then opens the tab. If a name
+	 * was given, sends `/rename` once the tab's `start` has claude reach `idle` (no pending-name
+	 * state is kept elsewhere). After sending, waits via `index.waitForName` for `Row.name` to
+	 * reflect it (once it does, subscribers redraw the tab title themselves).
 	 */
 	newSession(name?: string): void {
 		const id = crypto.randomUUID();
@@ -510,12 +515,12 @@ export default class AgentSessionsPlugin extends Plugin {
 			});
 	}
 
-	/** 名前を変更：`/rename` を今すぐ送る（タブが無くても。§6.6・D-42）。 */
+	/** Rename: sends `/rename` right away (even without a tab). */
 	async renameSession(id: string, name: string): Promise<void> {
 		try {
 			await this.sendCommand(id, `/rename ${name}`, t("progress.renaming"));
-			// `/rename` はモデルを呼ばず events.log にも来ないので、`rescan` を明示的に
-			// 繰り返して待つ（T-72）。タブの題名は `Row.name` が変わり次第、購読側が描き直す。
+			// `/rename` doesn't call the model and doesn't show up in events.log, so wait for it
+			// by repeatedly rescanning. Once `Row.name` changes, subscribers redraw the tab title.
 			void this.index.waitForName(id, name);
 		} catch (err) {
 			new Notice(t("notice.renameFailed", { error: messageOf(err) }));
@@ -523,8 +528,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * 直近の指示が `/compact` か（`json detail` の `last_command`。transcript を読むのは Python だけ、R-C5）。
-	 * `index.getDetail` のキャッシュがあればそれ、無ければ取得する。
+	 * Whether the last instruction was `/compact` (`json detail`'s `last_command`; only Python
+	 * reads the transcript). Uses `index.getDetail`'s cache if there is one, otherwise fetches it.
 	 */
 	async lastInstructionIsCompact(id: string): Promise<boolean> {
 		try {
@@ -534,7 +539,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 	}
 
-	/** 圧縮：直近の指示が `/compact` なら何もしない。それ以外は `/compact` を送る（タブが無くても。D-42）。 */
+	/** Compact: does nothing if the last instruction was already `/compact`; otherwise sends `/compact` (even without a tab). */
 	async compactSession(id: string): Promise<void> {
 		if (await this.lastInstructionIsCompact(id)) {
 			new Notice(t("notice.compactAlready"));
@@ -547,20 +552,22 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 	}
 
-	// ---- コマンドの送信（D-42） ------------------------------------------------------
+	// ---- Sending commands ------------------------------------------------------
 	//
-	// `text`（`/rename NAME`・`/compact`）を、セッションの置かれ方に応じて 3 経路で送る。
-	// 送り方はどの経路も同じ 1 列（`commandBytes`）：Ctrl+S（`chat:stash`。下書きがあれば退避、
-	// 空なら何も起きない）→ bracketed paste でコマンド（`/` の補完を開かせず一括で入れる）→ 送信列。
-	// 退避した下書きは、次の送信の後に Claude Code が自動で戻す（「Draft restored」）ので復元は送らない
-	// ——送るとまた退避されてしまう。
-	// ① タブがあり attach 済み：そのタブへ書く。
-	// ② タブは無いがデーモンにある：一時的に attach して書く。
-	// ③ デーモンに無い：裏で `start`（`--resume`）→ `idle` を待って書く → 応答が済んだら `/exit` → `forget`。
+	// Sends `text` (`/rename NAME`, `/compact`) by one of three routes depending on where the
+	// session currently is. Every route sends the same one sequence (`commandBytes`): Ctrl+S
+	// (`chat:stash` — stashes the draft if there is one, does nothing if empty) → the command as
+	// bracketed paste (goes in as one block without opening `/` completion) → the submit
+	// sequence. The stashed draft isn't restored explicitly — Claude Code does that itself after
+	// the next submit ("Draft restored"); sending a restore here would just get it stashed again.
+	// ① A tab exists and is attached: write to that tab.
+	// ② No tab, but the daemon has it: attach temporarily and write.
+	// ③ Not on the daemon: `start` (`--resume`) headless → wait for `idle` → write → once the
+	//    reply is done, `/exit` → `forget`.
 
 	/**
-	 * コマンドを送る。`progress` は経路③（裏で起動）のときだけ `Notice` に出す。
-	 * 失敗は例外（呼出側が `Notice` にする）。
+	 * Sends a command. `progress` is only shown as a `Notice` for route ③ (headless start).
+	 * Failures throw (the caller turns them into a `Notice`).
 	 */
 	async sendCommand(id: string, text: string, progress = t("progress.sending")): Promise<void> {
 		const view = this.findTerminalView(id);
@@ -588,17 +595,17 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 	}
 
-	/** 退避 → bracketed paste でコマンド → 送信列（`\r`、`submitKey !== 'enter'` なら `\x1b\r`）。 */
+	/** Stash → command as bracketed paste → submit sequence (`\r`, or `\x1b\r` when `submitKey !== 'enter'`). */
 	private commandBytes(text: string): Buffer {
 		return Buffer.from(STASH + PASTE_BEGIN + text + PASTE_END + submitSequence(this.settings), "utf8");
 	}
 
-	/** 経路①：そのタブへ書く。 */
+	/** Route ①: write straight to that tab. */
 	private sendViaView(view: TerminalView, text: string): void {
 		view.sendBytes(this.commandBytes(text));
 	}
 
-	/** 経路②：一時的に attach して書く。 */
+	/** Route ②: attach temporarily and write. */
 	private async sendViaAttach(client: DaemonClient, id: string, text: string): Promise<void> {
 		const res = await client.attach(id, HEADLESS_COLS, HEADLESS_ROWS);
 		if (!res.ok) {
@@ -612,9 +619,9 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * 経路③：裏で起動して送り、済んだら終了する。進行は `Notice`。
-	 * `idle` → 送信 → `busy` を経て `idle`（busy にならないコマンドは `WAIT_BUSY_MS` で見切る）
-	 * → `/exit` → `exit` イベント → `forget`。
+	 * Route ③: starts headless, sends, then exits. Progress is shown as a `Notice`.
+	 * `idle` → send → `busy` then back to `idle` (commands that never go busy give up after
+	 * `WAIT_BUSY_MS`) → `/exit` → the `exit` event → `forget`.
 	 */
 	private async sendHeadless(client: DaemonClient, id: string, text: string, progress: string): Promise<void> {
 		const row = this.index.sessions.get(id);
@@ -632,7 +639,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		});
 		try {
 			const claude = await resolveClaude(this.settings.claudePath, Platform.isMacOS);
-			// `AGENT_SESSIONS_VAULT`：terminal.ts の startSession と同じ理由（T-80）。
+			// `AGENT_SESSIONS_VAULT`: same reason as terminal.ts's startSession.
 			const env = {
 				...(await loginEnv(Platform.isMacOS)),
 				VISUAL: this.visualPath(),
@@ -678,7 +685,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 	}
 
-	/** セッションを終了：確認 → `kill`。 */
+	/** End session: confirm → `kill`. */
 	endSession(id: string): void {
 		new ConfirmModal(this.app, t("confirm.endSession.message"), t("action.endSession"), () => {
 			void (async () => {
@@ -696,7 +703,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		}).open();
 	}
 
-	/** セッション解析結果のモーダルを開く（D-31）。 */
+	/** Opens the session analytics modal. */
 	showUsage(id: string): void {
 		const row = this.index.sessions.get(id);
 		const name = row?.name || row?.label || t("common.untitled", { id: id.slice(0, 8) });
@@ -755,10 +762,10 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * `TerminalView` が状態を変えるたび（`updateIcon()`）・閉じたとき（`onClose()`）に呼ぶ
-	 * （D-66 追補）。`id` の全ビュー（分割で複数あり得る）を見て、優先順の高い方を
-	 * `terminalStatuses` に残す。ビューが 1 つも無ければ消す。行の印（サイド・
-	 * マネージャー）はこの `terminal-status` イベントで更新する。
+	 * Called whenever a `TerminalView` changes state (`updateIcon()`) or closes (`onClose()`).
+	 * Looks at every view for `id` (there can be several, from splits) and keeps whichever has
+	 * higher priority in `terminalStatuses`; removes the entry if no view is left. Row markers
+	 * (side panel, manager) update off this `terminal-status` event.
 	 */
 	refreshTerminalStatus(id: string): void {
 		let combined: TerminalStatus | null = null;
@@ -778,22 +785,24 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * deferred なタブ（`leaf.view` が `TerminalView` ではなく Obsidian の `DeferredView`。
-	 * 復元直後でまだ前面にしていないタブがこれ）のアイコン・題名を直す（D-66 追補 2・T-72）。
-	 * `TerminalView` はまだ無いので `updateIcon()`・`refreshName()` は使えず、
-	 * `plugin.index.sessions` の `Row` から分かる範囲（状態は `rowTerminalStatus`・台帳すら
-	 * 無ければ `detached`。名前は `Row.name`・無ければ `sessionDisplayName` の「無題 <id8>」）で決める。
+	 * Fixes up the icon and title for deferred tabs (`leaf.view` is Obsidian's own
+	 * `DeferredView` rather than a `TerminalView` — this is what a tab restored but not yet
+	 * brought to front looks like). There's no `TerminalView` yet, so `updateIcon()`/
+	 * `refreshName()` aren't available; instead this works from what's knowable via the `Row` in
+	 * `plugin.index.sessions` (status from `rowTerminalStatus`, or `detached` without even a
+	 * ledger entry; name from `Row.name`, or `sessionDisplayName`'s "Untitled <id8>" without one).
 	 *
-	 * 直す先はそれぞれ 2 つ：
-	 * 1. `leaf.view.icon`・`leaf.view.title`——`DeferredView` も `View`（公開型）のインスタンスで、
-	 *    `icon: IconName` は公開のフィールド（`getIcon()` はこれを返すだけ）。`title` は公開の
-	 *    型には無いが実際に持っている値で、`getDisplayText()` の代わりにここから読まれる。
-	 *    どちらも古いままだと、`lucide-ghost`（Obsidian の既定）や「agent-sessions-terminal」
-	 *    （`TerminalView` の `getViewType()`。最後に描かれたときの値が Obsidian の側で保存され、
-	 *    `DeferredView` 生成時にそのまま入る）を返し続ける。
-	 * 2. タブ見出しの DOM（アイコンは `agent-sessions-status-<status>` のクラス・tooltip・実際の
-	 *    `<svg>`、題名は `.workspace-tab-header-inner-title` の文字）——1 を直すだけでは
-	 *    Obsidian が自分から再描画してくれるとは限らないので、こちらも直接合わせておく。
+	 * Two things get fixed:
+	 * 1. `leaf.view.icon`/`leaf.view.title` — `DeferredView` is still an instance of `View` (the
+	 *    public type), where `icon: IconName` is a public field (`getIcon()` just returns it).
+	 *    `title` isn't in the public type but does exist at runtime, and is read from here
+	 *    instead of `getDisplayText()`. Left stale, either would keep returning
+	 *    `lucide-ghost` (Obsidian's default) or `agent-sessions-terminal` (`TerminalView`'s
+	 *    `getViewType()` — Obsidian persists whatever was last drawn, and that value carries
+	 *    straight into the `DeferredView` it creates).
+	 * 2. The tab header's DOM (the icon's `agent-sessions-status-<status>` class, tooltip, and
+	 *    actual `<svg>`; the title's `.workspace-tab-header-inner-title` text) — fixing (1) alone
+	 *    doesn't guarantee Obsidian redraws it on its own, so this is kept in sync directly too.
 	 */
 	private refreshDeferredTerminalTabs(): void {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)) {
@@ -827,9 +836,9 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 	}
 
-	// ---- 通知・後始末（§6.5） -----------------------------------------------------
+	// ---- Notifications and cleanup -----------------------------------------------------
 
-	/** `busy|shell → idle` で、そのタブが前面でないか Obsidian が非アクティブなら通知する。 */
+	/** On `busy|shell → idle`, notifies if that tab isn't in front or Obsidian isn't the active window. */
 	private notifyIdle(id: string): void {
 		if (!this.settings.notifyOnIdle || this.headless.has(id)) {
 			return;
@@ -854,8 +863,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * 終了済み（`exited !== null`）のうちターミナルタブが無いセッションに `forget` を送る。
-	 * デーモンに繋がらなければ何もしない（起動しない。§6.5）。
+	 * Sends `forget` for exited sessions (`exited !== null`) that have no terminal tab. Does
+	 * nothing if the daemon can't be reached (doesn't start it).
 	 */
 	private async cleanupExited(): Promise<void> {
 		const client = new DaemonClient(this.sockPath());
@@ -881,7 +890,7 @@ export default class AgentSessionsPlugin extends Plugin {
 				}
 			}
 		} catch (err) {
-			console.warn("agent-sessions: 終了済みの後始末に失敗", err);
+			console.warn("agent-sessions: failed to clean up exited sessions", err);
 		} finally {
 			client.close();
 		}
@@ -896,7 +905,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 }
 
-/** 設定タブの土台（§6.9）。Enter の役割（§6.8）は後続タスクで足す。 */
+/** The plugin's settings tab. */
 class AgentSessionsSettingTab extends PluginSettingTab {
 	plugin: AgentSessionsPlugin;
 
@@ -1016,8 +1025,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			);
 	}
 
-	/** 言語（§6.9・D-56）：自動／日本語／English。変えたら `setLang` → `saveSettings()`
-	 * （`settings-changed` で各ビュー・このタブ自身が描き直す）。 */
+	/** Language: auto / Japanese / English. Changing it calls `setLang` → `saveSettings()`
+	 * (each view, and this tab itself, redraws on `settings-changed`). */
 	private renderLanguageSetting(containerEl: HTMLElement): void {
 		new Setting(containerEl)
 			.setName(t("settings.language.name"))
@@ -1046,7 +1055,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		"cmd+enter": "Cmd+Enter",
 	};
 
-	/** 現在の keybindings.json の Chat の enter の表示だけに使う（変更には使わない、§6.8）。 */
+	/** Only for displaying the current keybindings.json's Chat `enter` value — never used to change it. */
 	private currentEnterBindingText(keybindingsPath: string): string {
 		const info = readEnterMode(keybindingsPath);
 		switch (info.mode) {
@@ -1061,7 +1070,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		}
 	}
 
-	/** 送信キー（§6.8・D-50）。開くたびに `keybindings.json` を読んで現在値を出す。 */
+	/** The submit-key setting. Reads `keybindings.json` and shows the current value every time this is opened. */
 	private renderSubmitKeySetting(containerEl: HTMLElement): void {
 		const keybindingsPath = this.plugin.keybindingsPath();
 
@@ -1081,7 +1090,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		});
 		setting.descEl.createDiv({ text: this.currentEnterBindingText(keybindingsPath) });
 		setting.addDropdown((dropdown) => {
-			// 非 macOS は cmd+enter（Command＝非 macOS では Super）を出さない（§6.9 非macOS対応）。
+			// Non-macOS doesn't offer cmd+enter (Command — on non-macOS that's Super).
 			for (const key of Platform.isMacOS ? SUBMIT_KEYS : SUBMIT_KEYS_NON_MAC) {
 				dropdown.addOption(key, AgentSessionsSettingTab.SUBMIT_KEY_LABELS[key]);
 			}
@@ -1096,7 +1105,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 					new ConfirmModal(this.app, t("confirm.writeKeybindings.message"), t("action.write"), () =>
 						applyAndSave(next)
 					).open();
-					// 確認が済むまでは見た目を戻しておく（確定したら display() で組み直す）。
+					// Revert the dropdown's appearance until confirmed (display() rebuilds it once applied).
 					dropdown.setValue(current);
 				} else {
 					applyAndSave(next);
@@ -1108,9 +1117,9 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * `keybindings.json` の `Chat.enter` と設定の `submitKey` が食い違っているとき
-	 * （例：ファイルは `chat:newline` なのに設定は `enter` のまま）に警告を出す
-	 * （§6.8・D-50）。「ファイルに合わせる」で `syncSubmitKeyFromKeybindings()` を実行する。
+	 * Warns when `keybindings.json`'s `Chat.enter` disagrees with the `submitKey` setting (e.g.
+	 * the file has `chat:newline` but the setting is still `enter`). "Match the file" runs
+	 * `syncSubmitKeyFromKeybindings()`.
 	 */
 	private renderSubmitKeyMismatch(containerEl: HTMLElement, keybindingsPath: string): void {
 		const info = readEnterMode(keybindingsPath);

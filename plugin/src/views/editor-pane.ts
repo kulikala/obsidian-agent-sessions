@@ -1,9 +1,10 @@
-// 編集領域（D-22）。ターミナルビューの下に置く `<textarea>` と 1 行のバー、`@` 候補。
-// ネイティブのペースト・IME・Undo に任せ、Markdown の扱いは持たない。
+// The editor pane: a `<textarea>` plus a one-line bar and `@` suggestions, placed below the
+// terminal view. Relies on native paste, IME, and undo; does no Markdown handling of its own.
 //
-// 一時ファイルへの書き込みは tmp→rename。送る＝最終内容を書く（送信は main.ts が続ける）。
-// 入力欄に戻る（Esc）＝今の内容を書く。取消（タブを閉じた）＝元の内容を書き戻す。
-// 中断（claude 側の切断）＝書かずに閉じる（D-51）。
+// Writes to the temp file go tmp→rename. Send = writes the final content (submitting the
+// prompt is continued by main.ts). Back to prompt (Esc) = writes the current content. Cancel
+// (the tab closed) = writes the original content back. Abort (claude's side disconnected) =
+// closes without writing.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -21,17 +22,17 @@ export interface EditorPaneDeps {
 	vaultPath: string;
 	fontFamily: string;
 	fontSize: number;
-	/** 送信キー（D-50）。これを押すと送る、他の Enter の組合せは改行。 */
+	/** The submit key. Pressing it sends; any other Enter combination inserts a newline. */
 	submitKey: SubmitKey;
-	/** 「送る」の表記（非macOS対応）：macOS は記号、非 macOS は文字表記。 */
+	/** How to label "send": macOS gets a symbol, non-macOS gets spelled-out text. */
 	isMac: boolean;
 }
 
-/** 入力が落ち着いてから一時ファイルへ書くまでの間（T-75）。`SaveDebouncer` が持つ。 */
+/** How long to wait after input settles before writing to the temp file. Held by `SaveDebouncer`. */
 const AUTOSAVE_MS = 800;
 const MAX_CANDIDATES = 8;
 
-/** tmp に書いて rename。`file` と同じディレクトリに tmp を置く。 */
+/** Writes to tmp, then renames. The tmp file is placed in the same directory as `file`. */
 function writeAtomic(file: string, text: string): void {
 	const tmp = path.join(path.dirname(file), `.${path.basename(file)}.${process.pid}.tmp`);
 	fs.writeFileSync(tmp, text, "utf8");
@@ -50,7 +51,7 @@ function writeAtomic(file: string, text: string): void {
 export class EditorPane {
 	private textarea: HTMLTextAreaElement | null = null;
 	private listEl: HTMLElement | null = null;
-	/** 自動保存の debounce（T-75。`schedule`＝入力のたび延長、`flush`＝確定で即書く）。 */
+	/** Autosave debounce (`schedule` extends it on every keystroke, `flush` writes immediately on commit). */
 	private saveDebouncer = new SaveDebouncer(AUTOSAVE_MS, () => this.writeCurrent());
 	private resolve: ((result: EditResult) => void) | null = null;
 	private file = "";
@@ -60,7 +61,7 @@ export class EditorPane {
 	private at: AtQuery | null = null;
 	private candidates: TFile[] = [];
 	private selected = 0;
-	/** window の capture で受けるキー処理（Obsidian の keydown より先に取る）。 */
+	/** Key handling captured on `window` (runs before Obsidian's own keydown handling). */
 	private captureKeyDown = (ev: KeyboardEvent): void => {
 		if (ev.target === this.textarea) {
 			this.onKeyDown(ev);
@@ -77,9 +78,9 @@ export class EditorPane {
 	}
 
 	/**
-	 * 設定が変わったら、開いているエディタのフォントも合わせる（T-75）。`open()` のとき渡した
-	 * `deps.fontFamily`／`fontSize` はそのときの値のまま固定されるので、`terminal.ts` の
-	 * `applySettings()`（`settings-changed` のたび）から呼んで追いかける。
+	 * Keeps the open editor's font in step with settings changes. The `deps.fontFamily`/
+	 * `fontSize` passed to `open()` are frozen at that point in time, so `terminal.ts`'s
+	 * `applySettings()` calls this (on every `settings-changed`) to keep them current.
 	 */
 	applySettings(fontFamily: string, fontSize: number): void {
 		this.deps.fontFamily = fontFamily;
@@ -90,7 +91,7 @@ export class EditorPane {
 		}
 	}
 
-	/** 領域を組み立て、`initial` を入れてフォーカス。送る／入力欄に戻る／取消／中断で解決する。 */
+	/** Builds the pane, fills in `initial`, and focuses it. Resolves on send/back to prompt/cancel/abort. */
 	open(file: string, cwd: string, initial: string): Promise<EditResult> {
 		this.file = file;
 		this.cwd = cwd;
@@ -107,7 +108,7 @@ export class EditorPane {
 		});
 	}
 
-	/** 送る：待っている自動保存があれば解除し、最後の内容を即書いてから閉じる。 */
+	/** Send: cancels any pending autosave and writes the final content right away, then closes. */
 	send(): void {
 		if (!this.resolve) {
 			return;
@@ -116,7 +117,7 @@ export class EditorPane {
 		this.finish("send");
 	}
 
-	/** 入力欄に戻る：待っている自動保存があれば解除し、今の内容を即書いてから閉じる（送信はしない）。 */
+	/** Back to prompt: cancels any pending autosave and writes the current content right away, then closes (doesn't submit). */
 	returnToInput(): void {
 		if (!this.resolve) {
 			return;
@@ -125,7 +126,7 @@ export class EditorPane {
 		this.finish("return");
 	}
 
-	/** 取消（タブを閉じた）：待っている自動保存は捨て、元の内容を書き戻してから閉じる。 */
+	/** Cancel (the tab closed): drops any pending autosave, writes the original content back, then closes. */
 	cancel(): void {
 		if (!this.resolve) {
 			return;
@@ -135,7 +136,7 @@ export class EditorPane {
 		this.finish("cancel");
 	}
 
-	/** 中断（相手が消えた）：待っている自動保存は捨て、書かずに閉じる。 */
+	/** Abort (the other side disconnected): drops any pending autosave and closes without writing. */
 	abort(): void {
 		if (!this.resolve) {
 			return;
@@ -201,7 +202,7 @@ export class EditorPane {
 		this.containerEl.removeClass("agent-sessions-editor");
 	}
 
-	// ---- 保存 -------------------------------------------------------------------
+	// ---- Saving -------------------------------------------------------------------
 
 	private onChanged(): void {
 		this.saveDebouncer.schedule();
@@ -216,11 +217,13 @@ export class EditorPane {
 	}
 
 	/**
-	 * 書き込み失敗（ディスクが読み取り専用・権限が無い等）は `Notice` を出さずログだけにする
-	 * （T-75。もとからの動作を保つ）。自動保存は 800ms ごとに走りうる経路なので、失敗するたび
-	 * 通知を出すと入力中に割り込みが連発しかねない。`send`／`returnToInput` の確定書き込みも
-	 * 同じ `write()` を通るため確定時も静かに失敗しうるが、これは自動保存を足す前からの
-	 * 挙動で今回の範囲の外——通知するなら確定の失敗だけを別扱いする設計判断が要る。
+	 * Write failures (read-only disk, no permission, etc.) are logged rather than shown as a
+	 * `Notice` (keeps the pre-existing behavior). Autosave can run as often as every 800ms, so
+	 * popping a notice on every failure could interrupt typing repeatedly. `send`/
+	 * `returnToInput`'s final writes go through this same `write()`, so they too can fail
+	 * silently — that's pre-existing behavior from before autosave was added and out of scope
+	 * here; surfacing it would need a separate design decision to treat the final write's
+	 * failure differently.
 	 */
 	private write(text: string): void {
 		if (text === this.lastSaved) {
@@ -230,17 +233,19 @@ export class EditorPane {
 			writeAtomic(this.file, text);
 			this.lastSaved = text;
 		} catch (err) {
-			console.warn("agent-sessions: 一時ファイルに書けない", err);
+			console.warn("agent-sessions: couldn't write the temp file", err);
 		}
 	}
 
-	// ---- キー -------------------------------------------------------------------
+	// ---- Keys -------------------------------------------------------------------
 
 	/**
-	 * 送信キー＝送る、他の Enter の組合せ＝改行、`Esc`＝入力欄に戻る（候補が開いていれば候補を閉じる）。
-	 * 候補が開いている間の修飾なし Enter／Tab は確定、↑↓は選択。IME 変換中（`isComposing`／
-	 * `keyCode 229`）は何もしない。他のキーは textarea のネイティブ動作に任せ、伝播だけ止めて
-	 * Obsidian のホットキーに渡さない（Cmd+V／C／X／Z／A は既定動作のまま）。
+	 * The submit key sends; any other Enter combination inserts a newline; `Esc` goes back to
+	 * the prompt (closing suggestions first if they're open). While suggestions are open,
+	 * unmodified Enter/Tab confirms the selection and ↑/↓ moves it. Does nothing during an IME
+	 * composition (`isComposing`/`keyCode 229`). Every other key is left to the textarea's
+	 * native behavior, with only propagation stopped so it doesn't reach Obsidian's hotkeys
+	 * (Cmd+V/C/X/Z/A keep their default behavior).
 	 */
 	private onKeyDown(ev: KeyboardEvent): void {
 		ev.stopImmediatePropagation();
@@ -273,7 +278,7 @@ export class EditorPane {
 			return;
 		}
 		if (cls !== "passthrough" && cls !== "enter") {
-			// 修飾つき Enter はネイティブでは改行にならないものがあるので、自分で入れる。
+			// Some modified Enter combinations don't natively insert a newline, so do it ourselves.
 			ev.preventDefault();
 			this.insertNewline();
 			return;
@@ -284,7 +289,7 @@ export class EditorPane {
 		}
 	}
 
-	/** カーソル位置に改行を入れる。`insertText` なら Undo の履歴に残る。 */
+	/** Inserts a newline at the cursor. Using `insertText` keeps it in the undo history. */
 	private insertNewline(): void {
 		const textarea = this.textarea;
 		if (!textarea) {
@@ -296,7 +301,7 @@ export class EditorPane {
 		}
 	}
 
-	// ---- `@` 補完 -----------------------------------------------------------------
+	// ---- `@` completion -----------------------------------------------------------------
 
 	private updateSuggestions(): void {
 		const textarea = this.textarea;
@@ -330,7 +335,7 @@ export class EditorPane {
 				scored.push({ file, score: result.score, exact: base === q || stem === q ? 1 : 0 });
 			}
 		}
-		// スコア降順 → basename が検索語と一致 → パスが短い → 辞書順。
+		// Sort: score descending → basename matches the query → shorter path → alphabetical.
 		scored.sort(
 			(a, b) =>
 				b.score - a.score ||

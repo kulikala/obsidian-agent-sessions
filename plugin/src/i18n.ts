@@ -1,26 +1,27 @@
-// 表示言語（D-56・§6.9）。`obsidian` には依存しない（`settings.ts` と同じ理由：純粋なデータ・
-// 関数だけを import するテストでも解決に失敗しない）。既定は自動——設定の `language` が
-// `auto` なら Obsidian の言語（`window.localStorage.getItem("language")`）に合わせ、`ja` 以外は
-// 英語にする。`t()` はモジュール内に持つ現在値を読むだけの純関数。
+// Display language. Doesn't depend on `obsidian` (same reason as `settings.ts`: importing
+// only plain data and functions means tests that don't run inside Obsidian can still resolve
+// it). Default is "auto" — when the setting's `language` is `auto`, it follows Obsidian's own
+// language (`window.localStorage.getItem("language")`); anything other than `ja` falls back to
+// English. `t()` is a pure function that just reads the current value held in this module.
 
 export type Lang = "ja" | "en";
 export type LanguageSetting = "auto" | Lang;
 
 let currentLang: Lang = "en";
 
-/** 表示言語を切り替える。`main.ts` の `onload`（最初）と、設定の言語を変えたときに呼ぶ。 */
+/** Switches the display language. Called from `main.ts`'s `onload` (first thing) and whenever the language setting changes. */
 export function setLang(lang: Lang): void {
 	currentLang = lang;
 }
 
-/** 今の表示言語（テスト・`limits.ts` の純関数などから参照する）。 */
+/** The current display language (read by tests, `limits.ts`'s pure functions, etc). */
 export function getLang(): Lang {
 	return currentLang;
 }
 
 /**
- * 設定の `language` と Obsidian の言語から、実際の表示言語を決める。
- * `auto` は `obsidianLang === 'ja'` なら日本語、それ以外（`null` を含む）は英語。
+ * Derives the actual display language from the setting's `language` and Obsidian's own
+ * language. `auto` is Japanese when `obsidianLang === 'ja'`, English otherwise (including `null`).
  */
 export function resolveLang(setting: LanguageSetting, obsidianLang: string | null): Lang {
 	if (setting === "ja" || setting === "en") {
@@ -30,8 +31,9 @@ export function resolveLang(setting: LanguageSetting, obsidianLang: string | nul
 }
 
 /**
- * Obsidian の言語設定。`window.localStorage` が無い・読めない環境（テストなど）では `null`。
- * `resolveLang` へ渡す値はここから取る（`resolveLang` 自体は注入された値だけを見る純関数）。
+ * Obsidian's language setting. `null` in environments without `window.localStorage`, or where
+ * it can't be read (tests, etc). This is what gets passed to `resolveLang` (`resolveLang`
+ * itself is a pure function that only looks at the values it's given).
  */
 export function readObsidianLang(): string | null {
 	try {
@@ -41,13 +43,13 @@ export function readObsidianLang(): string | null {
 	}
 }
 
-// ---- 辞書 ---------------------------------------------------------------------
+// ---- Dictionaries --------------------------------------------------------------
 //
-// `en` は `Record<MessageKey, string>` で宣言する（オブジェクトリテラルの過不足プロパティ
-// 検査により、`ja` と同じキー集合を型で強制する）。
+// `en` is declared as `Record<MessageKey, string>` — the object literal's excess/missing
+// property check then enforces the same key set as `ja` at the type level.
 
 const ja = {
-	// ---- コマンド・アクション（共通の文言。main.ts のコマンド名・action・ツールチップから使う） ----
+	// ---- Commands and actions (shared strings used by main.ts's command names, actions, tooltips) ----
 	"action.openSidePanel": "一覧を開く",
 	"action.newSession": "新規セッション",
 	"action.sessionManager": "セッションマネージャー",
@@ -84,14 +86,14 @@ const ja = {
 	"action.write": "書き込む",
 	"action.copy": "コピー",
 
-	// ---- 汎用 ----
+	// ---- Generic ----
 	"common.default": "デフォルト",
 	"common.none": "（無し）",
 	"common.unknown": "不明",
 	"common.listSep": "、",
 	"common.untitled": "無題 {id}",
 
-	// ---- Notice・エラー（main.ts・terminal.ts） ----
+	// ---- Notices and errors (main.ts, terminal.ts) ----
 	"notice.noActiveNote": "開いているノートがありません",
 	"notice.noActiveTerminal": "開いているターミナルがありません",
 	"notice.renameWaitFailed": "セッションの起動を待てなかったため、名前を付けられませんでした",
@@ -117,7 +119,7 @@ const ja = {
 	"notice.markdownCopied": "Markdown をコピーしました",
 	"error.claudeMissing": "claude が見つからない",
 
-	// ---- 設定タブ（main.ts） ----
+	// ---- Settings tab (main.ts) ----
 	"settings.font.name": "フォント",
 	"settings.fontSize.name": "フォントサイズ",
 	"settings.padding.name": "余白",
@@ -149,23 +151,23 @@ const ja = {
 	"settings.submitKeyMismatch.name": "keybindings.json と食い違っています",
 	"settings.submitKeyMismatch.desc": "Claude Code の keybindings.json と一致していません",
 
-	// ---- モーダル（modals.ts） ----
+	// ---- Modals (modals.ts) ----
 	"modal.newSession.title": "新規セッション",
 	"modal.newSession.nameField": "名前",
 	"modal.renameSession.title": "名前を変更",
 
-	// ---- サイドパネル（views/side.ts） ----
+	// ---- Side panel (views/side.ts) ----
 	"section.openTabs": "開いているタブ",
 	"section.running": "起動中",
 	"section.recent": "最近",
 
-	// ---- アテンションの印（サイドのバッジ・マネージャーの見出し。T-78） ----
+	// ---- Attention markers (side panel badges, manager section headings) ----
 	"attention.asking": "入力待ち {count}",
 	"attention.waiting": "未読 {count}",
 	"attention.askingInGroup": "入力待ちのセッションがあります",
 	"attention.waitingInGroup": "未読のセッションがあります",
 
-	// ---- マネージャー（views/manager.ts・manager-model.ts） ----
+	// ---- Manager (views/manager.ts, manager-model.ts) ----
 	"table.name": "名前",
 	"table.updated": "最終更新",
 	"table.model": "モデル",
@@ -197,7 +199,7 @@ const ja = {
 	"group.other": "その他",
 	"manager.analysis.title": "解析",
 
-	// ---- 詳細ビュー（views/detail.ts） ----
+	// ---- Detail view (views/detail.ts) ----
 	"detail.compacted": "compact 済み",
 	"detail.totalTokens": "総トークン",
 	"detail.totalCost": "総コスト",
@@ -206,25 +208,25 @@ const ja = {
 	"detail.tools": "ツール",
 	"detail.folder": "フォルダ",
 
-	// ---- 制限ビュー（views/limits.ts） ----
+	// ---- Rate-limit view (views/limits.ts) ----
 	"limits.countdownDays": "{days} 日 {h}:{mm}",
 
-	// ---- 編集領域（views/editor-pane.ts） ----
-	// action.send・action.backToInput を使う。
+	// ---- Editor pane (views/editor-pane.ts) ----
+	// Uses action.send and action.backToInput.
 
-	// ---- ターミナル終了画面（views/terminal.ts） ----
+	// ---- Terminal exit screen (views/terminal.ts) ----
 	"exit.exited": "セッションは終了しました（{code}）",
 	"exit.disconnected": "デーモンとの接続が切れました",
 
-	// ---- タブ・行の状態（views/terminal.ts の `terminalStatus`。D-66） ----
+	// ---- Tab/row state (views/terminal.ts's `terminalStatus`) ----
 	"status.connecting": "接続中",
 	"status.working": "処理中",
 	"status.runningShell": "コマンド実行中",
-	// claude 自身の質問・許可プロンプト・elicitation 待ち（T-77）。「指示待ち」（waiting）より上。
+	// claude itself is waiting on a question, a permission prompt, or elicitation. Ranks above "waiting for input".
 	"status.asking": "回答待ち",
 	"status.waiting": "指示待ち",
-	// compact 直後・まだ次の指示を送っていない（T-77 追補）。「指示待ち」より下——文脈が
-	// リセットされていることが分かるように別の状態にする。
+	// Right after a /compact, before the next instruction has been sent. Ranks below "waiting
+	// for input" — kept as a distinct state so it's clear the context was just reset.
 	"status.compacted": "compact 済み（文脈がリセットされています）",
 	"status.editing": "編集中",
 	"status.idle": "待機",
@@ -232,7 +234,7 @@ const ja = {
 	"status.exited": "終了",
 	"status.error": "エラー",
 
-	// ---- セッション解析結果モーダル（usage-modal.ts） ----
+	// ---- Session analytics modal (usage-modal.ts) ----
 	"usage.title": "セッション解析結果：{name}",
 	"usage.loading": "読み込み中…",
 	"usage.loadFailed": "集計に失敗しました: {error}",
@@ -258,7 +260,7 @@ const ja = {
 	"usage.chart.toolsTitle": "ツール使用",
 	"usage.chart.toolsEmpty": "ツール使用なし",
 
-	// ---- Markdown コピー（usage.ts の toMarkdown） ----
+	// ---- Markdown copy (usage.ts's toMarkdown) ----
 	"usage.md.title": "# セッション解析結果（#{lo}〜#{hi}）",
 	"usage.md.cost": "- コスト: {cost}{estimated}",
 	"usage.md.estimatedSuffix": "（概算）",
@@ -499,7 +501,7 @@ const en: Record<MessageKey, string> = {
 
 const dict: Record<Lang, Record<MessageKey, string>> = { ja, en };
 
-/** `key` の文字列。`vars` があれば `{name}` を置換する（無い名前はそのまま残す）。 */
+/** The string for `key`. If `vars` is given, replaces `{name}` placeholders (names not in `vars` are left as-is). */
 export function t(key: MessageKey, vars?: Record<string, string | number>): string {
 	const template = dict[currentLang][key];
 	if (!vars) {

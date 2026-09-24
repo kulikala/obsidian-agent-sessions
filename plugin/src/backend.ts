@@ -1,5 +1,5 @@
-// `agent-sessions json …` の呼び出しと結果の型（§5）、ログインシェルの環境（§4.2・§7）。
-// 走査・判定のロジックは Python 側にある。ここは呼び出しと結果の受け取りだけを持つ。
+// Calling `agent-sessions json …` and typing its results, plus the login shell's environment.
+// Scanning and detection logic lives on the Python side — this file only calls it and receives results.
 
 import { execFile } from "node:child_process";
 import { homedir } from "node:os";
@@ -7,19 +7,20 @@ import { join } from "node:path";
 import { t } from "./i18n";
 import type { Detail, LiveResult, ScanResult, StatsResult, UsageResult } from "./types";
 
-/** `json` サブコマンドが失敗したときの例外。stderr の先頭行を message に持つ。 */
+/** Thrown when a `json` subcommand fails. `message` is stderr's first line. */
 export class BackendError extends Error {}
 
 /**
- * `$SHELL` が無いときの既定のログインシェル（§4.2・§7 非macOS対応）。macOS は `zsh`
- * （既定シェル）。非 macOS は `bash` だと Ubuntu/WSL2 の一部・最小構成の環境に無いことが
- * あるため `/bin/sh`（POSIX 準拠で `-l -c` も使え、ほぼすべての Linux にある）にする。
+ * The default login shell to fall back on when `$SHELL` isn't set. macOS uses `zsh` (its
+ * default shell). Non-macOS uses `/bin/sh` rather than `bash`, since some Ubuntu/WSL2 setups
+ * and minimal environments don't have bash — `sh` is POSIX (so `-l -c` still works) and present
+ * on essentially every Linux system.
  */
 export function defaultLoginShell(isMac: boolean): string {
 	return isMac ? "/bin/zsh" : "/bin/sh";
 }
 
-/** 設定の `agentSessionsPath` が空のときの既定（§6.9）。 */
+/** The default when the `agentSessionsPath` setting is empty. */
 export function resolveAgentSessionsPath(configured: string): string {
 	return configured || join(homedir(), "bin", "agent-sessions");
 }
@@ -48,15 +49,16 @@ function execFileText(
 }
 
 /**
- * `process.env` に `AGENT_SESSIONS_VAULT` を重ねる（T-80）。`agent-sessions` は既定の
- * vault を持たないので、`json …` を呼ぶすべての経路でこれを渡す必要がある——渡さないと
- * env にも `~/.agents/sessions/vault.json` にも無い環境で python 側が vault を見失う。
+ * Overlays `AGENT_SESSIONS_VAULT` onto `process.env`. `agent-sessions` has no default vault, so
+ * every call path that invokes `json …` needs to pass this — without it, the Python side loses
+ * track of the vault in any environment that has it in neither `env` nor
+ * `~/.agents/sessions/vault.json`.
  */
 export function envWithVault(vaultPath: string, base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
 	return { ...base, AGENT_SESSIONS_VAULT: vaultPath };
 }
 
-/** `agent-sessions json …` を呼び、stdout を JSON として返す。失敗は `BackendError`。 */
+/** Calls `agent-sessions json …` and returns stdout parsed as JSON. Throws `BackendError` on failure. */
 export async function runJson(agentSessionsPath: string, vaultPath: string, args: string[]): Promise<unknown> {
 	try {
 		const { stdout } = await execFileText(agentSessionsPath, ["json", ...args], envWithVault(vaultPath));
@@ -81,7 +83,7 @@ export async function detail(agentSessionsPath: string, vaultPath: string, id: s
 	return runJson(agentSessionsPath, vaultPath, ["detail", id]) as Promise<Detail>;
 }
 
-/** `json usage ID [--from ISO] [--to ISO]`（D-30）。`from`／`to` は ISO8601（UTC）。 */
+/** `json usage ID [--from ISO] [--to ISO]`. `from`/`to` are ISO 8601 (UTC). */
 export async function usage(
 	agentSessionsPath: string,
 	vaultPath: string,
@@ -99,7 +101,7 @@ export async function usage(
 	return runJson(agentSessionsPath, vaultPath, args) as Promise<UsageResult>;
 }
 
-/** `json stats`（D-54・D-55）：5 時間・7 日の枠の使用状況。 */
+/** `json stats`: usage within the 5-hour and 7-day windows. */
 export async function stats(agentSessionsPath: string, vaultPath: string): Promise<StatsResult> {
 	return runJson(agentSessionsPath, vaultPath, ["stats"]) as Promise<StatsResult>;
 }
@@ -119,10 +121,10 @@ function parseEnvOutput(stdout: string): Record<string, string> {
 let cachedLoginEnv: Record<string, string> | null = null;
 
 /**
- * ログインシェルの環境（`PATH`・`LANG`・`HOME`・`USER`・`TMPDIR`・`CLAUDE_CONFIG_DIR`）。
- * Dock から起動した Obsidian の環境は貧弱なため、デーモンの `start` に渡す `env` を
- * これで補う（§4.2）。`$SHELL -l -c env` は 1 回だけ実行してキャッシュする。`isMac`（既定
- * `true`）は `$SHELL` が無いときの既定シェルの選び方（非macOS対応。`defaultLoginShell`）。
+ * The login shell's environment (`PATH`, `LANG`, `HOME`, `USER`, `TMPDIR`,
+ * `CLAUDE_CONFIG_DIR`). Obsidian launched from the Dock has a sparse environment, so this fills
+ * out the `env` passed to the daemon's `start`. `$SHELL -l -c env` is run once and cached.
+ * `isMac` (default `true`) picks the fallback shell when `$SHELL` isn't set (`defaultLoginShell`).
  */
 export async function loginEnv(isMac = true): Promise<Record<string, string>> {
 	if (cachedLoginEnv) {
@@ -141,15 +143,15 @@ export async function loginEnv(isMac = true): Promise<Record<string, string>> {
 	return picked;
 }
 
-/** テストで使う：`loginEnv` のキャッシュを消す。 */
+/** For use in tests: clears `loginEnv`'s cache. */
 export function resetLoginEnvCache(): void {
 	cachedLoginEnv = null;
 }
 
 /**
- * `claude` の実行パスを決める（§6.9・§7）。設定が空ならログインシェルの
- * `command -v claude` を引く。見つからなければ `BackendError`。`isMac`（既定 `true`）は
- * `$SHELL` が無いときの既定シェルの選び方（非macOS対応）。
+ * Resolves the `claude` executable's path. If the setting is empty, looks it up via the login
+ * shell's `command -v claude`. Throws `BackendError` if it can't be found. `isMac` (default
+ * `true`) picks the fallback shell when `$SHELL` isn't set.
  */
 export async function resolveClaude(configuredPath: string, isMac = true): Promise<string> {
 	if (configuredPath) {

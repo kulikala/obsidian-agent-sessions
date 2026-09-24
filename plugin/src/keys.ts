@@ -1,26 +1,27 @@
-// Enter の分類と、送信キー設定からの動作決定（§6.8・D-50）。xterm にも obsidian にも
-// 依存しない純関数。`views/terminal.ts` の `handleKey` と `views/editor-pane.ts` から使う。
+// Classifying the Enter key, and deciding what it should do based on the submit-key setting.
+// Pure functions with no dependency on xterm or obsidian. Used by `views/terminal.ts`'s
+// `handleKey` and by `views/editor-pane.ts`.
 
 import type { SubmitKey } from "./settings";
 
-/** キーボードイベントのうち、分類に要る部分だけ（テストでは本物の `KeyboardEvent` を作らずに済む）。 */
+/** Only the parts of a keyboard event that classification needs (so tests don't need to construct a real `KeyboardEvent`). */
 export interface KeyLike {
 	key: string;
 	shiftKey: boolean;
 	altKey: boolean;
 	ctrlKey: boolean;
 	metaKey: boolean;
-	/** IME 変換中。 */
+	/** True while an IME composition is in progress. */
 	isComposing?: boolean;
-	/** IME 変換中の Enter は多くのブラウザで `keyCode === 229` になる。 */
+	/** Enter during an IME composition comes through as `keyCode === 229` in most browsers. */
 	keyCode?: number;
 }
 
 export type EnterClass = SubmitKey | "passthrough";
 
 /**
- * Enter でなければ、または IME 変換中の Enter なら `passthrough`。
- * 修飾は shift・ctrl・alt・cmd（metaKey）・無し（enter）の優先順で 1 つに分類する。
+ * `passthrough` when the key isn't Enter, or it's Enter during an IME composition.
+ * Otherwise classifies by modifier, in priority order shift, ctrl, alt, cmd (metaKey), none (enter).
  */
 export function classifyEnter(ev: KeyLike): EnterClass {
 	if (ev.key !== "Enter") {
@@ -47,9 +48,10 @@ export function classifyEnter(ev: KeyLike): EnterClass {
 export type EnterAction = "submit" | "newline" | "passthrough";
 
 /**
- * 分類済みの Enter と送信キーから動作を決める。`passthrough` は IME 中と Enter 以外だけで、
- * Enter の組合せは必ず `submit` か `newline` になる（ターミナルが修飾を区別して送れないため、
- * プラグインがすべて横取りする）。
+ * Decides the action from a classified Enter and the submit-key setting. `passthrough` only
+ * happens during IME composition or for non-Enter keys — every Enter combination resolves to
+ * either `submit` or `newline` (the plugin intercepts all of them itself, since the terminal
+ * can't distinguish modifiers when sending).
  */
 export function resolveEnterAction(cls: EnterClass, submitKey: SubmitKey): EnterAction {
 	if (cls === "passthrough") {
@@ -59,9 +61,9 @@ export function resolveEnterAction(cls: EnterClass, submitKey: SubmitKey): Enter
 }
 
 /**
- * 動作ごとに PTY へ送る列。`submitKey === 'enter'` なら Claude Code の既定どおり
- * 送信＝`\r`・改行＝`\x1b\r`。それ以外は keybindings.json で逆にしてあるので
- * 送信＝`\x1b\r`（meta+enter）・改行＝`\r`。
+ * The bytes to send to the PTY for each action. When `submitKey === 'enter'`, this matches
+ * Claude Code's own default: submit = `\r`, newline = `\x1b\r`. Otherwise keybindings.json
+ * swaps them, so submit = `\x1b\r` (meta+enter), newline = `\r`.
  */
 export function sendSequence(action: "submit" | "newline", submitKey: SubmitKey): string {
 	const swapped = submitKey !== "enter";
@@ -72,11 +74,11 @@ export function sendSequence(action: "submit" | "newline", submitKey: SubmitKey)
 }
 
 /**
- * `keybindings.json` の `Chat` の中身から送信キーを導く（D-50）。純関数——ファイルは
- * 呼び出し側が `readChatBindings` で読む。
+ * Derives the submit key from the contents of `keybindings.json`'s `Chat` block. A pure
+ * function — the caller reads the file itself via `readChatBindings`.
  *
- * - `enter: chat:newline` があり、`cmd+enter`／`super+enter` もあれば `cmd+enter`、無ければ `alt+enter`。
- * - `enter` が無い、または `chat:newline` 以外なら `enter`。
+ * - If `enter: chat:newline` is set: `cmd+enter` when `cmd+enter`/`super+enter` is also present, otherwise `alt+enter`.
+ * - Otherwise (no `enter` key, or it's not `chat:newline`): `enter`.
  */
 export function deriveSubmitKey(chatBindings: Record<string, string> | undefined): SubmitKey {
 	if (chatBindings?.enter !== "chat:newline") {
@@ -85,7 +87,7 @@ export function deriveSubmitKey(chatBindings: Record<string, string> | undefined
 	return "cmd+enter" in chatBindings || "super+enter" in chatBindings ? "cmd+enter" : "alt+enter";
 }
 
-/** 「送る」ボタンなどに出す送信キーの記号（macOS）。 */
+/** The submit-key symbol shown on the "send" button etc. (macOS). */
 export const SUBMIT_KEY_SYMBOLS: Record<SubmitKey, string> = {
 	enter: "⏎",
 	"shift+enter": "⇧⏎",
@@ -95,9 +97,9 @@ export const SUBMIT_KEY_SYMBOLS: Record<SubmitKey, string> = {
 };
 
 /**
- * 非 macOS の「送る」ボタン表記（文字表記。§7.2 非macOS対応）。`cmd+enter` は非 macOS の
- * 選択肢に出さないので持たない——`submitKeyButtonLabel`／`submitKeyStatuslineSymbol` は
- * その場合 macOS の記号にフォールバックする。
+ * Non-macOS "send" button labels (spelled out as text). Has no entry for `cmd+enter` since
+ * that's not offered as an option on non-macOS — `submitKeyButtonLabel`/
+ * `submitKeyStatuslineSymbol` fall back to the macOS symbol in that case.
  */
 export const SUBMIT_KEY_LABELS_NON_MAC: Partial<Record<SubmitKey, string>> = {
 	enter: "Enter",
@@ -106,7 +108,7 @@ export const SUBMIT_KEY_LABELS_NON_MAC: Partial<Record<SubmitKey, string>> = {
 	"alt+enter": "Alt+Enter",
 };
 
-/** 非 macOS の statusLine 用の短い記号（ui.json の `submitSymbol`。§14 非macOS対応）。 */
+/** Short symbols for the non-macOS statusLine (the `submitSymbol` in ui.json). */
 export const SUBMIT_KEY_STATUSLINE_SYMBOLS_NON_MAC: Partial<Record<SubmitKey, string>> = {
 	enter: "⏎",
 	"shift+enter": "S-⏎",
@@ -114,7 +116,7 @@ export const SUBMIT_KEY_STATUSLINE_SYMBOLS_NON_MAC: Partial<Record<SubmitKey, st
 	"alt+enter": "A-⏎",
 };
 
-/** 「送る」ボタン・内蔵エディタの表記。macOS は記号、非 macOS は文字表記。 */
+/** Label for the "send" button and built-in editor. macOS gets a symbol, non-macOS gets spelled-out text. */
 export function submitKeyButtonLabel(key: SubmitKey, isMac: boolean): string {
 	if (isMac) {
 		return SUBMIT_KEY_SYMBOLS[key];
@@ -122,7 +124,7 @@ export function submitKeyButtonLabel(key: SubmitKey, isMac: boolean): string {
 	return SUBMIT_KEY_LABELS_NON_MAC[key] ?? SUBMIT_KEY_SYMBOLS[key];
 }
 
-/** statusLine（ui.json の `submitSymbol`）の表記。macOS は記号、非 macOS は短い文字表記。 */
+/** Label for the statusLine (the `submitSymbol` in ui.json). macOS gets a symbol, non-macOS gets a short text form. */
 export function submitKeyStatuslineSymbol(key: SubmitKey, isMac: boolean): string {
 	if (isMac) {
 		return SUBMIT_KEY_SYMBOLS[key];
@@ -131,9 +133,10 @@ export function submitKeyStatuslineSymbol(key: SubmitKey, isMac: boolean): strin
 }
 
 /**
- * 起動時・「ファイルに合わせる」で使う送信キー（D-50）。keybindings.json が Enter を改行に
- * しているかどうか（`deriveSubmitKey` が `enter` か否か）が今の設定と合っていれば今の設定を
- * 保ち（`shift+enter`／`ctrl+enter` はファイルから区別できない）、食い違っていれば導いた値にする。
+ * The submit key to use at startup and for "match the file". If keybindings.json making Enter
+ * a newline (whether `deriveSubmitKey` returns `enter` or not) agrees with the current setting,
+ * keeps the current setting (`shift+enter`/`ctrl+enter` can't be told apart from the file
+ * alone); otherwise switches to the derived value.
  */
 export function reconcileSubmitKey(chatBindings: Record<string, string> | undefined, current: SubmitKey): SubmitKey {
 	const derived = deriveSubmitKey(chatBindings);
@@ -141,22 +144,23 @@ export function reconcileSubmitKey(chatBindings: Record<string, string> | undefi
 }
 
 /**
- * 非 macOS の Ctrl キーの行き先（§7.1 非macOS対応）。macOS は Cmd が Obsidian の修飾キーなので
- * Ctrl はすべてターミナルへ渡せるが、非 macOS は Obsidian の修飾キーが Ctrl で、claude も
- * Ctrl+C／D／G／R／O／S／L／T 等を使うため、単純に Ctrl を Obsidian へ渡すと壊れる。
- * 既定は `terminal`（claude を優先）。**素の Ctrl+W／Ctrl+P もターミナルへ**——claude の
- * 入力欄は Ctrl+W を「1 語削除」に、readline 系の履歴操作で Ctrl+P を使いうるため。
- * 代わりに Ctrl+Shift+W／Ctrl+Shift+P を Obsidian の対応する操作（タブを閉じる・コマンド
- * パレット）に当てる——Obsidian の既定のホットキーは素の Ctrl+W／Ctrl+P 側に付いているので、
- * ただキーイベントを渡す（`obsidian`）だけでは発火しない。呼出側（`views/terminal.ts`）が
- * `app.commands.executeCommandById("workspace:close")`／`("command-palette:open")` を
- * 明示的に呼ぶ（`close-tab`／`command-palette`）。
- * それ以外に Obsidian 側へ渡すのは：Ctrl+Shift+<key>（`copy`／`paste`／フォントサイズ／
- * `close-tab`／`command-palette` を除く）・Ctrl+Tab・Ctrl+,（Obsidian の既定のホットキーが
- * 素のまま付いているので、キーイベントを渡すだけで発火する）。
- * `ev.metaKey`／`ev.altKey` が立っている、または `ev.ctrlKey` が無ければ `passthrough`
- * （呼出側の既存の分岐に任せる）。IME 変換中の判定は呼出側が Enter 用に持つのでここでは見ない
- * （このキー群は IME の変換候補確定に使われないため）。
+ * Where a Ctrl-held key should go on non-macOS. On macOS, Cmd is Obsidian's modifier key, so
+ * every Ctrl combination can safely go to the terminal. On non-macOS, Obsidian's modifier key
+ * is Ctrl, and claude itself uses combinations like Ctrl+C/D/G/R/O/S/L/T, so simply handing
+ * Ctrl to Obsidian would break those. The default is `terminal` (claude takes priority).
+ * **Plain Ctrl+W/Ctrl+P also go to the terminal** — claude's input line uses Ctrl+W for
+ * delete-word-back, and Ctrl+P can be used for readline-style history navigation.
+ * Ctrl+Shift+W/Ctrl+Shift+P are used instead for the corresponding Obsidian action (close tab,
+ * command palette) — Obsidian's default hotkeys for those are bound to the plain Ctrl+W/Ctrl+P
+ * combinations, so merely letting the keydown through (`obsidian`) wouldn't trigger them; the
+ * caller (`views/terminal.ts`) calls `app.commands.executeCommandById("workspace:close")` /
+ * `("command-palette:open")` explicitly (`close-tab`/`command-palette`).
+ * The other combinations sent to Obsidian: Ctrl+Shift+<key> (other than `copy`/`paste`/font
+ * size/`close-tab`/`command-palette`), Ctrl+Tab, Ctrl+, — Obsidian's default hotkeys for these
+ * are bound to the plain combination, so just letting the keydown through triggers them.
+ * Returns `passthrough` when `ev.metaKey`/`ev.altKey` is set, or `ev.ctrlKey` isn't (leaving it
+ * to the caller's existing branches). IME composition isn't checked here the way it is for
+ * Enter, since this set of keys is never used to confirm IME candidates.
  */
 export type CtrlKeyRole =
 	| "terminal"
@@ -176,14 +180,14 @@ export function classifyCtrlKeyNonMac(ev: KeyLike): CtrlKeyRole {
 	}
 	const key = ev.key;
 	if (ev.shiftKey) {
-		// Ctrl+Shift+C／V：ターミナルの選択コピー・貼り付け（Linux の端末アプリの慣習）。
+		// Ctrl+Shift+C/V: copy/paste the terminal's selection (the convention used by Linux terminal apps).
 		if (key === "c" || key === "C") {
 			return "copy";
 		}
 		if (key === "v" || key === "V") {
 			return "paste";
 		}
-		// Ctrl+Shift+=／−／0：フォントサイズ（macOS の Cmd +／−／0 に相当）。
+		// Ctrl+Shift+=/-/0: font size (equivalent to macOS's Cmd +/-/0).
 		if (key === "+" || key === "=") {
 			return "zoom-in";
 		}
@@ -193,21 +197,21 @@ export function classifyCtrlKeyNonMac(ev: KeyLike): CtrlKeyRole {
 		if (key === "0" || key === ")") {
 			return "zoom-reset";
 		}
-		// Ctrl+Shift+W／P：タブを閉じる・コマンドパレット（素の Ctrl+W／Ctrl+P はターミナルへ）。
+		// Ctrl+Shift+W/P: close tab / command palette (plain Ctrl+W/Ctrl+P go to the terminal).
 		if (key === "w" || key === "W") {
 			return "close-tab";
 		}
 		if (key === "p" || key === "P") {
 			return "command-palette";
 		}
-		// それ以外の Ctrl+Shift+<key> は Obsidian へ（claude は Ctrl+Shift の組合せを使わない）。
+		// Any other Ctrl+Shift+<key> goes to Obsidian (claude doesn't use Ctrl+Shift combinations).
 		return "obsidian";
 	}
 	if (key === "Tab") {
-		return "obsidian"; // タブ切替。
+		return "obsidian"; // Switch tabs.
 	}
 	if (key === ",") {
-		return "obsidian"; // 設定。
+		return "obsidian"; // Settings.
 	}
-	return "terminal"; // Ctrl+W／Ctrl+P を含む。claude の入力欄で使われうるため。
+	return "terminal"; // Includes Ctrl+W/Ctrl+P, which claude's input line may use.
 }
