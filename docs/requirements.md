@@ -1,112 +1,132 @@
-# Agent Sessions 要件
+# Agent Sessions requirements
 
-Obsidian の中で Claude Code のセッションを開き、管理する。プラグイン（Obsidian）・デーモン・CLI/TUI の 3 つで 1 つの道具。
+Opens and manages Claude Code sessions inside Obsidian. Three pieces make up one tool: the plugin (Obsidian), the daemon, and the CLI/TUI.
 
-## 用語
+## Terms
 
-- **セッション**：Claude Code の 1 会話。`~/.claude/projects/<project>/<id>.jsonl` が真実源。ID は Claude Code のセッション ID そのもの。
-- **名前**：`/rename` で付けた名前（transcript の `custom-title` 行）。`カテゴリ: 名前` の形なら `: ` より前がカテゴリで、カテゴリごとにグループになる。
-- **起動中**：デーモンが PTY を保持しているセッション。
-- **状態**：Claude Code が `~/.claude/sessions/<pid>.json` に書く `busy`／`shell`／`idle`／`waiting`（ダイアログを開いて答えを待っている）。
-- **attach／detach**：タブが起動中セッションの PTY に接続する／切り離す。detach してもセッションは動き続ける。
+- **Session**: one Claude Code conversation. `~/.claude/projects/<project>/<id>.jsonl` is the source of truth. The ID is Claude Code's own session ID.
+- **Name**: the name set via `/rename` (the transcript's `custom-title` line). A name of the form `Category: Name` groups by everything before `: `.
+- **Running**: a session whose PTY the daemon is holding.
+- **Status**: the value Claude Code writes to `~/.claude/sessions/<pid>.json` — `busy`/`shell`/`idle`/`waiting` (waiting on a dialog for an answer).
+- **Attach/detach**: a tab connecting to, or disconnecting from, a running session's PTY. Detaching doesn't stop the session.
 
-## 範囲
+## Scope
 
-| 内容 | 本書の扱い |
+| Area | Covered here |
 |---|---|
-| 一覧 GUI・ターミナル・デーモン・復元・フォント・名前変更・状態表示と通知・パスのリンク化・`@` 挿入・指示／応答へのジャンプ・CLI/TUI | R-T・R-S・R-D・R-A・R-N・R-C（設計 §4〜§12） |
-| 外部エディタ（プラグイン内蔵） | R-E（設計 §7.4） |
-| トークン集計（セッション単位・区間指定）・5 時間／7 日枠の統計 | R-S12・R-S13（設計 §13） |
-| IDE ブリッジ（差分の accept/reject、選択範囲の随時通知） | 要否未定。対象外 |
+| Session list GUI, terminal, daemon, restore, fonts, renaming, state display and notifications, path linking, `@` insertion, jumping to prompts/responses, CLI/TUI | R-T, R-S, R-D, R-A, R-N, R-C (design §4–§12) |
+| The built-in editor (inside the plugin) | R-E (design §7.4) |
+| Token aggregation (per-session and by range), 5-hour/7-day window statistics | R-S12, R-S13 (design §13) |
+| Uninstalling | R-U (design §20) |
+| Platform support (macOS, Linux, Windows) | R-P (design §19) |
+| Release process | R-REL (design §21) |
+| An IDE bridge (accept/reject diffs, live selection updates) | Undecided. Out of scope |
 
-Claude Code 以外のエージェント CLI（Codex）は将来の対象。データと画面は `agent` の軸を持つが、動くのは Claude Code だけ。
+Agent CLIs other than Claude Code (e.g. Codex) are a future direction. The data model and screens already carry an `agent` field, but only Claude Code runs today.
 
-## 要件
+## Requirements
 
-### R-T ターミナル
+### R-T Terminal
 
-- R-T1 タブは Claude Code 専用。シェルには戻らない。claude が終了したらタブは終了画面（再開・閉じる）になる。
-- R-T2 フォント名とサイズを設定で変えられる。タブ毎に Cmd + / Cmd − / リセットでサイズを変えられ、タブの復元後も保つ。
-- R-T2a ターミナルの余白（パディング）を設定で選べる：ゆったり（既定）・小さめ・なし。「なし」はタブを分割して並べる使い方向け。
-- R-T3 右端の文字が切れない。動作中にチラつかない。日本語・絵文字・罫線の幅が崩れない。
-- R-T4 Obsidian のテーマ（明暗）に合わせた配色。テーマ切替に追従する。
-- R-T5 Esc・Ctrl+C・矢印・Tab など Claude Code が使うキーはすべてターミナルに届く。Obsidian のホットキーに横取りされない。
-- R-T5a 設定は **送信キー** 1 つ（Enter／Shift+Enter／Ctrl+Enter／Option+Enter／Cmd+Enter、既定 Enter）。送信キー以外の Enter の組合せは改行になる。
-- R-T5b 送信キーを Enter 以外にすると Enter が改行になるので、Claude Code の `keybindings.json`（`Chat`）に書く。設定画面は開くたびにファイルを読み、食い違いがあれば示して合わせられる。他のターミナルアプリで起動した claude にも効くことを画面で伝える。
-- R-T6 複数タブを同時に開いても、各タブが独立して安定する。タブを閉じた後に出力が漏れたり、メモリが残ったりしない。
+- R-T1 A tab is dedicated to Claude Code — it never falls back to a plain shell. When `claude` exits, the tab shows an exit screen (Resume / Close).
+- R-T2 Font family and size are configurable. Each tab can also change its own size (Cmd +/Cmd −/reset on macOS, the non-macOS equivalents in R-T5c) independently, and keeps that size across a restore.
+- R-T2a Terminal padding is configurable: comfortable (default), compact, or none — "none" is meant for laying tabs out in splits.
+- R-T3 No clipped characters at the right edge. No flicker while a session is active. Japanese text, emoji, and box-drawing characters keep correct widths.
+- R-T4 Colors follow Obsidian's own theme (light/dark) and update when the theme changes.
+- R-T5 Every key Claude Code itself uses (Esc, Ctrl+C, arrow keys, Tab, and more) always reaches the terminal — Obsidian's hotkeys never intercept them.
+- R-T5a One **submit key** setting (Enter/Shift+Enter/Ctrl+Enter/Option+Enter/Cmd+Enter, default Enter; Cmd+Enter is macOS-only — R-T5c). Any other Enter combination becomes a newline.
+- R-T5b Setting the submit key to anything other than Enter also writes to Claude Code's own `keybindings.json` (`Chat` context), since Enter itself becomes a newline. The settings tab re-reads that file every time it opens and offers to reconcile a mismatch, and explains that the change affects Claude Code everywhere, including sessions started outside Obsidian.
+- R-T5c On platforms other than macOS, Ctrl (not Cmd) is Obsidian's own hotkey modifier, and Claude Code itself uses many Ctrl combinations. The default routes every Ctrl-combination to the terminal; only Ctrl+Shift+C (copy selection), Ctrl+Shift+V (paste), Ctrl+Shift+=/−/0 (font size), Ctrl+Shift+W (close tab), Ctrl+Shift+P (command palette), Ctrl+Tab, and Ctrl+, go to Obsidian instead. Plain Ctrl+W and Ctrl+P (which Claude Code's own input line can use for word-delete and history) always reach the terminal.
+- R-T5d The submit-key setting offers Cmd+Enter only on macOS (a non-macOS Super/Windows key doesn't reliably reach the browser — a window manager can intercept it first); the button/statusLine symbols and labels for the other four choices are shown in a form appropriate to the platform.
+- R-T6 Multiple tabs stay independently stable when open at once. Closing a tab leaks no output and leaves no memory behind.
 
-### R-S セッション管理（GUI）
+### R-S Session management (GUI)
 
-- R-S0 ビューは 3 種：**サイドパネル**（右サイドバー。ナビ・一覧・詳細・セッション制限の 4 領域。一覧と詳細の境はドラッグで動き、詳細の高さは中身で変わらない）、**セッションマネージャー**（メインエリアのタブ。全セッションの木と管理操作。「新しいタブ」相当の既定ビュー）、**ターミナル**（メインエリアのタブ）。
-- R-S1 マネージャーの木は「カテゴリのグループ → その他（カテゴリの無いもの・名前の無いものを 1 区分にまとめる）→ アーカイブ（「アーカイブを表示」のときだけ）」の順。各区分の中は最終更新の新しい順。グループとその他は折り畳める（折畳状態を保存）。
-- R-S2 最終更新は、最後のユーザー発言または assistant 応答の時刻。フックや更新通知の行、ファイルの更新時刻は使わない。
-- R-S3 子セッション（`entrypoint` が `cli` 以外・`agent-setting` 行あり・`sessionKind: bg`）は、名前が無ければその他に出さない。
-- R-S4 サイドパネルの一覧は「開いているタブ → 起動中（タブなし）→ 最近 N 件」。各行はカテゴリをチップで出し、その後にカテゴリを除いた名前。状態が同期し、前面のタブの行が強調され、クリックでそのタブに切り替わる。セッション制限の領域には 5 時間／7 日の使用率とリセットまでの残り時間（カウントダウン）を出す。
-- R-S5 行のクリックでそのセッションのタブを開く。**同じセッションのタブが既にあればそこへ移動する**。一覧からの操作で同じセッションのタブを 2 つ作ることはない（分割・複製で複数のビューに映すのは R-N4）。
-- R-S6 各行の右端に常に `⋯` があり、`名前を変更`（`/rename`）・`セッションを圧縮`（`/compact`。直近のコマンドが `/compact` なら非活性）・`アーカイブ`（アーカイブ済みなら `アーカイブ解除`）・（起動中なら）`セッションを終了`・`セッション解析結果`・`ID をコピー` を選べる。右クリックも同じ。ナビ（＋・マネージャー・⋯）にはセッションへの操作を置かない。
-- R-S7 新規セッションはダイアログから。入力は 1 つで、カテゴリはチップ、続けて名前を打つ（候補の選択・`:`・貼り付けでカテゴリを認識し、その文字は入力から取り除く）。名前は任意（空でも開始できる）。名前変更のダイアログも同じ形で、いまの名前を分けて入れる。名前を付けたらタブ名にもすぐ反映する（前面にしたことの無いタブも名前とアイコンを出す）。カテゴリの色は固定で、サイドパネル・マネージャーで同じ。作業フォルダは vault 直下。開始と同時に名前があれば `/rename` を送る。
-- R-S8 名前変更は `/rename`、圧縮は `/compact` を送って行い、即時に反映する。タブが無ければ一時的に接続し、デーモンに無ければ裏で起動して送り `/exit` する。入力中の下書きは退避してから送る（Claude Code が送信後に戻す）。
-- R-S9 管理情報（折畳・アーカイブ・カテゴリの色）は `<vault>/.agents/sessions/sessions.json` に置く。
-- R-S10 マネージャーを開いても claude は起動しない。**新規を選ぶか、行をクリックしない限り新しいセッションは始まらない。**
-- R-S11 詳細欄（サイドパネル・マネージャー共通）には、名前、モデル・エフォート・rc のバッジ（rc は未接続・不明が ○、接続中は緑の ●）、コンテキスト使用率の円グラフ（compact 直後は横に分かる印）、総トークン・総コスト、直近の指示・応答（行数を絞り、クリックで全文）、ツール・フォルダ・ID を出す。何も指していなければ前面のタブのセッションを出す。
-- R-S12 マネージャーは **利用状況の分析** の画面：上に一覧、下に解析（折り畳め、高さを変えられ、どちらも保存）。解析は 5 時間枠・7 日枠の統計（使用率、リセットまでの残り、枠内のコスト・トークン・呼出数・セッション数をラベル付きで）、7 日枠が今のペースで足りるかの判定（足りれば「順調」、足りなければ使い切る時刻と 1 日あたりの目安）、カテゴリ別（7 日枠）のコストの帯。一覧は表（印・名前・最終更新・モデル・エフォート・5h のコスト・7d のコスト・フォルダ。モデル・エフォートの完全な値は tooltip。グループ見出しにカテゴリのチップ・件数・5h／7d の合計、行は 32px 以上、列は重ならない。同じカテゴリ名を 1 行に重ねて出さない：グループ内の行はカテゴリを除いた名前だけ）、見出しで並べ替え（最終更新＝木、5h／7d＝コストの降順）、右の詳細パネル。↑↓／Enter／`/` で操作できる。ツールバーはアイコン（＋・再走査）と絞込、⋯ に「アーカイブを表示」のチェック。サイドパネルは **今の作業** の画面。
-- R-S13 「セッション解析結果」：固定ヘッダのモーダル（幅は画面の 90%）に、コスト・トークン・ターン数・期間のカード、入力／出力／ツール使用のバー、ターン表（指示は省略表示、コスト付き）。区間は行のクリックで選ぶ。数は k／M 表記。
+- R-S0 Three views: the **side panel** (right sidebar — nav, list, detail, and rate limits; the list/detail split is draggable, and the detail area's height follows its content), the **Session Manager** (a main-area tab — the full session tree and management actions; the default view for a new tab), and the **terminal** (a main-area tab).
+- R-S1 The manager's tree is ordered "category groups → Other (uncategorized and unnamed sessions, one section) → Archive (only when 'Show archive' is on)". Each section is ordered by last-updated, most recent first. Groups and Other are individually foldable, and folded state persists.
+- R-S2 Last-updated is the time of the last user message or assistant response — not a hook or notification timestamp, and not a file's own mtime.
+- R-S3 A child session (`entrypoint` other than `cli`, an `agent-setting` line present, or `sessionKind: bg`) is excluded from Other unless it has a name.
+- R-S4 The side panel's list is "open tabs → running (no tab) → recent, N items". Each row shows a category chip, then the name with the category stripped. Status stays in sync, the frontmost tab's row is highlighted, and clicking a row switches to that tab. The rate-limits area shows 5-hour/7-day usage percentages and a countdown to reset.
+- R-S5 Clicking a row opens that session's tab. **If a tab for that session already exists, the view switches to it** — opening from the list never creates a second tab for the same session (splitting or duplicating a tab intentionally can, per R-N4).
+- R-S6 Every row's right edge always has a `⋯` (rename via `/rename`; compress via `/compact`, disabled if the last command already was `/compact`; archive, or unarchive if already archived; end session, when running; session analysis; copy ID). Right-click opens the same menu. No session-level action lives in the nav row (new/manager/`⋯`).
+- R-S7 A new session comes from a dialog with a single combined input: a category chip, then free text for the name (typing a suggestion, `:`, or pasting a `Category: Name` string all recognize the category and strip it from the text). The name is optional — a session can start unnamed. The rename dialog uses the same input, pre-split into the current category and name. Naming is reflected in the tab title immediately, even for a tab never brought to front. Category color is fixed and shared between the side panel and the manager. New sessions always start in the vault's root folder. If a name was given at creation, `/rename` is sent right after starting.
+- R-S8 Renaming (`/rename`) and compressing (`/compact`) apply immediately by sending the command to the session. With no open tab, the plugin attaches temporarily; if the session isn't running at all, it's started in the background, the command is sent, and it's stopped again with `/exit`. A draft in progress is stashed before sending (Claude Code restores it automatically afterward).
+- R-S9 Management state (folded groups, archive, category colors) lives in `<vault>/.agents/sessions/sessions.json`.
+- R-S10 Opening the manager never starts `claude`. **Only choosing "New" or clicking a row starts a session.**
+- R-S11 The detail pane (shared by the side panel and the manager) shows the name, badges for model/effort/rc (rc: a hollow circle when disconnected or unknown, a solid green circle when connected), a context-usage donut (with a separate mark right after a compact), total tokens and cost, the most recent prompt and response (truncated, click for the full text), tools, folder, and ID. With nothing selected, it shows the frontmost tab's session.
+- R-S12 The manager is the **usage-analysis** view: a session list on top, collapsible/resizable analysis below (both states persist). Analysis shows 5-hour and 7-day stat cards (usage percentage, time to reset, cost/tokens/calls/sessions for that window, each labeled), a projection of whether the 7-day pace will hold ("on track", or the time it will run out and a suggested daily budget if not), and a per-category cost bar for the 7-day window. The list is a sortable table (state mark, name, last-updated, model, effort, 5h cost, 7d cost, folder — full model/effort values in a tooltip; group headings show a category chip, count, and 5h/7d totals; rows are at least 32px tall, with columns that never overlap; a category name never appears twice in one row — inside a group, rows show only the name). Sorting by last-updated shows the grouped tree; sorting by 5h/7d cost flattens it, descending. Keyboard: ↑↓/Enter/`/`. The toolbar has icon buttons (new, rescan), a name filter, and a "Show archive" toggle in `⋯`. The side panel is the **current-work** view.
+- R-S13 "Session analysis" (from the row menu) opens a fixed-header modal (90% of the screen's width) with cost/tokens/turn-count/duration cards, input/output/tool-use bars, and a turn table (prompt truncated, with cost). Clicking rows selects a range. Numbers use k/M notation.
 
-### R-D 持続と復元
+### R-D Persistence and restore
 
-- R-D1 タブを閉じてもセッションは終わらない（detach）。一覧では起動中のまま。開き直せば続きが見える。
-- R-D2 Obsidian を再起動しても、開いていたタブは同じセッションで復元される。復元したタブは**前面になったとき**に接続する（一斉起動しない）。
-- R-D3 デーモンが生きていれば再接続し、直前の出力を再生する。デーモンが無ければ（Mac 再起動など）`claude --resume <id>` で起動する。
-- R-D4 セッションを終わらせるのは「セッションを終了」の操作か、claude 自身の終了だけ。
+- R-D1 Closing a tab doesn't end the session (detach). It stays listed as running, and reopening it shows the continuation.
+- R-D2 Restarting Obsidian restores every open tab to the same session. A restored tab connects only **when it's brought to front** — restoring never connects everything at once.
+- R-D3 If the daemon is still alive, restoring reconnects and replays the recent output. If not (e.g. the machine restarted), it starts with `claude --resume <id>`.
+- R-D4 A session only ends via "End session" or `claude` exiting on its own.
 
-### R-A 状態・通知・ステータス
+### R-A State, notifications, and status
 
-- R-A1 タブのアイコンは状態ごとに違う（接続中・処理中・コマンド実行中・質問中（回答待ち。AskUserQuestion・許可プロンプト等）・指示待ち（応答が終わり前面にしていない）・編集中・compact 済み（`/compact` 直後、次の指示まで）・待機・未接続・終了・エラー）。色と動き（回転・点滅・脈動）で見分けられ、`prefers-reduced-motion` では動かない。サイドパネル・マネージャーの行の印はタブのアイコンと同じ絵柄・色・動き。マネージャー（`layout-dashboard`）・サイドパネル（`list-tree`）のアイコンはターミナルと違う。
-- R-A5 質問中・指示待ちのセッションは前面でなくても分かるようにする：サイドパネルの「開いているタブ」見出しに「入力待ち N・未読 M」のバッジ（0 件なら出さない、クリックで質問中優先で最初の対象へ）、マネージャーのグループ見出しに同じ優先度の印、一覧の行は質問中を強い背景＋色帯＋太字、指示待ちを弱い背景で目立たせる。
-- R-A2 前面でないタブのセッションが指示待ちになったら Obsidian の通知を出す（設定で切れる）。通知のクリックでそのタブへ移動する。
-- R-A3 `statusLine`（claude の画面下）に送信キーの記号（プラグインから起動したときだけ、先頭）・モデル・エフォート・コンテキスト使用率・rc を出す。取れないモデル・エフォートは「デフォルト」。
-- R-A4 状態の元は `~/.claude/sessions/<pid>.json`（Claude Code が書く）と、`statusLine` 経由で受け取る JSON。画面の文字列から推定しない。
+- R-A1 A tab's icon differs by state (connecting, working, running a shell command, asking a question — waiting for an answer, e.g. AskUserQuestion or a permission prompt — unread response, editing, just-compacted, waiting, detached, exited, error). Color and motion (spin/blink/pulse) distinguish them further, and motion respects `prefers-reduced-motion`. Side-panel and manager row marks share the same icon, color, and motion as the tab. The manager (`layout-dashboard`) and side panel (`list-tree`) icons differ from the terminal's own.
+- R-A5 A session asking a question or with an unread response is visible even when its tab isn't in front: the side panel's "open tabs" heading shows an "N waiting for input · M unread" badge (omitted at zero; clicking opens the highest-priority target), the manager's group headings show the same priority mark, and list rows highlight asking (strong background, color bar, bold) more strongly than unread (weaker background).
+- R-A2 A background session becoming unread triggers an Obsidian notification (can be turned off); clicking it switches to that tab.
+- R-A3 `statusLine` (below the session, in Claude Code's own UI) shows the submit-key symbol (only when launched from the plugin, first in the line), model, effort, context-usage percentage, and rc. An unavailable model or effort shows "Default".
+- R-A4 State comes from `~/.claude/sessions/<pid>.json` (written by Claude Code) and the JSON `statusLine` receives — never inferred from on-screen text.
 
-### R-N 移動と参照
+### R-N Navigation and references
 
-- R-N1 出力中のファイルパス（`path/to/note.md:12` など）で vault 内に実在するものはリンクになり、クリックで Obsidian のエディタに開く（行番号があればその行へ）。
-- R-N2 「現在のノートを `@` で挿入」の操作で、開いているノートの（セッションの作業フォルダから見た）パスを `@path` としてプロンプトに入れる。エディタで範囲選択していれば `#L開始-終了` を付ける。
-- R-N3 ジャンプ：前の指示・次の指示・最後の応答の先頭へ、ボタンでスクロールできる。Claude Code が全画面レイアウト（`tui: fullscreen`）のときは Claude 自身のスクロール（1 画面上／下／最下部）を送る。
-- R-N4 同じセッションを複数のビューで映せる（右に分割・下に分割・タブの複製）。一覧からの open は既存のタブに移動する。
-- R-N5 内蔵エディタが開いている間、キー操作は PTY に送らない。
+- R-N1 A file path printed in a session's output (e.g. `path/to/note.md:12`) that resolves inside the vault becomes a clickable link, opening in Obsidian's editor (at that line, if given).
+- R-N2 "Insert current note as `@`" inserts the open note's path (relative to the session's working folder) as `@path`. An editor selection appends `#L<start>-<end>`.
+- R-N3 Buttons jump to the previous prompt, next prompt, and last response. When Claude Code is in full-screen mode (`tui: fullscreen`), these send Claude's own scroll keys (page up/down, jump to end) instead.
+- R-N4 The same session can be shown in more than one view (split right, split down, duplicate tab). Opening from a list always moves to an existing tab rather than creating a new one.
+- R-N5 While the built-in editor is open, key input goes to the editor, not the PTY.
 
-### R-C CLI／TUI（`agent-sessions`）
+### R-C CLI/TUI (`agent-sessions`)
 
-- R-C1 実行ファイルは `agent-sessions` 一本（内蔵エディタ用の `$VISUAL` である `agent-sessions-code` はその薄い入口）。
-- R-C2 引数なしで TUI。一覧から選んで ⏎ で、起動中なら attach、そうでなければ `claude --resume` で起動。管理操作（名前変更・アーカイブ）は TUI に持たない。
-- R-C3 サブコマンド：`daemon`（PTY の持ち主）・`json`（プラグイン向け出力）・`attach`・`hook`（Stop／SessionEnd／SessionStart（compact）／UserPromptSubmit）・`status`（`statusLine`）・`edit`（内蔵エディタの窓口）・`setup`（`settings.json` のフックと `statusLine` を整える）。
-- R-C4 TUI のサイドパネルは、横幅に応じて幅を変える。狭いときはパネルだけの表示に切り替えられ、「横幅のせいで出ない」状態を作らない。
-- R-C5 走査・最終更新・子判定・直近の指示／応答の抽出は Python 側にだけ実装する。プラグインは JSON を受け取って表示する。
+- R-C1 One executable, `agent-sessions` (`agent-sessions-code`, the `$VISUAL` entry point for the built-in editor, is a thin wrapper around it).
+- R-C2 No arguments opens the TUI. Selecting a session and pressing Enter attaches if it's running, or launches it with `claude --resume` if not. The TUI has no management actions (rename, archive, …).
+- R-C3 Subcommands: `daemon` (the PTY owner; `--detach`, `--running-count`, `--stop`), `json` (`scan`, `live`, `detail`, `usage`, `stats` — what the plugin itself consumes), `attach`, `hook` (`Stop`/`SessionEnd`/`SessionStart` matcher `compact`/`UserPromptSubmit`), `status` (`statusLine`), `edit` (the built-in editor's receiving end), `setup` (reconciles the hooks and `statusLine` in `settings.json`; `setup --remove` reverses it).
+- R-C4 The TUI's side panel adapts its width to the terminal's; below a threshold it can switch to a panel-only view, so no state is simply unreachable for being too narrow.
+- R-C5 Scanning, last-updated computation, child-session detection, and prompt/response extraction are implemented only in Python. The plugin displays JSON it receives; it doesn't duplicate this logic.
+- R-C6 CLI, TUI, and statusLine text are bilingual (Japanese/English), selected independently of the plugin's own UI language — see R-L2.
 
-### R-E 外部エディタ
+### R-E Built-in editor
 
-- R-E1 Claude Code の Ctrl+G（`$VISUAL`）で、プラグイン内蔵のエディタが開く。
-- R-E2 エディタはペースト・`@` によるファイル補完・入力中の自動保存に対応する。Markdown の扱いは最小限で良い。
-- R-E3 **編集中もセッションの出力は見え、スクロールできる**（エディタはターミナルを隠さない）。
-- R-E4 「送る」で編集を確定し、プロンプト編集なら即座に送信する。「入力欄に戻る」（Esc）は内容を保ったまま入力欄に戻る（送信しない）。
+- R-E1 Claude Code's Ctrl+G (`$VISUAL`) opens the plugin's built-in editor.
+- R-E2 The editor supports paste, `@`-based file completion, and autosave while typing. Minimal Markdown awareness is enough.
+- R-E3 **The session's own output stays visible and scrollable while editing** — the editor doesn't cover the terminal.
+- R-E4 "Send" confirms the edit and, for a prompt edit, submits it immediately. "Back to input" (Esc) returns to the input line with the content kept, without submitting.
 
-### R-L 言語
+### R-L Language
 
-- R-L1 UI は日本語と英語。設定「言語」：自動（Obsidian の言語に合わせる）／日本語／English。既定は自動。拡張機能の説明（manifest）は英語。
+- R-L1 The plugin's UI supports Japanese and English. The "Language" setting: Auto (follows Obsidian's own language), Japanese, or English; default Auto. The extension's own description (`manifest.json`) is always English.
+- R-L2 The CLI, TUI, and statusLine output are independently bilingual (Japanese/English; see R-C6). Selection order: a plugin-launched session matches the plugin's own resolved display language; otherwise the environment's `LANG`/`LC_ALL`/`LC_MESSAGES` decide, defaulting to English. Internal log and error text (not meant for a chosen-language audience) stays English regardless.
 
-### R-P 前提と制約
+### R-U Uninstall
 
-- R-P1 macOS。Python 3.9 標準ライブラリのみ（`/usr/bin/python3`）。Obsidian desktop。Windows は対象外、Linux は未検証。
-- R-P2 Claude Code は常に対話モード（`claude`）で起動する。Agent SDK は使わない（`/remote-control` を含む対話機能を保つため）。
-- R-P3 Claude Code が書くファイルは読むだけ。書き換えない。
-- R-P4 リポジトリは `~/work/agent-sessions/`（git）。プラグイン・デーモン・CLI・共通ライブラリ・テスト・設計書を同居させる。
+- R-U1 `uninstall.sh <vault>` removes only what this project added: its own hook entries and `statusLine` in `~/.claude/settings.json` (backed up first), its own two submit-key entries in `~/.claude/keybindings.json` (only if the submit key was changed away from Enter), the daemon (stopped cleanly first), and its own symlinks (`~/bin/agent-sessions`, `~/bin/agent-sessions-code`, `<vault>/.obsidian/plugins/agent-sessions`). Every other tool's hooks, `statusLine`, and keybindings entries are left untouched. Running it again when nothing is left to remove is safe and reports as much.
+- R-U2 `--force` skips the confirmation prompt that otherwise appears when sessions are still running.
+- R-U3 `--purge` additionally deletes the daemon's runtime directory (`~/.agents/sessions/`) and the vault's session bookkeeping (`<vault>/.agents/sessions/`); without it, both are left in place.
 
-## 受け入れの確認
+### R-P Platform support
 
-- 10 個のタブを開いて 1 時間使い、チラつき・右端切れ・タブ間の取り違えが無い。
-- タブを閉じて開き直したとき、直前の画面が再生され、続きが打てる。
-- Obsidian を再起動して、タブが同じセッションで戻り、前面にした順に接続される。
-- 一覧で同じセッションを 2 回クリックしても、タブは 1 つのまま。
-- 指示待ちになった裏のタブのアイコンが変わり、通知が出る。
-- 設定でフォントを変えると、開いているすべてのタブに反映される。
-- `agent-sessions` TUI を幅 60 桁で開いてもパネルが使える。
+- R-P1 macOS is the primary, fully verified platform. Linux — including Obsidian running under WSLg on Windows — is supported: the daemon, CLI, and their platform-specific code paths (process listing, shebang, racy-mtime cache handling, socket path length, default shell, terminal key routing) run in CI on Linux and were additionally verified by hand in containers; running the plugin itself inside a real Linux Obsidian instance hasn't been walked through end to end yet. Native Windows is not supported — the daemon depends on Unix-only standard-library facilities (`pty`, `fcntl`, `termios`) that don't exist there; the Linux build of Obsidian under WSL/WSLg is the supported path for Windows users. Python 3.9+, standard library only, resolved via `$PATH`. Obsidian desktop only (`isDesktopOnly`), minimum version 1.7.2.
+- R-P2 Claude Code always launches in interactive mode (`claude`), never the Agent SDK — this preserves interactive-only features such as `/remote-control`.
+- R-P3 Files Claude Code writes are read-only from this project's point of view; nothing here modifies them.
+- R-P4 The plugin, daemon, CLI, shared library code, tests, and this design documentation live together in one repository.
+
+### R-REL Release process
+
+- R-REL1 Bumping the plugin's version keeps `plugin/manifest.json`, the repository root's `manifest.json` (a copy read by the community-plugin review tooling and BRAT), and the root `versions.json` (minimum Obsidian version per release) all in sync in one step.
+- R-REL2 Pushing a version tag builds the plugin and publishes `main.js`, `manifest.json`, and `styles.css` as a **draft** GitHub Release — nothing is published to users until a maintainer reviews and publishes that draft by hand.
+- R-REL3 Every push and pull request runs the Python test suite on both Linux and macOS, and the plugin's type-check and test suite on Linux, in CI — a merge is never based on a suite that only ran on one platform.
+
+## Acceptance checks
+
+- Ten tabs, open for an hour: no flicker, no clipped edges, no cross-talk between tabs.
+- Closing and reopening a tab replays the last screen and accepts input right away.
+- Restarting Obsidian restores every tab to the same session, connecting each one only as it's brought to front.
+- Clicking the same session twice in a list never opens a second tab.
+- A background tab that starts asking for input changes its icon and raises a notification.
+- Changing the font in settings updates every open tab.
+- The `agent-sessions` TUI stays usable at a terminal width of 60 columns.
+- `uninstall.sh` run twice in a row is a no-op the second time, and leaves other tools' Claude Code configuration untouched throughout.

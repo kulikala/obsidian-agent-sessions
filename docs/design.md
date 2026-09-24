@@ -1,161 +1,169 @@
-# Agent Sessions 設計
+# Agent Sessions design
 
-要件は `requirements.md`。
+Requirements are in [`requirements.md`](requirements.md).
 
-## 1. 概要
+## 1. Overview and components
 
-Obsidian の中で Claude Code のセッションをターミナルタブとして開き、管理する。
-4 つの実体が 1 つの道具になる：
+Agent Sessions runs and manages [Claude Code](https://claude.com/claude-code) sessions as terminal tabs inside [Obsidian](https://obsidian.md). Four pieces make up the tool:
 
-- **デーモン**（`agent-sessions daemon`）：PTY を保持し続ける常駐プロセス。プラグインだけが起動する。
-- **CLI／`json` 出力**（`agent-sessions` バイナリ）：走査・集計をすべて Python 側に持ち、プラグインは JSON を受け取って描くだけにする。
-- **フック／`statusLine`**（`agent-sessions hook` / `status`）：Claude Code の `settings.json` から呼ばれ、状態とトークン使用量をファイルに落とす。
-- **プラグイン**（Obsidian、TypeScript）：一覧・ターミナル描画・タブ管理・復元・通知・`sessions.json` の書込。
+- **The daemon** (`agent-sessions daemon`) — a resident process that holds each session's PTY open. Only the plugin starts it.
+- **The CLI / `json` output** (the `agent-sessions` binary) — all scanning and aggregation logic lives in Python; the plugin receives JSON and renders it.
+- **Hooks and `statusLine`** (`agent-sessions hook` / `agent-sessions status`) — called from Claude Code's `settings.json`, they write state and token usage to files the plugin and CLI read.
+- **The plugin** (Obsidian, TypeScript) — the session list, terminal rendering, tab management, restore-on-restart, notifications, and writing `sessions.json`.
 
-走査・判定・集計のロジックは Python 側にだけ置く（`agentsessions/`）。プラグインはその JSON を表示し、`sessions.json` を書き、PTY をターミナルとして描く。
+Scanning, status detection, and aggregation live only in Python (`agentsessions/`). The plugin displays that JSON, writes `sessions.json`, and renders the PTY as a terminal. This split exists so the CLI, the TUI, and the plugin always see the same session list and the same numbers — there is exactly one place that decides what a session's status is or what a turn cost, and it is not TypeScript.
 
 ```
 agent-sessions/
-├── plugin/                    Obsidian プラグイン（TypeScript, esbuild, vitest）
+├── plugin/                    Obsidian plugin (TypeScript, esbuild, vitest)
 │   ├── src/
-│   │   ├── main.ts            Plugin 本体：ビュー登録・コマンド・設定・openSession・sendCommand
-│   │   ├── settings.ts        設定の型・既定値・設定タブ
-│   │   ├── store.ts           <vault>/.agents/sessions/sessions.json の読み書き・ロック
-│   │   ├── backend.ts         `agent-sessions json …` の呼び出しと結果の型
-│   │   ├── daemon-client.ts   Unix ソケットのクライアント（フレーム・attach・resize）
-│   │   ├── edit-server.ts     `~/.agents/sessions/plugin.sock`（内蔵エディタの受け口）
-│   │   ├── registry.ts        ~/.claude/sessions/*.json の監視（状態・pid・rc）
-│   │   ├── statusline.ts      ~/.agents/sessions/status/<id>.json の監視
-│   │   ├── ui-state.ts        ~/.agents/sessions/ui.json の書込（statusLine への送信キー記号）
-│   │   ├── vault-state.ts     ~/.agents/sessions/vault.json の書込（vault の場所。T-80）
-│   │   ├── tree.ts            JSON → グループ木・サイドの 3 区分（純関数。splitName・OTHER_GROUP・buildManagerTree・buildSideList）
-│   │   ├── category.ts        カテゴリの固定色（パレット番号の割当）
-│   │   ├── chip.ts            カテゴリのチップ描画（サイド・マネージャー・ダイアログ共通）
-│   │   ├── name.ts            名前の分解・命名ダイアログの入力トークナイズ
-│   │   ├── keys.ts            Enter の分類・送信キーの動作決定・keybindings.json との整合・非macOS の Ctrl キー分類
-│   │   ├── terminal-status.ts タブの状態を 1 つに決める純関数（`TerminalStatus`）
-│   │   ├── attention.ts       asking／waiting の集計（サイドのバッジ・マネージャー見出しの印）
-│   │   ├── compacted.ts       ~/.agents/sessions/compacted/ の監視（compact 直後の印）
-│   │   ├── autosave.ts        内蔵エディタの自動保存デバウンス（`SaveDebouncer`）
-│   │   ├── links.ts           出力中のパス検出と vault 内解決（純関数）
-│   │   ├── at-complete.ts     `@` 補完の検索語切出しと置換（純関数）
-│   │   ├── marks.ts           指示／応答のマーカー管理（純関数＋xterm 依存の薄い層）
-│   │   ├── index.ts           SessionIndex：走査結果＋起動中＋タブの合成、購読、waitForName
-│   │   ├── open-session.ts    openSession・多重呼出の抑止（純関数寄りの薄い層）
-│   │   ├── keybindings.ts     ~/.claude/keybindings.json の読解と書換
-│   │   ├── tui-mode.ts        ~/.claude/settings.json の `tui` が `fullscreen` かの判定
-│   │   ├── types.ts           `json` 出力の型
-│   │   ├── usage.ts / usage-modal.ts   セッション解析結果（合計・整形・モーダル）
-│   │   ├── i18n.ts            日英辞書と `t()`
-│   │   ├── theme.ts           Obsidian の CSS 変数 → xterm テーマ
-│   │   ├── views/side.ts      サイドパネル（骨組み・一覧の描画・バッジ）
-│   │   ├── views/side-list.ts サイドパネルの 3 区分の組み立て（純関数。`buildSideList` を呼ぶ）
-│   │   ├── views/manager.ts   セッションマネージャー（骨組み・描画）
-│   │   ├── views/manager-model.ts  マネージャーの表を 1 本に平らにする純関数
-│   │   ├── views/detail.ts    詳細欄（サイド・マネージャー共通部品）
-│   │   ├── views/limits.ts    5h／7d のバー・カウントダウン
-│   │   ├── views/terminal.ts  ターミナルビュー
-│   │   ├── views/editor-pane.ts  内蔵エディタの編集領域
-│   │   ├── views/rows.ts      行・行メニュー（共通部品）
-│   │   └── modals.ts          新規セッション・名前変更のダイアログ
-│   ├── test/                  vitest（純関数・daemon-client のフレーム・DOM の薄い層）
+│   │   ├── main.ts            Plugin entry point: view registration, commands, settings, openSession, sendCommand
+│   │   ├── settings.ts        Settings types, defaults, settings tab
+│   │   ├── store.ts           Reads/writes/locks <vault>/.agents/sessions/sessions.json
+│   │   ├── backend.ts         Invokes `agent-sessions json …` and types its output
+│   │   ├── daemon-client.ts   Unix socket client (frames, attach, resize)
+│   │   ├── edit-server.ts     Listens on ~/.agents/sessions/plugin.sock (built-in editor's receiving end)
+│   │   ├── registry.ts        Watches ~/.claude/sessions/*.json (status, pid, rc)
+│   │   ├── statusline.ts      Watches ~/.agents/sessions/status/<id>.json
+│   │   ├── ui-state.ts        Writes ~/.agents/sessions/ui.json (submit-key symbol, resolved display language)
+│   │   ├── vault-state.ts     Writes ~/.agents/sessions/vault.json (the vault's location, for the CLI/TUI)
+│   │   ├── tree.ts            JSON → group tree and the side panel's three sections (pure functions: splitName, OTHER_GROUP, buildManagerTree, buildSideList)
+│   │   ├── category.ts        Fixed category colors (palette-index assignment)
+│   │   ├── chip.ts            Category chip rendering, shared by the side panel, manager, and dialogs
+│   │   ├── name.ts            Name parsing and the naming dialog's input tokenizer
+│   │   ├── keys.ts            Enter classification, submit-key behavior, keybindings.json reconciliation, non-macOS Ctrl-key classification
+│   │   ├── terminal-status.ts A pure function that decides a tab's single `TerminalStatus`
+│   │   ├── attention.ts       Aggregates "asking"/"waiting" counts (side-panel badge, manager group marks)
+│   │   ├── compacted.ts       Watches ~/.agents/sessions/compacted/ (the just-compacted marker)
+│   │   ├── autosave.ts        The built-in editor's autosave debouncer (`SaveDebouncer`)
+│   │   ├── links.ts           Path detection in terminal output and vault-relative resolution (pure functions)
+│   │   ├── at-complete.ts     `@`-completion: search-term extraction and replacement (pure functions)
+│   │   ├── marks.ts           Prompt/response marker tracking (pure functions plus a thin xterm-dependent layer)
+│   │   ├── index.ts           SessionIndex: merges scan results, running sessions, and tabs; subscriptions; waitForName
+│   │   ├── open-session.ts    openSession and de-duplication of concurrent calls (a thin, mostly-pure layer)
+│   │   ├── keybindings.ts     Reads and rewrites ~/.claude/keybindings.json
+│   │   ├── tui-mode.ts        Whether ~/.claude/settings.json's `tui` is `fullscreen`
+│   │   ├── types.ts           Types for `json` output
+│   │   ├── usage.ts / usage-modal.ts   Session-analysis results (totals, formatting, the modal)
+│   │   ├── i18n.ts            The Japanese/English dictionary and `t()`
+│   │   ├── theme.ts           Obsidian CSS variables → xterm theme
+│   │   ├── views/side.ts      Side panel (skeleton, list rendering, badges)
+│   │   ├── views/side-list.ts Builds the side panel's three sections (pure function, calls buildSideList)
+│   │   ├── views/manager.ts   Session Manager (skeleton, rendering)
+│   │   ├── views/manager-model.ts  Pure functions that flatten the manager's table
+│   │   ├── views/detail.ts    Detail pane (shared by the side panel and the manager)
+│   │   ├── views/limits.ts    5h/7d bars and countdowns
+│   │   ├── views/terminal.ts  The terminal view
+│   │   ├── views/editor-pane.ts  The built-in editor's edit area
+│   │   ├── views/rows.ts      Row rendering and the row menu (shared component)
+│   │   └── modals.ts          New-session and rename dialogs
+│   ├── test/                  vitest (pure functions, daemon-client framing, a thin DOM layer)
 │   ├── manifest.json          id: agent-sessions / name: Agent Sessions / isDesktopOnly: true
 │   ├── styles.css
 │   ├── esbuild.config.mjs     → plugin/main.js
 │   └── package.json
-├── bin/agent-sessions          #!/usr/bin/python3。agentsessions.cli.main を呼ぶ
-├── bin/agent-sessions-code     内蔵エディタ用の `$VISUAL`（sh、名前に `code` を含める）
-├── agentsessions/               Python パッケージ（標準ライブラリのみ）
-│   ├── config.py               パス定数（VAULT, STORE_PATH, RUNTIME_DIR, SOCK_PATH, UI_STATE_PATH, …）。VAULT は既定値を持たず env→vault.json→None（§3.2）
-│   ├── model.py scan.py detail.py live.py items.py   走査・抽出
-│   ├── store.py                 sessions.json（折畳・アーカイブ・カテゴリ色）。mkdir ロック付き
-│   ├── cache.py                 走査キャッシュ（path → mtime,size,結果）
-│   ├── jsonout.py               `json` サブコマンドの出力組立
+├── bin/agent-sessions          #!/usr/bin/env python3, calls agentsessions.cli.main
+├── bin/agent-sessions-code     The built-in editor's $VISUAL entry point (sh; the name contains "code", see §7.4)
+├── agentsessions/               Python package (standard library only)
+│   ├── config.py               Path constants (VAULT, STORE_PATH, RUNTIME_DIR, SOCK_PATH, UI_STATE_PATH, …). VAULT has no default; see §3.2
+│   ├── model.py scan.py detail.py live.py items.py   Scanning and extraction
+│   ├── store.py                 sessions.json (folded groups, archive, category colors); mkdir-based locking
+│   ├── cache.py                 The scan cache (path → mtime, size, result)
+│   ├── jsonout.py               Builds the `json` subcommand's output
 │   ├── cmd_json.py / cmd_attach.py / cmd_daemon.py / cmd_hook.py / cmd_status.py / cmd_edit.py
-│   │                            `cli.py` が `agentsessions.cmd_<name>.main(args)` へ振り分ける各サブコマンド
-│   ├── protocol.py              ソケットのフレーム（デーモンとクライアント共通）
-│   ├── daemon.py                PTY デーモン
-│   ├── attach.py                端末からの attach クライアント（raw mode）
-│   ├── hooks.py                 `hook`・`status` の受け口、`format_status_line`
-│   ├── pricing.py               モデル別の $/MTok 単価表とコスト計算
-│   ├── usage.py                 `json usage`（セッション単位のターン集計）
-│   ├── stats.py                 `json stats`（5h／7d 窓の全体集計）
-│   ├── setup.py                 `setup`（settings.json のフックと statusLine を整える）
-│   ├── cli.py                   サブコマンドの振り分け
-│   └── tui.py                   TUI（選んで起動するだけ）
+│   │                            Each subcommand `cli.py` routes to as agentsessions.cmd_<name>.main(args)
+│   ├── protocol.py              The socket frame format, shared by the daemon and its clients
+│   ├── daemon.py                The PTY daemon
+│   ├── attach.py                The terminal-attach client (raw mode)
+│   ├── hooks.py                 The `hook`/`status` entry points, format_status_line
+│   ├── pricing.py               Per-model $/MTok price table and cost calculation
+│   ├── usage.py                 `json usage` (per-session turn aggregation)
+│   ├── stats.py                 `json stats` (5h/7d window aggregation)
+│   ├── setup.py                 `setup` (reconciles the hooks and statusLine in settings.json)
+│   ├── keybindings.py           Removes the plugin's own entries from keybindings.json (`setup --remove`)
+│   ├── i18n.py                  A small message table for CLI/TUI/statusLine strings
+│   ├── cli.py                   Subcommand dispatch
+│   └── tui.py                   The TUI (select and launch, nothing else)
 ├── tests/                       Python unittest
 ├── docs/
-└── install.sh                   symlink を張り、`agent-sessions setup` を呼ぶ
+├── install.sh                   Creates the symlinks and calls `agent-sessions setup`
+└── uninstall.sh                 Reverses install.sh
 ```
 
-`~/.config/dotfiles` は `bin/agent-sessions` → `~/work/agent-sessions/bin/agent-sessions` の symlink を持つ。
+## 2. Processes and responsibilities
 
-## 2. プロセスと責務
-
-| プロセス | 起動 | 責務 |
+| Process | Started by | Responsibility |
 |---|---|---|
-| プラグイン | Obsidian | 一覧・ターミナル描画・タブ管理・復元・通知・`sessions.json` の書込 |
-| `agent-sessions daemon` | プラグインだけが起動する（ソケット不応答時に `--detach`）。CLI・TUI は起動しない | PTY の保持、出力バッファ、attach/detach、claude の起動と終了検知 |
-| `agent-sessions json …` | プラグインが必要時に spawn | 走査・最終更新・子判定・起動中・直近の指示／応答・トークン集計・全体統計 |
-| `agent-sessions`（TUI）| ユーザー | 選んで attach／起動 |
-| `agent-sessions hook` / `status` | Claude Code（settings.json） | フック・statusLine の受け口 |
-| `agent-sessions setup` | `install.sh`／手動 | `~/.claude/settings.json` のフックと `statusLine` を整える |
+| The plugin | Obsidian | Session list, terminal rendering, tab management, restore-on-restart, notifications, writing `sessions.json` |
+| `agent-sessions daemon` | Only the plugin starts it (with `--detach`, when the socket doesn't respond). The CLI and TUI never start it | Holding PTYs, output buffering, attach/detach, launching and detecting the exit of `claude` |
+| `agent-sessions json …` | Spawned by the plugin as needed | Scanning, last-activity, child-session detection, running sessions, recent prompt/response, token aggregation, account-wide statistics |
+| `agent-sessions` (TUI) | The user | Pick a session, attach or launch it |
+| `agent-sessions hook` / `status` | Claude Code (via `settings.json`) | The hook and statusLine receiving end |
+| `agent-sessions setup` | `install.sh`, or run by hand | Reconciles the hooks and `statusLine` in `~/.claude/settings.json` |
 
-## 3. データと置き場
+## 3. Data and locations
 
-| 場所 | 内容 | 書く者 |
+| Location | Contents | Writer |
 |---|---|---|
-| `<vault>/.agents/sessions/sessions.json` | 折畳・アーカイブ・カテゴリの色（下記） | プラグイン、`agent-sessions`（TUI の折畳）。§3.1 のロックの中で読み→更新→tmp→rename |
-| `<vault>/.agents/sessions/sessions.json.lock/` | 書込みの排他（§3.1） | 書く者 |
-| `~/.agents/sessions/daemon.sock` | デーモンのソケット（vault 配下は macOS のパス長制限 104 バイトに掛かる）。ディレクトリ 0700・ソケット 0600 | デーモン |
-| `~/.agents/sessions/daemon.pid` / `daemon.log` | デーモンの pid とログ | デーモン |
-| `~/.agents/sessions/exited.json` | 終了済みで未 `forget` のセッション（`id → {code, exitedAt}`）。デーモンが終了時に書き、起動時に読む | デーモン |
-| `~/.agents/sessions/status/<session_id>.json` | `statusLine` が渡す JSON をそのまま | `agent-sessions status` |
-| `~/.agents/sessions/ui.json` | `{submitKey, submitSymbol}`。statusLine が送信キーの記号を付けるための控え | プラグイン（`onload`・設定保存のたび） |
-| `~/.agents/sessions/vault.json` | `{"vault": "<path>"}`。vault は既定値を持たないので、Obsidian の外（TUI・CLI）から見るための控え（T-80。§3.2 参照） | プラグイン（`onload` に 1 回、tmp→rename） |
-| `~/.agents/sessions/plugin.sock` | 内蔵エディタの受け口（プラグインが listen） | プラグイン |
-| `~/.agents/sessions/events.log` | フック 1 件 1 行 `{"event","session_id","transcript_path","ts"}` | `agent-sessions hook` |
-| `~/.agents/sessions/scan-cache.json` | 走査キャッシュ | `agent-sessions json scan` |
-| `~/.agents/sessions/stats-cache.json` | `json stats` の 10 分バケット・読取位置・重複排除用の直近 `message.id` | `agent-sessions json stats` |
-| `~/.agents/sessions/compacted/<id>.json` | compact 直後でまだ次の指示を送っていない印（中身は `{"compactedAt"}`。プラグインは存在だけを見る） | `agent-sessions hook`（`_update_compacted`） |
-| `~/.claude/projects/<p>/<id>.jsonl` | transcript（真実源） | Claude Code（読むだけ） |
-| `~/.claude/sessions/<pid>.json` | 起動中の台帳と状態 | Claude Code（読むだけ） |
+| `<vault>/.agents/sessions/sessions.json` | Folded groups, archive, category colors (below) | The plugin, and `agent-sessions` (TUI, folding only). Written inside the lock in §3.1: read → update → write to a temp file → rename |
+| `<vault>/.agents/sessions/sessions.json.lock/` | Mutual exclusion for writes (§3.1) | Whoever is writing |
+| `~/.agents/sessions/daemon.sock` | The daemon's socket. Kept outside the vault, since a vault path can run into the `AF_UNIX` path-length limit (104 bytes on macOS, 108 on Linux); directory mode 0700, socket mode 0600 | The daemon |
+| `~/.agents/sessions/daemon.pid` / `daemon.log` | The daemon's pid and its own operational log (not session output — see §24) | The daemon |
+| `~/.agents/sessions/exited.json` | Exited sessions not yet `forget`-ten (`id → {code, exitedAt}`); written on daemon exit, read on daemon start | The daemon |
+| `~/.agents/sessions/status/<session_id>.json` | The JSON `statusLine` receives, written back out verbatim | `agent-sessions status` |
+| `~/.agents/sessions/ui.json` | `{submitKey, submitSymbol, language}` — lets `statusLine` show the submit-key symbol and lets the Python side match the plugin's display language (§17) | The plugin (on load, and on every settings save) |
+| `~/.agents/sessions/vault.json` | `{"vault": "<path>"}`. Since the vault has no built-in default, this is how code outside Obsidian (the TUI, the CLI) learns where it is; see §3.2 | The plugin (once, on load) |
+| `~/.agents/sessions/plugin.sock` | The built-in editor's receiving end (the plugin listens) | The plugin |
+| `~/.agents/sessions/events.log` | One hook event per line: `{"event","session_id","transcript_path","ts"}` | `agent-sessions hook` |
+| `~/.agents/sessions/scan-cache.json` | The scan cache | `agent-sessions json scan` |
+| `~/.agents/sessions/stats-cache.json` | `json stats`'s 10-minute buckets, per-file read offset, and the most recent `message.id`s (for de-duplication) | `agent-sessions json stats` |
+| `~/.agents/sessions/compacted/<id>.json` | A marker meaning "just compacted, no prompt sent since" (`{"compactedAt"}`; the plugin only checks whether the file exists) | `agent-sessions hook` (`_update_compacted`) |
+| `~/.claude/projects/<p>/<id>.jsonl` | The transcript (the source of truth) | Claude Code (read-only from this project) |
+| `~/.claude/sessions/<pid>.json` | The running-session ledger and live status | Claude Code (read-only from this project) |
 
-`sessions.json`：
+`sessions.json`:
 
 ```json
 {
   "version": 1,
-  "folded": ["RIM", "その他のセッション"],
-  "archived": [{"id": "5778f81f-…", "name": "酔い酒鮨庵", "agent": "claude"}],
+  "folded": ["Docs", "Other sessions"],
+  "archived": [{"id": "5778f81f-…", "name": "Release notes", "agent": "claude"}],
   "pendingRenames": {},
-  "sessions": {"68d25490-…": {"agent": "claude", "cwd": "/Users/…/obsidian-projects"}},
-  "categoryColors": {"RIM": 0, "スキル開発": 3}
+  "sessions": {"68d25490-…": {"agent": "claude", "cwd": "/path/to/vault"}},
+  "categoryColors": {"Docs": 0, "Infra": 3}
 }
 ```
 
-- `sessions` はプラグインが起動したセッションの `agent` と `cwd`。走査で transcript が見つかれば transcript が優先。新規直後（transcript 未生成）の行を一覧に出すために持つ。
-- `archived` の `name` はマネージャーの「アーカイブ」区分に出すための控え。真実は transcript。
-- `categoryColors` はカテゴリ名（`splitName` が返す `カテゴリ: 名前` の前半）→ パレット番号（0〜11）。一度決めた番号は変えない（§11）。
-- `pendingRenames` は Python・TypeScript とも読み込んだ値を同じ形で書き戻すだけで、参照する処理は無い。名前変更は §6 の `sendCommand` が直接送る。
+- `sessions` holds the `agent` and `cwd` of sessions the plugin itself started. A scan's own transcript-derived data takes priority once the transcript exists; this entry exists to show a brand-new session (before its transcript is written) in the list at all.
+- `archived`'s `name` is a cached copy for the manager's Archive section; the transcript remains the source of truth.
+- `categoryColors` maps a category name (the part of `splitName`'s `Category: Name` split before the colon) to a palette index (0–11). Once assigned, an index never changes (§11).
+- `pendingRenames` is read and written back unchanged by both the Python and TypeScript sides; nothing currently reads it. Renames go through `sendCommand` (§6) directly.
 
-### 3.1 `sessions.json` の排他
+### 3.1 Locking `sessions.json`
 
-書く者はプラグイン（名前変更・アーカイブ・折畳・新規・カテゴリ色の確定）と `agent-sessions` TUI（折畳）で、同時に動きうる。書込みは `sessions.json.lock/` ディレクトリを `mkdir` で取ってから行う（Python `os.mkdir`、Node `fs.mkdirSync`。作れた者がロックを持つ）。`EEXIST` なら 50 ms 待って再試行、2 秒で諦めてエラー（プラグインは `Notice`）。ロックの mtime が 10 秒より古ければ壊れたものとして `rmdir` して取り直す。ロックの中で読み→更新→tmp に書き→rename→`rmdir`。読むだけの者はロックを取らない。
+The plugin (rename, archive, fold, new session, confirming a category color) and the `agent-sessions` TUI (folding) can write concurrently. A writer takes the lock by `mkdir`-ing `sessions.json.lock/` (Python `os.mkdir`, Node `fs.mkdirSync` — whoever succeeds holds the lock). On `EEXIST` it waits 50ms and retries, giving up with an error after 2 seconds (the plugin shows a `Notice`). A lock whose directory mtime is older than 10 seconds is treated as abandoned and removed with `rmdir` before retrying. Inside the lock: read → update → write to a temp file → rename → `rmdir`. Readers don't take the lock.
 
-### 3.2 vault の場所（T-80）
+### 3.2 Vault resolution
 
-`agent-sessions` は既定の vault を持たない。`agentsessions/config.py` の `VAULT`（`_resolve_vault()`。import 時に 1 回だけ決める）は、env `AGENT_SESSIONS_VAULT` → `~/.agents/sessions/vault.json` の `vault` フィールド → どちらも無ければ `None`、の順で決める。`STORE_DIR`・`STORE_PATH`・`LOCK_DIR` は `VAULT` が `None` なら同じく `None`（`import` 時にここで落ちない）。
+Agent Sessions has no default vault. `agentsessions/config.py`'s `VAULT` (via `_resolve_vault()`, resolved once at import time) is decided in this order: the `AGENT_SESSIONS_VAULT` environment variable → the `vault` field in `~/.agents/sessions/vault.json` → `None` if neither is set. `STORE_DIR`, `STORE_PATH`, and `LOCK_DIR` are `None` too when `VAULT` is `None`, so importing the module never fails just because the vault isn't known yet.
 
-- **プラグイン**：`agent-sessions json …`（`backend.ts` の `runJson`）・デーモンの `start` に渡す `env`（`main.ts`・`views/terminal.ts`）のどちらにも `env AGENT_SESSIONS_VAULT=<this.vaultPath()>` を必ず付ける（`backend.ts` の `envWithVault`）。デーモン自身は `env` を素通しして `execvpe` するだけなので（`daemon.py` の `_op_start`）、claude 本体やその子（フック・statusLine）にもここから伝わる。`onload` の 1 回だけ `vault.json` を書く（vault は起動中に変わらない）。
-- **python**：`config.require_vault()` は `VAULT` を返すか、`VaultNotConfigured`（英語の分かりやすいメッセージ）を投げる。TUI の入口（`tui.main()`）はこれを呼び、curses を起こす前に止まる（終了コード 1）。`store.load()` は `path` が `None`（＝ vault 不明）でも空の `Store` を返す（`json scan` はプラグインから必ず env が来る前提だが、来なくても落ちない）。`store.save()`・`store.update()` は `path` が `None` なら `VaultNotConfigured` を投げる（書く先が無いので黙って諦めない）。
-- **install.sh**：vault は第 1 引数か `$AGENT_SESSIONS_VAULT` の必須値（既定値なし）。どちらも無ければ usage を出して終了。
+- **The plugin** always sets `AGENT_SESSIONS_VAULT=<this.vaultPath()>` in the `env` it passes both to `agent-sessions json …` (`backend.ts`'s `runJson`, via `envWithVault`) and to the daemon's `start` (`main.ts`, `views/terminal.ts`). The daemon passes `env` straight through to `execvpe` (`daemon.py`'s `_op_start`), so `claude` itself and everything it spawns (hooks, statusLine) inherit it too. `vault.json` is written once, in `onload` (the vault doesn't change while Obsidian is running).
+- **Python**: `config.require_vault()` returns `VAULT` or raises `VaultNotConfigured` with the message `"Agent Sessions could not find your vault. Enable the Agent Sessions plugin once in Obsidian, or set the AGENT_SESSIONS_VAULT environment variable."` The TUI's entry point (`tui.main()`) calls this before starting `curses`, so a missing vault fails cleanly (exit code 1, a message on stderr) rather than opening a blank screen. `store.load()` returns an empty `Store` when `path` is `None` rather than raising — `json scan` always expects the plugin to supply the env var, but staying alive without it is safer than crashing. `store.save()`/`store.update()` raise `VaultNotConfigured` when `path` is `None`, since silently discarding a write nobody asked for is worse than failing loudly.
+- **`install.sh`**: the vault is a required value, either the first argument or `$AGENT_SESSIONS_VAULT`; with neither, it prints usage and exits.
 
-## 4. デーモンとプロトコル
+## 4. The daemon and its wire protocol
 
-### 4.1 ソケットとフレーム
+### 4.1 Why a daemon
 
-Unix ドメインソケット `~/.agents/sessions/daemon.sock`。両方向とも同じフレーム：
+Without something holding the PTY open, closing a terminal tab — or reloading Obsidian, which recreates every view — would kill the underlying `claude` process along with it. The daemon is a small resident process, started on demand by the plugin, whose only job is to keep each session's PTY alive independently of any tab or Obsidian instance being attached to it. A tab detaching (closing, or Obsidian restarting) doesn't touch the session; reattaching replays what was missed.
+
+It's a single-threaded `select` loop over the listening socket, every open client connection, and every session's PTY master fd, with no blocking I/O anywhere (sockets and PTYs are non-blocking; each connection's output is flushed from its own queue whenever the socket is writable). `agentsessions/` as a whole — the daemon included — uses only the Python standard library: no dependency to install means the daemon can be launched by a plain `#!/usr/bin/env python3` script with nothing more than a working `python3`, on any machine that has one.
+
+Communication happens over Unix domain sockets (`~/.agents/sessions/daemon.sock`, plus `plugin.sock` for the built-in editor) rather than TCP: both sides always run on the same machine, so a filesystem path is a strictly better address than a port — it can't collide with another process, access control follows filesystem permissions (the containing directory is 0700, the socket itself 0600), and there's nothing to accidentally expose on a network interface.
+
+### 4.2 Sockets and frames
+
+`~/.agents/sessions/daemon.sock`. Both directions share the same frame format:
 
 ```
 +------+----------------+---------+
@@ -164,398 +172,459 @@ Unix ドメインソケット `~/.agents/sessions/daemon.sock`。両方向とも
 +------+----------------+---------+
 ```
 
-| type | 向き | payload |
+| type | direction | payload |
 |---|---|---|
-| `J` | 双方向 | JSON（UTF-8）。要求と応答・イベント |
-| `D` | 双方向 | 生バイト。クライアント→デーモンは PTY への入力、デーモン→クライアントは PTY の出力 |
-| `R` | デーモン→ | attach 直後に再生するバッファ（複数フレーム可）。再生の終わりは `{"ev":"replayed"}` |
+| `J` | both | JSON (UTF-8): requests, responses, events |
+| `D` | both | Raw bytes: client→daemon is PTY input, daemon→client is PTY output |
+| `R` | daemon→client | The replay buffer sent right after attach (possibly several frames); replay ends with `{"ev":"replayed"}` |
 
-要求（`J`、`"op"` で区別）と応答（同じ `"seq"` を返す）：
+Requests (`J`, distinguished by `"op"`) and their responses (echoing the same `"seq"`):
 
-| op | 引数 | 応答 |
+| op | arguments | response |
 |---|---|---|
-| `hello` | `client`（`plugin`／`tui`） | `{"ok":true,"version":1,"pid":…}` |
-| `list` | — | `{"ok":true,"sessions":[{"id","agent","cwd","pid","startedAt","clients","exited":null or code,"exitedAt"}]}`。終了済みも `forget` されるまで載る |
-| `start` | `id`,`agent`,`cwd`,`argv`,`env`,`cols`,`rows` | `{"ok":true}`。既に同じ `id` があれば `{"ok":false,"error":"exists"}` |
-| `attach` | `id`,`cols`,`rows` | `{"ok":true,"exited":null or code}` → `R`… → `{"ev":"replayed"}` → 以後 `D`。終了済みなら `replayed` の直後に `{"ev":"exit",…}` を送る。無ければ `{"ok":false,"error":"no-session"}` |
+| `hello` | `client` (`plugin`/`tui`/`cli`) | `{"ok":true,"version":1,"pid":…}` |
+| `list` | — | `{"ok":true,"sessions":[{"id","agent","cwd","pid","startedAt","clients","exited":null or code,"exitedAt"}]}`. Exited sessions stay listed until `forget`-ten |
+| `start` | `id`,`agent`,`cwd`,`argv`,`env`,`cols`,`rows` | `{"ok":true}`, or `{"ok":false,"error":"exists"}` if that `id` is already running |
+| `attach` | `id`,`cols`,`rows` | `{"ok":true,"exited":null or code}` → `R`… → `{"ev":"replayed"}` → then `D` frames. For an already-exited session, `{"ev":"exit",…}` follows `replayed` immediately. `{"ok":false,"error":"no-session"}` if there is no such session |
 | `detach` | — | `{"ok":true}` |
 | `resize` | `cols`,`rows` | `{"ok":true}` |
-| `kill` | `id`,`signal`（既定 `TERM`） | `{"ok":true}` |
-| `forget` | `id` | 終了済みセッションの記録とバッファを捨てる `{"ok":true}`。動作中なら `{"ok":false,"error":"running"}` |
-| `shutdown` | — | `{"ok":true}` 後にデーモン終了 |
+| `kill` | `id`,`signal` (default `TERM`) | `{"ok":true}` |
+| `forget` | `id` | Discards an exited session's record and buffer, `{"ok":true}`. `{"ok":false,"error":"running"}` if it's still running |
+| `shutdown` | — | `{"ok":true}`, then the daemon exits |
 
-イベント（デーモン→、`"ev"`）：`exit`（`id`,`code`）・`replayed`。1 接続は同時に 1 セッションにしか attach しない。同じセッションに複数の接続が attach してよい（プラグインと TUI）。出力は全接続へ、入力はどこからでも。**PTY のサイズは attach 中の全接続の最小 cols・最小 rows**（tmux と同じ）で、`resize`・`detach`・切断のたびに再計算する。
+Events (daemon→client, `"ev"`): `exit` (`id`, `code`), `replayed`. A single connection attaches to at most one session at a time; multiple connections (the plugin and the TUI, or two split panes) may attach to the same session — output fans out to all of them, input is accepted from any of them. **The PTY size is the minimum of cols and minimum of rows across every attached connection** (the same rule tmux uses), recomputed on `resize`, `detach`, and disconnect.
 
-接続の切断：`select` で読めるのに `recv` が空、または `ECONNRESET`／`EPIPE` なら切断とみなし、その接続を attach から外して `clients` を減らし、サイズを再計算する。明示の `detach` と同じ後始末を通る。
+Disconnection: if `select` reports the socket readable but `recv` returns empty, or the connection raises `ECONNRESET`/`EPIPE`, it's treated as disconnected — removed from the session's attached connections, `clients` count decremented, size recomputed. This follows the same cleanup path as an explicit `detach`.
 
-### 4.2 セッションの保持
+### 4.3 Session lifetime
 
-- `start`：`pty.fork()` → 子で `os.chdir(cwd)`、`os.execvpe(argv[0], argv, env)`。親は `TIOCSWINSZ` でサイズを設定。
-- 環境は要求の `env` に `TERM=xterm-256color`・`COLORTERM=truecolor`・`AGENT_SESSIONS_ID=<id>`・`VISUAL=<~/bin/agent-sessions-code の絶対パス>` を足す。プラグインはログインシェル（`$SHELL -l -c 'env'`）から取った `PATH`・`LANG`・`HOME` などを `env` に渡す（Dock から起動した Obsidian の環境は貧弱なため）。`EDITOR` は触らない。
-- 出力バッファ：セッション毎に `deque` のチャンク列、合計 1 MiB を上限に古いものから捨てる。再生はチャンク境界から。
-- attach 時：`resize` を適用してから `R` で再生。attach で PTY のサイズが**変わったときだけ**、`replayed` の後に行数を 1 減らして戻す（Claude Code が SIGWINCH で画面下部を描き直す。サイズが同じなら再生した画面がそのまま正しい）。
-- 終了の検知：master fd の読みが EOF か `EIO` になったら `waitpid(pid, WNOHANG)`。加えて `SIGCHLD` を self-pipe で `select` に流し、孫プロセスが PTY を掴んでいて EOF が来ない場合も拾う。検知したらそのセッションに attach 中の接続に `exit` を送る。
-- 終了済みセッションは **`forget` されるまで保持**する（記録とバッファ）。裏のタブが後から attach しても再生と `exit` が届き、終了画面になる。`forget` はプラグインの「再開」「閉じる」と TUI が送る。
-- `kill`：プロセスグループへ `SIGTERM`、10 秒で `SIGKILL`。
-- デーモン自身：動作中セッション 0 かつ接続 0 の状態が 10 分続いたら終了。終了するとき（アイドル・`shutdown`・`SIGTERM`）は、**その時点で既に終了済み**の記録（`id`・`code`・`exitedAt`）だけを `~/.agents/sessions/exited.json` に書き、次に起動したときに読み込んで `forget` されるまで保持する（バッファは持ち越さない）。デーモンの終了に伴って `kill` した動作中セッションは外からの停止なので記録しない（再起動後は `--resume` で続く）。裏タブがデーモンの再起動をまたいで attach しても `exit` が届き、終了画面になる。`exited.json` に上限は設けない。増えないのは、プラグインが `onLayoutReady` と `layout-change` のたびに、終了済みでターミナルタブの無い `id` へ `forget` を送るから（タブが残っている `id` は捨てない）。`SIGTERM` で全セッションを `kill` して終了。単一実体は `daemon.pid` と `flock` で保証。二重に起動された側は `flock` に失敗して即終了し、呼び出し側（プラグイン）は 1 秒待って再接続する。
-- 起動時に `~/.agents/sessions/` を 0700 で作り、ソケットは `umask 0077` の下で bind する。
-- 1 スレッド `select` ループ。ブロッキング I/O なし。
+- `start`: `pty.fork()` → the child does `os.chdir(cwd)` then `os.execvpe(argv[0], argv, env)`; the parent sets the initial size with `TIOCSWINSZ`.
+- The environment is the request's `env` plus `TERM=xterm-256color`, `COLORTERM=truecolor`, `AGENT_SESSIONS_ID=<id>`, and `VISUAL=<absolute path to bin/agent-sessions-code>`. The plugin fills `env` from a login shell (`$SHELL -l -c 'env'`, falling back to `defaultLoginShell(isMac)` — `/bin/zsh` on macOS, `/bin/sh` on other platforms, chosen because some minimal Linux/WSL2 setups don't have `bash`) so that `PATH`, `LANG`, `HOME`, and friends match what a real terminal would see (Obsidian launched from the Dock, or an equivalent GUI launcher, otherwise inherits a much sparser environment). `EDITOR` is left untouched.
+- Output buffering: a `deque` of chunks per session, capped at 1 MiB total, oldest chunks dropped first. Replay starts at a chunk boundary.
+- On attach: `resize` is applied, then the buffer replays via `R`. If attaching *changed* the PTY size, the row count is reduced by one right after `replayed` and then restored a moment later — this nudges Claude Code into redrawing the bottom of the screen via `SIGWINCH`; when the size didn't change, the replayed screen is already correct as-is.
+- Exit detection: EOF or `EIO` on the master fd triggers `waitpid(pid, WNOHANG)`. `SIGCHLD` is also routed through a self-pipe into the `select` loop, to catch the case where a grandchild process still holds the PTY open and EOF hasn't arrived yet. Once detected, every connection attached to that session receives an `exit` event.
+- An exited session is **kept until `forget`-ten** (its record and buffer). A background tab that later attaches still gets a replay followed by `exit`, landing on the same exited screen. `forget` is sent by the plugin ("Resume"/"Close") and by the TUI.
+- `kill` sends `SIGTERM` to the process group, `SIGKILL` after 10 seconds.
+- The daemon itself exits once it has had zero running sessions and zero connections for `idle_exit` seconds (default 600; configurable via `--idle-exit`). On any exit (idle timeout, `shutdown`, `SIGTERM`), it writes **only the sessions that had already exited by that point** (`id`, `code`, `exitedAt`) to `exited.json`, which the next daemon instance reads back on startup and keeps until each one is `forget`-ten (buffers aren't carried over — only the fact that it exited and with what code). Sessions still running when the daemon itself is killed by `SIGTERM` (as part of its own shutdown) aren't recorded there, since that's an external stop, not the session's own exit; they resume normally with `--resume` after a restart. A background tab attaching across a daemon restart still gets `exit` and lands on the exited screen. `exited.json` has no size cap — it doesn't grow unbounded because the plugin sends `forget` for any exited `id` with no open terminal tab, on every `onLayoutReady` and `layout-change` (an `id` that still has a tab is left alone). `SIGTERM` kills every running session before the daemon itself exits. A single daemon instance is guaranteed by `daemon.pid` plus `flock`: a second daemon that fails to acquire the lock exits immediately, and the caller (the plugin) waits one second and reconnects.
+- On startup, `~/.agents/sessions/` is created with mode 0700, and the socket is bound under `umask 0077`.
 
-## 5. `agent-sessions` CLI
+## 5. The `agent-sessions` CLI
 
-| コマンド | 内容 |
+| Command | What it does |
 |---|---|
-| `agent-sessions` | TUI |
-| `agent-sessions daemon [--detach]` | デーモン。`--detach` は `setsid` して pid を出力し戻る |
-| `agent-sessions json scan [--only ID …]` | 走査結果 `{"sessions":[…],"store":{"folded","archived","pendingRenames","sessions"}}`。`--only` は指定 transcript だけ再走査してキャッシュを更新し、その分だけを返す |
-| `agent-sessions json live` | 起動中の台帳（`~/.claude/sessions`）とデーモンの `list` を併せて `{"live":{id:{status,pid,rc,updated_at,waiting_for?}},"daemon":{"running":bool,"sessions":[list の要素]}}`（`status` は表示用ラベル「実行中」「コマンド実行中」「待機中」「回答待ち」「起動中」。`waiting_for` は claude の値が `waiting` のときだけ載る）。デーモンが無ければ `running:false`（起動はしない）。プラグインは `daemon.sessions` から行ごとの `daemon`／`exited` を導く |
-| `agent-sessions json detail ID` | `{"last_user","last_assistant","tools","last_command"}`（`last_command` は直近のスラッシュコマンド名。引数は含めない） |
-| `agent-sessions json usage ID [--from ISO --to ISO]` | セッション単位のターン集計（§13.1） |
-| `agent-sessions json stats` | 5 時間・7 日窓の全体集計（§13.2） |
-| `agent-sessions attach ID` | 端末を raw mode にしてデーモンの PTY へ接続。`Ctrl+\` で detach |
-| `agent-sessions edit FILE` | 内蔵エディタの窓口（§7.4） |
-| `agent-sessions hook` | stdin の JSON を `events.log` に 1 行追記し、compacted 印を更新する（§7.5） |
-| `agent-sessions status` | stdin の JSON を `status/<session_id>.json` に書き、statusLine の 1 行を出力（Claude Code のステータス行になる。§12） |
-| `agent-sessions setup` | `~/.claude/settings.json` を読み、`settings.json.bak-<時刻>` を残してから、`hooks.Stop`（matcher `.*`）・`hooks.SessionEnd`（`.*`）・`hooks.SessionStart`（`compact`。compacted 印の「入る」、§7.5）・`hooks.UserPromptSubmit`（`.*`。compacted 印の「出る」）を `"$HOME/bin/agent-sessions" hook` に揃え（無ければ追加、既にあれば event＋matcher の一致で冪等、他のフックは触らない）、`statusLine` が null か既定と違えば `{"type":"command","command":"$HOME/bin/agent-sessions status"}` を設定。結果を表示する |
+| `agent-sessions` | The TUI |
+| `agent-sessions daemon [--detach] [--sock PATH] [--runtime-dir DIR] [--idle-exit SEC]` | Starts the daemon. `--detach` double-forks (`setsid`), prints the child's pid, and returns |
+| `agent-sessions daemon --running-count [--sock PATH]` | Prints the number of sessions with `exited: null` and returns; never starts the daemon. `0` if the daemon isn't up |
+| `agent-sessions daemon --stop [--sock PATH]` | Sends `shutdown` and waits (up to 15s) for the socket to stop responding; a no-op if the daemon wasn't running. Used by `uninstall.sh` to shut the daemon down cleanly before removing files |
+| `agent-sessions json scan [--only ID …]` | `{"sessions":[…],"store":{"folded","archived","pendingRenames","sessions"}}`. `--only` re-scans just the listed transcripts, updates the cache, and returns only those |
+| `agent-sessions json live` | `{"live":{id:{status,status_label,pid,rc,updated_at,waiting_for?}},"daemon":{"running":bool,"sessions":[…]}}`, merging the running-session ledger (`~/.claude/sessions`) with the daemon's own `list`. `status` is the raw value Claude Code writes (`busy`/`shell`/`idle`/`waiting`/`""`); `status_label` is its display label in the current CLI/TUI language (§17). `waiting_for` is present only when `status` is `waiting`. `running: false` if the daemon isn't up (this never starts it) |
+| `agent-sessions json detail ID` | `{"last_user","last_assistant","tools","last_command"}` (`last_command` is the most recent slash command's name, no arguments) |
+| `agent-sessions json usage ID [--from ISO] [--to ISO]` | Per-session turn aggregation (§13.1) |
+| `agent-sessions json stats` | 5-hour/7-day window aggregation across all sessions (§13.2) |
+| `agent-sessions attach ID` | Puts the terminal in raw mode and connects to the daemon's PTY for that session. `Ctrl+\` detaches |
+| `agent-sessions edit FILE` | The built-in editor's receiving end (§7.4) |
+| `agent-sessions hook` | Appends the JSON on stdin as one line to `events.log`, and updates the compacted marker (§7.5) |
+| `agent-sessions status` | Writes the JSON on stdin to `status/<session_id>.json` and prints one line to stdout — Claude Code's status line (§14) |
+| `agent-sessions setup [--dry-run] [--settings PATH] [--keybindings PATH]` | Reads `~/.claude/settings.json`, writes a `settings.json.bak-<timestamp>` backup, then reconciles `hooks.Stop` (matcher `.*`), `hooks.SessionEnd` (`.*`), `hooks.SessionStart` (matcher `compact` — the compacted marker, §7.5), and `hooks.UserPromptSubmit` (`.*`) to run `"$HOME/bin/agent-sessions" hook` (added if missing, left alone if already correct by matching on event + matcher, other tools' hooks untouched), and sets `statusLine` to `{"type":"command","command":"$HOME/bin/agent-sessions status"}` if it's unset or still the old default. Prints what it changed |
+| `agent-sessions setup --remove` | The reverse: removes only the hook entries and statusLine command this project added from `settings.json`, and only the two submit-key entries (`enter`/`meta+enter` under `Chat`) it may have added from `keybindings.json`. A single hook-matcher entry that also has another tool's hooks in it loses only this project's own array element, not the whole entry; an event whose hooks list becomes empty is removed, and so is the `hooks` key itself if nothing is left under it. Other tools' hooks, statusLine, and keybindings entries are always left alone. Writes a backup first, the same way plain `setup` does; if nothing needs removing, nothing is written |
 
-TUI：一覧（グループ→カテゴリの無い名前付きセッション（見出し無し）→その他、折畳、`/` 絞込、`h` でアーカイブを見せる）と ⏎。「その他」（既定で折畳）に載るのは名前が無く `child` でないセッションだけ（`items.py` の `build_items`。表示名は最初の指示の先頭 40 字、無ければ id の先頭 8 字）。⏎ はデーモンに `id` があれば `attach`（終了済みなら `forget` して `--resume`）、無ければ `claude --resume ID` を `execvp`。デーモンを起動することはない。折畳の保存は §3.1 のロックの中で書く。管理操作は持たない。サイドパネル：`cols >= 60` なら幅 `clamp(cols×0.4, 30, 60)` で常に出す。`cols < 60` では `p` で「一覧」と「パネルのみ」を切り替える。
+The TUI: a list (groups → named sessions with no category, with no heading → "Other", foldable, `/` to filter, `h` to show the archive) and Enter to open. "Other" (folded by default) holds only nameless, non-child sessions (`items.py`'s `build_items`; the display name is the first 40 characters of the first prompt, or the session id's first 8 characters if there is none). Enter attaches to the daemon if that `id` is already running there (a first `forget` if it had exited), otherwise `execvp`s `claude --resume ID`; the TUI never starts the daemon itself. Folding is saved inside the §3.1 lock. There are no management actions (rename, archive, …) in the TUI. Side panel: with `cols >= 60` it's always shown, width `clamp(cols×0.4, 30, 60)`; below that, `p` toggles between the list and panel-only view.
 
-`json scan` の出力（1 セッション）：
+`json scan`'s output (one session):
 
 ```json
-{"id":"…","agent":"claude","name":"RIM: 議事メモ作成","group":"RIM","label":"議事メモ作成",
- "cwd":"/Users/…","folder":"obsidian-projects","last_activity":1789400538.7,"child":false,
- "transcript":"/Users/…/68d25490-….jsonl"}
+{"id":"…","agent":"claude","name":"Docs: release notes","group":"Docs","label":"release notes",
+ "cwd":"/path/to/project","folder":"project","last_activity":1789400538.7,"child":false,
+ "transcript":"/path/to/68d25490-….jsonl"}
 ```
 
-キャッシュ：`scan-cache.json` に `path → {mtime,size,head,last_activity}`。`mtime`・`size` が一致すれば再読しない。全走査の 2 回目以降は 0.1 秒以下。
+Caching: `scan-cache.json` holds `path → {mtime,size,head,last_activity}`. A file is skipped when its `mtime` and `size` still match. A second full scan takes well under 0.1 seconds.
 
-`install.sh`：`~/bin/agent-sessions`・`~/bin/agent-sessions-code` の symlink と、`<vault>/.obsidian/plugins/agent-sessions` → `plugin/` の symlink を張る。vault は既定値を持たない（T-80）——`$AGENT_SESSIONS_VAULT` か第 1 引数で渡す必須の値で、どちらも無ければ usage を出して終了する。`plugin/main.js` が無ければ build を促す。最後に `agent-sessions setup`（残りの引数をそのまま渡す）を呼ぶ。
+`install.sh` links `~/bin/agent-sessions`, `~/bin/agent-sessions-code`, and `<vault>/.obsidian/plugins/agent-sessions` → `plugin/`. The vault has no default — it's the required first argument or `$AGENT_SESSIONS_VAULT`; without either, it prints usage and exits. If `plugin/main.js` is missing it suggests running the build. It finishes by calling `agent-sessions setup` with any remaining arguments passed through.
 
-## 6. コマンド送信（名前変更・圧縮）
+## 6. Sending commands (rename, compact)
 
-`/rename NAME`・`/compact` はどちらも `main.ts` の `sendCommand(id, text)` を通して PTY へ送る。行メニュー・ダイアログはこの 1 つの関数を呼ぶだけで、経路の違いは意識しない。
+`/rename NAME` and `/compact` both go through `main.ts`'s `sendCommand(id, text)` to reach the PTY. The row menu and the dialogs call this one function without caring which path below it takes.
 
-送る列はどの経路も同じ 1 列（`commandBytes`）：Ctrl+S（`\x13`。Claude Code の既定 `chat:stash`。下書きがあれば退避し、空なら何も起きないので無条件に送る）→ コマンドを **bracketed paste**（`\x1b[200~` + text + `\x1b[201~`。文字を打つと `/` の補完が開いて壊れる）→ 送信列（§7.2 の `submitSequence()`）。**復元は送らない**：Claude Code は stash した下書きを次の送信の後に自動で戻す（「Draft restored」）。
+Every path sends the same sequence (`commandBytes`): Ctrl+S (`\x13`, Claude Code's built-in `chat:stash` — stashes a draft if there is one, does nothing otherwise, so it's sent unconditionally) → the command as a **bracketed paste** (`\x1b[200~` + text + `\x1b[201~`; typing it as literal keystrokes would trigger `/` completion and corrupt it) → the submit sequence (`submitSequence()`, §7.2). **The stashed draft is never restored explicitly** — Claude Code restores it on its own after the next submission ("Draft restored").
 
-1. **タブがあり attach 済み**：そのタブから PTY へ書く。
-2. **タブは無いがデーモンにあり動作中**：一時的に attach（120×40）して書き、detach する。
-3. **デーモンに無い、または終了済み**（終了済みなら先に `forget`）：**裏で起動**：`start`（`--resume`、120×40）→ attach → `registry.waitFor(id, 'idle', 60 秒)` で `idle` になるのを待つ（遷移イベントではなく状態そのものを待つ。初めて観測する id でも成り立つ）→ 送信 → `waitFor(id, 'busy', 10 秒)`（`busy` にならないコマンドはここで見切る）→ `waitFor(id, 'idle', 60 秒)` → `/exit` を同じ列で送る → `exit` を 30 秒待つ（来なければ `kill`）→ detach → `forget` → `rescan([id])`。進行は `Notice` で知らせる（「名前を変更しています…」）。待ちが切れると例外になり、呼出側が `Notice` に出す。この経路の間は `busy→idle` の通知（§12）を出さない。
+1. **A tab is open and attached**: write to the PTY from that tab.
+2. **No tab, but the daemon has it running**: attach temporarily (120×40), write, detach.
+3. **Not on the daemon, or exited** (`forget` first if exited): **start it in the background** — `start` (`--resume`, 120×40) → attach → `registry.waitFor(id, 'idle', 60s)` (waits for the state itself, not a transition, so it works even for an `id` never observed before) → send the command → `waitFor(id, 'busy', 10s)` (catches commands that never go busy) → `waitFor(id, 'idle', 60s)` → send `/exit` the same way → wait up to 30s for `exit` (falling back to `kill`) → detach → `forget` → `rescan([id])`. Progress shows as a `Notice` ("Renaming…"). A timeout raises, and the caller shows it in a `Notice`. The `busy→idle` notification (§12) is suppressed for the duration of this path.
 
-新規セッション（名前つき）は `start` の後に同じ `waitFor(id,'idle')` → `sendCommand(id, '/rename NAME')`。名前変更・新規どちらも、送信の直後に `SessionIndex.waitForName(id, expected, timeoutMs=5000, intervalMs=300)` を fire-and-forget で呼ぶ：一致していれば即 `true`、一致しなければ `rescan([id])` を挟みながら 300 ms ごとに見直し、5 秒で諦めて `false`（失敗しても `Notice` は出さない。最悪でも §10 の周期走査で追いつく）。`/rename` はモデルを呼ばないコマンドなので `busy` にならず、フックの `events.log` にも記録が来ない。この `waitForName` が無いと、タブの題名は次の周期走査（60 秒）まで直らない。
+A new, named session follows `start` with the same `waitFor(id,'idle')` → `sendCommand(id, '/rename NAME')`. Both renaming and creating a session fire `SessionIndex.waitForName(id, expected, timeoutMs=5000, intervalMs=300)` right after sending, without waiting for it: it resolves immediately if the name already matches, otherwise rechecks every 300ms (calling `rescan([id])` in between) for up to 5 seconds before giving up silently (worst case, the periodic scan in §10.1 catches up later). `/rename` doesn't invoke the model, so it never goes `busy` and produces no `events.log` entry — without `waitForName`, the tab title would stay stale until the next periodic scan (60 seconds).
 
-直近のスラッシュコマンドが `/compact` かどうかは `json detail` の `last_command` で判定し、行メニュー・ターミナルの ⋯ の「セッションを圧縮」を非活性にする（キャッシュ済みの detail で同期に判定し、未取得なら活性のまま出す。`compactSession` が改めて判定し、`/compact` 済みなら送らずに `Notice` を出す）。
+Whether the most recent slash command was `/compact` comes from `json detail`'s `last_command`, and disables the row menu's/terminal's "Compress session" action when it was (synchronously, from a cached `detail` — if none is cached yet, the action stays enabled and `compactSession` checks again before sending, showing a `Notice` instead of sending if it turns out to already be compacted).
 
-## 7. プラグイン：ターミナル（`agent-sessions-terminal`）
+## 7. The terminal view (`agent-sessions-terminal`)
 
-状態（`getState`）：`{id, agent, cwd, fontSize?, fresh?}`（`fresh` は新規で未起動のときだけ真。最初の `start` で消える）。Obsidian の workspace に保存され、再起動で戻る。
+State (`getState`): `{id, agent, cwd, fontSize?, fresh?}` (`fresh` is true only for a brand-new, not-yet-started session, and clears on the first `start`). Obsidian persists this in the workspace and restores it across restarts.
 
-### 7.1 接続・入出力・サイズ
+### 7.1 Connecting, I/O, and sizing
 
-- xterm 5.x：`fontFamily`・`fontSize` は設定（タブ毎の `fontSize` があれば優先）、`lineHeight: 1.0`、`letterSpacing: 0`、`scrollback: 5000`、`allowProposedApi: true`、`macOptionIsMeta: true`、`cursorBlink: true`。アドオン：fit・webgl（失敗時は既定の canvas）・unicode11。
-- 余白：設定 `padding`（`comfortable`＝12px／`compact`＝4px／`none`＝0）をコンテナの CSS 変数に流す。`.agent-sessions-terminal-body` は `overflow: hidden`、`fit()` は padding を引いた領域で計算する（`FitAddon` は要素の `padding` を見るので、padding は xterm の親ではなく外側の要素に付ける。スクロールバーが余白側に出るのを防ぐ）。
-- 接続：初回に ResizeObserver が 0 でない大きさを報告したとき `ensureAttached()`。デーモンに `id` があれば `attach`（終了済みなら再生の後に `exit` が届き終了画面になる）、無ければ `start`（`argv = [claudePath, '--resume', id]`、新規は `['--session-id', id]`）。デーモンに繋がらなければ起動を試み、1 秒待って再接続、3 回失敗で終了画面にエラー。
-- 出力：`D` フレームを `terminal.write(Uint8Array)`。再生（`R`）中は `write` をまとめ、`replayed` で `scrollToBottom()`。
-- 入力：`onData` の文字列を UTF-8 で `D`。`onBinary` も同様。
-- サイズ：ResizeObserver → 50 ms デバウンス → `fit()` → `onResize` → `resize`。
-- 終了（`exit` イベント）：出力の上に「セッションは終了しました（code）」と **再開**・**閉じる**。再開は `forget` → `--resume` で `start`。閉じるは `forget` してタブを閉じる。
-- タブを閉じる（`onClose`）：`detach` して接続を閉じ、xterm を `dispose`。セッションは残る。`SessionIndex`・`registry`・`statusline`・`settings-changed` の購読は `this.register(unsubscribe)` で登録してあり、Obsidian が `onClose` で解く。
-- 設定の反映：`main.ts` が設定保存時に `settings-changed` を発火し、全ターミナルビューが `applySettings()` でフォント・サイズ（タブ毎の値があればそれ）・余白・スクロールバックを xterm に当てて `fit()` する。
-- ヘッダの操作（`addAction`）：`@`（現在のノートを挿入）・前の指示・次の指示・最後の応答。セッションへの操作（名前変更・圧縮・アーカイブ・終了・セッション解析結果・ID をコピー）はサイドパネルとマネージャーの行メニューに集約する。ターミナルの ⋯（`onPaneMenu`）は Obsidian 標準の項目（右に分割・下に分割を含む）の後に区切り線を置き、`名前を変更`・`セッションを圧縮`・`セッション解析結果`・`ID をコピー` を並べる（アーカイブ・終了は行メニューだけ）。
+- xterm 5.x: `fontFamily`/`fontSize` from settings (a per-tab `fontSize` takes priority), `lineHeight: 1.0`, `letterSpacing: 0`, `scrollback: 5000`, `allowProposedApi: true`, `macOptionIsMeta: true`, `cursorBlink: true`. Addons: fit, webgl (falls back to the default canvas renderer on failure), unicode11.
+- Padding: the `padding` setting (`comfortable` = 12px / `compact` = 4px / `none` = 0) flows into a CSS variable on the container. `.agent-sessions-terminal-body` is `overflow: hidden`, and `fit()` computes against the area minus padding — `FitAddon` reads the *element's* padding, so the padding lives on the outer wrapper rather than xterm's own parent, keeping the scrollbar out of the padded area.
+- Connecting: the first time the `ResizeObserver` reports a non-zero size, `ensureAttached()` runs. If the daemon already has that `id`, it attaches (an exited session replays then immediately shows the exit screen); otherwise it starts one (`argv = [claudePath, '--resume', id]`, or `['--session-id', id]` for a new session). If the daemon can't be reached, it tries to start it, waits one second and reconnects, and shows an error on the exit screen after three failures.
+- Output: `D` frames go to `terminal.write(Uint8Array)`. Writes during replay (`R`) are batched, with `scrollToBottom()` once `replayed` arrives.
+- Input: `onData`'s string, and `onBinary`, both go out as UTF-8 `D` frames.
+- Sizing: `ResizeObserver` → 50ms debounce → `fit()` → `onResize` → `resize`.
+- Exit (`exit` event): a "Session ended (code)" banner appears over the output, with **Resume** and **Close**. Resume is `forget` followed by `start` with `--resume`; Close is `forget` and closing the tab.
+- Closing a tab (`onClose`): detaches and closes the connection, disposes xterm. The session itself keeps running. `SessionIndex`, `registry`, `statusline`, and `settings-changed` subscriptions are registered via `this.register(unsubscribe)`, which Obsidian tears down on `onClose`.
+- Settings changes: `main.ts` fires `settings-changed` on save, and every open terminal view's `applySettings()` re-applies font, size (a per-tab override if set), padding, and scrollback to xterm and calls `fit()`.
+- Header actions (`addAction`): `@` (insert the current note), previous prompt, next prompt, last response. Session-level actions (rename, compress, archive, end, session analysis, copy ID) live in the row menu on the side panel and manager instead. The terminal's own `⋯` (`onPaneMenu`) has Obsidian's standard items (including split right/split down) followed by a separator, then "Rename", "Compress session", "Session analysis", "Copy ID" (archive and end-session stay row-menu-only).
 
-### 7.2 送信キーと Enter
+### 7.2 Submit key and Enter
 
-設定は **送信キー** 1 つ（`enter`（既定）／`shift+enter`／`ctrl+enter`／`alt+enter`（Option）／`cmd+enter`。`cmd+enter` は macOS だけ選べる——非macOS対応は下記）。送信キー以外の Enter の組合せは改行になる。`views/terminal.ts` の `handleKey`（`attachCustomKeyEventHandler`）が Enter の組合せを IME 変換中を除きすべて横取りする（純関数は `keys.ts`）：
+One setting, **submit key** (`enter` default, `shift+enter`, `ctrl+enter`, `alt+enter` (Option), `cmd+enter` — macOS-only, see below for non-macOS). Any other Enter combination becomes a newline. `views/terminal.ts`'s `handleKey` (`attachCustomKeyEventHandler`) intercepts every Enter combination except while composing with an IME (the pure logic lives in `keys.ts`):
 
-- `classifyEnter(ev)`：Enter でなければ、または IME 変換中（`isComposing`／`keyCode 229`）なら `passthrough`。修飾は shift・ctrl・alt・cmd（metaKey）・無し（enter）の優先順で 1 つに分類する。
-- `resolveEnterAction(cls, submitKey)`：一致すれば `submit`、しなければ `newline`（Enter 以外・IME 中だけ `passthrough`）。
-- `sendSequence(action, submitKey)` ＝ `submitSequence()`：`submitKey === 'enter'` なら Claude Code の既定どおり送信＝`\r`・改行＝`\x1b\r`。それ以外は `keybindings.json` で逆にしてあるので送信＝`\x1b\r`（meta+enter）・改行＝`\r`。`sendSubmit()` に集約し、指示マーカー（§7.3）の記録もここで行う。コマンド送信（§6）・内蔵エディタの「送る」（§7.4）も同じ関数を使う。
+- `classifyEnter(ev)`: `passthrough` if it isn't Enter, or during IME composition (`isComposing`/`keyCode 229`). Otherwise classifies the modifier as one of shift/ctrl/alt/cmd (metaKey)/none, in that priority order.
+- `resolveEnterAction(cls, submitKey)`: `submit` on a match, otherwise `newline` (or `passthrough` for a non-Enter key or mid-composition).
+- `sendSequence(action, submitKey)` (i.e. `submitSequence()`): when `submitKey === 'enter'`, Claude Code's own default applies — submit is `\r`, newline is `\x1b\r`. Any other submit key reverses that in `keybindings.json` (see below), so submit is `\x1b\r` (meta+enter) and newline is `\r`. This is centralized in `sendSubmit()`, which also records the prompt marker (§7.3). Sending a command (§6) and the built-in editor's "Send" (§7.4) use the same function.
 
-Esc は `keyup` の伝播を止める（Obsidian がフォーカスを奪うため）。`Cmd + / − / 0` はフォントサイズ。それ以外の Cmd 付きキーは伝播を止めず Obsidian に渡す（xterm は Cmd の組合せに何も送らないため、止めると Cmd+W・Cmd+P が効かなくなる）。Ctrl・Option 付きと無修飾のキーは xterm に任せ、`keydown` の伝播を止めて Obsidian のホットキーに渡さない。Option+Enter を含む Enter の組合せはすべて `handleKey` が横取りするので、送信キーの設定どおりに送信か改行になる。
+Esc stops `keyup` propagation (Obsidian would otherwise steal focus). `Cmd +`/`Cmd -`/`Cmd 0` are the font-size shortcuts; every other Cmd-combination is left to propagate to Obsidian (xterm sends nothing for Cmd-combinations, and blocking them would break Cmd+W/Cmd+P). Ctrl- and Option-combinations, and unmodified keys, go to xterm, with `keydown` propagation stopped so Obsidian's hotkeys don't also see them. Every Enter combination, including Option+Enter, is intercepted by `handleKey`, so it always resolves to either submit or newline per the setting.
 
-`submitKey !== 'enter'` のときだけ、`keybindings.json`（`$CLAUDE_CONFIG_DIR` 配下。vault の `.claude/` は読まない）の `Chat` に `enter: chat:newline`・`meta+enter: chat:submit` を書く（他の鍵は触らない。`$schema`・`$docs` が無ければ足す）。Claude Code 全体の設定なので、iTerm など他の端末の claude にも効く（設定画面で伝える）。`submitKey === 'enter'` に戻すときは自分が書いた 2 鍵だけを消す。起動時は `reconcileSubmitKey(chatBindings, current)`：ファイルの状態（Enter が改行になっているか）と今の設定（`enter` か否か）が合っていれば設定を保ち（`shift+enter`／`ctrl+enter`／`alt+enter`／`cmd+enter` はファイルの 2 鍵からは区別できない）、食い違うときだけ `deriveSubmitKey(chatBindings)`（`enter: chat:newline` があり `cmd+enter`／`super+enter` もあれば `cmd+enter`、無ければ `alt+enter`。`enter` が無いか `chat:submit` なら `enter`）で導いた値にする。設定画面は開くたびに `keybindings.json` を読み、食い違いがあれば示して合わせられる。ファイルが無ければ送信、JSON が壊れていれば「読めない」と表示し変更を受け付けない。
+`keybindings.json` (under `$CLAUDE_CONFIG_DIR`, not the vault's own `.claude/`) is only touched when `submitKey !== 'enter'`: `Chat.enter` is set to `chat:newline` and `Chat.meta+enter` to `chat:submit` (no other key is touched; `$schema`/`$docs` are added if missing). This is a Claude Code-wide setting, so it also affects `claude` started from any other terminal (the settings tab says so). Reverting to `enter` removes only those two entries. On startup, `reconcileSubmitKey(chatBindings, current)` compares the file's actual state (is Enter remapped to a newline or not) against the current setting (`enter` or not): if they agree, the setting is kept as-is (`shift+enter`/`ctrl+enter`/`alt+enter`/`cmd+enter` can't be told apart just from those two keys); if they disagree, the setting is re-derived with `deriveSubmitKey(chatBindings)` (`enter: chat:newline` plus either `cmd+enter` or `super+enter` present → `cmd+enter`; otherwise → `alt+enter`; no `enter` remap, or `enter: chat:submit` → `enter`). The settings tab re-reads `keybindings.json` every time it opens and offers to reconcile a mismatch. A missing file is treated as "submit"; malformed JSON shows "unreadable" and blocks changes.
 
-送信キーの記号（`⏎`／`⇧⏎`／`⌃⏎`／`⌥⏎`／`⌘⏎`、`keys.ts` の `SUBMIT_KEY_SYMBOLS`）は macOS の「送る」ボタンの表記（例「送る（⌘⏎）」）と statusLine（§14）に使う。非macOS対応は下記。
+Submit-key symbols (`⏎`/`⇧⏎`/`⌃⏎`/`⌥⏎`/`⌘⏎` on macOS, `keys.ts`'s `SUBMIT_KEY_SYMBOLS`) label the "Send" button (e.g. "Send (⌘⏎)") and the statusLine (§14); see below for non-macOS labels and symbols.
 
-#### 7.2.1 非 macOS のキー割当
+#### 7.2.1 Non-macOS key routing
 
-`Platform.isMacOS`（Obsidian）で分岐する。macOS は上記のまま変えない。
+`Platform.isMacOS` (from Obsidian) branches the whole terminal key-handling path. macOS is unchanged from the above.
 
-非 macOS では Obsidian のホットキーの修飾キーが Ctrl（Cmd ではない）で、claude 自身も Ctrl+C／D／G／R／O／S／L／T 等の組合せを使う（R-T5）。そのため「Ctrl は素通りで Obsidian へ渡す」とはできず、`keys.ts` の `classifyCtrlKeyNonMac(ev)` が Ctrl 付きキーの行き先を決める（`views/terminal.ts` の `handleKey` から、`!Platform.isMacOS` のときだけ呼ぶ）。既定は **ターミナルへ**（claude を優先）で、以下だけ例外にする：
+On other platforms, Obsidian's own hotkey modifier is Ctrl rather than Cmd, and `claude` itself uses Ctrl+C/D/G/R/O/S/L/T and more (a requirement — every key Claude Code uses must reach the terminal). So Ctrl can't simply pass through to Obsidian the way Cmd does on macOS. `keys.ts`'s `classifyCtrlKeyNonMac(ev)` decides where a Ctrl-combination goes (called from `views/terminal.ts`'s `handleKey` only when `!Platform.isMacOS`). The default is **the terminal** (`claude` wins ties), with these exceptions:
 
-| キー | 行き先 |
+| Key | Destination |
 |---|---|
-| Ctrl+Shift+C | ターミナルの選択をコピー（`terminal.getSelection()` → `navigator.clipboard.writeText`）。選択が無ければ何もしない |
-| Ctrl+Shift+V | クリップボードを PTY へ（`navigator.clipboard.readText()` → `sendInput`）。`terminal.modes.bracketedPasteMode` が立っていれば bracketed paste（`\x1b[200~`…`\x1b[201~`）で囲む（§6 の bracketed paste と同じ理由。`/` の補完を誤って開かせない） |
-| Ctrl+Shift+=／−／0 | フォントサイズ（macOS の Cmd +／−／0 に相当。`TerminalView.zoomFont()`） |
-| Ctrl+Shift+<その他の key> | Obsidian へ（claude は Ctrl+Shift の組合せを使わないため） |
-| Ctrl+Tab／Ctrl+, ／Ctrl+W | Obsidian へ（タブ切替・設定・タブを閉じる） |
-| それ以外の Ctrl+<key>（Ctrl+P を含む） | ターミナルへ |
+| Ctrl+Shift+C | Copies the terminal's selection (`terminal.getSelection()` → `navigator.clipboard.writeText`; does nothing if nothing is selected) — the convention Linux terminal apps use |
+| Ctrl+Shift+V | Pastes the clipboard into the PTY (`navigator.clipboard.readText()` → `sendInput`), wrapped in a bracketed paste if `terminal.modes.bracketedPasteMode` is set (same reason as §6: avoid mis-triggering `/` completion) |
+| Ctrl+Shift+=/−/0 | Font size (`TerminalView.zoomFont()`, the non-macOS equivalent of Cmd +/−/0) |
+| Ctrl+Shift+W | Runs Obsidian's `workspace:close` (closes the tab) |
+| Ctrl+Shift+P | Runs Obsidian's `command-palette:open` |
+| Ctrl+Shift+<anything else> | Goes to Obsidian (the key event is passed through, not handled) |
+| Ctrl+Tab, Ctrl+, | Goes to Obsidian (tab switching, settings — passing the event through is enough, since Obsidian's own default hotkeys already cover these) |
+| Any other Ctrl+<key>, **including plain Ctrl+W and Ctrl+P** | Goes to the terminal |
 
-Obsidian へ渡すときは xterm には渡さず（`false` を返す）が `preventDefault`／`stopPropagation` は呼ばない——macOS の Cmd 付きキーと同じ考え方で、ネイティブの `keydown` をそのまま Obsidian のホットキー処理へ通す。コピー・貼り付け・フォントサイズは自前で処理するので `preventDefault`・`stopPropagation` を呼び、xterm にも Obsidian にも渡さない。
+"Goes to Obsidian" means xterm doesn't see it (the handler returns `false`), but `preventDefault`/`stopPropagation` aren't called — the same approach as macOS's Cmd-combinations, letting the native `keydown` reach Obsidian's own hotkey handling (which only does something for combinations Obsidian already binds by default, such as Ctrl+Tab and Ctrl+,). Copy, paste, font size, close-tab, and command-palette are handled directly, so those call `preventDefault`/`stopPropagation` and reach neither xterm nor Obsidian's native handling.
 
-Ctrl+P はコマンドパレットと衝突しうるが（claude の readline 系入力は Ctrl+P を履歴の「1 つ前」に使う可能性がある）、R-T5（claude が使うキーはすべてターミナルに届く）を優先し、既定のターミナル行きのままにした——Obsidian のコマンドパレットは他の手段（リボン・メニュー、または非フォーカス時の Ctrl+P）で開ける。Ctrl+W（タブを閉じる）も readline の「1 語削除」と重なりうるが、タブを閉じる操作の可用性を優先してある。どちらも実機での衝突確認はまだ済んでいない（§21）。
+Ctrl+Shift+W and Ctrl+Shift+P exist specifically because plain Ctrl+W and Ctrl+P are reserved for the terminal: Claude Code's own input line uses Ctrl+W for "delete one word" and readline-style input can use Ctrl+P for history, so routing those to Obsidian's close-tab/command-palette would break them inside a session. `views/terminal.ts`'s `runObsidianCommand()` invokes `app.commands.executeCommandById()` (an internal Obsidian API not in its public types, cast the same way `main.ts` casts for `app.setting`) to run `workspace:close`/`command-palette:open` explicitly, since passing the raw key event through wouldn't trigger them — Obsidian's own default hotkeys for those actions are bound to the plain (non-Shift) combinations.
 
-右クリックのコピー・貼り付け（xterm.js 自身の `rightClickHandler`／`copyHandler`／`handlePasteEvent`。`element` の `copy`・`paste`・`contextmenu` DOM イベントを購読）はプラットフォームで分岐しない——ブラウザのネイティブ `copy`／`paste` イベントに乗るだけなので、非 macOS でも同じ経路で動く。
+Right-click copy/paste (xterm.js's own `rightClickHandler`/`copyHandler`/`handlePasteEvent`, listening on the element's native `copy`/`paste`/`contextmenu` DOM events) needs no platform branch — it rides the browser's native clipboard events the same way on every platform.
 
-### 7.3 リンクと `@` とジャンプ
+### 7.3 Links, `@`, and jumping
 
-- リンク（`links.ts`）：`registerLinkProvider`。行から `[\w./~\-]+(?:\.[A-Za-z0-9]+)(?::\d+(?::\d+)?)?` を候補にし、絶対パスは vault 配下なら相対に、相対はセッションの `cwd` から vault 相対に直し、`vault.getAbstractFileByPath` で実在するものだけリンクにする。クリックで `openLinkText`（メイン領域）、行番号があれば `editor.setCursor`。
-- `@` 挿入：コマンド「Agent Sessions: 現在のノートを @ で挿入」とヘッダの `@`。`workspace.activeEditor` はターミナルにフォーカスがあると null なので、`main.ts` が `active-leaf-change` で最後に前面だった Markdown leaf（`MarkdownView`）を覚え、`lastMarkdownView()` として公開する。パスはセッションの `cwd` からの相対（`cwd` の外なら絶対）。エディタの選択が複数行なら `#L{from}-{to}`。空白を含むパスは引用符で囲む。PTY へ `@path ` を書き、ターミナルにフォーカスを移す。
-- ジャンプ（`marks.ts`）：`handleKey` が無修飾の Enter も含め送信になる Enter を横取りして `sendSubmit()` を呼ぶたびに指示マーカーを記録する（`onData` の `\r` では記録しない。`\x1b\r` を含む改行の誤記録を避けるため）。応答マーカーは `registry` の `idle → busy`（初めて観測する id が `busy` ならその時点で発火する `Registry.refresh()` の扱いを含む）で記録（最後の 1 つを保持）。前の指示＝現在の表示先頭より上で最も近いマーカー、次の指示＝表示先頭より下で最も近いマーカー、最後の応答＝応答マーカー。`scrollToLine(marker.line)`。破棄済みマーカーは捨てる。
-- `~/.claude/settings.json` の `"tui": "fullscreen"` のとき、Claude Code は全面再描画でスクロールを自前で持ち、xterm のスクロールバックには溜まらない（`buffer.length === rows`）。この状態ではマーカー方式のジャンプは成り立たないので、3 つのボタンは Claude のスクロールキー（PageUp・PageDown・End）を送る。
+- Links (`links.ts`): via `registerLinkProvider`. A line is scanned for `[\w./~\-]+(?:\.[A-Za-z0-9]+)(?::\d+(?::\d+)?)?` candidates; an absolute path inside the vault is made relative, a relative path is resolved against the session's `cwd` and then made vault-relative, and only paths that resolve to a real file (`vault.getAbstractFileByPath`) become links. Clicking opens the file (`openLinkText`) in the main area; a line number moves the cursor there.
+- `@` insertion: the command "Agent Sessions: Insert current note as @" and the header's `@` button. `workspace.activeEditor` is `null` while the terminal has focus, so `main.ts` tracks the last `MarkdownView` that was in front via `active-leaf-change`, exposed as `lastMarkdownView()`. The path is relative to the session's `cwd` (absolute if outside it). A multi-line selection appends `#L{from}-{to}`. A path containing spaces is quoted. `@path ` is written to the PTY, and focus moves to the terminal.
+- Jumping (`marks.ts`): every time `handleKey` intercepts an Enter that resolves to submit (including the unmodified case) and calls `sendSubmit()`, a prompt marker is recorded (`onData`'s own `\r` doesn't record one, to avoid double-counting a newline that includes `\x1b\r`). A response marker is recorded on the `idle → busy` transition from `registry` (including the case where the very first observation of a session's status is already `busy`), keeping only the most recent one. "Previous prompt" is the nearest marker above the current top of the visible screen; "next prompt" the nearest one below it; "last response" is the response marker. `scrollToLine(marker.line)` does the scrolling. Discarded markers are dropped.
+- When `~/.claude/settings.json`'s `"tui"` is `"fullscreen"`, Claude Code redraws the whole screen itself and keeps its own scroll state — nothing accumulates in xterm's scrollback (`buffer.length === rows`). Marker-based jumping doesn't work in that mode, so the three jump buttons send Claude's own scroll keys (PageUp, PageDown, End) instead.
 
-### 7.4 内蔵エディタ
+### 7.4 The built-in editor
 
-Claude Code は Ctrl+G で `$VISUAL` を、`spawnSync(cmd, [...args, tmpfile], {stdio:'inherit'})` で終了を待って呼ぶ（終了コード 0 でファイルを読み戻す。非 0・シグナルなら「quit unexpectedly」と出て元の内容のまま）。実行ファイルの basename に `code`／`cursor`／`windsurf`／`codium`／`subl`／`atom`／`gedit`／`notepad` を含むと GUI エディタ扱いで、代替スクリーンに切り替えない（`prepareTerminalForHandoff`）。`/memory` も同じ経路。
+Claude Code's Ctrl+G calls `$VISUAL` via `spawnSync(cmd, [...args, tmpfile], {stdio:'inherit'})`, waiting for it to exit and re-reading the file on exit code 0 (a non-zero exit or a signal shows "quit unexpectedly" and keeps the original content). An executable whose basename contains `code`, `cursor`, `windsurf`, `codium`, `subl`, `atom`, `gedit`, or `notepad` is treated as a GUI editor and Claude Code skips switching to the terminal's alternate screen buffer (`prepareTerminalForHandoff`). `/memory` uses the same path.
 
-- `bin/agent-sessions-code`（sh、`exec "$(dirname "$0")/agent-sessions" edit "$@"`）。`install.sh` が `~/bin/agent-sessions-code` に symlink。名前に `code` を含めるのは上の判定に乗るため。デーモンが `start` の `env` に `VISUAL=<その絶対パス>` を足す（§4.2。パスに空白があってはならない）。
-- `agent-sessions edit FILE`（`agentsessions/cmd_edit.py`）：`~/.agents/sessions/plugin.sock` に接続し `{"op":"edit","file":FILE,"session":$AGENT_SESSIONS_ID,"cwd":…}` を送る。応答 `{"ok":true}` で 0。`{"ok":false,"error":"cancel"}` は 1 で終わる（vi は開かない。Claude は元の内容を使う）。`error` が `no-tab`／`busy`、接続できない、EOF・`ECONNRESET`（Obsidian のクラッシュを含む）なら**端末のエディタに倒す**：`$AGENT_SESSIONS_FALLBACK_EDITOR`、無ければ `vi` を `execvp`（同じ端末で開く）。応答が来るまで待つ（タイムアウト無し。Ctrl+C／`SIGTERM` で `{"op":"cancel"}` を送って 1）。
-- `edit-server.ts`：`~/.agents/sessions/plugin.sock` で listen（`onload` で古いソケットを unlink、`onunload` で close と unlink、作成後 `chmod 0600`）。フレームは `daemon-client.ts` の `encodeFrame`／`FrameDecoder` を共用（J のみ）。要求 `edit`：`session` に対応するターミナルビューを探す。無ければ `{"ok":false,"error":"no-tab"}`。あれば `view.openEditor(file, cwd)` を呼び、送る／取消の結果で応答して接続を閉じる。同じタブで編集中に 2 つ目が来たら `{"ok":false,"error":"busy"}`。接続が先に切れたら（claude 側の中断）編集領域を閉じる。**タブ側が先に閉じるとき**（`onClose`・プラグインの `onunload`・`plugin.sock` の close）は、進行中の編集に対して元の内容を一時ファイルへ書き戻し `cancel` を返してから閉じる。編集中の状態はビューの `pendingEdit` 1 つに集約し、閉じる経路すべてがそれを解決する。
-- `views/editor-pane.ts`：ターミナルビューの本体を上下に割る（上＝xterm 残り全部、下＝編集領域。高さは設定 `editorHeight`（既定 40%、10〜90% に収める）を上限とし、ターミナルの最小 8 行を優先して縮む。編集領域の下限は 4 行＋バー。開閉で `fit()` を呼び直す）。編集領域は `<textarea>`（ネイティブのペースト・IME・Undo。Markdown の扱いは最小限）。フォント名・サイズは設定を使い、`applySettings(fontFamily, fontSize)` を `terminal.ts` の `applySettings()`（`settings-changed` のたび）から呼ぶので、エディタを開いたまま設定を変えても即反映する。読みやすさのため `.agent-sessions-editor-text` に `letter-spacing: var(--as-editor-letter-spacing, 0.03em)`・`line-height: var(--as-editor-line-height, 1.7)` を既定で当てる（ターミナル本体より字間・行間を広くとる）。開いたら一時ファイルの内容を入れてフォーカス、末尾にカーソル。上部に 1 行のバー：ファイル名（basename）・「送る（送信キーの記号）」・「入力欄に戻る（Esc）」。自動保存は `autosave.ts` の `SaveDebouncer`（`schedule`／`flush`／`cancel`。DOM にも obsidian にも依存しない純クラス）を使い、入力が 800 ms 止まったら tmp→rename で書く（IME 変換中の `input` は `onChanged()` を呼ばず `compositionend` で改めて呼ぶので、変換途中では保存しない）。「送る」「入力欄に戻る」は待っているタイマーを `flush()` してから即書く（`text === lastSaved` なら空振り）。「取消」（元の内容へ戻す経路）はタイマーを `cancel()` するだけで、別途 `original` を書き戻す。自動保存の書込み失敗は `Notice` を出さず `console.warn` のログだけにする（最短 800 ms 間隔で走りうる経路のため）。
-  - **送る**：一時ファイルが `claude-prompt-` で始まるプロンプト編集なら、最後の内容を書いて `ok` を返した後（Claude が読み戻す 300 ms を置いて）`submitSequence()` を PTY へ送る。`/keybindings` など他のファイルは送信しない。
-  - **入力欄に戻る**（Esc も同じ）：今の内容を書いて `ok` を返す（送信しない。Claude は非 0 でなく `ok` を受けて元の入力欄に戻る）。
-  - キー：設定の送信キー＝送る、それ以外の Enter の組合せ＝改行（修飾つきは自前で改行を入れる）、`Esc`＝入力欄に戻る（候補が開いていれば候補を閉じる）。IME 変換中（`isComposing`／`keyCode 229`）は無視。他は textarea の既定。`keydown` の伝播は止める（Obsidian のホットキーに渡さない。Cmd+V／C／X／Z／A はネイティブ動作）。`pendingEdit` がある間、ターミナル側の `attachCustomKeyEventHandler` は全部 `false` を返し、`onData` も捨てる（キーは PTY に送らない）。
-  - `@` 補完（`at-complete.ts`）：検索語の更新は `input` イベントのうち `isComposing` でないものと `compositionend` で行う。`@` を打った直後から次の空白までを検索語にし、textarea の直下に候補リスト（最大 8 件）を出す。候補は `app.vault.getFiles()` を `prepareFuzzySearch` で絞り、表示は vault 相対パス。↑↓ で選び、Enter／Tab で確定（`@` から検索語までを、`cwd` から見た相対パス（空白があれば引用符）＋空白に置き換える）。Esc で候補を閉じる（編集は続く）。候補が開いている間の Enter は確定であって送信ではない。
-  - `bracketed paste` は関係しない（textarea へのペースト）。
+- `bin/agent-sessions-code` (`sh`; `exec "$(dirname "$0")/agent-sessions" edit "$@"`). `install.sh` symlinks it to `~/bin/agent-sessions-code`; its name contains `code` specifically to match the GUI-editor heuristic above. The daemon adds `VISUAL=<its absolute path>` to a session's `start` env (§4.3 — the path must contain no spaces).
+- `agent-sessions edit FILE` (`agentsessions/cmd_edit.py`) connects to `~/.agents/sessions/plugin.sock` and sends `{"op":"edit","file":FILE,"session":$AGENT_SESSIONS_ID,"cwd":…}`. `{"ok":true}` returns exit code 0; `{"ok":false,"error":"cancel"}` returns 1 (no editor opens; Claude keeps the original content). Any other outcome — `error` of `no-tab` or `busy`, a connection failure, or an unexpected EOF/`ECONNRESET` (including Obsidian crashing) — **falls back to a terminal editor**: `$AGENT_SESSIONS_FALLBACK_EDITOR`, or `vi` if unset, `execvp`'d in the same terminal. It waits indefinitely for a response (Ctrl+C/`SIGTERM` sends `{"op":"cancel"}` and exits 1).
+- `edit-server.ts` listens on `~/.agents/sessions/plugin.sock` (unlinking a stale socket on `onload`, closing and unlinking on `onunload`, `chmod 0600` after creation). Frames reuse `daemon-client.ts`'s `encodeFrame`/`FrameDecoder` (`J` only). An `edit` request looks up the terminal view for `session`; none found returns `{"ok":false,"error":"no-tab"}`; otherwise `view.openEditor(file, cwd)` runs and the response reflects send/cancel, then the connection closes. A second `edit` request for a tab already mid-edit gets `{"ok":false,"error":"busy"}`. If the client disconnects first (Claude Code was interrupted), the edit pane closes. If **the tab** closes first (`onClose`, plugin `onunload`, or the socket closing), the original content is written back to the temp file and `cancel` is returned before closing — a single `pendingEdit` field on the view is the source of truth, and every closing path resolves it.
+- `views/editor-pane.ts` splits the terminal view's body vertically (top: the rest of xterm; bottom: the edit area). Height is the `editorHeight` setting (default 40%, clamped 10–90%), yielding to the terminal's 8-line minimum; the edit area's own minimum is 4 lines plus its toolbar. Opening/closing re-runs `fit()`. The edit area is a `<textarea>` (native paste, IME, undo; minimal Markdown awareness). Font settings flow in the same way as the terminal (`applySettings(fontFamily, fontSize)`, called on every `settings-changed`), so changes apply live even with the editor open. `.agent-sessions-editor-text` defaults to a slightly looser `letter-spacing: var(--as-editor-letter-spacing, 0.03em)` and `line-height: var(--as-editor-line-height, 1.7)` than the terminal, for readability. Opening it loads the temp file's content, focuses it, and places the cursor at the end. A one-line toolbar shows the filename (basename), "Send (<submit-key symbol>)", and "Back to input (Esc)". Autosave is `autosave.ts`'s `SaveDebouncer` (`schedule`/`flush`/`cancel`, a plain class with no DOM or Obsidian dependency): after 800ms of no typing, it writes to a temp file and renames it into place (an `input` event mid-IME-composition doesn't call `onChanged()`; `compositionend` does, so a save never lands mid-conversion). "Send" and "Back to input" both `flush()` any pending timer and write immediately (a no-op if `text === lastSaved`). "Cancel" (the discard path) only `cancel()`s the timer — `original` is written back separately. A failed autosave write logs to `console.warn` rather than a `Notice`, since it can fire as often as every 800ms.
+  - **Send**: if the temp file starts with `claude-prompt-` (a prompt edit), the final content is written and `ok` is returned, then (after a 300ms pause for Claude to read it back) `submitSequence()` is sent to the PTY. Other files (e.g. `/keybindings`) are written but not submitted.
+  - **Back to input** (also Esc): writes the current content and returns `ok` without sending — Claude returns to the (non-empty, non-zero-exit) input line as usual.
+  - Keys: the submit-key setting sends, any other Enter combination inserts a newline, `Esc` returns to input (or closes an open completion list first). IME composition (`isComposing`/`keyCode 229`) is ignored. Everything else is the textarea's normal behavior. `keydown` propagation is stopped (kept away from Obsidian's hotkeys; Cmd+V/C/X/Z/A stay native). While `pendingEdit` is set, the terminal's own `attachCustomKeyEventHandler` returns `false` for everything and `onData` is discarded (no keys reach the PTY).
+  - `@` completion (`at-complete.ts`): the search term updates on non-composing `input` events and on `compositionend`. Typing `@` starts a search term that runs to the next space; a dropdown (up to 8 results) appears below the textarea. Candidates come from `app.vault.getFiles()` filtered with `prepareFuzzySearch`, shown as vault-relative paths. ↑↓ moves the selection, Enter/Tab confirms (replacing `@` through the search term with the vault-relative path from `cwd`, quoted if it contains spaces, plus a trailing space). Esc closes the list without ending the edit. Enter while the list is open confirms rather than submitting.
+  - Bracketed paste doesn't apply here (pasting into a plain `<textarea>`).
 
-### 7.5 タブの状態とアイコン
+### 7.5 Tab state and icons
 
-ビューのアイコン：セッションマネージャーは `layout-dashboard`、サイドパネルは `list-tree`（リボン・サイドバーのタブ）。ターミナルは状態で変わる（基本形は `square-terminal`）。
+View icons: `layout-dashboard` for the Session Manager, `list-tree` for the side panel (ribbon and sidebar tab). The terminal's icon (base form `square-terminal`) changes with state.
 
-純関数 `terminalStatus(input)`（`terminal-status.ts`）が 1 つの `TerminalStatus` を決める：
+A pure function, `terminalStatus(input)` (`terminal-status.ts`), decides a single `TerminalStatus`:
 
-| 状態 | 条件 | アイコン | 色・動き |
+| State | Condition | Icon | Color / motion |
 |---|---|---|---|
-| connecting | attach／start の途中 | `loader` | 薄い色・回転 |
-| working | registry の状態が `busy` | `loader-circle` | アクセント色・回転 |
-| running-shell | registry の状態が `shell`（ツールのコマンド実行中） | `terminal` | 黄・点滅（opacity） |
-| asking | registry の状態が `waiting`（claude 自身が `~/.claude/sessions/<pid>.json` に書く値。AskUserQuestion・許可プロンプト・elicitation・モデル切替の確認等、ダイアログを開いて答えを待っている） | `message-circle-question` | 赤紫・脈動（scale） |
-| waiting | `busy→idle` の後、まだそのタブを前面にしていない（claude 自身の `waiting` とは別物・名前が重なるだけ） | `bell-dot` | オレンジ・脈動（scale） |
-| editing | 内蔵エディタが開いている | `pencil-line` | 青 |
-| idle | 接続中で待機（見た） | `square-terminal` | 通常色 |
-| detached | タブはあるが未接続（復元後、前面にする前） | `square-dashed` | 薄い色 |
-| compacted | `/compact` 完了直後（手動・自動とも）から、次の指示を送る／セッションが終わるまで（下記） | `archive-restore` | 青緑（動き無し） |
-| exited | claude が終了 | `circle-stop` | 薄い色 |
-| error | デーモン不通・claude 不在・起動失敗 | `triangle-alert` | 赤 |
+| connecting | Mid attach/start | `loader` | Muted, spinning |
+| working | `registry` status is `busy` | `loader-circle` | Accent color, spinning |
+| running-shell | `registry` status is `shell` (a tool is running a command) | `terminal` | Yellow, blinking (opacity) |
+| asking | `registry` status is `waiting` (Claude Code's own value in `~/.claude/sessions/<pid>.json` — AskUserQuestion, a permission prompt, elicitation, a model-switch confirmation, or similar, waiting on a dialog) | `message-circle-question` | Magenta, pulsing (scale) |
+| waiting | After `busy→idle`, before that tab has been brought to front (unrelated to Claude's own `waiting` status — the names just happen to collide) | `bell-dot` | Orange, pulsing (scale) |
+| editing | The built-in editor is open | `pencil-line` | Blue |
+| idle | Connected and idle (already seen) | `square-terminal` | Normal |
+| detached | The tab exists but isn't connected (after restore, before it's been brought to front) | `square-dashed` | Muted |
+| compacted | Just after `/compact` completes (manual or automatic), until the next prompt or the session ends (below) | `archive-restore` | Teal, static |
+| exited | `claude` exited | `circle-stop` | Muted |
+| error | Can't reach the daemon, `claude` missing, or start failed | `triangle-alert` | Red |
 
-優先順：error＞exited＞asking＞editing＞connecting＞running-shell＞working＞waiting＞compacted＞detached＞idle。アニメーション（connecting・working・running-shell・asking・waiting）は `prefers-reduced-motion` で止める。
+Priority order: error > exited > asking > editing > connecting > running-shell > working > waiting > compacted > detached > idle. Animated states (connecting, working, running-shell, asking, waiting) respect `prefers-reduced-motion`.
 
-タブの状態は `plugin.terminalStatuses`（id → 状態）に集約し、同じ id のビューが複数あれば優先順の高い方。サイドパネル・マネージャーの行の印はタブがあればこの値、無ければ `Row` と registry から分かる範囲（working／running-shell／asking／compacted／exited／idle／detached）。行の印は状態アイコンそのもの（`TERMINAL_STATUS_ICON[status]`、`rowStatusMark`）で、タブ見出しと同じ絵柄・色・動き（`agent-sessions-status-<status>` クラスを共有）になる。tooltip に状態名。asking・waiting の行はさらに背景でも目立たせる（§8・§10.1）。
+A tab's state lives in `plugin.terminalStatuses` (id → state); if several views share an id, the higher-priority one wins. Side-panel and manager rows use this same value when a tab exists, and otherwise the subset derivable from `Row` and `registry` (working/running-shell/asking/compacted/exited/idle/detached). A row's mark is the same icon (`TERMINAL_STATUS_ICON[status]`, `rowStatusMark`), the same shape, color, and motion as the tab (sharing the `agent-sessions-status-<status>` class), with the state name as a tooltip. `asking`/`waiting` rows are additionally highlighted with a background (§8, §10.1).
 
-`asking` はフックを使わずに検出する：claude 自身が `~/.claude/sessions/<pid>.json` に `status: "waiting"` と、理由を表す `waitingFor`（`"input needed"`・`"permission prompt"`・`"dialog open"` 等）を書く。`registry.ts` はこのファイルを watch しており、生の値をそのまま通す（`RegistryEntry.waitingFor`・`Row.waitingFor`、`json live` では `waiting_for`）。`Notification` フック（`notification_type`：`permission_prompt`・`idle_prompt`・`elicitation_dialog`・`agent_needs_input` 等）は一度きりのイベントで、状態を自前で持ち直す必要があり、届かなければ取りこぼすため使わない。`status: "waiting"` は持続的な状態なので、読むだけで足りる。
+`asking` is detected without a hook: Claude Code itself writes `status: "waiting"` plus a reason, `waitingFor` (e.g. `"input needed"`, `"permission prompt"`, `"dialog open"`), to `~/.claude/sessions/<pid>.json`. `registry.ts` watches this file and passes the raw value through untouched (`RegistryEntry.waitingFor`, `Row.waitingFor`; `waiting_for` in `json live`). The `Notification` hook (`notification_type` values like `permission_prompt`, `idle_prompt`, `elicitation_dialog`, `agent_needs_input`) is a one-shot event that would require reconstructing persistent state and risks being missed entirely, so it isn't used; `status: "waiting"` is itself persistent, so reading it is enough.
 
-`compacted` は `~/.claude/sessions/<pid>.json` に情報が無いため、フックで検出する。`SessionStart` は `source`（`startup`／`resume`／`clear`／`compact`／`fork`）を持ち、`compact` は手動の `/compact` と自動の文脈圧縮の両方に共通の値。圧縮そのものの前に鳴る `PreCompact` は一度きりで「完了」の合図には使えないため、`SessionStart`（`source=compact`。圧縮が終わってセッションが実質再開した時点）を「入る」の合図にする。`agentsessions/hooks.py` の `_update_compacted(data)` が `record_hook` から呼ばれ、`SessionStart`＋`source=compact` で `~/.agents/sessions/compacted/<session_id>.json` を tmp→rename で作り、`UserPromptSubmit`（次の指示）・`SessionEnd`（セッション終了）で消す。`setup` は `SessionStart` のフックを matcher `compact` に絞って登録する（無関係な起動のたびに呼ばれないように）。プラグインの `CompactedTracker`（`compacted.ts`。`registry.ts`・`statusline.ts` と同じ `fs.watch`＋200ms デバウンスの形）がこのディレクトリを監視し、中身は見ずファイルの有無だけを `has(id)` として持つ。`SessionIndex.compactedTracker` を `Row.compacted` に合成する。
+`compacted` has no equivalent field in `~/.claude/sessions/<pid>.json`, so it's detected via a hook instead. `SessionStart` carries a `source` (`startup`/`resume`/`clear`/`compact`/`fork`); `compact` covers both a manual `/compact` and automatic context compaction. `PreCompact`, which fires before compaction starts, is one-shot and can't mark "done", so `SessionStart` with `source=compact` (fired once compaction has finished and the session has effectively resumed) is the "enter" signal instead. `agentsessions/hooks.py`'s `_update_compacted(data)`, called from `record_hook`, creates `~/.agents/sessions/compacted/<session_id>.json` (temp file + rename) on `SessionStart`+`source=compact`, and deletes it on `UserPromptSubmit` (the next prompt) or `SessionEnd`. `setup` registers the `SessionStart` hook with matcher `compact` specifically so it doesn't fire on every unrelated startup. The plugin's `CompactedTracker` (`compacted.ts`, the same `fs.watch` + 200ms-debounce shape as `registry.ts`/`statusline.ts`) watches this directory and tracks only file existence, exposed as `has(id)`; `SessionIndex.compactedTracker` feeds into `Row.compacted`.
 
-Obsidian 1.7 以降、前面にしたことのないタブは deferred view で、アイコンと題名は保存された値がそのまま使われる。`refreshDeferredTerminalTabs()`（`main.ts`）が `onLayoutReady`・`layout-change`・`index`／`registry` の変化のたびに、`leaf.view.title`（`DeferredView` が持つフィールド）とタブ見出し DOM（`.workspace-tab-header-inner-icon`・`.workspace-tab-header-inner-title`）の両方を直接書き換える。アイコンは `rowTerminalStatus(row)`（行が無ければ `detached`）の状態アイコンで、`agent-sessions-status-<status>` クラスと状態名の tooltip も付け替える。題名は `Row.name`（無ければ `sessionDisplayName`「無題 <id8>」。`name.ts` の純関数で、`views/terminal.ts` の `getDisplayText()` も同じ関数を使い、両者が同じ規則で名前を決めることを保証する）。
+Since Obsidian 1.7, a tab never brought to front is a deferred view, so its icon and title come from whatever was last saved rather than being computed live. `refreshDeferredTerminalTabs()` (`main.ts`), run on `onLayoutReady`, `layout-change`, and any `index`/`registry` change, writes both `leaf.view.title` (a field `DeferredView` exposes) and the tab-header DOM (`.workspace-tab-header-inner-icon`, `.workspace-tab-header-inner-title`) directly. The icon is `rowTerminalStatus(row)`'s state icon (`detached` if there's no row), with the matching `agent-sessions-status-<status>` class and tooltip. The title is `Row.name`, or `sessionDisplayName` ("Untitled <id8>") if there is none — the same pure function (`name.ts`) that `views/terminal.ts`'s `getDisplayText()` uses, so both agree on the rule.
 
-### 7.6 1 セッション＝1 タブと分割
+### 7.6 One session, one tab, and splitting
 
-`openSession(id)`（`open-session.ts`）：`workspace.getLeavesOfType('agent-sessions-terminal')` から `view.state.id === id` の leaf を探し、あれば `revealLeaf` して終わり。無ければメインエリアに `workspace.getLeaf('tab')` で leaf を作り `setViewState`。新規セッションも同じ経路（先に `sessions.json` の `sessions[id]` を書く）。多重呼出は `opening: Map<id, Promise<WorkspaceLeaf>>` で抑止し、同じ `id` の呼出が進行中ならその Promise を返す。
+`openSession(id)` (`open-session.ts`): looks through `workspace.getLeavesOfType('agent-sessions-terminal')` for a leaf whose `view.state.id === id`; if found, `revealLeaf`s it and stops. Otherwise it creates a leaf in the main area (`workspace.getLeaf('tab')`) and calls `setViewState`. A new session follows the same path (writing `sessions.json`'s `sessions[id]` first). Concurrent calls for the same `id` are de-duplicated via `opening: Map<id, Promise<WorkspaceLeaf>>` — a call already in flight for that `id` returns the same promise.
 
-「右に分割」「下に分割」（⋯ メニュー、`app.workspace.duplicateLeaf(leaf, 'vertical' | 'horizontal')`）と Obsidian 標準の「タブを複製」「新しいウィンドウへ」は、同じ `id` を持つ複数のビューを作ってよい（`openSession` を経由しない経路。`TerminalView.setState` はこれらを自己閉鎖しない）。複数ビューはそれぞれ独立に attach し（デーモンの最小サイズ規則で PTY のサイズが決まる）、閉じればそのビューだけ detach する。`openSession` からの通常の open は既存タブへ移動するので、重複は作らない。
+"Split right"/"split down" (the `⋯` menu, `app.workspace.duplicateLeaf(leaf, 'vertical' | 'horizontal')`) and Obsidian's own "Duplicate tab"/"Open in new window" are allowed to create multiple views sharing an `id` — they bypass `openSession` (`TerminalView.setState` doesn't self-close in this case). Each view attaches independently (the daemon's minimum-size rule still applies across them) and detaches independently when closed. A normal open via `openSession` always moves to the existing tab instead, so it never creates a duplicate on its own.
 
-## 8. プラグイン：サイドパネル（`agent-sessions-side`）
+## 8. The side panel (`agent-sessions-side`)
 
-右サイドバー、常設。4 領域を CSS grid（`auto 1fr <detailHeight> auto`）で上から並べる：
+The right sidebar, always present. Four areas laid out as a CSS grid (`auto 1fr <detailHeight> auto`), top to bottom:
 
-1. **ナビ行**：`＋`（新規セッションダイアログ）・`layout-grid`（セッションマネージャーをメインに開く。あればそこへ）・`⋯`（再走査・設定を開く）。セッションに対する操作はここに置かない。
-2. **一覧**（`views/side-list.ts`。区分は見出し付き、空の区分は出さない）
-   - **開いているタブ**：ターミナルタブがあるセッション。タブの順。前面のタブの行は強調。クリックでそのタブを前面に。見出しの横に「入力待ち N・未読 M」のバッジ（`attentionCounts`。asking を「入力待ち」、waiting を「未読」と呼ぶ。0 件なら出さない）。クリックで最初の対象（asking 優先、無ければ waiting）を開く。件数は「開いているタブ」「起動中」「最近」の全体から数える（`attentionCounts(source, [...openTabs, ...running, ...recent])`）。
-   - **起動中**：デーモンが持っていてタブが無いセッション。クリックで attach したタブを開く。
-   - **最近**：それ以外を最終更新順に N 件（設定、既定 10）。アーカイブ済みと名前の無い子セッションは出さない。クリックで `--resume` のタブを開く。
-   - 行：状態の印（§7.5 と同じアイコン・色・動き）＋カテゴリのチップ（あれば、§11）＋カテゴリを除いた名前＋最終更新（`MM-DD HH:MM`）＋タブがあれば `▣`＋`⋯`（常に表示）。「開いているタブ」「起動中」「最近」のどの区分も同じ表示。asking の行は淡い赤紫の背景＋左端 3px の色帯＋名前を太字、waiting の行はそれより弱いオレンジの背景（帯・太字は無し）で目立たせる。
-   - `⋯` のクリックで行メニュー：`名前を変更`・`セッションを圧縮`（直近が `/compact` なら非活性）・`アーカイブ`⇄`アーカイブ解除`・（起動中なら）`セッションを終了`・`セッション解析結果`・`ID をコピー`（`views/rows.ts` の `showRowMenu`）。右クリックでも同じメニュー。クリック・`⋯`・右クリックでその行を選択状態にする（強調のみ）。
-3. **詳細欄**（折畳可、`views/detail.ts`。§9）：一覧との間に 4px のドラッグハンドル（`mousedown`→`mousemove` で `sideDetailHeight` を更新、`mouseup` で保存。既定 220px、最小 80px）。
-4. **セッション制限**（`views/limits.ts`）：5h・7d のバー・使用率・「リセットまで h:mm:ss」（24 時間以上は「N 日 h:mm」）を 1 秒ごとに更新。`resets_at` が無ければ「—」。元は `~/.agents/sessions/status/*.json` のうち `rate_limits` を持つ最新 mtime のファイル（アカウント共通。前提：アカウントを切り替えて並行使用しない）。リセット直後でまだ新しい `rate_limits` が届いていないときは、`rollForwardWindow`（§10.2 と同じ規則の純関数）が窓を先へ送って「今の窓」を表示する。1 秒ごとの再描画のたびに `Date.now()` で判定し直すので、リセットを過ぎた瞬間から自然に切り替わる。
+1. **Nav row**: `+` (new-session dialog), `layout-grid` (opens the Session Manager in the main area, or reveals it if already open), `⋯` (rescan, open settings). No session-level actions live here.
+2. **List** (`views/side-list.ts`; sections have headings, empty sections are omitted):
+   - **Open tabs**: sessions with a terminal tab, in tab order. The frontmost tab's row is highlighted. Clicking brings that tab to front. The heading carries an "N waiting for input · M unread" badge (`attentionCounts`; "waiting for input" = asking, "unread" = waiting; omitted at zero), and clicking it opens the first matching session (asking takes priority over waiting). The counts are computed across all three sections together (`attentionCounts(source, [...openTabs, ...running, ...recent])`).
+   - **Running**: sessions the daemon holds with no open tab. Clicking opens an attached tab.
+   - **Recent**: everything else, most-recently-updated first, up to a setting (default 10). Archived sessions and nameless child sessions are excluded. Clicking opens a `--resume` tab.
+   - Row layout: state mark (§7.5's icon/color/motion) + category chip (if any, §11) + name without the category + last-updated (`MM-DD HH:MM`) + `▣` if a tab exists + `⋯` (always shown). All three sections share this layout. An asking row gets a pale magenta background, a 3px left color bar, and a bold name; a waiting row gets a weaker orange background (no bar, not bold).
+   - `⋯` opens the row menu: Rename, Compress (disabled if the last command was `/compact`), Archive ⇄ Unarchive, End session (running sessions only), Session analysis, Copy ID (`views/rows.ts`'s `showRowMenu`). Right-click opens the same menu. Clicking, `⋯`, or right-clicking also selects that row (highlight only).
+3. **Detail pane** (collapsible, `views/detail.ts`, §9): a 4px drag handle sits between it and the list above (`mousedown`→`mousemove` updates `sideDetailHeight`, `mouseup` saves it; default 220px, minimum 80px).
+4. **Rate limits** (`views/limits.ts`): 5h and 7d bars, usage percentage, and "resets in h:mm:ss" (or "N days h:mm" past 24 hours), refreshed every second. `resets_at` missing shows "—". The source is the most recently modified `status/*.json` file that carries `rate_limits` (account-wide; this assumes one account isn't used concurrently from two places). If the window's reset time has passed but a fresh `rate_limits` hasn't arrived yet, `rollForwardWindow` (the same rule as §10.2's pure function) advances the window so "the current window" is what's shown; since the redraw happens every second and re-evaluates `Date.now()` each time, the display flips over naturally the instant the reset time passes.
 
-サイドパネルは `workspace` の `layout-change`・`active-leaf-change` と `registry`・`SessionIndex` の変化を購読して描き直す。
+The side panel subscribes to `workspace`'s `layout-change`/`active-leaf-change`, and to `registry`/`SessionIndex` changes, to re-render.
 
-## 9. プラグイン：詳細ビュー（共通部品）
+## 9. The detail view (shared component)
 
-`views/detail.ts` はサイドパネル・セッションマネージャーの両方が使う共通部品。渡された `Row`（何も指していなければ前面のタブのセッション）について描く：
+`views/detail.ts` is used by both the side panel and the Session Manager. For a given `Row` (or the frontmost tab's session if none is given):
 
-- 名前の上に小さなカテゴリのチップ（あれば、§11 の色）、`<h4>` はカテゴリを除いた名前だけ（`categoryAndLabel(row)`：`row.name` を `splitName` で分ける純関数）。
-- バッジ：モデル・エフォート（`statusInfo` から。無ければ「デフォルト」）・rc（○／●、§10.1 の判定と同じ見た目のチップ）。
-- コンテキスト使用率のドーナツ（SVG、`ctxPercent`）。`row.compacted`（§7.5）が真なら、その右に小さな「compact 済み」ラベル（`.agent-sessions-detail-compacted`。文脈がリセットされていることを示す）。
-- 総トークン・総コスト：`json usage` を呼んで 60 秒キャッシュ（`totalTokens` ＝入力＋出力＋cache 読出＋cache 作成、`formatCost` ＝ `$x.xx`）。
-- 直近の指示・直近の応答（カード。`-webkit-line-clamp: 6`、クリックで全文展開）・直近のツール・フォルダ・ID。
+- A small category chip above the name (if any, §11's colors); the `<h4>` shows only the name, without the category (`categoryAndLabel(row)`, a pure function that splits `row.name` via `splitName`).
+- Badges: model, effort (from `statusInfo`; "Default" if unavailable), and rc (a green ● when connected, ○ otherwise or unknown — the same look as §10.1's rc chip).
+- A context-usage donut (SVG, `ctxPercent`). If `row.compacted` (§7.5) is true, a small "Compacted" label appears next to it (`.agent-sessions-detail-compacted`), indicating the context was just reset.
+- Total tokens and cost: from `json usage`, cached for 60 seconds (`totalTokens` = input + output + cache-read + cache-create; `formatCost` = `$x.xx`).
+- The most recent prompt and response (cards, `-webkit-line-clamp: 6`, click to expand), plus recent tools, folder, and ID.
 
-行にポインタが 300 ms 乗ったとき（一覧の hover）も `json detail`（キャッシュ）を引いて同じ内容を出す。
+Hovering a row for 300ms also fetches `json detail` (cached) and shows the same content.
 
-## 10. プラグイン：セッションマネージャー（`agent-sessions-manager`）
+## 10. The Session Manager (`agent-sessions-manager`)
 
-メインエリアのタブ、「新しいタブ」相当の既定ビュー。開いても claude は起動しない。**新規を選ぶか、行をクリックしない限り新しいセッションは始まらない。** マネージャーは**利用状況の分析**の画面、サイドパネルは**今の作業**の画面という役割分担を持つ。
+The main-area tab, and the default view for a new tab. Opening it never starts a session — **only choosing "New" or clicking a row does.** The manager is the **usage-analysis** view; the side panel is the **current-work** view — a deliberate split of roles.
 
-`buildSkeleton()` は上下 2 段：**上**＝ツールバー＋本体（`.agent-sessions-manager-body`。表＋右の詳細パネル、残りの高さを使う）、**下**＝解析（`.agent-sessions-manager-analysis`。§10.3）。
+`buildSkeleton()` builds two stacked sections: **top** (toolbar + body — `.agent-sessions-manager-body`, the table plus the right-hand detail pane, filling the remaining height), **bottom** (analysis — `.agent-sessions-manager-analysis`, §10.3).
 
-### 10.1 木・一覧・その他・アーカイブ
+### 10.1 The tree, listing, Other, and Archive
 
-木は「グループ（見出し、折畳）→ その他（見出し、折畳）→ アーカイブ（見出し。ツールバーの「アーカイブを表示」が入のときだけ出し、常に展開）」の順。グループの並びは各グループの最も新しい最終更新の順。折畳状態は `sessions.json` の `folded` に保存する（既定は展開）（`tree.ts`／`views/manager-model.ts` の `flattenTree`）。各区分の中は最終更新順。
+The tree order is "groups (headings, foldable) → Other (heading, foldable) → Archive (heading, shown only when the toolbar's "Show archive" is on, always expanded)". Groups are ordered by their most-recently-updated session. Folded state persists in `sessions.json`'s `folded` (expanded by default) (`tree.ts`/`views/manager-model.ts`'s `flattenTree`). Within each section, rows are ordered by last-updated.
 
-- グループはカテゴリ名（`splitName` の前半、`カテゴリ: 名前` の `カテゴリ`）ごとにまとまる。見出しはキャレット＋カテゴリのチップ（§11）＋件数＋その区分の 5h／7d のコスト合計（`categoryTotals`。列の位置に揃える）。実カテゴリの見出しはチップだけで、カテゴリ名をもう一度プレーンテキストでは出さない（チップの文字＝カテゴリ名のため）。
-- カテゴリの無い名前付きセッションと、名前も無く `json scan` の `child` が偽のセッションは、1 つの「その他」区分（`OTHER_GROUP`＝`"その他のセッション"`。表示は `t("group.other")`）にまとめ、最終更新順で混在させる。無名の子セッションはここにも出さない。直前の区分の最後の行と続いて見えないよう、すべての区分の見出し行の上に 4px（`--size-4-1`）の余白を置く。折畳の識別子は `OTHER_GROUP`（`folded` に `__no_category__` があっても畳んだ扱いにする）。
-- グループ・その他の区分の中の行にはチップを付けない（見出しが既に示しているため）。その他・アーカイブの見出しは色を持たないため、チップではなく文字（「その他」「アーカイブ」）で示す。
-- 5h／7d の列見出しをクリックしてグループを外した平らな一覧に並べ替えたときだけ、見出しが無くなるため行ごとにチップを出す（唯一の色手がかりになるため）。
+- Groups correspond to category names (the part of `splitName` before the colon in `Category: Name`). A group heading is a caret + category chip (§11) + count + that section's combined 5h/7d cost (`categoryTotals`, column-aligned). A real category's heading shows only its chip — never the category name a second time as plain text, since the chip already carries it.
+- Named sessions with no category, and sessions with neither a name nor (per `json scan`'s) `child` set, are combined into one "Other" section (`OTHER_GROUP`, the literal persisted string `"その他のセッション"`, shown to users as `t("group.other")`), interleaved by last-updated. Nameless child sessions never appear here either. Every section heading gets 4px (`--size-4-1`) of top margin, so it never runs into the previous section's last row visually. The fold identifier is `OTHER_GROUP` (a `folded` entry of `__no_category__` is also treated as folded, for backward compatibility with sessions.json files written before this section had its current identifier).
+- Rows inside a group or Other have no chip of their own — the heading already carries the color.
+- Sorting by clicking the 5h/7d column headers flattens the tree (no more grouping), and only then does each row carry its own chip, since it's the only remaining color cue.
 
-グループ・その他の見出しには、その区分の中（折畳んでいても）に asking／waiting のセッションがあれば、優先度の高い方（asking＞waiting）の印を付ける（`urgencyByGroupKey`（`attention.ts`）→ `renderGroupUrgencyMark`。アーカイブは数えない）。
+A group or Other heading gets an urgency mark — the higher-priority of asking/waiting, if either is present anywhere inside it (even folded) — via `urgencyByGroupKey` (`attention.ts`) → `renderGroupUrgencyMark`. The Archive section isn't counted.
 
-行は状態の印（§7.5。タブと同じアイコン・色・動き）・名前列（チップ＋名前、上記の規則）・最終更新・モデル・エフォート・5h のコスト・7d のコスト・フォルダ・⋯。モデル・エフォートは短い表記で出し、完全な値は tooltip、不明は空欄にする。行の高さは 32px 以上。列は `table-layout: fixed` の固定幅（印 24px・最終更新 120px・モデル 90px・エフォート 64px・5h／7d 各 72px・フォルダ 120px・⋯ 28px、名前が残り）で重ならない。幅が足りないときはコンテナクエリでフォルダ（600px 未満）→エフォート（550px 未満）→モデル（500px 未満）→5h（460px 未満）の順に列を隠す。列見出しのクリックで並べ替え（最終更新＝既定のグループの木、5h／7d のコスト＝グループを外した一覧のコスト降順）。asking／waiting の行は §8 と同じ背景・帯で目立たせる。
+Row columns: state mark (§7.5, same icon/color/motion as the tab) · name (chip + name, per the rules above) · last-updated · model · effort · 5h cost · 7d cost · folder · `⋯`. Model and effort show a short form with the full value in a tooltip; unknown values are blank. Row height is at least 32px. Columns are `table-layout: fixed` (mark 24px, last-updated 120px, model 90px, effort 64px, 5h/7d 72px each, folder 120px, `⋯` 28px, name takes the rest) so nothing overlaps. At narrower widths, container queries hide folder (<600px) → effort (<550px) → model (<500px) → 5h (<460px), in that order. Clicking a column header sorts (last-updated = the default grouped tree; 5h/7d cost = a flattened list sorted by that cost, descending). Asking/waiting rows get the same background/bar treatment as §8.
 
-ツールバー：`＋`・`再走査`（`rotate-cw`）・絞込（名前の部分一致）・`⋯`（「アーカイブを表示」チェック）。行クリック → `openSession(id)`（タブがあればジャンプ）。↑↓ で行の移動、Enter で開く、`/` で絞込にフォーカス。行の `⋯` と右クリックはサイドパネルと同じ行メニュー（`showRowMenu`、§8）。右の詳細パネルは `views/detail.ts`（§9）そのもの。
+Toolbar: `+`, "Rescan" (`rotate-cw`), a name filter, `⋯` ("Show archive" checkbox). Clicking a row opens it (`openSession(id)`, jumping to an existing tab if one exists). ↑↓ moves the row selection, Enter opens, `/` focuses the filter. A row's `⋯` and right-click open the same row menu as the side panel (`showRowMenu`, §8). The right-hand detail pane is `views/detail.ts` (§9) itself.
 
-再走査のタイミング：ビューを開いたとき、再走査ボタン、`events.log` の追記（該当 ID だけ `--only`）、`~/.claude/sessions/` の変化（状態の更新のみ、走査はしない）、ビューが見えている間 60 秒毎。サイドパネルも同じ走査結果を共有する（`main.ts` が 1 つの `SessionIndex` を持ち、両ビューが購読）。
+Rescan triggers: opening the view, the Rescan button, an `events.log` append (rescanning just that ID via `--only`), a change under `~/.claude/sessions/` (status updates only, no scan), and every 60 seconds while the view is visible. The side panel shares the same scan results (`main.ts` holds one `SessionIndex`, and both views subscribe to it).
 
-### 10.2 解析：統計カード・カテゴリ別の帯
+### 10.2 Analysis: stat cards and the category bar
 
-解析領域は上に統計の帯、下にカテゴリ別の横バー。
+The analysis area is a row of stat cards on top, a per-category horizontal bar below.
 
-**統計カード**：5 時間枠・7 日枠の 2 枚。見出しの横に「リセットまで …」（カウントダウン）。上段は使用率のバー。下段は 2×2 のラベル付きの小さな表——「コスト $22.90」「トークン 31.5M」「呼出 142 回」「セッション 2」（ラベルは薄い文字、値は太字）。各値に tooltip（例：トークン＝入力＋出力＋cache 読出＋cache 作成、この枠の中）。数値は `agent-sessions json stats`（§13.2）から。窓がリセット時刻を過ぎているのに新しい `rate_limits` がまだ届いていないときは、Python 側の `_roll_forward`（§13.2）が窓を先送りした「今の窓」を返すので、カードは常に今の窓を表示する（先送りした窓は使用率が不明「—」になる）。
+**Stat cards**: two, for the 5-hour and 7-day windows. Each heading is followed by "resets in …" (a countdown). The top row is a usage-percentage bar; below it, a 2×2 labeled mini-table — "Cost $22.90", "Tokens 31.5M", "Calls 142", "Sessions 2" (light labels, bold values), each with a tooltip (e.g. tokens = input + output + cache-read + cache-create, for that window). Numbers come from `agent-sessions json stats` (§13.2). If a window's reset time has passed but a fresh `rate_limits` snapshot hasn't arrived yet, Python's `_roll_forward` (§13.2) has already advanced it to "the current window" server-side, so the card always shows the current one (a rolled-forward window shows "—" for usage percentage, since it isn't known).
 
-**7 日枠のペース判定**：7 日枠のカードの使用率バーの下に 1 行（`renderPaceLine`）。純関数 `weeklyPace(usedPct, start, end, now, windowCost)`（`views/manager-model.ts`）が経過率 `e`（今が窓の何割目か）から予測使用率＝使用率 `/ e` を出す。予測 ≤100 のときは「順調 — このペースで枠の終わりに約 N%」（緑）。>100 のときは、このままのペースで使い切る時刻（`start + 経過 × 100 / 使用率`。`formatWeekdayTime` で「<曜日> HH:MM」）とリセットまでの余り（「このペースでは 火 14:00 に使い切ります（リセットの D 日 H 時間前）」）、2 行目に残り期間を保たせるための目安（「残り 1 日あたり Z% 以下（約 $W／日）」。コストが出せなければ % だけ）をオレンジで出す。使用率が不明（`used_percentage` が無い）なら「使用率が分かりません」、経過が 6 時間未満なら「判定には経過が足りません」を薄い色で出す（母数が小さすぎるため）。tooltip に経過％・使用％。5 時間枠には出さない（1 日あたりの目安に意味がないため）。
+**7-day pace projection**: one line under the 7-day card's usage bar (`renderPaceLine`). The pure function `weeklyPace(usedPct, start, end, now, windowCost)` (`views/manager-model.ts`) computes elapsed fraction `e` (how far into the window "now" is) and projects `usedPct / e`. A projection ≤100 shows "On track — about N% by the end of the window at this pace" (green). Above 100, it shows the time it would run out at this pace (`start + elapsed × 100 / usedPct`, formatted "<weekday> HH:MM" via `formatWeekdayTime`) and the margin to reset ("At this pace you'll run out Tue 14:00 (D days H hours before reset)"), plus a second line with a target for the remaining days ("Stay under Z%/day (about $W/day) for the rest of the window" — percentage only if cost can't be computed), in orange. Missing `used_percentage` shows "Usage isn't known"; under 6 hours elapsed shows "Not enough time has passed to project" (too small a sample), both in a muted color. A tooltip carries the elapsed and used percentages. The 5-hour window doesn't show this line (a per-day target isn't meaningful over 5 hours).
 
-**カテゴリ別（7 日枠）の帯**：コストの上位 8 カテゴリの横バー（カテゴリの無いセッションは名前の有無を問わず「その他」1 本にまとめる。`categoryKeyOf`。値は $ と割合）。実カテゴリはバーの塗りにそのカテゴリのチップと同じ色相、「その他」は灰色（`.is-neutral`）。コスト 0 のカテゴリは出さない。全部 0 なら「この枠の使用はありません」。クリックでそのグループへスクロールして開く。純関数 `categoryTotals(rows, stats, window)` は `views/manager-model.ts` に置く。
+**Per-category (7-day) bar**: a horizontal bar per category, the top 8 by cost (any session with no category, named or not, is folded into one "Other" bar via `categoryKeyOf`; values are $ and percentage). A real category's fill uses its chip's hue; "Other" is gray (`.is-neutral`). A category at $0 is omitted; if everything is $0, it shows "No usage in this window." Clicking a bar scrolls to and expands that group. The pure function `categoryTotals(rows, stats, window)` lives in `views/manager-model.ts`.
 
-### 10.3 上下配置・折畳・リサイズ
+### 10.3 Layout, folding, and resizing
 
-解析領域は見出し（キャレット＋「解析」）をクリックで折畳める。一覧本体と解析の間には §8 の詳細欄と同じ作りのドラッグハンドルがあり、高さを変えられる（下限 120px）。折畳状態（`managerAnalysisCollapsed`）と高さ（`managerAnalysisHeight`、既定 240px）は設定に保存し、骨組みを作り直しても（言語切替など）保たれる。折畳んだときはハンドルも隠す。
+The analysis area's heading (caret + "Analysis") toggles folding. A drag handle, matching §8's detail-pane handle, sits between the table and analysis areas (minimum height 120px). Folded state (`managerAnalysisCollapsed`) and height (`managerAnalysisHeight`, default 240px) persist in settings and survive a skeleton rebuild (e.g. a language switch). The handle is hidden while folded.
 
-## 11. 名前とカテゴリ
+## 11. Names and categories
 
-**カテゴリ**＝名前の `: ` より前（`tree.ts` の `splitName`。TUI・マネージャーのグループと同じ判定）。カテゴリの無い名前はそのまま。
+**Category** is everything before `: ` in a name (`tree.ts`'s `splitName`, the same rule the TUI and manager groups use). A name with no `: ` has no category.
 
-**入力**：新規セッション・名前を変更のダイアログはどちらも 1 つの入力欄（`modals.ts` の `buildComposedNameField`）で、カテゴリと名前をまとめて打てる。半角 `:` は打った時点で区切りと認め、続く空白は要らない。全角 `：` は直後に空白が来て初めて区切りと認める（IME の変換途中で `：` だけが先に入ることがあるため）。区切りを認識した瞬間、区切りより前の文字列（カテゴリ名・区切り文字とも）は入力欄から取り除かれ、代わりにチップとして確定表示になる（貼り付けで一括入力された場合も、同じ `input` イベント経由で同様に効く）。区切りがまだ無い間は、既存カテゴリの部分一致候補（`filterCategories`）をドロップダウンで出し、↑↓ で移動、Enter／Tab で確定（チップになる）、Escape で候補を閉じる。名前が空でカーソルが先頭のとき Backspace、またはチップのクリックで、チップを解いてテキストに戻せる（`tokenizeNameInput`・`filterCategories` は `name.ts` の純関数）。ダイアログの確定はボタンだけで、この入力欄での Enter は候補の確定であって、ダイアログの確定にはならない。
+**Input**: both the new-session and rename dialogs use one combined field (`modals.ts`'s `buildComposedNameField`) for category and name together. A half-width `:` is recognized as a separator the moment it's typed, no trailing space required. A full-width `：` is only recognized once followed by a space (since an IME can produce `：` alone mid-conversion, before the rest of the input lands). The instant a separator is recognized, everything before it (the category text and the separator itself) is removed from the text field and shown instead as a confirmed chip (this also applies to a separator that arrives via paste, through the same `input` event path). Before a separator appears, a dropdown of matching existing categories (`filterCategories`) is shown; ↑↓ moves through it, Enter/Tab confirms the selection (turning it into a chip), Escape closes it. With the name field empty and the cursor at the start, Backspace — or clicking the chip — turns the chip back into text (`tokenizeNameInput` and `filterCategories` are pure functions in `name.ts`). Only the dialog's own button confirms the dialog; Enter in this field confirms a dropdown suggestion, not the dialog.
 
-結果の名前は「カテゴリ: 名前」（カテゴリが空なら「名前」）。名前変更ダイアログはいまの名前を `splitName` で 2 つに分けて入力欄に反映する（チップ＋残りの名前）。
+The resulting name is `Category: Name` (or just `Name` with no category). The rename dialog pre-splits the current name via `splitName` into the chip and the remaining text.
 
-**色**：カテゴリごとに固定のパレット番号（0〜11、`category.ts` の `paletteHueDeg(index)` が色相角度 0〜330 を 30 度刻みで返す）を割り当て、`sessions.json` の `categoryColors`（§3）に書いて覚える。`assignCategoryColor(colors, category)`：既にあればその番号を不変で返す。無ければ「まだ使われていない番号のうち最小」、12 個すべて使われていれば「使用回数が最も少ない番号（同数なら小さいほう）」を選ぶ。`SessionIndex.categoryColorIndex(category)` は確定済みならその番号を返し、未確定なら（走査で確定するまでの見込みとして）その場で計算した番号を書き戻さずに返す（命名ダイアログのプレビュー色に使う）。走査のたびに `SessionIndex` が今のセッション一覧に出てくるカテゴリのうち未確定のものを `ensureCategoryColors` でまとめて確定し、ロック付きで `sessions.json` に書き戻す（ロックが取れなくても例外を握りつぶし、次の走査で再試行する）。
+**Color**: each category gets a fixed palette index (0–11; `category.ts`'s `paletteHueDeg(index)` maps it to a hue in 30-degree steps from 0 to 330), recorded in `sessions.json`'s `categoryColors` (§3). `assignCategoryColor(colors, category)`: an already-assigned category keeps its index unchanged; a new one gets the lowest unused index, or — once all 12 are in use — whichever index is used least often (ties go to the lower index). `SessionIndex.categoryColorIndex(category)` returns the confirmed index if there is one, or computes (without writing) what it would be — used for the naming dialog's preview color before a scan confirms it. Every scan, `SessionIndex` runs `ensureCategoryColors` over any category present in the current session list that isn't yet confirmed, writing the results back to `sessions.json` under the lock (a failed lock is swallowed rather than raised, and retried on the next scan).
 
-チップの描画は `chip.ts` の `renderCategoryChip(container, category, colorIndex)` に一本化し、命名ダイアログ・サイドパネルの行・マネージャーの見出し／行／カテゴリ別バー・詳細ビューがすべてこれを使う（暗いテーマは `hsl(h 40% 50% / 0.18)` の背景と `hsl(h 45% 60%)` の文字、明るいテーマ（`.theme-light`）は `hsl(h 50% 50% / 0.16)` の背景と `hsl(h 45% 32%)` の文字。カテゴリ別の帯の塗りも同じ色相で、暗 `45% 60%`・明 `45% 32%`）。チップは `max-width` や省略記号を持たず全文表示し、名前側（`flex: 1 1 auto`）だけが幅に応じて縮む。
+Chip rendering is centralized in `chip.ts`'s `renderCategoryChip(container, category, colorIndex)`, used identically by the naming dialog, side-panel rows, the manager's headings/rows/category bar, and the detail view (dark theme: `hsl(h 40% 50% / 0.18)` background, `hsl(h 45% 60%)` text; light theme (`.theme-light`): `hsl(h 50% 50% / 0.16)` background, `hsl(h 45% 32%)` text; the category bar's fill uses the same hue, `45% 60%` dark / `45% 32%` light). A chip has no `max-width` or ellipsis — it always shows the full text; only the name beside it (`flex: 1 1 auto`) shrinks to fit.
 
-## 12. 状態・通知・deferred タブ
+## 12. State, notifications, and deferred tabs
 
-- `registry.ts`：`fs.watch(~/.claude/sessions)` を 200 ms でまとめ、全 `*.json` を読み `sessionId → {status, pid, rc, updatedAt, waitingFor?}`（`rc` は `bridgeSessionId` の有無、`waitingFor` は `status` が `waiting` のときだけ）。pid が生きているか `process.kill(pid, 0)` で確かめ、死んでいる台帳は無視。
-- 状態の遷移 `busy|shell → idle` で、そのセッションのタブが前面でない（または Obsidian が非アクティブ）なら 8 秒の `Notice`「<名前>：指示待ち」（クリックで `openSession`）。設定で切れる。§6 の裏で起動した経路の間は出さない。
-- 3 つのビューは `registry`・`SessionIndex` の変化イベントを購読して印を更新する（§7.5）。
-- 終了済みの後始末：`onLayoutReady` と `layout-change` で、デーモンの `list` の `exited` のうちターミナルタブが無い `id` に `forget` を送る。タブがある `id` は、そのタブが「再開」「閉じる」で `forget` するまで残す。
-- deferred タブの名前とアイコン：`refreshDeferredTerminalTabs()` が §7.5 の通り書き換える。
+- `registry.ts`: `fs.watch(~/.claude/sessions)`, debounced 200ms, reads every `*.json` into `sessionId → {status, pid, rc, updatedAt, waitingFor?}` (`rc` reflects whether `bridgeSessionId` is present; `waitingFor` only when `status` is `waiting`). A pid is checked with `process.kill(pid, 0)`; a dead one's ledger entry is ignored.
+- On the `busy|shell → idle` transition, if that session's tab isn't in front (or Obsidian itself isn't focused), an 8-second `Notice` appears ("<name>: waiting for input", clicking it calls `openSession`). This can be turned off in settings, and is suppressed for the duration of §6's background-start path.
+- All three views subscribe to `registry`/`SessionIndex` changes and update their state marks accordingly (§7.5).
+- Exited-session cleanup: on `onLayoutReady` and `layout-change`, any `id` in the daemon's `list` with `exited` set and no open terminal tab gets a `forget`. An `id` that still has a tab is left alone until that tab's Resume/Close sends `forget` itself.
+- Deferred-tab name and icon updates: handled by `refreshDeferredTerminalTabs()` as described in §7.5.
 
-## 13. 集計
+## 13. Aggregation
 
 ### 13.1 `agent-sessions json usage ID [--from ISO] [--to ISO]`
 
-`assistant` 行の `message.usage`（`input_tokens`・`cache_creation_input_tokens`・`cache_read_input_tokens`・`output_tokens`、`output_tokens_details.thinking_tokens`）は同じ `message.id` が複数行に現れ、内容は同一。`message.model` が `<synthetic>` の行は API 呼出ではない。`isSidechain`（サブエージェント）・`isMeta` の行は数えない。
+An `assistant` line's `message.usage` (`input_tokens`, `cache_creation_input_tokens`, `cache_read_input_tokens`, `output_tokens`, `output_tokens_details.thinking_tokens`) recurs across several lines sharing the same `message.id`, with identical content. A line whose `message.model` is `<synthetic>` isn't a real API call. Sidechain (sub-agent) and meta lines aren't counted.
 
-`agentsessions/usage.py`：transcript を先頭から読み、人の指示（`detail.is_human_prompt`）でターンを切る。以後の `assistant` 行の usage を `message.id` で重複排除してターンに足す。最初の指示より前の usage は「（開始前）」のターン（index −1）。各ターンに `cost`（$、`pricing.py`）・`tools: {name: count}`（`content` の `tool_use` ブロックを名前で数える。`message.id` で重複排除）・`models` を持ち、`total` に `cost`・`tools`・`duration`（最初の指示から最後の assistant 行までの経過秒）・`first_ts`・`last_ts`・`context_last`（最後の呼出の `input + cache_read + cache_create`）を持つ。`estimated: true` を持つターンがあれば `total.estimated = true`。`--from`／`--to` はターン開始時刻に当てる（両端含む）。`turns` は常に全部返し、`total` だけが区間の合計。
+`agentsessions/usage.py` reads a transcript from the start and cuts it into turns at each human prompt (`detail.is_human_prompt`); the `assistant` lines that follow accumulate into that turn's usage, de-duplicated by `message.id`. Usage before the first prompt goes into a synthetic pseudo-turn (`index -1`, `before_first: True`, `prompt: ''` — display text for that case is the caller's job; see `usage.beforeFirstPrompt` on the plugin side). Each turn carries `cost` ($, from `pricing.py`), `tools: {name: count}` (`tool_use` blocks in `content`, counted by name, de-duplicated by `message.id`), and `models`. The `total` carries `cost`, `tools`, `duration` (seconds from the first prompt to the last assistant line), `first_ts`, `last_ts`, and `context_last` (the most recent call's `input + cache_read + cache_create`). If any turn has `estimated: true`, so does `total`. `--from`/`--to` filter by a turn's start time (inclusive on both ends). `turns` is always the complete list; only `total` reflects the filtered range.
 
-行メニュー「セッション解析結果」→ モーダル（`src/usage-modal.ts`、`width: 90vw; max-width: 1100px`）。固定ヘッダ（題名・コピー・閉じる）。要約カード 4 枚（コスト・トークン（入力合計、下に出力）・ターン数・期間）。入力バー（cache 読出／cache 作成／非キャッシュの割合、凡例に数）・出力バー・ツール使用（横バー、上位 12）。ターン表（#・時刻・指示（省略表示、ホバーで全文）・入力・出力・コスト）。区間は行クリックで開始、次のクリックで終了（範囲を強調）、もう一度で解除。カードとバーは区間の値、副題に「#a〜#b」。数は k／M 表記（`usage.ts` の `formatK`）。合計の計算と Markdown 化（コピー用）は `usage.ts` の純関数（`sumRange`・`toMarkdown`）。
+The row menu's "Session analysis" opens a modal (`src/usage-modal.ts`, `width: 90vw; max-width: 1100px`) with a fixed header (title, copy, close), four summary cards (cost; tokens — total input, output below it; turn count; duration), an input bar (cache-read / cache-create / uncached shares, with counts in the legend), an output bar, a tool-use bar (top 12), and a turn table (# · time · prompt (truncated, full text on hover) · input · output · cost). Clicking a row starts a range, another click ends it (highlighting the range), a third click clears it. The cards and bars reflect the selected range, with a "#a–#b" subtitle. Numbers use k/M notation (`usage.ts`'s `formatK`). Range summing and the copyable Markdown rendering are pure functions in `usage.ts` (`sumRange`, `toMarkdown`).
 
 ### 13.2 `agent-sessions json stats`
 
-出力：`{"windows":{"five_hour":W,"seven_day":W}}`、`W = {"start","end","used_percentage","total":{calls,input,output,cache_read,cache_create,cost},"sessions":{id:{calls,input,output,cache_read,cache_create,cost}}}`。`end` は `resets_at`（無ければ現在）、`start` は `end − 5h／7d`。`used_percentage` は rate_limits から（無ければ null）。
+Output: `{"windows":{"five_hour":W,"seven_day":W}}`, where `W = {"start","end","used_percentage","total":{calls,input,output,cache_read,cache_create,cost},"sessions":{id:{calls,input,output,cache_read,cache_create,cost}}}`. `end` is `resets_at` (or the current time if absent); `start` is `end − 5h`/`7d`. `used_percentage` comes from `rate_limits` (`null` if unavailable).
 
-`end`（`resets_at`）が現在時刻より過去（リセット直後で、まだ新しい `rate_limits` が届いていない）なら、`_roll_forward(end, used_percentage, duration, now)` が窓の長さ（5h／7d）ずつ `math.ceil((now - end) / duration)` 回分だけ先送りして「今の窓」の `end` にする（2 期分以上ずれていても対応）。先送りしたときは `used_percentage` を `null`（不明）にする——新しい `rate_limits` が届くまで実際の値は分からないため。`start` は新しい `end` から計算されるので、コスト集計も新しい窓の開始からだけになる（直前の窓のコストは含まない）。プラグインのサイドパネル（`views/limits.ts`、§8）は `json stats` を経由せず `status/*.json` を直接読む独立実装なので、同じ規則の純関数 `rollForwardWindow(w, durationSeconds, now)` を別に持つ。
+If `end` (`resets_at`) is in the past — right after a reset, before a fresh `rate_limits` has arrived — `_roll_forward(end, used_percentage, duration, now)` advances the window by whole multiples of its length (`math.ceil((now - end) / duration)`, so it copes with being more than one window stale) to produce "the current window"'s `end`. A rolled-forward window sets `used_percentage` to `null`, since the real value won't be known until a fresh `rate_limits` snapshot arrives. `start` follows from the new `end`, so cost aggregation only covers the new window (not the one before it). The side panel's rate-limit view (`views/limits.ts`, §8) reads `status/*.json` directly rather than going through `json stats`, so it carries its own copy of the same rule as a pure function, `rollForwardWindow(w, durationSeconds, now)`.
 
-集計：`~/.claude/projects/*/*.jsonl`（サイドチェーンの行も含める。サブエージェントの transcript が `<project>/<id>/` 配下にあれば親の id に加える）のうち mtime が 7d 窓の開始より新しいもの。`assistant` 行の `message.usage` を `message.id` で重複排除、`<synthetic>` 除外、`pricing.cost` でコスト。
+Aggregation source: `~/.claude/projects/*/*.jsonl` (sidechain lines included; a sub-agent transcript under `<project>/<id>/` is folded into its parent's `id`) with mtime newer than the 7-day window's start. `assistant` lines are de-duplicated by `message.id`, `<synthetic>` excluded, cost from `pricing.cost`.
 
-キャッシュ：ファイル毎に 10 分単位のバケット（`{bucket_start: {calls,…,cost}}`）と読んだ位置（`offset`）・直近の `message.id` 200 件を `~/.agents/sessions/stats-cache.json` に持つ。サイズが増えていれば `offset` から続きだけ読む（transcript は追記のみ。縮んでいたら読み直す）。窓の合計はバケットから（10 分の粒度）。壊れたキャッシュ（ファイル全体・エントリ単位のどちらも）は捨てて読み直す。2 回目以降は 1 秒未満。
+Caching: per file, 10-minute buckets (`{bucket_start: {calls,…,cost}}`), the last read position (`offset`), and the 200 most recent `message.id`s live in `~/.agents/sessions/stats-cache.json`. A grown file is read from `offset` onward (transcripts are append-only); a shrunk one is read from scratch. Window totals sum from the buckets (10-minute granularity). A corrupted cache (the whole file, or a single entry) is discarded and rebuilt. A second run typically finishes in under a second.
 
 ### 13.3 `pricing.py`
 
-`price_of(model) -> {input, output, cache_5m, cache_1h, cache_read, estimated}`（$/MTok）。`cost(usage_dict, model) -> float`。モデル ID の前方一致で引く（長い方を優先）：
+`price_of(model) -> {input, output, cache_5m, cache_1h, cache_read, estimated}` ($/MTok). `cost(usage_dict, model) -> float`. Models are matched by longest-prefix:
 
-- `claude-fable-5-1`・`claude-mythos-5-1`：入力 10・出力 50・cache 読出 0.25（例外）
-- `claude-fable-5`・`claude-mythos-5`：入力 10・出力 50・cache 読出 1.0
-- `claude-opus-5`・`claude-opus-4-8`・`claude-opus-4-7`・`claude-opus-4-6`・`claude-opus-4-5`：入力 5・出力 25・cache 読出 0.5
-- `claude-opus-4-1`・`claude-opus-4`：入力 15・出力 75・cache 読出 1.5
-- `claude-sonnet-5`：入力 2・出力 10・cache 読出 0.2
-- `claude-sonnet-4-6`・`claude-sonnet-4-5`・`claude-sonnet-4`・`claude-3-7-sonnet`：入力 3・出力 15・cache 読出 0.3
-- `claude-haiku-4-5`：入力 1・出力 5・cache 読出 0.1
-- `claude-3-5-haiku`：入力 0.8・出力 4・cache 読出 0.08
-- `claude-3-haiku`：入力 0.25・出力 1.25・cache 読出 0.03
+- `claude-fable-5-1`, `claude-mythos-5-1`: input 10, output 50, cache-read 0.25 (an exception to the pattern below)
+- `claude-fable-5`, `claude-mythos-5`: input 10, output 50, cache-read 1.0
+- `claude-opus-5`, `claude-opus-4-8`, `claude-opus-4-7`, `claude-opus-4-6`, `claude-opus-4-5`: input 5, output 25, cache-read 0.5
+- `claude-opus-4-1`, `claude-opus-4`: input 15, output 75, cache-read 1.5
+- `claude-sonnet-5`: input 2, output 10, cache-read 0.2
+- `claude-sonnet-4-6`, `claude-sonnet-4-5`, `claude-sonnet-4`, `claude-3-7-sonnet`: input 3, output 15, cache-read 0.3
+- `claude-haiku-4-5`: input 1, output 5, cache-read 0.1
+- `claude-3-5-haiku`: input 0.8, output 4, cache-read 0.08
+- `claude-3-haiku`: input 0.25, output 1.25, cache-read 0.03
 
-cache 作成は 5 分＝入力×1.25、1 時間＝入力×2（`cache_creation.ephemeral_1h_input_tokens` があれば 1 時間の単価、残りは 5 分）。未知のモデルは Opus の単価で見積もり `estimated: true` を立てる。
+Cache-write cost is input × 1.25 for a 5-minute TTL, input × 2 for a 1-hour TTL (`cache_creation.ephemeral_1h_input_tokens`, if present, uses the 1-hour rate; the rest uses 5-minute). An unrecognized model is priced at the Opus rate with `estimated: true`.
 
 ## 14. statusLine
 
-`agent-sessions status`（`hooks.format_status_line`）が Claude Code のステータス行に 1 行を出す：
+`agent-sessions status` (`hooks.format_status_line`) writes one line for Claude Code's status line:
 
 ```
-[<送信キー記号> · ]<モデル> · <エフォート> · ctx NN% · rc ●/○
+[<submit-key symbol> · ]<model> · <effort> · ctx NN% · rc ●/○
 ```
 
-- モデルは `model.display_name`、無ければ「デフォルト」。エフォートは `effort.level`（辞書のとき）または `effort` 自身（文字列のとき）、無ければ「デフォルト」。
-- `ctx` は `context_window.used_percentage`（`round`）、無ければ「—」。
-- `rc` は `~/.claude/sessions/*.json` のうち `session_id` の一致する行の `bridgeSessionId` の有無（`live.live_sessions`）。一致が無ければ `○`。台帳が無い・未接続はどちらも `○`、接続中だけ緑の `●`（サイド・マネージャーの詳細ビューの rc バッジと同じ判定）。
-- 送信キーの記号（macOS は `⏎`／`⇧⏎`／`⌃⏎`／`⌥⏎`／`⌘⏎`、非 macOS は短い文字表記 `⏎`／`S-⏎`／`C-⏎`／`A-⏎`。`keys.ts` の `submitKeyStatuslineSymbol(key, isMac)`）は、環境変数 `AGENT_SESSIONS_ID` が立っているとき（プラグインのデーモンから起動したセッション）だけ、`~/.agents/sessions/ui.json`（`plugin/src/ui-state.ts` の `writeUiState(runtimeDir, submitKey, isMac)`。プラグインが `onload` と設定保存のたびに `Platform.isMacOS` を渡して tmp→rename で書く）から読み、**行の先頭**に `· ` 区切りで付ける。`AGENT_SESSIONS_ID` が無い・`ui.json` が無い／壊れている／`submitSymbol` が無いときは何も付けない。
+- Model is `model.display_name`, or "Default" if unavailable. Effort is `effort.level` (if it's a dict) or `effort` itself (if a string), or "Default" if unavailable.
+- `ctx` is `context_window.used_percentage` (rounded), or "—" if unavailable.
+- `rc` reflects whether the matching `session_id` in `~/.claude/sessions/*.json` has a `bridgeSessionId` (`live.live_sessions`) — no match, no ledger entry, or not connected all show `○`; only a connected session shows the green `●` (the same rule as the rc badge in the side/manager detail view).
+- The submit-key symbol (macOS: `⏎`/`⇧⏎`/`⌃⏎`/`⌥⏎`/`⌘⏎`; other platforms: the shorter `⏎`/`S-⏎`/`C-⏎`/`A-⏎`; `keys.ts`'s `submitKeyStatuslineSymbol(key, isMac)`) is prepended, with a `· ` separator, only when `AGENT_SESSIONS_ID` is set (a session the plugin's daemon started) and `~/.agents/sessions/ui.json` has a `submitSymbol` (written by `plugin/src/ui-state.ts`'s `writeUiState(runtimeDir, submitKey, language, isMac)` on every `onload` and settings save, passing `Platform.isMacOS`). It's omitted whenever `AGENT_SESSIONS_ID` is unset, `ui.json` is missing or unreadable, or `submitSymbol` is absent.
 
-`agent-sessions status` は同時に、stdin の JSON をそのまま `status/<session_id>.json` に tmp→rename で書く（§3）。
+`agent-sessions status` also writes the JSON on stdin, verbatim, to `status/<session_id>.json` (temp file + rename; §3).
 
-## 15. 設定
+## 15. Settings
 
-| 項目 | 既定 |
+| Setting | Default |
 |---|---|
-| フォント | macOS：`Menlo, "Hiragino Sans", monospace`。非 macOS：`"DejaVu Sans Mono", "Noto Sans Mono CJK JP", monospace`（`settings.ts` の `defaultFontFamily(isMac)`。新規インストールだけ分岐——一度でも保存された値は変えない） |
-| フォントサイズ | 13 |
-| 余白 | ゆったり（`comfortable`／`compact`／`none`） |
-| 送信キー | `enter`（§7.2。実体は `keybindings.json`。選択肢は macOS が 5 つ、非 macOS は `cmd+enter` を除く 4 つ） |
-| 最近の件数（サイドパネル） | 10 |
-| サイドパネルの詳細欄の高さ | 220px（`sideDetailHeight`、最小 80px） |
-| マネージャーの解析領域の高さ／折畳 | 240px／展開（`managerAnalysisHeight`／`managerAnalysisCollapsed`） |
-| 指示待ちの通知 | オン |
-| `claude` のパス | 空＝ログインシェル（`$SHELL`、無ければ macOS は `/bin/zsh`・非 macOS は `/bin/bash`。`backend.ts` の `defaultLoginShell(isMac)`）で `command -v claude` |
-| `agent-sessions` のパス | 空＝`~/bin/agent-sessions` |
-| Python のパス | 空＝`/usr/bin/python3`（Linux にもある） |
-| スクロールバック行数 | 5000 |
-| 内蔵エディタの高さ | `editorHeight`、既定 40%（10〜90%。§7.4） |
-| 言語 | 自動（§16） |
+| Font | macOS: `Menlo, "Hiragino Sans", monospace`. Other platforms: `"DejaVu Sans Mono", "Noto Sans Mono CJK JP", monospace` (`settings.ts`'s `defaultFontFamily(isMac)` — branches only for a fresh install; a saved value is never overridden by a platform default) |
+| Font size | 13 |
+| Padding | Comfortable (`comfortable`/`compact`/`none`) |
+| Submit key | `enter` (§7.2). Backed by `keybindings.json`; five choices on macOS, four on other platforms (`cmd+enter` excluded — see §7.2.1's rationale) |
+| Recent count (side panel) | 10 |
+| Side panel detail height | 220px (`sideDetailHeight`, minimum 80px) |
+| Manager analysis height / folded | 240px / expanded (`managerAnalysisHeight`/`managerAnalysisCollapsed`) |
+| Idle notification | On |
+| `claude` path | Empty = resolved via a login shell (`$SHELL`, or `defaultLoginShell(isMac)` — `/bin/zsh` on macOS, `/bin/sh` elsewhere) running `command -v claude` |
+| `agent-sessions` path | Empty = `~/bin/agent-sessions` |
+| Scrollback lines | 5000 |
+| Built-in editor height | `editorHeight`, default 40% (10–90%, §7.4) |
+| Language | Auto (§17) |
 
-## 16. テーマ
+## 16. Theme
 
-`theme.ts` が Obsidian の CSS 変数（`--background-primary`・`--text-normal`・`--text-accent`・`--text-selection`）から `background`・`foreground`・`cursor`・`selectionBackground` を作る。ANSI 16 色は明暗それぞれの固定表。`css-change` で再適用。
+`theme.ts` derives `background`/`foreground`/`cursor`/`selectionBackground` from Obsidian's own CSS variables (`--background-primary`, `--text-normal`, `--text-accent`, `--text-selection`). The 16 ANSI colors are a fixed table per light/dark mode. `css-change` triggers re-applying the theme.
 
 ## 17. i18n
 
-`manifest.json` の `description` は英語（`Open and manage Claude Code sessions as terminal tabs in Obsidian.`）。UI 本体は日本語と英語の 2 言語。設定「言語」：自動（既定。`window.localStorage.getItem("language")` が `"ja"` なら日本語、それ以外は英語）／日本語／English。
+### 17.1 The plugin (TypeScript)
 
-`src/i18n.ts`：`t(key, vars?)`。辞書は `ja`・`en`。ビュー・メニュー・ダイアログ・設定・通知・モーダル・ツールチップなど UI の文字列はすべて `t()` を通す。言語を変えたら `settings-changed` を発火し、全ビューが骨組みから描き直す。Python 側（TUI・CLI）の文字列は対象外（日本語のまま）。
+`manifest.json`'s `description` is always English (`Open and manage Claude Code sessions as terminal tabs in Obsidian.`). The UI itself supports Japanese and English. The language setting has three values: Auto (default — follows `window.localStorage.getItem("language")`: `"ja"` selects Japanese, anything else English), Japanese, English.
 
-## 18. エラー処理
+`src/i18n.ts` exposes `t(key, vars?)` against `ja`/`en` dictionaries. Every user-facing string — views, menus, dialogs, settings, notifications, modals, tooltips — goes through `t()`. Changing the language fires `settings-changed`, and every view rebuilds its skeleton from scratch.
 
-| 事象 | 振る舞い |
+### 17.2 Python (CLI, TUI, hooks, statusLine)
+
+`agentsessions/i18n.py` provides the same kind of `t(key, **values)` for strings a human actually reads outside the plugin: the TUI screen, CLI stdout/stderr, the statusLine, and the display labels in `json` output (`status_label`, distinct from the raw `status` value — see §5). It intentionally doesn't cover comments, docstrings, or internal log/exception text (nobody reads `daemon.log` or a Python traceback in a chosen language) — those are plain English. It also doesn't use `gettext`/`locale`; the table is small enough that a plain dict is simpler and adds no dependency.
+
+English is the default. Japanese is selected when:
+
+1. `AGENT_SESSIONS_ID` is set (a session launched by the plugin's daemon) **and** `~/.agents/sessions/ui.json` has a `language` field — matching whatever the user picked in the plugin's own language setting, since the plugin resolves `auto` to a concrete value before writing it (§17.1).
+2. Otherwise, the first of `LANG`, `LC_ALL`, `LC_MESSAGES` that is set: a value starting with `ja` (case-insensitive) selects Japanese, anything else selects English.
+
+A CLI invocation with no session context (outside a plugin-launched terminal — an interactive `agent-sessions` in a plain shell, for instance) falls straight to step 2, i.e. the shell's own locale.
+
+One literal Japanese string is deliberately not translated: `OTHER_GROUP`, whose value is the literal `"その他のセッション"` (marked here as a literal, not prose). It's a key persisted in existing users' `sessions.json` (`folded`) and in the plugin's matching `plugin/src/tree.ts` constant — translating it would silently un-fold that group for everyone who had it folded, and it's shown as-is (that literal text) even in an English-language UI, the same as the plugin does on its side.
+
+## 18. Error handling
+
+| Situation | Behavior |
 |---|---|
-| デーモンに繋がらない | 起動を試みる。3 回失敗で終了画面に理由（Python が無い・ソケットが作れない） |
-| `claude` が見つからない | 終了画面に「claude が見つからない」と設定へのリンク |
-| `--resume` が失敗（transcript 消失） | claude の出力をそのまま見せ、終了画面に「新規として開始」を足す |
-| `json scan` が失敗 | 一覧に前回の結果を残し、`Notice` に stderr の先頭行 |
-| `sessions.json` が壊れている | `.broken-<時刻>` に退避して初期化 |
-| `keybindings.json` が読めない | 設定画面に「読めない」と出し、送信キーが `enter` 以外の変更は不可 |
-| `sessions.json.lock` が 2 秒取れない | 書込みを諦めて `Notice`。10 秒より古いロックは壊れたものとして消す |
-| デーモンの二重起動 | 後発が `flock` に失敗して即終了。プラグインは 1 秒待って再接続 |
-| `exited.json` が壊れている | `.broken-<時刻>` に退避して空で始める（デーモンは起動する） |
-| `stats-cache.json` が壊れている | 該当ファイル（またはエントリ）を捨てて読み直す |
-| WebGL が使えない | canvas に落ちる（ログのみ） |
+| Can't reach the daemon | Tries to start it; after 3 failures, the exit screen shows why (Python missing, socket couldn't be created) |
+| `claude` not found | The exit screen shows "claude not found" with a link to settings |
+| `--resume` fails (transcript gone) | Shows Claude's own output as-is, with "Start as new" added to the exit screen |
+| `json scan` fails | The list keeps its last successful result; a `Notice` shows the first line of stderr |
+| `sessions.json` is corrupted | Moved aside to `.broken-<timestamp>` and reinitialized |
+| `keybindings.json` can't be read | Settings shows "unreadable"; changes away from `enter` are blocked |
+| `sessions.json.lock` can't be acquired in 2 seconds | The write is abandoned with a `Notice`; a lock older than 10 seconds is treated as abandoned and removed |
+| Two daemons start at once | The later one fails to `flock` and exits immediately; the plugin waits 1 second and reconnects |
+| `exited.json` is corrupted | Moved aside to `.broken-<timestamp>`, the daemon starts with an empty one |
+| `stats-cache.json` is corrupted | The affected file (or entry) is discarded and rebuilt |
+| WebGL unavailable | Falls back to the canvas renderer (logged only) |
 
-## 19. テスト
+## 19. Platform support
 
-- **Python**（unittest、`-W error`。`tests/`）：`protocol`（フレームの分割・結合）、`daemon`（`cat` を子にした start/attach/replay/resize/kill/forget、バッファ上限、複数接続と最小サイズ、切断の後始末、終了済みへの attach、`exited.json` の書き出しと読み込み）、`store` のロック（2 プロセスで同時に書く。`categoryColors` の往復・`path=None`（vault 未設定）で `load` は空、`save`／`update` は `VaultNotConfigured` を含む）、`setup`（settings.json の置換と backup。`SessionStart`（matcher `compact`）・`UserPromptSubmit` の追加を含む）、`cache`、`jsonout`（`waiting_for` を条件付きで持つこと）、`live`（`waiting`／`waiting_for`／ラベル）、`pricing`（各表・1h・未知モデル）、`usage`（cost・tools・duration）、`stats`（窓・バケット・重複排除・`_roll_forward` の 1 期分／複数期分の先送りと境界）、`hooks`（`format_status_line`・送信キー記号・`_update_compacted` の書込と削除）、`config`（`_resolve_vault` の優先順・`require_vault`。T-80）、`model`・`scan`・`detail`（`last_command` を含む）・`items`（TUI の区分け）・`tui_state`（vault 未設定時の `main()` の早期終了を含む）、`edit`（偽ソケットサーバーで `ok:true`→0、`cancel`→1、`no-tab`／`busy`→fallback、接続不可／EOF→fallback）、`attach`。
-- **TypeScript**（vitest、`plugin/test/`）：`tree`・`manager-model`（開いているタブ／起動中／最近・グループ／その他／アーカイブの区分け、`categoryTotals`、`weeklyPace`・`formatWeekdayTime`・`shortModelName`）、`links`・`at-complete`、`marks`、`keys`（`classifyEnter`・`resolveEnterAction`・`sendSequence`・`deriveSubmitKey`・`reconcileSubmitKey`）、`keybindings`（読解・書換・戻し）、`daemon-client`（フレーム）、`daemon-integration`、`statusline`・`limits`（整形・並べ替え・`rollForwardWindow`）、`store`（読み書きとロック、tmp dir）、`category`（パレット番号の割当）、`name`（`tokenizeNameInput`・`filterCategories`・`sessionDisplayName`）、`detail`（`categoryAndLabel`）、`terminal-status`（`terminalStatus` の優先順・`asking`・`compacted`・アイコン対応表）、`attention`（`attentionCounts`・`urgencyByGroupKey`）、`compacted`（`CompactedTracker`）、`autosave`（`SaveDebouncer`）、`ui-state`、`vault-state`（`writeVaultState`。T-80）、`backend`（`envWithVault`。T-80）、`registry`（`waitingFor` の素通し）、`index`（`waitForName`・`row.compacted` の合成を含む）、`edit-server`（フレームの往復とハンドラの分岐）、`i18n`、`settings`、`usage`、`tui-mode`、`side-list`、`key-role`、`dedupe`。`openSession` の多重呼出はモックの workspace で確認する。
-- **手動**：`requirements.md` の「受け入れの確認」。実機での目視は崩れを指摘されたときと、Obsidian CLI で組立てにくい操作（右クリックメニューなど）に限る。
+- **macOS**: the primary, fully verified platform.
+- **Linux, including Obsidian running under WSLg on Windows**: supported. The daemon, CLI, and their Python-side platform branches are exercised in CI (below) and were additionally verified by hand in `ubuntu:22.04`, `ubuntu:24.04`, and `python:3.10-slim` containers — the daemon's full socket protocol (`start`/`attach`/`resize`/`kill`/`exit`/`shutdown` over a real PTY running `bash`), `bin/agent-sessions`'s shebang and direct execution, `curses` availability for the TUI, and `install.sh`/`uninstall.sh` end to end. A few platform-specific choices exist because of this:
+  - `_claude_pids()` (`live.py`) resolves `ps` via `shutil.which('ps')` rather than assuming `/bin/ps`, and calls it with `-eo pid=,args=` (works on both GNU/procps and BSD `ps`). A minimal environment with no `ps` at all falls back to a plain liveness check (`_alive(pid)`) — the same result, just without the process list.
+  - `bin/agent-sessions`'s shebang is `#!/usr/bin/env python3` rather than a hardcoded `/usr/bin/python3`, since some minimal Linux images (e.g. `python:3.10-slim`) only have `python3` at `/usr/local/bin`.
+  - `scan()`'s cache trusts a file's `mtime`/`size` to mean "unchanged" — except within `RACY_WINDOW` (2 seconds) of the current time, which it always re-reads regardless of what the cache says. Some Linux filesystems (observed reliably in Docker's default `/tmp`, essentially never on macOS's APFS) coalesce back-to-back writes to nearly the same `mtime`, which would otherwise make an actively-updating transcript look unchanged and return stale cached content — the same failure mode "racy git" addresses for git's own index.
+  - The daemon's socket lives under `~/.agents/sessions/` rather than inside the vault partly because `AF_UNIX` path length is capped at 104 bytes on macOS and 108 on Linux, and a vault path can be long.
+  - The terminal's key routing, submit-key labels, default font, and default login shell all branch on platform — see §7.2.1 and §15.
+  - What hasn't been verified end to end yet: running the Obsidian plugin itself on Linux (including under WSLg) — the terminal keybinding table in particular (§7.2.1) is derived from Claude Code's own key usage and Linux terminal conventions, not from an interactive session on that platform.
+- **Windows (native)**: not supported. The daemon depends on `pty`, `fcntl`, and `termios` — all Unix-only standard-library modules with no Windows equivalent — plus a `select.select` loop over both sockets and PTY file descriptors, which Windows' `select` doesn't support for anything but sockets. None of this is a plugin-side restriction that could be worked around; a native Windows build of Obsidian has no PTY to hold open. Running the Linux build of Obsidian under WSL/WSLg avoids the issue entirely, since the daemon then runs under Linux.
+- Obsidian desktop only (`isDesktopOnly: true` in `manifest.json`), since the plugin spawns processes and opens Unix sockets — neither is available to a mobile or web build. Minimum Obsidian version 1.7.2 (`minAppVersion`), the version that introduced deferred views (§7.5, §23).
+- Python 3.9+, standard library only, resolved via `$PATH` (`python3`).
 
-## 20. 検証の手段と Obsidian の注意点
+## 20. Install, uninstall, and setup
 
-実機の確認は Obsidian CLI（`obsidian plugin:reload id=agent-sessions` の後、起動中の Obsidian に対してコマンド・DOM の問い合わせを行う）で行う。確認の前後で `document.querySelectorAll(".modal-container").length === 0` を見て、モーダルを開けっぱなしにしていないか確かめる。副作用で作ったタブ・セッションは確認後に畳む／`forget` する。
+`install.sh <vault>` (or `AGENT_SESSIONS_VAULT=<vault> install.sh`): symlinks `bin/agent-sessions` and `bin/agent-sessions-code` into `~/bin`, symlinks `plugin/` into `<vault>/.obsidian/plugins/agent-sessions`, warns (without failing) if `~/bin` isn't on `$PATH`, and finishes by calling `agent-sessions setup` (§5) to reconcile Claude Code's hooks and statusLine.
 
-気をつける点：
+`uninstall.sh <vault> [--force] [--purge]`:
 
-- **`Modal.open()`** は閉じるときに戻す選択範囲を `this.selection` に書く。Modal のサブクラスで同名のフィールドを使わない。
-- **deferred view**：前面にしたことのないタブは `DeferredView` で、アイコン・題名は保存された値がそのまま使われる（§7.5・§12）。DOM を直接書き換えないと反映されない。
-- **`hidden` な要素は `ResizeObserver` が発火しない**：背面のタブ・折畳んだ領域は大きさ 0 として報告されるか、そもそも観測されない。ターミナルの `ensureAttached()` は「0 でない大きさを初めて報告したとき」に接続するため、前面にするまで接続されないのは設計どおり（§7.1）。
-- **`tui: fullscreen`** の Claude Code は画面を自前で描き直し、xterm のスクロールバックに溜まらない（`buffer.length === rows`）。マーカー方式のジャンプが効かないことを前提に、スクロールキー送出で代替する（§7.3）。
-- Obsidian CLI の合成イベントでは `showAtMouseEvent`（右クリックメニュー）が反応しないことがあるため、その経路は手動確認に回す。
+1. Checks `daemon --running-count`. With one or more sessions still running, it asks for confirmation (`--force` skips the prompt) before proceeding; aborting leaves everything untouched.
+2. `daemon --stop` (a no-op if the daemon isn't running).
+3. `agent-sessions setup --remove` (§5) — removes only this project's own hook entries, statusLine, and the two submit-key `keybindings.json` entries; other tools' entries are always left alone.
+4. Removes the `~/bin/agent-sessions`, `~/bin/agent-sessions-code`, and `<vault>/.obsidian/plugins/agent-sessions` symlinks. A path that exists but isn't actually a symlink (replaced by hand) is left in place, with a note.
+5. Only with `--purge`: also deletes `~/.agents/sessions/` (or `$AGENT_SESSIONS_RUNTIME_DIR` if set) and `<vault>/.agents/sessions/` — daemon runtime state and session bookkeeping (folded groups, archive, category colors), respectively.
 
-## 21. 今後の見込み
+Both scripts are `#!/bin/sh` (POSIX, checked with `dash -n`/`sh -n`) and safe to run more than once — running either again when there's nothing left to do just reports that.
 
-- **Codex（他のエージェント CLI）**：データ・CLI/JSON・画面のいずれも `agent` の軸を持つが、今動くのは Claude Code だけ。対応するときは `agent` フィールド・`argv` の組み立て・走査元（`~/.codex/sessions`）を `agentsessions/agents/<name>.py` に分ける想定。
-- **IDE ブリッジ**（差分の accept/reject、選択範囲の随時通知）：要否未定、対象外。
-- **非 macOS の実機確認**（§7.2.1）：Linux（WSLg を含む）の Obsidian でまだ通しの動作確認をしていない。特に Ctrl+P（コマンドパレットと claude の履歴操作が衝突しうる）・Ctrl+W（タブを閉じると claude の readline の「1 語削除」が衝突しうる）・Ctrl+Shift+C／V（選択コピー・貼り付け）・フォントサイズ・既定フォントの CJK 幅は、実機での見え方と衝突の有無を確かめてから、必要なら §7.2.1 の割当表を見直す。
+## 21. Release process
+
+The plugin version lives in `plugin/manifest.json`, mirrored at the repo root (`manifest.json`) and tracked per-version in `versions.json` (the minimum Obsidian version each plugin release requires). `cd plugin && npm version <patch|minor|major>` runs `plugin/version-bump.mjs` as npm's `version` hook: it writes the new version into `plugin/manifest.json`, copies that file to the repo root (the review bot and BRAT only read the root copy), and — only if the version is new — records `{version: minAppVersion}` in the root `versions.json`.
+
+Pushing the resulting tag runs `.github/workflows/release.yml`: it checks out the repo, installs the plugin's npm dependencies, runs `npm run build`, and creates a **draft** GitHub Release for that tag with `main.js`, `manifest.json`, and `styles.css` attached. A maintainer reviews and publishes the draft by hand — nothing here publishes automatically.
+
+## 22. Testing and CI
+
+- **Python** (`unittest`, run with `-W error`, under `tests/`): `protocol` (frame splitting/joining), `daemon` (`cat` as a stand-in child process for start/attach/replay/resize/kill/forget, the buffer cap, multiple connections and minimum-size negotiation, disconnect cleanup, attaching to an exited session, `exited.json` round-tripping), `store`'s locking (two processes writing concurrently; `categoryColors` round-tripping; `path=None` — no vault configured — making `load` return empty while `save`/`update` raise `VaultNotConfigured`), `setup` (both directions: the settings.json rewrite/backup and `run_remove`'s selective removal), `keybindings` (the removal side only — see §17.2/§7.2), `cmd_daemon` (`--running-count`/`--stop` against a real daemon), `cache`, `jsonout` (the `status`/`status_label` split, `waiting_for` only when applicable), `live` (`waiting`/`waiting_for`/labels), `pricing` (each price tier, the 1-hour cache rate, unknown models), `usage` (cost, tools, duration, `before_first`), `stats` (windows, buckets, de-duplication, `_roll_forward`'s single- and multi-window-stale cases and their boundaries), `hooks` (`format_status_line`, the submit-key symbol, `_update_compacted`'s write/remove), `config` (`_resolve_vault`'s priority order, `require_vault`), `model`, `scan` (including the racy-mtime re-read rule), `detail` (including `last_command`), `items` (the TUI's grouping), `tui_state` (the early exit with no vault configured), `edit` (a fake socket server: `ok:true`→0, `cancel`→1, `no-tab`/`busy`→fallback, unreachable/EOF→fallback), `attach`.
+- **TypeScript** (`vitest`, under `plugin/test/`): `tree`, `manager-model` (open-tabs/running/recent sectioning, group/Other/Archive sectioning, `categoryTotals`, `weeklyPace`, `formatWeekdayTime`, `shortModelName`), `links`, `at-complete`, `marks`, `keys` (`classifyEnter`, `resolveEnterAction`, `sendSequence`, `deriveSubmitKey`, `reconcileSubmitKey`), `key-role` (`classifyCtrlKeyNonMac`, the non-macOS submit-key labels), `keybindings` (read/write/reconcile), `daemon-client` (framing), `daemon-integration` (a real daemon — skipped unless `AGENT_SESSIONS_BIN` points at a built binary), `statusline`, `limits` (formatting, sorting, `rollForwardWindow`), `store` (read/write, locking, the temp-file path), `category` (palette-index assignment), `name` (`tokenizeNameInput`, `filterCategories`, `sessionDisplayName`), `detail` (`categoryAndLabel`), `terminal-status` (priority order, `asking`, `compacted`, the icon table), `attention` (`attentionCounts`, `urgencyByGroupKey`), `compacted` (`CompactedTracker`), `autosave` (`SaveDebouncer`), `ui-state`, `vault-state` (`writeVaultState`), `backend` (`envWithVault`, `defaultLoginShell`), `registry` (`waitingFor` passthrough), `index` (`waitForName`, `row.compacted` composition), `edit-server` (frame round-trips and handler branches), `i18n`, `settings`, `usage`, `tui-mode`, `side-list`. `openSession`'s de-duplication is checked against a mocked workspace.
+- **Manual**: `requirements.md`'s acceptance checks. Hands-on verification in a real Obsidian instance is reserved for reported visual glitches and for interactions the automation described in §23 can't drive (a right-click context menu, for instance).
+- **CI** (`.github/workflows/test.yml`, on every push and pull request): the Python suite (`python3 -W error -m unittest discover -s tests -t .`) runs on `ubuntu-latest` and `macos-latest`. The plugin's `npm run typecheck` and `npm test` run on `ubuntu-latest`.
+
+## 23. Verification and Obsidian's quirks
+
+Hands-on verification goes through the Obsidian CLI (`obsidian plugin:reload id=agent-sessions`, then querying and driving the already-running Obsidian instance's commands and DOM). Before and after, `document.querySelectorAll(".modal-container").length === 0` checks that no modal was left open. Any tab or session created as a side effect is folded/`forget`-ten afterward.
+
+Things worth knowing:
+
+- **`Modal.open()`** stores the selection it restores on close in `this.selection` — a `Modal` subclass must not reuse that field name for something else.
+- **Deferred views**: a tab never brought to front is a `DeferredView`, whose icon and title come from whatever was last saved, not computed live (§7.5, §12) — they only update when written directly into the DOM.
+- **`ResizeObserver` doesn't fire on a hidden element**: a background tab or a folded panel either reports zero size or isn't observed at all. The terminal's `ensureAttached()` only runs once it sees a non-zero size for the first time, so a tab staying disconnected until it's brought to front is expected behavior, not a bug (§7.1).
+- **`tui: fullscreen`**: Claude Code redraws its own screen and keeps its own scroll position, so nothing accumulates in xterm's scrollback (`buffer.length === rows`). Marker-based jumping is assumed not to work in this mode, and falls back to sending Claude's own scroll keys instead (§7.3).
+- The Obsidian CLI's synthetic events don't reliably trigger `showAtMouseEvent` (a right-click menu), so that path is checked by hand instead.
+
+## 24. Security and privacy
+
+Everything this project writes outside the vault lives under `~/.agents/sessions/` (the daemon's runtime state — see §3's table) with the containing directory at mode 0700 and the sockets at 0600, so only the invoking user's own processes can reach them. Session bookkeeping inside the vault (`<vault>/.agents/sessions/sessions.json`) holds only folded-group names, the archive list, and category-color assignments — no transcript content or prompts.
+
+Claude Code's own files (`~/.claude/projects/*/*.jsonl`, `~/.claude/sessions/*.json`) are read-only from this project's point of view; nothing here ever writes to them. `~/.claude/settings.json` and `~/.claude/keybindings.json` are the two exceptions — `agent-sessions setup` edits `settings.json`'s hooks and `statusLine`, and the plugin can edit `keybindings.json`'s `Chat` context when the submit key isn't `enter` — and in both cases a timestamped backup (`settings.json.bak-<timestamp>`) is written before the first edit, and only entries this project recognizes as its own are ever touched or removed.
+
+The daemon's per-session output buffer (up to 1 MiB) lives in the daemon process's memory only; it is never written to disk. `daemon.log` holds only the daemon's own operational messages (start/stop, errors) — not session output — since `--detach` redirects the daemon process's own stdout/stderr there, not a child PTY's. No API key, token, or credential is handled by this project directly; `claude` manages its own authentication, and this project only launches it and relays its terminal I/O.
+
+## 25. Future work
+
+- **Other agent CLIs (e.g. Codex)**: the data model, `json` output, and UI already carry an `agent` field, but only Claude Code is wired up today. Supporting another CLI would mean an `agentsessions/agents/<name>.py` per agent, covering its own scan source (e.g. `~/.codex/sessions`) and `argv` construction.
+- **IDE-bridge features** (accepting/rejecting diffs, live selection updates): undecided, out of scope for now.
+- **Linux, end to end**: the Python and TypeScript sides are both exercised on Linux (§19), but running the Obsidian plugin itself on Linux (including under WSLg) hasn't been walked through end to end yet — in particular, whether the non-macOS Ctrl-key table (§7.2.1) actually avoids every collision with Claude Code's own key usage in practice.
