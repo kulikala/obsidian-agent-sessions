@@ -11,7 +11,7 @@ import json
 import os
 from typing import List, Optional, Tuple
 
-from . import i18n
+from .. import i18n
 
 ENTER_KEYS = {
     'enter': 'chat:newline',

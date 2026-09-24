@@ -35,7 +35,8 @@ import time
 from collections import deque
 from typing import Any, Callable, Deque, Dict, List, Optional, Set
 
-from . import config, protocol
+from . import protocol
+from .. import config
 
 VERSION = 1
 BUFFER_LIMIT = 1024 * 1024          # Per-session output buffer

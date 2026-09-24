@@ -1,14 +1,14 @@
 """`agent-sessions attach ID [--sock PATH]`.
 
-This only parses arguments; the real work happens in `attach.py`.
+This only parses arguments; the real work happens in `daemon/client.py`.
 """
 
 import argparse
 import os
 from typing import List
 
-from . import config
-from .attach import run
+from .. import config
+from ..daemon.client import run
 
 SOCK_ENV = 'AGENT_SESSIONS_SOCK'
 

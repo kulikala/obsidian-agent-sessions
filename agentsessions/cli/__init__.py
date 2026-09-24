@@ -2,17 +2,20 @@ import importlib
 import sys
 from typing import List
 
-from . import i18n
+from .. import i18n
 
-# Each subcommand is `main(args) -> int` in an `agentsessions.cmd_<name>` module. A
-# subcommand with no such module is "not implemented".
+# Each subcommand is `main(args) -> int` in an `agentsessions.cli.<module>` module. A
+# subcommand with no such module is "not implemented". The module's own name only
+# differs from the subcommand's for `json` (its module is `json_cmd`, so it doesn't
+# shadow the standard library's `json`).
 SUBCOMMANDS = ('daemon', 'json', 'attach', 'edit', 'hook', 'status', 'setup')
+_MODULE_NAMES = {'json': 'json_cmd'}
 
 
 def main(argv: List[str]) -> int:
     args = argv[1:]
     if not args:
-        from .tui import main as tui_main
+        from ..tui.app import main as tui_main
         return tui_main()
     cmd = args[0]
     if cmd in ('-h', '--help', 'help'):
@@ -20,7 +23,7 @@ def main(argv: List[str]) -> int:
         return 0
     if cmd in SUBCOMMANDS:
         try:
-            mod = importlib.import_module('agentsessions.cmd_%s' % cmd)
+            mod = importlib.import_module('agentsessions.cli.%s' % _MODULE_NAMES.get(cmd, cmd))
         except ImportError:
             sys.stderr.write(i18n.t('cli.not_implemented', cmd=cmd) + '\n')
             return 2

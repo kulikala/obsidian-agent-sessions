@@ -18,7 +18,8 @@ import termios
 import tty
 from typing import Optional
 
-from . import i18n, protocol
+from . import protocol
+from .. import i18n
 
 DETACH_BYTE = 0x1c   # Ctrl+\
 CONNECT_TIMEOUT = 5.0

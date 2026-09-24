@@ -5,7 +5,8 @@ import os
 import tempfile
 import time
 
-from . import config, i18n, live
+from .. import config, i18n
+from ..sessions import live
 
 
 def record_hook(raw: bytes) -> None:

@@ -7,7 +7,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from . import config, i18n
+from .. import config, i18n
 
 # Maps a session's raw `status` to the i18n key for its display label.
 STATUS_LABEL_KEY = {

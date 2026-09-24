@@ -7,14 +7,17 @@ import socket
 import time
 from typing import List, Optional
 
-from . import cache, config, protocol, stats, store
-from .detail import read_detail_for
-from .items import OTHER_LABEL_LEN
-from .live import live_sessions
-from .model import Session, folder_of, split_name
-from .scan import list_transcripts, scan
-from .usage import collect as collect_usage
-from .usage import summarize as summarize_usage
+from .. import config
+from ..daemon import protocol
+from ..sessions import cache, store
+from ..sessions.detail import read_detail_for
+from ..sessions.live import live_sessions
+from ..sessions.model import Session, folder_of, split_name
+from ..sessions.scan import list_transcripts, scan
+from ..tui.items import OTHER_LABEL_LEN
+from ..usage import stats
+from ..usage.turns import collect as collect_usage
+from ..usage.turns import summarize as summarize_usage
 
 DAEMON_TIMEOUT = 1.0
 

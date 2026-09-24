@@ -10,7 +10,7 @@ import os
 import tempfile
 from typing import Dict
 
-from . import config
+from .. import config
 
 
 def load(path: str = config.CACHE_PATH) -> Dict[str, dict]:

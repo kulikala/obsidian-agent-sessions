@@ -1,7 +1,7 @@
 import sys
 from typing import List
 
-from . import hooks
+from ..claude import hooks
 
 
 def main(args: List[str]) -> int:

@@ -3,7 +3,8 @@
 `uninstall.sh` uses to check for live PTY sessions before it sends the daemon a
 `shutdown`.
 
-This only parses arguments and starts the daemon; the daemon itself lives in `daemon.py`.
+This only parses arguments and starts the daemon; the daemon itself lives in
+`daemon/server.py`.
 """
 
 import argparse
@@ -13,8 +14,9 @@ import sys
 import time
 from typing import Any, Dict, List, Optional
 
-from . import config, i18n, protocol
-from .daemon import DEFAULT_IDLE_EXIT, AlreadyRunning, Daemon
+from .. import config, i18n
+from ..daemon import protocol
+from ..daemon.server import DEFAULT_IDLE_EXIT, AlreadyRunning, Daemon
 
 SOCK_ENV = 'AGENT_SESSIONS_SOCK'
 RUNTIME_DIR_ENV = 'AGENT_SESSIONS_RUNTIME_DIR'

@@ -18,7 +18,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from . import detail, pricing
+from . import pricing
+from ..sessions import detail
 
 PROMPT_HEAD_LEN = 60
 

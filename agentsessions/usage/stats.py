@@ -27,7 +27,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from . import pricing
-from .scan import UUID_RE
+from ..sessions.scan import UUID_RE
 
 BUCKET_SECONDS = 600          # 10 minutes
 RECENT_IDS_LIMIT = 200

@@ -1,14 +1,16 @@
 import sys
 from typing import List
 
-from . import i18n, keybindings, setup
+from .. import i18n
+from ..claude import keybindings
+from ..claude import setup as claude_setup
 
 
 def main(args: List[str]) -> int:
     dry_run = '--dry-run' in args
     remove = '--remove' in args
 
-    settings_path = setup.DEFAULT_SETTINGS_PATH
+    settings_path = claude_setup.DEFAULT_SETTINGS_PATH
     if '--settings' in args:
         i = args.index('--settings')
         if i + 1 >= len(args):
@@ -30,15 +32,15 @@ def main(args: List[str]) -> int:
             # Removes only our own hooks/statusLine from settings.json, and only our
             # own two submit-key entries from keybindings.json (leaving other tools'
             # entries alone either way).
-            changes, _ = setup.run_remove(settings_path, dry_run=dry_run)
+            changes, _ = claude_setup.run_remove(settings_path, dry_run=dry_run)
             kb_changed, kb_warning = keybindings.remove_enter_keys(keybindings_path, dry_run=dry_run)
             if kb_changed:
                 changes.append(i18n.t('setup.keybindings_removed'))
             if kb_warning:
                 changes.append(kb_warning)  # already starts with "keybindings.json: "
         else:
-            changes, _ = setup.run(settings_path, dry_run=dry_run)
-    except setup.SettingsUnreadable as e:
+            changes, _ = claude_setup.run(settings_path, dry_run=dry_run)
+    except claude_setup.SettingsUnreadable as e:
         sys.stderr.write(i18n.t('cmd.settings_unreadable', path=settings_path, error=e) + '\n')
         return 1
 

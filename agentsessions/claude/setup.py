@@ -6,7 +6,7 @@ import os
 import time
 from typing import List, Optional, Tuple
 
-from . import i18n
+from .. import i18n
 
 DEFAULT_SETTINGS_PATH = os.path.expanduser('~/.claude/settings.json')
 

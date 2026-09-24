@@ -4,12 +4,14 @@ import sys
 import time
 from typing import Dict, List, Optional, Tuple
 
-from . import config, i18n, jsonout, store
-from .detail import Detail, read_detail
+from .. import config, i18n
+from ..cli import json_output
+from ..sessions import store
+from ..sessions.detail import Detail, read_detail
+from ..sessions.live import Live, live_sessions
+from ..sessions.model import Doc, Session, fmt_time, folder_of, row_from, sort_rows
+from ..sessions.scan import list_transcripts, scan
 from .items import Item, build_items, dw, fit, wrap
-from .live import Live, live_sessions
-from .model import Doc, Session, fmt_time, folder_of, row_from, sort_rows
-from .scan import list_transcripts, scan
 
 DATE_W = 11      # MM-DD HH:MM
 FOLDER_W = 18
@@ -416,20 +418,20 @@ def _launch(s: Session) -> int:
     """Launches the session chosen with Enter: attach if it's on the daemon, `forget`
     first if it already exited there, otherwise just run `claude --resume` directly.
     This never starts the daemon."""
-    sock_path = jsonout.daemon_sock_path()
-    daemon = jsonout.live_output().get('daemon') or {}
+    sock_path = json_output.daemon_sock_path()
+    daemon = json_output.live_output().get('daemon') or {}
     if daemon.get('running'):
         entry = next((d for d in daemon.get('sessions', []) if d.get('id') == s.id), None)
         if entry is not None:
             if entry.get('exited') is not None:
-                jsonout.send_daemon_op('forget', id=s.id, sock_path=sock_path)
+                json_output.send_daemon_op('forget', id=s.id, sock_path=sock_path)
             else:
                 try:
-                    from . import attach
+                    from ..daemon import client
                 except ImportError:
-                    attach = None
-                if attach is not None:
-                    return attach.run(s.id, sock_path)
+                    client = None
+                if client is not None:
+                    return client.run(s.id, sock_path)
 
     cwd = s.cwd if s.cwd and os.path.isdir(s.cwd) else config.VAULT
     os.chdir(cwd)

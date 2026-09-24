@@ -15,7 +15,8 @@ import socket
 import sys
 from typing import List
 
-from . import config, i18n, protocol
+from .. import config, i18n
+from ..daemon import protocol
 
 READ_SIZE = 65536
 SOCK_ENV = 'AGENT_SESSIONS_PLUGIN_SOCK'

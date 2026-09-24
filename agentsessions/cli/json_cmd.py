@@ -3,7 +3,8 @@ import sys
 from datetime import datetime, timezone
 from typing import List
 
-from . import i18n, jsonout
+from .. import i18n
+from . import json_output
 
 
 def _print(obj) -> None:
@@ -35,18 +36,18 @@ def main(args: List[str]) -> int:
             if not only:
                 sys.stderr.write(i18n.t('cmd.json_id_needs_value') + '\n')
                 return 2
-        _print(jsonout.scan_output(only=only))
+        _print(json_output.scan_output(only=only))
         return 0
 
     if sub == 'live':
-        _print(jsonout.live_output())
+        _print(json_output.live_output())
         return 0
 
     if sub == 'detail':
         if not rest:
             sys.stderr.write(i18n.t('cmd.json_detail_usage') + '\n')
             return 2
-        _print(jsonout.detail_output(rest[0]))
+        _print(json_output.detail_output(rest[0]))
         return 0
 
     if sub == 'usage':
@@ -73,11 +74,11 @@ def main(args: List[str]) -> int:
             else:
                 sys.stderr.write(i18n.t('cmd.json_unknown_option', option=opt) + '\n')
                 return 2
-        _print(jsonout.usage_output(session_id, from_ts=from_ts, to_ts=to_ts))
+        _print(json_output.usage_output(session_id, from_ts=from_ts, to_ts=to_ts))
         return 0
 
     if sub == 'stats':
-        _print(jsonout.stats_output())
+        _print(json_output.stats_output())
         return 0
 
     sys.stderr.write(i18n.t('cmd.json_unknown_subcommand', sub=sub) + '\n')

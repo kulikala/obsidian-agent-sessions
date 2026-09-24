@@ -3,8 +3,8 @@ import unicodedata
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
-from .config import OTHER_GROUP
-from .model import Doc, Session, split_name
+from ..config import OTHER_GROUP
+from ..sessions.model import Doc, Session, split_name
 
 OTHER_LABEL_LEN = 40
 
