@@ -4,7 +4,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { SUBMIT_KEY_SYMBOLS } from "./keys";
+import { submitKeyStatuslineSymbol } from "./keys";
 import type { SubmitKey } from "./settings";
 
 export interface UiState {
@@ -12,10 +12,14 @@ export interface UiState {
 	submitSymbol: string;
 }
 
-/** `runtimeDir`（`~/.agents/sessions`）へ `ui.json` を書く。`onload`・`saveSettings` から呼ぶ。 */
-export function writeUiState(runtimeDir: string, submitKey: SubmitKey): void {
+/**
+ * `runtimeDir`（`~/.agents/sessions`）へ `ui.json` を書く。`onload`・`saveSettings` から呼ぶ。
+ * `isMac`（既定 `true`）は非 macOS 対応（§14）：非 macOS は statusLine 用の短い文字表記
+ * （`C-⏎` など）を書く。
+ */
+export function writeUiState(runtimeDir: string, submitKey: SubmitKey, isMac = true): void {
 	fs.mkdirSync(runtimeDir, { recursive: true });
-	const state: UiState = { submitKey, submitSymbol: SUBMIT_KEY_SYMBOLS[submitKey] };
+	const state: UiState = { submitKey, submitSymbol: submitKeyStatuslineSymbol(submitKey, isMac) };
 	const data = JSON.stringify(state, null, 1);
 	const filePath = path.join(runtimeDir, "ui.json");
 	const tmp = path.join(runtimeDir, `.ui.${process.pid}.${Date.now()}.tmp`);

@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { classifyEnter, resolveEnterAction, sendSequence, SUBMIT_KEY_SYMBOLS, type KeyLike } from "../src/keys";
+import {
+	classifyCtrlKeyNonMac,
+	classifyEnter,
+	resolveEnterAction,
+	sendSequence,
+	submitKeyButtonLabel,
+	submitKeyStatuslineSymbol,
+	SUBMIT_KEY_SYMBOLS,
+	type KeyLike,
+} from "../src/keys";
 import { SUBMIT_KEYS, type SubmitKey } from "../src/settings";
 
 function key(overrides: Partial<KeyLike> = {}): KeyLike {
@@ -82,5 +91,74 @@ describe("SUBMIT_KEY_SYMBOLS", () => {
 			"alt+enter": "⌥⏎",
 			"cmd+enter": "⌘⏎",
 		});
+	});
+});
+
+describe("submitKeyButtonLabel／submitKeyStatuslineSymbol（非macOS対応）", () => {
+	it("macOS は SUBMIT_KEY_SYMBOLS のまま", () => {
+		for (const k of SUBMIT_KEYS) {
+			expect(submitKeyButtonLabel(k, true)).toBe(SUBMIT_KEY_SYMBOLS[k]);
+			expect(submitKeyStatuslineSymbol(k, true)).toBe(SUBMIT_KEY_SYMBOLS[k]);
+		}
+	});
+
+	it("非 macOS の「送る」ボタンは文字表記", () => {
+		expect(submitKeyButtonLabel("enter", false)).toBe("Enter");
+		expect(submitKeyButtonLabel("shift+enter", false)).toBe("Shift+Enter");
+		expect(submitKeyButtonLabel("ctrl+enter", false)).toBe("Ctrl+Enter");
+		expect(submitKeyButtonLabel("alt+enter", false)).toBe("Alt+Enter");
+	});
+
+	it("非 macOS の statusLine は短い文字表記", () => {
+		expect(submitKeyStatuslineSymbol("enter", false)).toBe("⏎");
+		expect(submitKeyStatuslineSymbol("shift+enter", false)).toBe("S-⏎");
+		expect(submitKeyStatuslineSymbol("ctrl+enter", false)).toBe("C-⏎");
+		expect(submitKeyStatuslineSymbol("alt+enter", false)).toBe("A-⏎");
+	});
+
+	it("非 macOS でも cmd+enter は macOS の記号にフォールバックする（選択肢には出ないが安全策）", () => {
+		expect(submitKeyButtonLabel("cmd+enter", false)).toBe("⌘⏎");
+		expect(submitKeyStatuslineSymbol("cmd+enter", false)).toBe("⌘⏎");
+	});
+});
+
+describe("classifyCtrlKeyNonMac（§7.2.1 非macOS対応）", () => {
+	it("Ctrl が無い・metaKey・altKey が立っていれば passthrough", () => {
+		expect(classifyCtrlKeyNonMac(key({ key: "c", ctrlKey: false }))).toBe("passthrough");
+		expect(classifyCtrlKeyNonMac(key({ key: "c", ctrlKey: true, metaKey: true }))).toBe("passthrough");
+		expect(classifyCtrlKeyNonMac(key({ key: "c", ctrlKey: true, altKey: true }))).toBe("passthrough");
+	});
+
+	it("Ctrl+Shift+C／V はコピー・貼り付け", () => {
+		expect(classifyCtrlKeyNonMac(key({ key: "c", ctrlKey: true, shiftKey: true }))).toBe("copy");
+		expect(classifyCtrlKeyNonMac(key({ key: "C", ctrlKey: true, shiftKey: true }))).toBe("copy");
+		expect(classifyCtrlKeyNonMac(key({ key: "v", ctrlKey: true, shiftKey: true }))).toBe("paste");
+		expect(classifyCtrlKeyNonMac(key({ key: "V", ctrlKey: true, shiftKey: true }))).toBe("paste");
+	});
+
+	it("Ctrl+Shift+=／−／0 はフォントサイズ（Shift 込みの実際の key も見る）", () => {
+		expect(classifyCtrlKeyNonMac(key({ key: "=", ctrlKey: true, shiftKey: true }))).toBe("zoom-in");
+		expect(classifyCtrlKeyNonMac(key({ key: "+", ctrlKey: true, shiftKey: true }))).toBe("zoom-in");
+		expect(classifyCtrlKeyNonMac(key({ key: "-", ctrlKey: true, shiftKey: true }))).toBe("zoom-out");
+		expect(classifyCtrlKeyNonMac(key({ key: "_", ctrlKey: true, shiftKey: true }))).toBe("zoom-out");
+		expect(classifyCtrlKeyNonMac(key({ key: "0", ctrlKey: true, shiftKey: true }))).toBe("zoom-reset");
+		expect(classifyCtrlKeyNonMac(key({ key: ")", ctrlKey: true, shiftKey: true }))).toBe("zoom-reset");
+	});
+
+	it("それ以外の Ctrl+Shift+<key> は Obsidian へ", () => {
+		expect(classifyCtrlKeyNonMac(key({ key: "p", ctrlKey: true, shiftKey: true }))).toBe("obsidian");
+	});
+
+	it("Ctrl+Tab・Ctrl+,・Ctrl+W は Obsidian へ", () => {
+		expect(classifyCtrlKeyNonMac(key({ key: "Tab", ctrlKey: true }))).toBe("obsidian");
+		expect(classifyCtrlKeyNonMac(key({ key: ",", ctrlKey: true }))).toBe("obsidian");
+		expect(classifyCtrlKeyNonMac(key({ key: "w", ctrlKey: true }))).toBe("obsidian");
+		expect(classifyCtrlKeyNonMac(key({ key: "W", ctrlKey: true }))).toBe("obsidian");
+	});
+
+	it("claude が使う Ctrl+C／D／G／R／O／S／L／T・Ctrl+P はターミナルへ（既定）", () => {
+		for (const k of ["c", "d", "g", "r", "o", "s", "l", "t", "p"]) {
+			expect(classifyCtrlKeyNonMac(key({ key: k, ctrlKey: true }))).toBe("terminal");
+		}
 	});
 });

@@ -47,4 +47,16 @@ describe("writeUiState", () => {
 		const data = JSON.parse(readFileSync(join(runtimeDir, "ui.json"), "utf8"));
 		expect(data).toEqual({ submitKey: "alt+enter", submitSymbol: "⌥⏎" });
 	});
+
+	it("非 macOS は短い文字表記（statusLine 用。§14 非macOS対応）", () => {
+		writeUiState(runtimeDir, "ctrl+enter", false);
+		const data = JSON.parse(readFileSync(join(runtimeDir, "ui.json"), "utf8"));
+		expect(data).toEqual({ submitKey: "ctrl+enter", submitSymbol: "C-⏎" });
+	});
+
+	it("非 macOS の enter は macOS と同じ ⏎", () => {
+		writeUiState(runtimeDir, "enter", false);
+		const data = JSON.parse(readFileSync(join(runtimeDir, "ui.json"), "utf8"));
+		expect(data.submitSymbol).toBe("⏎");
+	});
 });

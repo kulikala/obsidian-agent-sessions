@@ -10,6 +10,14 @@ import type { Detail, LiveResult, ScanResult, StatsResult, UsageResult } from ".
 /** `json` サブコマンドが失敗したときの例外。stderr の先頭行を message に持つ。 */
 export class BackendError extends Error {}
 
+/**
+ * `$SHELL` が無いときの既定のログインシェル（§4.2・§7 非macOS対応）。macOS は `zsh`
+ * （既定シェル）、非 macOS は `bash`（大半のディストリビューションに入っている）。
+ */
+export function defaultLoginShell(isMac: boolean): string {
+	return isMac ? "/bin/zsh" : "/bin/bash";
+}
+
 /** 設定の `agentSessionsPath` が空のときの既定（§6.9）。 */
 export function resolveAgentSessionsPath(configured: string): string {
 	return configured || join(homedir(), "bin", "agent-sessions");
@@ -112,13 +120,14 @@ let cachedLoginEnv: Record<string, string> | null = null;
 /**
  * ログインシェルの環境（`PATH`・`LANG`・`HOME`・`USER`・`TMPDIR`・`CLAUDE_CONFIG_DIR`）。
  * Dock から起動した Obsidian の環境は貧弱なため、デーモンの `start` に渡す `env` を
- * これで補う（§4.2）。`$SHELL -l -c env` は 1 回だけ実行してキャッシュする。
+ * これで補う（§4.2）。`$SHELL -l -c env` は 1 回だけ実行してキャッシュする。`isMac`（既定
+ * `true`）は `$SHELL` が無いときの既定シェルの選び方（非macOS対応。`defaultLoginShell`）。
  */
-export async function loginEnv(): Promise<Record<string, string>> {
+export async function loginEnv(isMac = true): Promise<Record<string, string>> {
 	if (cachedLoginEnv) {
 		return cachedLoginEnv;
 	}
-	const shell = process.env.SHELL || "/bin/zsh";
+	const shell = process.env.SHELL || defaultLoginShell(isMac);
 	const { stdout } = await execFileText(shell, ["-l", "-c", "env"]);
 	const all = parseEnvOutput(stdout);
 	const picked: Record<string, string> = {};
@@ -138,13 +147,14 @@ export function resetLoginEnvCache(): void {
 
 /**
  * `claude` の実行パスを決める（§6.9・§7）。設定が空ならログインシェルの
- * `command -v claude` を引く。見つからなければ `BackendError`。
+ * `command -v claude` を引く。見つからなければ `BackendError`。`isMac`（既定 `true`）は
+ * `$SHELL` が無いときの既定シェルの選び方（非macOS対応）。
  */
-export async function resolveClaude(configuredPath: string): Promise<string> {
+export async function resolveClaude(configuredPath: string, isMac = true): Promise<string> {
 	if (configuredPath) {
 		return configuredPath;
 	}
-	const shell = process.env.SHELL || "/bin/zsh";
+	const shell = process.env.SHELL || defaultLoginShell(isMac);
 	try {
 		const { stdout } = await execFileText(shell, ["-l", "-c", "command -v claude"]);
 		const path = stdout.trim();

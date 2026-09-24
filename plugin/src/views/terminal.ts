@@ -1,7 +1,16 @@
 // ターミナル（§6.3）・1 セッション＝1 タブ（§6.4）・アイコンの状態（§6.5）・
 // エラー処理（§7）。xterm 5.x を `DaemonClient` に繋ぐ。
 
-import { ItemView, Notice, setIcon, setTooltip, type Menu, type ViewStateResult, type WorkspaceLeaf } from "obsidian";
+import {
+	ItemView,
+	Notice,
+	Platform,
+	setIcon,
+	setTooltip,
+	type Menu,
+	type ViewStateResult,
+	type WorkspaceLeaf,
+} from "obsidian";
 import * as fs from "node:fs";
 import { join } from "node:path";
 import { Terminal } from "@xterm/xterm";
@@ -11,7 +20,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { BackendError, loginEnv, resolveClaude } from "../backend";
 import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../daemon-client";
 import { t } from "../i18n";
-import { classifyEnter, resolveEnterAction, sendSequence } from "../keys";
+import { classifyCtrlKeyNonMac, classifyEnter, resolveEnterAction, sendSequence } from "../keys";
 import { buildAtToken, selectionLineRange, VaultLinkProvider } from "../links";
 import { submitSequence } from "../main";
 import type AgentSessionsPlugin from "../main";
@@ -499,12 +508,16 @@ export class TerminalView extends ItemView {
 	}
 
 	private async startSession(client: DaemonClient, fresh: boolean): Promise<void> {
-		const claude = await resolveClaude(this.plugin.settings.claudePath);
+		const claude = await resolveClaude(this.plugin.settings.claudePath, Platform.isMacOS);
 		// `VISUAL` は内蔵エディタ（D-20）。`EDITOR` は触らない。`AGENT_SESSIONS_VAULT`
 		// は claude 自身のフック・statusLine（agent-sessions hook/status）が vault を
 		// 見失わないように（T-80。デーモンは env をそのまま execvpe に渡すだけなので、
 		// ここで入れておかないと env にも vault.json にも無い環境では効かない）。
-		const env = { ...(await loginEnv()), VISUAL: this.plugin.visualPath(), AGENT_SESSIONS_VAULT: this.plugin.vaultPath() };
+		const env = {
+			...(await loginEnv(Platform.isMacOS)),
+			VISUAL: this.plugin.visualPath(),
+			AGENT_SESSIONS_VAULT: this.plugin.vaultPath(),
+		};
 		const argv = fresh ? [claude, "--session-id", this.id] : [claude, "--resume", this.id];
 		const cwd = this.cwd || this.plugin.vaultPath();
 		const res = await client.start({
@@ -638,6 +651,7 @@ export class TerminalView extends ItemView {
 			fontFamily: s.fontFamily,
 			fontSize: this.fontSize ?? s.fontSize,
 			submitKey: s.submitKey,
+			isMac: Platform.isMacOS,
 		});
 		this.pendingEdit = pane;
 		this.applyTerminalMinHeight();
@@ -835,21 +849,97 @@ export class TerminalView extends ItemView {
 				ev.preventDefault();
 				ev.stopPropagation();
 				if (ev.type === "keydown") {
-					const current = this.fontSize ?? this.plugin.settings.fontSize;
-					if (ev.key === "0") {
-						this.setFontSize(this.plugin.settings.fontSize);
-					} else {
-						this.setFontSize(current + (ev.key === "-" ? -1 : 1));
-					}
+					this.zoomFont(ev.key === "0" ? "reset" : ev.key === "-" ? "out" : "in");
 				}
 				return false;
 			}
 			return true;
 		}
+		// 非 macOS：Obsidian の修飾キーは Ctrl。claude も Ctrl+C・D・G・R・O・S・L・T 等を
+		// 使うため、素の Ctrl は既定でターミナルへ渡し（下の最終形と同じ）、一部の組合せだけ
+		// Obsidian・コピー貼り付け・フォントサイズに回す（`classifyCtrlKeyNonMac`）。
+		if (!Platform.isMacOS) {
+			const role = classifyCtrlKeyNonMac(ev);
+			if (role === "obsidian") {
+				// xterm には渡さない（`false`）が、伝播は止めない——preventDefault も呼ばず、
+				// そのまま Obsidian のホットキーへ（macOS の Cmd 付きキーと同じ考え方）。
+				return false;
+			}
+			if (role !== "passthrough" && role !== "terminal") {
+				ev.preventDefault();
+				ev.stopPropagation();
+				if (ev.type === "keydown") {
+					switch (role) {
+						case "copy":
+							void this.copySelection();
+							break;
+						case "paste":
+							void this.pasteFromClipboard();
+							break;
+						case "zoom-in":
+							this.zoomFont("in");
+							break;
+						case "zoom-out":
+							this.zoomFont("out");
+							break;
+						case "zoom-reset":
+							this.zoomFont("reset");
+							break;
+					}
+				}
+				return false;
+			}
+		}
 		if (ev.type === "keydown") {
 			ev.stopPropagation();
 		}
 		return true;
+	}
+
+	/** フォントサイズの拡大・縮小・既定に戻す（Cmd +／−／0、非 macOS の Ctrl+Shift+=／−／0）。 */
+	private zoomFont(direction: "in" | "out" | "reset"): void {
+		if (direction === "reset") {
+			this.setFontSize(this.plugin.settings.fontSize);
+			return;
+		}
+		const current = this.fontSize ?? this.plugin.settings.fontSize;
+		this.setFontSize(current + (direction === "in" ? 1 : -1));
+	}
+
+	/**
+	 * Ctrl+Shift+C（非 macOS）：選択があればクリップボードへコピーする。macOS の Cmd+C は
+	 * ネイティブの `copy` イベント（xterm 自身が拾う）に任せているのでここは通らない。
+	 */
+	private async copySelection(): Promise<void> {
+		const text = this.terminal.getSelection();
+		if (!text) {
+			return;
+		}
+		try {
+			await navigator.clipboard.writeText(text);
+		} catch (err) {
+			console.warn("agent-sessions: クリップボードへコピーできない", err);
+		}
+	}
+
+	/**
+	 * Ctrl+Shift+V（非 macOS）：クリップボードの文字列を PTY へ送る。claude 側が bracketed
+	 * paste を有効にしていれば（`terminal.modes.bracketedPasteMode`）同じ囲みを付ける
+	 * （§6 の bracketed paste と同じ理由。`/` の補完が誤って開くのを防ぐ）。
+	 */
+	private async pasteFromClipboard(): Promise<void> {
+		let text: string;
+		try {
+			text = await navigator.clipboard.readText();
+		} catch (err) {
+			console.warn("agent-sessions: クリップボードを読めない", err);
+			return;
+		}
+		if (!text) {
+			return;
+		}
+		const wrapped = this.terminal.modes.bracketedPasteMode ? `\x1b[200~${text}\x1b[201~` : text;
+		this.sendInput(Buffer.from(wrapped, "utf8"));
 	}
 
 	// ---- 終了画面 ---------------------------------------------------------------

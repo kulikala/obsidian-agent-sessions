@@ -85,7 +85,7 @@ export function deriveSubmitKey(chatBindings: Record<string, string> | undefined
 	return "cmd+enter" in chatBindings || "super+enter" in chatBindings ? "cmd+enter" : "alt+enter";
 }
 
-/** 「送る」ボタンなどに出す送信キーの記号。 */
+/** 「送る」ボタンなどに出す送信キーの記号（macOS）。 */
 export const SUBMIT_KEY_SYMBOLS: Record<SubmitKey, string> = {
 	enter: "⏎",
 	"shift+enter": "⇧⏎",
@@ -95,6 +95,42 @@ export const SUBMIT_KEY_SYMBOLS: Record<SubmitKey, string> = {
 };
 
 /**
+ * 非 macOS の「送る」ボタン表記（文字表記。§7.2 非macOS対応）。`cmd+enter` は非 macOS の
+ * 選択肢に出さないので持たない——`submitKeyButtonLabel`／`submitKeyStatuslineSymbol` は
+ * その場合 macOS の記号にフォールバックする。
+ */
+export const SUBMIT_KEY_LABELS_NON_MAC: Partial<Record<SubmitKey, string>> = {
+	enter: "Enter",
+	"shift+enter": "Shift+Enter",
+	"ctrl+enter": "Ctrl+Enter",
+	"alt+enter": "Alt+Enter",
+};
+
+/** 非 macOS の statusLine 用の短い記号（ui.json の `submitSymbol`。§14 非macOS対応）。 */
+export const SUBMIT_KEY_STATUSLINE_SYMBOLS_NON_MAC: Partial<Record<SubmitKey, string>> = {
+	enter: "⏎",
+	"shift+enter": "S-⏎",
+	"ctrl+enter": "C-⏎",
+	"alt+enter": "A-⏎",
+};
+
+/** 「送る」ボタン・内蔵エディタの表記。macOS は記号、非 macOS は文字表記。 */
+export function submitKeyButtonLabel(key: SubmitKey, isMac: boolean): string {
+	if (isMac) {
+		return SUBMIT_KEY_SYMBOLS[key];
+	}
+	return SUBMIT_KEY_LABELS_NON_MAC[key] ?? SUBMIT_KEY_SYMBOLS[key];
+}
+
+/** statusLine（ui.json の `submitSymbol`）の表記。macOS は記号、非 macOS は短い文字表記。 */
+export function submitKeyStatuslineSymbol(key: SubmitKey, isMac: boolean): string {
+	if (isMac) {
+		return SUBMIT_KEY_SYMBOLS[key];
+	}
+	return SUBMIT_KEY_STATUSLINE_SYMBOLS_NON_MAC[key] ?? SUBMIT_KEY_SYMBOLS[key];
+}
+
+/**
  * 起動時・「ファイルに合わせる」で使う送信キー（D-50）。keybindings.json が Enter を改行に
  * しているかどうか（`deriveSubmitKey` が `enter` か否か）が今の設定と合っていれば今の設定を
  * 保ち（`shift+enter`／`ctrl+enter` はファイルから区別できない）、食い違っていれば導いた値にする。
@@ -102,4 +138,54 @@ export const SUBMIT_KEY_SYMBOLS: Record<SubmitKey, string> = {
 export function reconcileSubmitKey(chatBindings: Record<string, string> | undefined, current: SubmitKey): SubmitKey {
 	const derived = deriveSubmitKey(chatBindings);
 	return (derived === "enter") === (current === "enter") ? current : derived;
+}
+
+/**
+ * 非 macOS の Ctrl キーの行き先（§7.1 非macOS対応）。macOS は Cmd が Obsidian の修飾キーなので
+ * Ctrl はすべてターミナルへ渡せるが、非 macOS は Obsidian の修飾キーが Ctrl で、claude も
+ * Ctrl+C／D／G／R／O／S／L／T 等を使うため、単純に Ctrl を Obsidian へ渡すと壊れる。
+ * 既定は `terminal`（claude を優先）。Obsidian 側に回すのは衝突しにくい一部の組合せだけ：
+ * Ctrl+Shift+<key>（`copy`／`paste`／フォントサイズを除く）・Ctrl+Tab・Ctrl+,・Ctrl+W。
+ * `ev.metaKey`／`ev.altKey` が立っている、または `ev.ctrlKey` が無ければ `passthrough`
+ * （呼出側の既存の分岐に任せる）。IME 変換中の判定は呼出側が Enter 用に持つのでここでは見ない
+ * （このキー群は IME の変換候補確定に使われないため）。
+ */
+export type CtrlKeyRole = "terminal" | "obsidian" | "copy" | "paste" | "zoom-in" | "zoom-out" | "zoom-reset" | "passthrough";
+
+export function classifyCtrlKeyNonMac(ev: KeyLike): CtrlKeyRole {
+	if (!ev.ctrlKey || ev.metaKey || ev.altKey) {
+		return "passthrough";
+	}
+	const key = ev.key;
+	if (ev.shiftKey) {
+		// Ctrl+Shift+C／V：ターミナルの選択コピー・貼り付け（Linux の端末アプリの慣習）。
+		if (key === "c" || key === "C") {
+			return "copy";
+		}
+		if (key === "v" || key === "V") {
+			return "paste";
+		}
+		// Ctrl+Shift+=／−／0：フォントサイズ（macOS の Cmd +／−／0 に相当）。
+		if (key === "+" || key === "=") {
+			return "zoom-in";
+		}
+		if (key === "_" || key === "-") {
+			return "zoom-out";
+		}
+		if (key === "0" || key === ")") {
+			return "zoom-reset";
+		}
+		// それ以外の Ctrl+Shift+<key> は Obsidian へ（claude は Ctrl+Shift の組合せを使わない）。
+		return "obsidian";
+	}
+	if (key === "Tab") {
+		return "obsidian"; // タブ切替。
+	}
+	if (key === ",") {
+		return "obsidian"; // 設定。
+	}
+	if (key.toLowerCase() === "w") {
+		return "obsidian"; // タブを閉じる。
+	}
+	return "terminal";
 }

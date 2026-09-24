@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { envWithVault } from "../src/backend";
+import { defaultLoginShell, envWithVault } from "../src/backend";
 
 describe("envWithVault（T-80：json … を呼ぶすべての経路に AGENT_SESSIONS_VAULT を通す）", () => {
 	it("base に AGENT_SESSIONS_VAULT を重ねる", () => {
@@ -18,5 +18,15 @@ describe("envWithVault（T-80：json … を呼ぶすべての経路に AGENT_SE
 		const result = envWithVault("/tmp/vault", base);
 		expect(base).toEqual({ PATH: "/usr/bin" });
 		expect(result).not.toBe(base);
+	});
+});
+
+describe("defaultLoginShell（非macOS対応：$SHELL が無いときの既定）", () => {
+	it("macOS は zsh", () => {
+		expect(defaultLoginShell(true)).toBe("/bin/zsh");
+	});
+
+	it("非 macOS は bash", () => {
+		expect(defaultLoginShell(false)).toBe("/bin/bash");
 	});
 });

@@ -2,6 +2,7 @@ import {
 	Events,
 	MarkdownView,
 	Notice,
+	Platform,
 	Plugin,
 	PluginSettingTab,
 	setIcon,
@@ -23,7 +24,14 @@ import { buildAtToken, selectionLineRange } from "./links";
 import { ConfirmModal, NewSessionModal, RenameSessionModal } from "./modals";
 import { sessionDisplayName } from "./name";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./open-session";
-import { AgentSessionsSettings, DEFAULT_SETTINGS, mergeSettings, SUBMIT_KEYS, type SubmitKey } from "./settings";
+import {
+	AgentSessionsSettings,
+	DEFAULT_SETTINGS,
+	mergeSettings,
+	SUBMIT_KEYS,
+	SUBMIT_KEYS_NON_MAC,
+	type SubmitKey,
+} from "./settings";
 import { migrateFromMarkdown, StoreLockError, updateStore } from "./store";
 import {
 	ALL_TERMINAL_STATUSES,
@@ -234,7 +242,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		this.settings = mergeSettings(await this.loadData());
+		this.settings = mergeSettings(await this.loadData(), Platform.isMacOS);
 	}
 
 	async saveSettings(): Promise<void> {
@@ -249,7 +257,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	 */
 	private syncUiState(): void {
 		try {
-			writeUiState(RUNTIME_DIR, this.settings.submitKey);
+			writeUiState(RUNTIME_DIR, this.settings.submitKey, Platform.isMacOS);
 		} catch (err) {
 			console.warn("agent-sessions: ui.json を書けない", err);
 		}
@@ -623,9 +631,13 @@ export default class AgentSessionsPlugin extends Plugin {
 			});
 		});
 		try {
-			const claude = await resolveClaude(this.settings.claudePath);
+			const claude = await resolveClaude(this.settings.claudePath, Platform.isMacOS);
 			// `AGENT_SESSIONS_VAULT`：terminal.ts の startSession と同じ理由（T-80）。
-			const env = { ...(await loginEnv()), VISUAL: this.visualPath(), AGENT_SESSIONS_VAULT: this.vaultPath() };
+			const env = {
+				...(await loginEnv(Platform.isMacOS)),
+				VISUAL: this.visualPath(),
+				AGENT_SESSIONS_VAULT: this.vaultPath(),
+			};
 			const res = await client.start({
 				id,
 				agent: row.agent || "claude",
@@ -1079,7 +1091,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		});
 		setting.descEl.createDiv({ text: this.currentEnterBindingText(keybindingsPath) });
 		setting.addDropdown((dropdown) => {
-			for (const key of SUBMIT_KEYS) {
+			// 非 macOS は cmd+enter（Command＝非 macOS では Super）を出さない（§6.9 非macOS対応）。
+			for (const key of Platform.isMacOS ? SUBMIT_KEYS : SUBMIT_KEYS_NON_MAC) {
 				dropdown.addOption(key, AgentSessionsSettingTab.SUBMIT_KEY_LABELS[key]);
 			}
 			dropdown.setValue(this.plugin.settings.submitKey);

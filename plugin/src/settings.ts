@@ -12,6 +12,21 @@ export type SubmitKey = "enter" | "shift+enter" | "ctrl+enter" | "alt+enter" | "
 
 export const SUBMIT_KEYS: readonly SubmitKey[] = ["enter", "shift+enter", "ctrl+enter", "alt+enter", "cmd+enter"];
 
+/**
+ * 非 macOS の送信キーの選択肢（§6.9 非macOS対応）。`cmd+enter`（Command＝非 macOS では Super）は
+ * ブラウザに安定して届かない（ウィンドウマネージャに奪われうる）ので出さない。
+ */
+export const SUBMIT_KEYS_NON_MAC: readonly SubmitKey[] = ["enter", "shift+enter", "ctrl+enter", "alt+enter"];
+
+const FONT_FAMILY_MAC = 'Menlo, "Hiragino Sans", monospace';
+/** Menlo は Linux に無いので、非 macOS は幅の揃う等幅フォント＋CJK フォールバックにする。 */
+const FONT_FAMILY_NON_MAC = '"DejaVu Sans Mono", "Noto Sans Mono CJK JP", monospace';
+
+/** 既定のフォント（§6.9 非macOS対応。§15）。 */
+export function defaultFontFamily(isMac: boolean): string {
+	return isMac ? FONT_FAMILY_MAC : FONT_FAMILY_NON_MAC;
+}
+
 export interface AgentSessionsSettings {
 	fontFamily: string;
 	fontSize: number;
@@ -37,7 +52,7 @@ export interface AgentSessionsSettings {
 }
 
 export const DEFAULT_SETTINGS: AgentSessionsSettings = {
-	fontFamily: 'Menlo, "Hiragino Sans", monospace',
+	fontFamily: FONT_FAMILY_MAC,
 	fontSize: 13,
 	padding: "comfortable",
 	recentCount: 10,
@@ -58,8 +73,13 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
  * 保存データを既定値に重ねる。今の型に無いキー（`newlineKey`）や、今の `SubmitKey` に
  * 無い値（`super+enter`・`meta+enter` など）が保存データに残っていても捨てる
  * （起動時に keybindings.json から導き直す。D-50）。
+ *
+ * `isMac`（既定 `true`）は非 macOS 対応（§6.9・§15）：非 macOS では選択肢に無い
+ * `cmd+enter` が保存データに残っていても捨て（既定 `enter` に戻る）、`fontFamily` が
+ * 保存データに無いとき（新規インストール）だけ非 macOS 向けの既定フォントを使う——
+ * 一度でも保存された `fontFamily` はプラットフォームが変わっても書き換えない。
  */
-export function mergeSettings(data: unknown): AgentSessionsSettings {
+export function mergeSettings(data: unknown, isMac = true): AgentSessionsSettings {
 	const saved = (typeof data === "object" && data !== null ? { ...(data as Record<string, unknown>) } : {}) as Record<
 		string,
 		unknown
@@ -71,5 +91,9 @@ export function mergeSettings(data: unknown): AgentSessionsSettings {
 	if (!SUBMIT_KEYS.includes(saved.submitKey as SubmitKey)) {
 		delete saved.submitKey;
 	}
-	return Object.assign({}, DEFAULT_SETTINGS, saved) as AgentSessionsSettings;
+	if (!isMac && saved.submitKey === "cmd+enter") {
+		delete saved.submitKey;
+	}
+	const defaults = isMac ? DEFAULT_SETTINGS : { ...DEFAULT_SETTINGS, fontFamily: defaultFontFamily(false) };
+	return Object.assign({}, defaults, saved) as AgentSessionsSettings;
 }

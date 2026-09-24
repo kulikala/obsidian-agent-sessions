@@ -11,7 +11,7 @@ import { prepareFuzzySearch, type App, type TFile } from "obsidian";
 import { applyCompletion, findAtQuery, relPathFor, type AtQuery } from "../at-complete";
 import { SaveDebouncer } from "../autosave";
 import { t } from "../i18n";
-import { classifyEnter, SUBMIT_KEY_SYMBOLS } from "../keys";
+import { classifyEnter, submitKeyButtonLabel } from "../keys";
 import type { SubmitKey } from "../settings";
 
 export type EditResult = "send" | "return" | "cancel";
@@ -23,6 +23,8 @@ export interface EditorPaneDeps {
 	fontSize: number;
 	/** 送信キー（D-50）。これを押すと送る、他の Enter の組合せは改行。 */
 	submitKey: SubmitKey;
+	/** 「送る」の表記（非macOS対応）：macOS は記号、非 macOS は文字表記。 */
+	isMac: boolean;
 }
 
 /** 入力が落ち着いてから一時ファイルへ書くまでの間（T-75）。`SaveDebouncer` が持つ。 */
@@ -159,7 +161,7 @@ export class EditorPane {
 		const bar = root.createDiv({ cls: "agent-sessions-editor-bar" });
 		bar.createSpan({ cls: "agent-sessions-editor-file", text: path.basename(this.file) });
 		const send = bar.createEl("button", {
-			text: t("action.send", { key: SUBMIT_KEY_SYMBOLS[this.deps.submitKey] }),
+			text: t("action.send", { key: submitKeyButtonLabel(this.deps.submitKey, this.deps.isMac) }),
 			cls: "mod-cta",
 		});
 		const back = bar.createEl("button", { text: t("action.backToInput") });
