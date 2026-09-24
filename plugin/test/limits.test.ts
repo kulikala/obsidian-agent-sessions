@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { setLang } from "../src/i18n";
 import {
 	FIVE_HOUR_SECONDS,
 	SEVEN_DAY_SECONDS,
@@ -94,6 +95,8 @@ describe("rollForwardWindow", () => {
 });
 
 describe("formatCountdown", () => {
+	afterEach(() => setLang("en"));
+
 	it("formats as h:mm:ss", () => {
 		expect(formatCountdown(3725)).toBe("1:02:05");
 	});
@@ -110,11 +113,12 @@ describe("formatCountdown", () => {
 		expect(formatCountdown(59.6)).toBe("0:01:00");
 	});
 
-	it("drops the seconds and formats as 'N 日 h:mm' at 24 hours or more", () => {
-		// 2 days, 3 hours, 5 minutes, 10 seconds.
-		// Japanese fixture: the expected output is the actual UI-facing countdown
-		// string the app renders (day unit is displayed in Japanese), not
-		// incidental test dressing.
-		expect(formatCountdown(2 * 86400 + 3 * 3600 + 5 * 60 + 10)).toBe("2 日 3:05");
+	it("drops the seconds and formats as 'N 日 h:mm' (ja) / 'Nd h:mm' (en) at 24 hours or more", () => {
+		// 2 days, 3 hours, 5 minutes, 10 seconds. Goes through t("limits.countdownDays"), so pin the language for each assertion.
+		const seconds = 2 * 86400 + 3 * 3600 + 5 * 60 + 10;
+		setLang("ja");
+		expect(formatCountdown(seconds)).toBe("2 日 3:05");
+		setLang("en");
+		expect(formatCountdown(seconds)).toBe("2d 3:05");
 	});
 });

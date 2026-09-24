@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { setLang } from "../src/i18n";
 import {
 	effectiveRange,
 	formatCost,
@@ -280,10 +281,13 @@ describe("card totals for the whole (unselected) range (same steps the modal's r
 	});
 });
 
-// test/setup.ts defaults the test locale to "ja", so toMarkdown's rendered
-// text below is the current Japanese UI copy from src/i18n.ts; these
-// assertions are checking that actual rendered output, not incidental filler.
+// toMarkdown's output goes through t(), so this block pins the language to ja and checks
+// against the current Japanese UI copy from src/i18n.ts — that's the actual rendered output
+// being asserted on, not incidental filler.
 describe("toMarkdown (for copying)", () => {
+	beforeEach(() => setLang("ja"));
+	afterEach(() => setLang("en"));
+
 	it("the table lists only turns in the selected range, with the card values in the header", () => {
 		const total = sumRange(TURNS, 1, 2);
 		const md = toMarkdown(TURNS, 1, 2, total);
@@ -336,11 +340,14 @@ describe("toMarkdown (for copying)", () => {
 });
 
 describe("promptOrBeforeFirst", () => {
+	afterEach(() => setLang("en"));
+
 	it("shows the turn's own prompt when before_first is unset", () => {
 		expect(promptOrBeforeFirst(turn({ index: 0, prompt: "hello" }))).toBe("hello");
 	});
 
 	it("shows the before-first-prompt placeholder when before_first is true, ignoring the (empty) prompt", () => {
+		setLang("ja");
 		expect(promptOrBeforeFirst(turn({ index: 0, prompt: "", before_first: true }))).toBe("（開始前）");
 	});
 });

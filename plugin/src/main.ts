@@ -17,7 +17,7 @@ import { detail, live, loginEnv, resolveAgentSessionsPath, resolveClaude, scan }
 import { DaemonClient, defaultSockPath, ensureDaemon } from "./daemon-client";
 import { EditServer, editReplyFor, submitsAfterEdit, type EditReply, type EditRequest } from "./edit-server";
 import { SessionIndex } from "./index";
-import { readObsidianLang, resolveLang, setLang, t } from "./i18n";
+import { getLang, readObsidianLang, resolveLang, setLang, t } from "./i18n";
 import { applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./keybindings";
 import { reconcileSubmitKey, sendSequence } from "./keys";
 import { buildAtToken, selectionLineRange } from "./links";
@@ -253,13 +253,15 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * Writes the submit-key symbol to `ui.json`, read by the statusLine (the Python side's
-	 * `format_status_line`). Only sessions started with `AGENT_SESSIONS_ID` set actually attach
-	 * it, so this writes unconditionally.
+	 * Writes the submit-key symbol and the resolved display language to `ui.json`. The
+	 * submit-key symbol is read by the statusLine (the Python side's `format_status_line`) —
+	 * only sessions started with `AGENT_SESSIONS_ID` set actually attach it, so this writes
+	 * unconditionally. The language is read by the Python side to match the plugin's own display
+	 * language. Called from `saveSettings`, so a language-setting change gets picked up here too.
 	 */
 	private syncUiState(): void {
 		try {
-			writeUiState(RUNTIME_DIR, this.settings.submitKey, Platform.isMacOS);
+			writeUiState(RUNTIME_DIR, this.settings.submitKey, getLang(), Platform.isMacOS);
 		} catch (err) {
 			console.warn("agent-sessions: couldn't write ui.json", err);
 		}

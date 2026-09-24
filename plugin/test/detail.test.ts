@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { setLang } from "../src/i18n";
 import type { Row } from "../src/index";
 import { categoryAndLabel, formatCost, totalTokens } from "../src/views/detail";
 
@@ -45,6 +46,8 @@ describe("formatCost", () => {
 });
 
 describe("categoryAndLabel (splits the detail panel's name into category and label)", () => {
+	afterEach(() => setLang("en"));
+
 	it("splits a name that has a category", () => {
 		// Japanese fixture: exercises splitting a real Japanese category/label pair.
 		expect(categoryAndLabel(row({ id: "1", name: "スキル開発: セッション管理" }))).toEqual({
@@ -65,6 +68,8 @@ describe("categoryAndLabel (splits the detail panel's name into category and lab
 			category: null,
 			label: "Heading",
 		});
+		// The Untitled fallback goes through t(), so pin the language for this assertion.
+		setLang("ja");
 		expect(categoryAndLabel(row({ id: "12345678", name: null, label: null }))).toEqual({
 			category: null,
 			label: "無題 12345678",

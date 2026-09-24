@@ -266,15 +266,17 @@ export function weeklyPace(usedPct: number | null, start: number, end: number, n
 	return { kind: "over-pace", exhaustAt, daysBeforeReset, hoursBeforeReset, maxDailyPct, maxDailyCost, elapsedPct, usedPct };
 }
 
-const WEEKDAY_JA = ["日", "月", "火", "水", "木", "金", "土"] as const;
-const WEEKDAY_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
+/** Short weekday names, cached per language rather than built on every call. */
+const WEEKDAY_FORMATTER: Record<Lang, Intl.DateTimeFormat> = {
+	ja: new Intl.DateTimeFormat("ja-JP", { weekday: "short" }),
+	en: new Intl.DateTimeFormat("en-US", { weekday: "short" }),
+};
 
 /** Formats `epochSeconds` (local time) as "<weekday> HH:MM". */
 export function formatWeekdayTime(epochSeconds: number, lang: Lang): string {
 	const d = new Date(epochSeconds * 1000);
 	const pad = (n: number) => String(n).padStart(2, "0");
-	const weekday = (lang === "ja" ? WEEKDAY_JA : WEEKDAY_EN)[d.getDay()];
-	return `${weekday} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+	return `${WEEKDAY_FORMATTER[lang].format(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 // ---- Model and effort columns ----------------------------------------------------------

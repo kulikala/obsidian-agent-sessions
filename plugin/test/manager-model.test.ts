@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { setLang } from "../src/i18n";
 import type { Row } from "../src/index";
 import { OTHER_GROUP, type ManagerTree } from "../src/tree";
 import type { StatsResult, StatsUsage, StatsWindow } from "../src/types";
@@ -54,8 +55,12 @@ function tree(overrides: Partial<ManagerTree> = {}): ManagerTree {
 }
 
 describe("flattenTree", () => {
+	// The "other"/"archive" group labels go through t(), so this whole block pins ja
+	// (the assertions below check the app's actual ja UI strings) and resets afterward.
+	beforeEach(() => setLang("ja"));
+	afterEach(() => setLang("en"));
+
 	it("orders headers and children as groups, then 'other' (uncategorized + unnamed merged into one bucket)", () => {
-		// Japanese fixture: labels below assert against the app's ja UI strings ("その他" / OTHER_GROUP's label).
 		const g1 = row({ id: "1", name: "RIM: Meeting notes" });
 		const noCategory = row({ id: "2", name: "Name without a category" });
 		const unnamed = row({ id: "3", name: null });
@@ -106,7 +111,6 @@ describe("flattenTree", () => {
 			],
 		});
 		const rows = flattenTree(t, true);
-		// Japanese fixture: asserts against ARCHIVED_GROUP's actual ja label.
 		expect(rows).toEqual<ManagerRow[]>([
 			{ kind: "group", key: ARCHIVED_GROUP, label: "アーカイブ（2）", count: 2, folded: false },
 			{ kind: "session", row: withRow, indent: true },
@@ -259,6 +263,8 @@ describe("isRealCategoryKey", () => {
 });
 
 describe("categoryTotals", () => {
+	afterEach(() => setLang("en"));
+
 	it("sums cost and session count per group", () => {
 		const rows: Row[] = [
 			row({ id: "1", name: "RIM: Meeting notes" }),
@@ -279,9 +285,10 @@ describe("categoryTotals", () => {
 	});
 
 	it("groups a name without a group and a missing name together into 'other'", () => {
+		// The "other" label goes through t(), so pin the language before computing totals.
+		setLang("ja");
 		const rows: Row[] = [row({ id: "1", name: "Name without a category" }), row({ id: "2", name: null })];
 		const totals = categoryTotals(rows, null, "5h");
-		// Japanese fixture: asserts against OTHER_GROUP's actual ja label.
 		expect(totals).toEqual([{ key: OTHER_GROUP, label: "その他", cost: 0, count: 2 }]);
 	});
 

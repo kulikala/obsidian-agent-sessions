@@ -498,7 +498,7 @@ export class ManagerView extends ItemView {
 		const share = windowCost > 0 ? Math.round((entry.cost / windowCost) * 100) : 0;
 		item.createDiv({
 			cls: "agent-sessions-manager-category-bar-value",
-			text: `${formatCost(entry.cost)}（${share}%）`,
+			text: t("stats.categoryBar.itemCost", { cost: formatCost(entry.cost), share }),
 		});
 		this.registerDomEvent(item, "click", () => this.scrollToCategory(entry.key));
 	}

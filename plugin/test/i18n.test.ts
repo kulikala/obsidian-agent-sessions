@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { getLang, resolveLang, setLang, t, type MessageKey } from "../src/i18n";
 
-// This file intentionally switches languages. Reset back to Japanese (the
+// This file intentionally switches languages. Reset back to English (the
 // default, set in test/setup.ts) so it doesn't leak into other tests.
 afterEach(() => {
-	setLang("ja");
+	setLang("en");
 });
 
 describe("resolveLang", () => {

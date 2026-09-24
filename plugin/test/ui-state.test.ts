@@ -18,45 +18,51 @@ describe("writeUiState", () => {
 	});
 
 	it("writes submitKey and its matching symbol to ui.json", () => {
-		writeUiState(runtimeDir, "cmd+enter");
+		writeUiState(runtimeDir, "cmd+enter", "ja");
 		const data = JSON.parse(readFileSync(join(runtimeDir, "ui.json"), "utf8"));
-		expect(data).toEqual({ submitKey: "cmd+enter", submitSymbol: "⌘⏎" });
+		expect(data).toEqual({ submitKey: "cmd+enter", submitSymbol: "⌘⏎", language: "ja" });
 	});
 
 	it("maps enter to ⏎", () => {
-		writeUiState(runtimeDir, "enter");
+		writeUiState(runtimeDir, "enter", "ja");
 		const data = JSON.parse(readFileSync(join(runtimeDir, "ui.json"), "utf8"));
 		expect(data.submitSymbol).toBe("⏎");
 	});
 
 	it("creates the directory if it doesn't exist", () => {
 		expect(existsSync(runtimeDir)).toBe(false);
-		writeUiState(runtimeDir, "shift+enter");
+		writeUiState(runtimeDir, "shift+enter", "ja");
 		expect(existsSync(join(runtimeDir, "ui.json"))).toBe(true);
 	});
 
 	it("doesn't leave a tmp file behind", () => {
-		writeUiState(runtimeDir, "ctrl+enter");
+		writeUiState(runtimeDir, "ctrl+enter", "ja");
 		const files = readdirSync(runtimeDir);
 		expect(files).toEqual(["ui.json"]);
 	});
 
 	it("overwrites the file when written again", () => {
-		writeUiState(runtimeDir, "enter");
-		writeUiState(runtimeDir, "alt+enter");
+		writeUiState(runtimeDir, "enter", "ja");
+		writeUiState(runtimeDir, "alt+enter", "ja");
 		const data = JSON.parse(readFileSync(join(runtimeDir, "ui.json"), "utf8"));
-		expect(data).toEqual({ submitKey: "alt+enter", submitSymbol: "⌥⏎" });
+		expect(data).toEqual({ submitKey: "alt+enter", submitSymbol: "⌥⏎", language: "ja" });
 	});
 
 	it("uses short text symbols on non-macOS (for the status line)", () => {
-		writeUiState(runtimeDir, "ctrl+enter", false);
+		writeUiState(runtimeDir, "ctrl+enter", "ja", false);
 		const data = JSON.parse(readFileSync(join(runtimeDir, "ui.json"), "utf8"));
-		expect(data).toEqual({ submitKey: "ctrl+enter", submitSymbol: "C-⏎" });
+		expect(data).toEqual({ submitKey: "ctrl+enter", submitSymbol: "C-⏎", language: "ja" });
 	});
 
 	it("still maps non-macOS enter to the same ⏎ as macOS", () => {
-		writeUiState(runtimeDir, "enter", false);
+		writeUiState(runtimeDir, "enter", "ja", false);
 		const data = JSON.parse(readFileSync(join(runtimeDir, "ui.json"), "utf8"));
 		expect(data.submitSymbol).toBe("⏎");
+	});
+
+	it("writes the resolved display language", () => {
+		writeUiState(runtimeDir, "enter", "en");
+		const data = JSON.parse(readFileSync(join(runtimeDir, "ui.json"), "utf8"));
+		expect(data.language).toBe("en");
 	});
 });

@@ -2,6 +2,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { setLang } from "../src/i18n";
 import { formatStatus, StatusLine } from "../src/statusline";
 
 describe("StatusLine.get", () => {
@@ -67,6 +68,8 @@ describe("StatusLine.get", () => {
 });
 
 describe("formatStatus", () => {
+	afterEach(() => setLang("en"));
+
 	it("when everything is present", () => {
 		expect(
 			formatStatus({ model: "Opus 5", effort: "high", ctxPercent: 42, fiveHour: 37, sevenDay: 12 }, true)
@@ -86,11 +89,13 @@ describe("formatStatus", () => {
 	});
 
 	it("falls back to デフォルト (default) when model/effort are missing, and — for everything else", () => {
-		// Japanese fixture: "デフォルト" is the real UI-facing fallback string the app renders.
+		// The default-value fallback goes through t(), so pin the language for these assertions.
+		setLang("ja");
 		expect(formatStatus(null, null)).toBe("デフォルト · デフォルト · ctx — · rc ○ · 5h — · 7d —");
 	});
 
 	it("info is present but some fields are missing", () => {
+		setLang("ja");
 		expect(formatStatus({ model: "Sonnet 5", effort: null, ctxPercent: 10, fiveHour: null, sevenDay: null }, true)).toBe(
 			"Sonnet 5 · デフォルト · ctx 10% · rc ● · 5h — · 7d —"
 		);
