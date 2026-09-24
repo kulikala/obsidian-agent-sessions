@@ -1,6 +1,7 @@
 // The session manager: table, folding, filtering, showing the archive, and the detail panel.
-// Looks different from the side panel (a ruled table, a monospace date/time column). Row
-// rendering logic (status marker, name, time formatting, the `⋯` row menu) is reused from `rows.ts`.
+// Looks different from the side panel (a ruled table). Row rendering logic (status marker, name,
+// time formatting, the `⋯` row menu) is reused from `rows.ts` — the last-updated column shows
+// the same relative time as the side panel, re-rendered on the same shared ticker.
 
 import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
 import type AgentSessionsPlugin from "../main";
@@ -44,7 +45,18 @@ import {
 	type ManagerRow,
 	type SortKey,
 } from "./manager-model";
-import { categoryOf, createRowActions, formatTime, renderCategoryChip, rowLabel, rowStatusMark, showRowMenu, type RowActions } from "./rows";
+import {
+	categoryOf,
+	createRowActions,
+	formatRelativeTime,
+	formatTime,
+	RelativeTimeTicker,
+	renderCategoryChip,
+	rowLabel,
+	rowStatusMark,
+	showRowMenu,
+	type RowActions,
+} from "./rows";
 
 const STATS_FETCH_INTERVAL_MS = 60000;
 const STATS_TICK_INTERVAL_MS = 1000;
@@ -103,6 +115,8 @@ export class ManagerView extends ItemView {
 	private analysisHeight = 240;
 	/** Guards `refreshStatsFromClick()` against overlapping calls from rapid clicks. */
 	private refreshingStats = false;
+	/** The last-updated column's cells, re-rendered in place once a minute (shared with `SideView`). */
+	private timeTicker = new RelativeTimeTicker();
 
 	constructor(leaf: WorkspaceLeaf, plugin: AgentSessionsPlugin) {
 		super(leaf);
@@ -148,6 +162,8 @@ export class ManagerView extends ItemView {
 			if (this.statsTickTimer) clearInterval(this.statsTickTimer);
 			if (this.statusRenderTimer) clearTimeout(this.statusRenderTimer);
 		});
+		this.timeTicker.start();
+		this.register(() => this.timeTicker.stop());
 
 		void this.plugin.index.rescan();
 		void this.refreshStats();
@@ -699,6 +715,7 @@ export class ManagerView extends ItemView {
 		// building the tree passed to `flattenTree`), so it reflects state even while folded.
 		this.groupUrgency = urgencyByGroupKey(this.plugin, sessionRows, categoryKeyOf);
 
+		this.timeTicker.reset();
 		this.tableBodyEl.empty();
 		this.rowEls = this.rows.map((mrow, index) => this.renderRow(mrow, index));
 		this.applySelectionHighlight();
@@ -789,7 +806,11 @@ export class ManagerView extends ItemView {
 			renderCategoryChip(nameWrap, category, this.plugin.index.categoryColorIndex(category));
 		}
 		nameWrap.createSpan({ cls: "agent-sessions-manager-name-text", text: rowLabel(row) });
-		tr.createEl("td", { cls: "agent-sessions-manager-col-time", text: formatTime(row.last_activity) });
+		const timeTd = tr.createEl("td", { cls: "agent-sessions-manager-col-time", text: formatRelativeTime(row.last_activity) });
+		if (row.last_activity) {
+			setTooltip(timeTd, formatTime(row.last_activity));
+			this.timeTicker.track(timeTd, row.last_activity);
+		}
 		const statusInfo = this.plugin.index.statusline.get(row.id);
 		this.renderShortValueCell(tr, "agent-sessions-manager-col-model", shortModelName(statusInfo?.model ?? null), statusInfo?.model ?? null);
 		this.renderShortValueCell(tr, "agent-sessions-manager-col-effort", statusInfo?.effort ?? "", statusInfo?.effort ?? null);

@@ -1,6 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLang } from "../../src/i18n";
-import { formatRelativeTime } from "../../src/views/rows";
+import { formatRelativeTime, RelativeTimeTicker } from "../../src/views/rows";
 
 describe("formatRelativeTime", () => {
 	afterEach(() => setLang("en"));
@@ -58,5 +58,65 @@ describe("formatRelativeTime", () => {
 
 	it("defaults `now` to the current time when omitted", () => {
 		expect(formatRelativeTime(Date.now() / 1000)).toBe("just now");
+	});
+});
+
+describe("RelativeTimeTicker", () => {
+	function fakeEl(): { setText: ReturnType<typeof vi.fn> } {
+		return { setText: vi.fn() };
+	}
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		vi.setSystemTime(1_700_000_000 * 1000);
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("updates every tracked element's text once a minute, to the current formatRelativeTime", () => {
+		const ticker = new RelativeTimeTicker();
+		const el = fakeEl();
+		const epoch = Date.now() / 1000 - 30; // "just now" at track time
+		ticker.track(el as unknown as HTMLElement, epoch);
+		ticker.start();
+
+		expect(el.setText).not.toHaveBeenCalled();
+
+		vi.advanceTimersByTime(60000);
+		expect(el.setText).toHaveBeenCalledWith("1 min ago");
+
+		vi.advanceTimersByTime(60000);
+		expect(el.setText).toHaveBeenLastCalledWith("2 min ago");
+	});
+
+	it("ignores a falsy epoch (no last_activity) — nothing to update", () => {
+		const ticker = new RelativeTimeTicker();
+		const el = fakeEl();
+		ticker.track(el as unknown as HTMLElement, 0);
+		ticker.start();
+		vi.advanceTimersByTime(60000);
+		expect(el.setText).not.toHaveBeenCalled();
+	});
+
+	it("reset() forgets every tracked element, so a later tick doesn't touch it", () => {
+		const ticker = new RelativeTimeTicker();
+		const el = fakeEl();
+		ticker.track(el as unknown as HTMLElement, Date.now() / 1000);
+		ticker.reset();
+		ticker.start();
+		vi.advanceTimersByTime(60000);
+		expect(el.setText).not.toHaveBeenCalled();
+	});
+
+	it("stop() stops future ticks", () => {
+		const ticker = new RelativeTimeTicker();
+		const el = fakeEl();
+		ticker.track(el as unknown as HTMLElement, Date.now() / 1000);
+		ticker.start();
+		ticker.stop();
+		vi.advanceTimersByTime(120000);
+		expect(el.setText).not.toHaveBeenCalled();
 	});
 });

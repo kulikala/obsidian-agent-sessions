@@ -113,7 +113,8 @@ export function rowLabel(row: Row): string {
 
 export { renderCategoryChip };
 
-/** `MM-DD HH:MM` (local time). Used by the manager's table and as the side panel row's tooltip (`formatRelativeTime` is the row's displayed text there). */
+/** `MM-DD HH:MM` (local time). The tooltip for both the side panel row's and the manager
+ * table's last-updated cell — `formatRelativeTime` is the displayed text in both places. */
 export function formatTime(epochSeconds: number): string {
 	if (!epochSeconds) {
 		return "";
@@ -152,6 +153,49 @@ export function formatRelativeTime(epochSeconds: number, now: number = Date.now(
 	const d = new Date(epochSeconds * 1000);
 	const pad = (n: number) => String(n).padStart(2, "0");
 	return `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * Tracks a set of relative-time text elements (already showing `formatRelativeTime(epoch)`) and
+ * re-renders just their text, once a minute, without touching anything else about the row/cell
+ * they're in — no full re-render. Shared by the side panel and the manager (`SideView`,
+ * `ManagerView`) so both tick on the same schedule and behave identically.
+ */
+export class RelativeTimeTicker {
+	private entries: { el: HTMLElement; epoch: number }[] = [];
+	private timer: ReturnType<typeof setInterval> | null = null;
+
+	/** Starts the once-a-minute tick. Call once, from `onOpen`. */
+	start(): void {
+		this.timer = setInterval(() => this.tick(), 60000);
+	}
+
+	/** Stops the tick — call from a `register()` cleanup so it doesn't outlive the view. */
+	stop(): void {
+		if (this.timer) {
+			clearInterval(this.timer);
+			this.timer = null;
+		}
+	}
+
+	/** Forgets every tracked element. Call at the start of a full re-render, before re-tracking. */
+	reset(): void {
+		this.entries = [];
+	}
+
+	/** Tracks `el` so the next tick updates its text. A falsy `epoch` (no `last_activity`) is a
+	 * no-op — there's nothing to update since the row shows no time at all in that case. */
+	track(el: HTMLElement, epoch: number): void {
+		if (epoch) {
+			this.entries.push({ el, epoch });
+		}
+	}
+
+	private tick(): void {
+		for (const { el, epoch } of this.entries) {
+			el.setText(formatRelativeTime(epoch));
+		}
+	}
 }
 
 /** The row menu (rename, compact session, archive, end session, session analytics, copy ID).

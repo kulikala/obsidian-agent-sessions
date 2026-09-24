@@ -10,7 +10,7 @@ import { VIEW_TYPE_TERMINAL } from "../sessions/open-session";
 import { NewSessionModal } from "../ui/modals";
 import type { Row } from "../sessions/index";
 import type { SideList } from "../sessions/tree";
-import { createRowActions, formatRelativeTime, renderRow, RowSelection, type RowActions } from "./rows";
+import { createRowActions, RelativeTimeTicker, renderRow, RowSelection, type RowActions } from "./rows";
 import { computeSideList, leafIdsOf } from "./side-list";
 import { renderDetail, type DetailContext } from "./detail";
 import { LimitsView } from "./limits";
@@ -41,9 +41,8 @@ export class SideView extends ItemView {
 	private navButtons: { newSession?: HTMLElement; manager?: HTMLElement; more?: HTMLElement } = {};
 	/** Debounce timer for `terminal-status`. */
 	private statusRenderTimer: ReturnType<typeof setTimeout> | null = null;
-	/** Row time elements to update every minute (`tickRelativeTimes`), rebuilt on every `render()`. */
-	private timeEls: { el: HTMLElement; epoch: number }[] = [];
-	private timeTickTimer: ReturnType<typeof setInterval> | null = null;
+	/** Row time elements, re-rendered in place once a minute (shared with `ManagerView`). */
+	private timeTicker = new RelativeTimeTicker();
 
 	constructor(leaf: WorkspaceLeaf, plugin: AgentSessionsPlugin) {
 		super(leaf);
@@ -81,13 +80,8 @@ export class SideView extends ItemView {
 				clearTimeout(this.statusRenderTimer);
 			}
 		});
-		this.timeTickTimer = setInterval(() => this.tickRelativeTimes(), 60000);
-		this.register(() => {
-			if (this.timeTickTimer) {
-				clearInterval(this.timeTickTimer);
-				this.timeTickTimer = null;
-			}
-		});
+		this.timeTicker.start();
+		this.register(() => this.timeTicker.stop());
 
 		this.onLayoutChange();
 		this.onActiveLeafChange();
@@ -243,7 +237,7 @@ export class SideView extends ItemView {
 	private render(): void {
 		this.listEl.empty();
 		this.selection.clear();
-		this.timeEls = [];
+		this.timeTicker.reset();
 		const actions = createRowActions(
 			this.plugin,
 			(id) => this.onHoverShow(id),
@@ -284,19 +278,10 @@ export class SideView extends ItemView {
 				actions,
 				plugin: this.plugin,
 			});
-			if (row.last_activity) {
-				const timeEl = el.querySelector<HTMLElement>(".agent-sessions-row-time");
-				if (timeEl) {
-					this.timeEls.push({ el: timeEl, epoch: row.last_activity });
-				}
+			const timeEl = el.querySelector<HTMLElement>(".agent-sessions-row-time");
+			if (timeEl) {
+				this.timeTicker.track(timeEl, row.last_activity);
 			}
-		}
-	}
-
-	/** Updates each row's relative-time text in place, without rebuilding the list. */
-	private tickRelativeTimes(): void {
-		for (const { el, epoch } of this.timeEls) {
-			el.setText(formatRelativeTime(epoch));
 		}
 	}
 

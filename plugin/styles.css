@@ -444,9 +444,14 @@
 }
 
 .agent-sessions-manager-col-time {
-	/* Wide enough that `MM-DD HH:MM` (11 monospace characters) doesn't get clipped. */
+	/* Same relative-time text as the side panel's row (`.agent-sessions-row-time`) now, not a
+	   fixed `MM-DD HH:MM` digit grid, so this no longer needs to be monospace (font size stays
+	   the table's own — matching the rest of the row rather than the side panel's smaller row
+	   font, so the column doesn't look out of place next to model/effort/folder). 120px was
+	   already sized generously for the old 11-character monospace format; the longest of the new
+	   values ("59 min ago", "23 時間前") and the header text ("Last updated"/"最終更新") all
+	   render well under that in a proportional font, so the width itself didn't need to change. */
 	width: 120px;
-	font-family: var(--font-monospace);
 	color: var(--text-muted);
 	overflow: hidden;
 	text-overflow: ellipsis;
