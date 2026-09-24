@@ -162,6 +162,13 @@ const ja = {
 	"section.running": "起動中",
 	"section.recent": "最近",
 
+	// ---- Row relative time (views/rows.ts's formatRelativeTime, side panel only) ----
+	"time.justNow": "たった今",
+	"time.minutesAgo": "{n} 分前",
+	"time.hoursAgo": "{n} 時間前",
+	"time.yesterday": "昨日",
+	"time.daysAgo": "{n} 日前",
+
 	// ---- Attention markers (side panel badges, manager section headings) ----
 	"attention.asking": "入力待ち {count}",
 	"attention.waiting": "未読 {count}",
@@ -185,7 +192,8 @@ const ja = {
 	"stats.metric.callsTip": "この枠内の呼出回数",
 	"stats.metric.sessions": "セッション",
 	"stats.metric.sessionsTip": "この枠内で動いたセッション数",
-	"stats.categoryBar.title": "カテゴリ別（7 日枠）",
+	"stats.categoryBar.title5h": "カテゴリ別（5 時間枠）",
+	"stats.categoryBar.title7d": "カテゴリ別（7 日枠）",
 	"stats.categoryBar.empty": "この枠の使用はありません",
 	"stats.categoryBar.itemCost": "{cost}（{share}%）",
 	"stats.pace.unknown": "使用率が分かりません",
@@ -397,6 +405,12 @@ const en: Record<MessageKey, string> = {
 	"section.running": "Running",
 	"section.recent": "Recent",
 
+	"time.justNow": "just now",
+	"time.minutesAgo": "{n} min ago",
+	"time.hoursAgo": "{n} h ago",
+	"time.yesterday": "yesterday",
+	"time.daysAgo": "{n} d ago",
+
 	"attention.asking": "Needs input {count}",
 	"attention.waiting": "Unread {count}",
 	"attention.askingInGroup": "Has a session waiting for input",
@@ -418,7 +432,8 @@ const en: Record<MessageKey, string> = {
 	"stats.metric.callsTip": "Number of calls within this window",
 	"stats.metric.sessions": "Sessions",
 	"stats.metric.sessionsTip": "Number of sessions active within this window",
-	"stats.categoryBar.title": "By category (7-day window)",
+	"stats.categoryBar.title5h": "By category (5-hour window)",
+	"stats.categoryBar.title7d": "By category (7-day window)",
 	"stats.categoryBar.empty": "No usage in this window",
 	"stats.categoryBar.itemCost": "{cost} ({share}%)",
 	"stats.pace.unknown": "Usage percentage unavailable",

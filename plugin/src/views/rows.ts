@@ -1,11 +1,9 @@
 // Row rendering, selection, and the row menu — shared by the side panel and the manager. The detail pane is views/detail.ts.
 
-import { Menu, setIcon, setTooltip } from "obsidian";
 import { renderCategoryChip } from "../chip";
 import type { Row } from "../index";
 import { t } from "../i18n";
 import type AgentSessionsPlugin from "../main";
-import { RenameSessionModal } from "../modals";
 import { resolveRowStatus, STATUS_LABEL_KEY, terminalStatusClass, TERMINAL_STATUS_ICON } from "../terminal-status";
 import { splitName } from "../tree";
 
@@ -68,6 +66,10 @@ export class RowSelection {
  * tooltip as the tab header, so they stay consistent.
  */
 export function rowStatusMark(container: HTMLElement, plugin: AgentSessionsPlugin, row: Row): HTMLElement {
+	// `obsidian`'s `setIcon`/`setTooltip` are required lazily (same reason as `views/detail.ts`'s
+	// `makeIconButton`: so importing this file's pure functions in tests doesn't fail trying to
+	// resolve `obsidian`).
+	const { setIcon, setTooltip } = require("obsidian") as typeof import("obsidian");
 	const status = resolveRowStatus(plugin, row);
 	const mark = container.createSpan({ cls: `agent-sessions-row-mark ${terminalStatusClass(status)}` });
 	setIcon(mark, TERMINAL_STATUS_ICON[status]);
@@ -101,6 +103,7 @@ export function rowLabel(row: Row): string {
 
 export { renderCategoryChip };
 
+/** `MM-DD HH:MM` (local time). Used by the manager's table and as the side panel row's tooltip (`formatRelativeTime` is the row's displayed text there). */
 export function formatTime(epochSeconds: number): string {
 	if (!epochSeconds) {
 		return "";
@@ -110,9 +113,42 @@ export function formatTime(epochSeconds: number): string {
 	return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/**
+ * The side panel's row time: "just now" under a minute, "N min ago" under an hour, "N h ago"
+ * under a day, "yesterday" under two days, "N d ago" under a week, and "MM-DD" (no time of day)
+ * from a week on — a plain duration cascade rather than calendar-day boundaries, so it doesn't
+ * depend on timezone edge cases. `now` defaults to the current time; pass it explicitly in tests.
+ */
+export function formatRelativeTime(epochSeconds: number, now: number = Date.now() / 1000): string {
+	if (!epochSeconds) {
+		return "";
+	}
+	const diff = Math.max(0, now - epochSeconds);
+	if (diff < 60) {
+		return t("time.justNow");
+	}
+	if (diff < 3600) {
+		return t("time.minutesAgo", { n: Math.floor(diff / 60) });
+	}
+	if (diff < 86400) {
+		return t("time.hoursAgo", { n: Math.floor(diff / 3600) });
+	}
+	if (diff < 172800) {
+		return t("time.yesterday");
+	}
+	if (diff < 604800) {
+		return t("time.daysAgo", { n: Math.floor(diff / 86400) });
+	}
+	const d = new Date(epochSeconds * 1000);
+	const pad = (n: number) => String(n).padStart(2, "0");
+	return `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 /** The row menu (rename, compact session, archive, end session, session analytics, copy ID).
  * `manager.ts`'s table opens the same menu — shared by both the `⋯` button and right-click. */
 export function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): void {
+	// See `rowStatusMark`'s comment on why `obsidian` is required lazily here.
+	const { Menu } = require("obsidian") as typeof import("obsidian");
 	const menu = new Menu();
 	menu.addItem((item) =>
 		item
@@ -162,6 +198,8 @@ export function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): voi
 
 /** Renders one row: `status-marker  name  time  ▣  ⋯`. `⋯` is always shown. */
 export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptions): HTMLElement {
+	// See `rowStatusMark`'s comment on why `obsidian` is required lazily here.
+	const { setTooltip } = require("obsidian") as typeof import("obsidian");
 	const el = container.createDiv({ cls: "agent-sessions-row" });
 	if (opts.front) {
 		el.addClass("is-front");
@@ -186,9 +224,10 @@ export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptio
 		renderCategoryChip(el, category, opts.plugin.index.categoryColorIndex(category));
 	}
 	el.createSpan({ cls: "agent-sessions-row-name", text: rowLabel(row) });
-	const time = formatTime(row.last_activity);
+	const time = formatRelativeTime(row.last_activity);
 	if (time) {
-		el.createSpan({ cls: "agent-sessions-row-time", text: time });
+		const timeEl = el.createSpan({ cls: "agent-sessions-row-time", text: time });
+		setTooltip(timeEl, formatTime(row.last_activity));
 	}
 	if (row.hasTab) {
 		el.createSpan({ cls: "agent-sessions-row-tab-mark", text: "▣" });
@@ -261,6 +300,10 @@ export function createRowActions(
 			void plugin.openSession(id, { agent: row?.agent ?? "claude", cwd: row?.cwd ?? "" });
 		},
 		rename: (id, currentName) => {
+			// `../modals` itself has a top-level `obsidian` import, so it's required lazily here
+			// too (same reason as `rowStatusMark`'s comment) — otherwise importing this file's
+			// pure functions in tests would drag in `obsidian` transitively through this closure.
+			const { RenameSessionModal } = require("../modals") as typeof import("../modals");
 			new RenameSessionModal(plugin, currentName, (name) => void plugin.renameSession(id, name)).open();
 		},
 		compact: (id) => void plugin.compactSession(id),

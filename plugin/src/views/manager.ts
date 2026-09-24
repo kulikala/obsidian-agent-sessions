@@ -30,6 +30,7 @@ import {
 	sortRows,
 	topCategoryTotals,
 	weeklyPace,
+	windowOf,
 	windowSummary,
 	type CategoryTotal,
 	type ManagerRow,
@@ -80,7 +81,8 @@ export class ManagerView extends ItemView {
 	};
 	/** Whether each group key has an asking/waiting row (rebuilt in `render()`). */
 	private groupUrgency: Map<string, GroupUrgency> = new Map();
-	private categoryBarEl!: HTMLElement;
+	/** The two per-category bars, 5-hour then 7-day (same left-to-right order as the stat cards above). */
+	private categoryBarEls: Partial<Record<"5h" | "7d", HTMLElement>> = {};
 	/** Debounce timer for `terminal-status`. */
 	private statusRenderTimer: ReturnType<typeof setTimeout> | null = null;
 	/** The bottom analytics area (the usage bar plus the per-category bar). Clicking its heading
@@ -114,12 +116,12 @@ export class ManagerView extends ItemView {
 		this.contentEl.addClass("agent-sessions-manager");
 		this.buildSkeleton();
 
-		// Rebuild the per-category bar, not just the table, whenever the session list changes —
+		// Rebuild the per-category bars, not just the table, whenever the session list changes —
 		// this way, even if `stats()` (daemon) resolves before the session scan does, it catches
 		// up as soon as the scan finishes (previously, if `refreshStats()` resolved before the
-		// scan completed, the bar stayed empty).
+		// scan completed, the bars stayed empty).
 		this.register(this.plugin.index.onChange(() => {
-			this.renderCategoryBar();
+			this.renderCategoryBars();
 			this.render();
 		}));
 		this.register(this.plugin.index.onError((message) => new Notice(t("notice.scanFailed", { message }))));
@@ -179,7 +181,7 @@ export class ManagerView extends ItemView {
 			this.statsResult = null;
 		}
 		this.renderStatsBar();
-		this.renderCategoryBar();
+		this.renderCategoryBars();
 		this.render();
 	}
 
@@ -250,7 +252,7 @@ export class ManagerView extends ItemView {
 		this.registerDomEvent(this.analysisBodyEl, "click", () => void this.refreshStatsFromClick());
 		setTooltip(this.analysisBodyEl, t("action.clickToRefresh"));
 		this.buildStatsBar();
-		this.buildCategoryBar();
+		this.buildCategoryBars();
 
 		this.applyAnalysisHeight(this.plugin.settings.managerAnalysisHeight);
 		this.applyAnalysisCollapsed(this.plugin.settings.managerAnalysisCollapsed);
@@ -462,34 +464,40 @@ export class ManagerView extends ItemView {
 		setTooltip(cell, tooltip);
 	}
 
-	/** Below the usage bar: the "by category (7-day window)" horizontal bar (top 8 by cost). */
-	private buildCategoryBar(): void {
-		this.categoryBarEl = this.analysisBodyEl.createDiv({ cls: "agent-sessions-manager-category-bar" });
-		this.renderCategoryBar();
+	/** Below the usage bar: the "by category" horizontal bars — 5-hour then 7-day, side by side
+	 * when there's room and stacked when there isn't (each is `topCategoryTotals` up to 8 by cost). */
+	private buildCategoryBars(): void {
+		const wrap = this.analysisBodyEl.createDiv({ cls: "agent-sessions-manager-category-bars" });
+		this.categoryBarEls["5h"] = wrap.createDiv({ cls: "agent-sessions-manager-category-bar" });
+		this.categoryBarEls["7d"] = wrap.createDiv({ cls: "agent-sessions-manager-category-bar" });
+		this.renderCategoryBars();
 	}
 
-	private renderCategoryBar(): void {
-		this.categoryBarEl.empty();
-		this.categoryBarEl.createDiv({
-			cls: "agent-sessions-manager-category-bar-title",
-			text: t("stats.categoryBar.title"),
-		});
+	private renderCategoryBars(): void {
+		this.renderCategoryBar("5h", t("stats.categoryBar.title5h"));
+		this.renderCategoryBar("7d", t("stats.categoryBar.title7d"));
+	}
+
+	private renderCategoryBar(window: "5h" | "7d", title: string): void {
+		const el = this.categoryBarEls[window];
+		if (!el) {
+			return;
+		}
+		el.empty();
+		el.createDiv({ cls: "agent-sessions-manager-category-bar-title", text: title });
 
 		const allRows = [...this.plugin.index.sessions.values()];
-		const totals = categoryTotals(allRows, this.statsResult, "7d");
+		const totals = categoryTotals(allRows, this.statsResult, window);
 		// Categories with 0 cost (inactive in this window) aren't listed.
 		const top = topCategoryTotals(totals, CATEGORY_BAR_TOP_N);
 		if (top.length === 0) {
-			this.categoryBarEl.createDiv({
-				cls: "agent-sessions-manager-category-bar-empty",
-				text: t("stats.categoryBar.empty"),
-			});
+			el.createDiv({ cls: "agent-sessions-manager-category-bar-empty", text: t("stats.categoryBar.empty") });
 			return;
 		}
 
-		const windowCost = this.statsResult?.windows.seven_day.total.cost ?? 0;
+		const windowCost = windowOf(this.statsResult, window)?.total.cost ?? 0;
 		const maxCost = Math.max(...top.map((c) => c.cost), 0);
-		const list = this.categoryBarEl.createDiv({ cls: "agent-sessions-manager-category-bar-list" });
+		const list = el.createDiv({ cls: "agent-sessions-manager-category-bar-list" });
 		for (const entry of top) {
 			this.renderCategoryBarItem(list, entry, maxCost, windowCost);
 		}

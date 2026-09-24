@@ -90,7 +90,8 @@ export function sessionCost(window: StatsWindow | null | undefined, id: string):
 	return entry ? entry.cost : null;
 }
 
-function windowOf(stats: StatsResult | null, key: "5h" | "7d"): StatsWindow | null {
+/** The `StatsWindow` for `key` ("5h" → `five_hour`, "7d" → `seven_day`), or `null` if `stats` itself is. */
+export function windowOf(stats: StatsResult | null, key: "5h" | "7d"): StatsWindow | null {
 	if (!stats) {
 		return null;
 	}

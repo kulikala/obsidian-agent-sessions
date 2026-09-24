@@ -10,7 +10,7 @@ import { VIEW_TYPE_TERMINAL } from "../open-session";
 import { NewSessionModal } from "../modals";
 import type { Row } from "../index";
 import type { SideList } from "../tree";
-import { createRowActions, renderRow, RowSelection, type RowActions } from "./rows";
+import { createRowActions, formatRelativeTime, renderRow, RowSelection, type RowActions } from "./rows";
 import { computeSideList, leafIdsOf } from "./side-list";
 import { renderDetail, type DetailContext } from "./detail";
 import { LimitsView } from "./limits";
@@ -41,6 +41,9 @@ export class SideView extends ItemView {
 	private navButtons: { newSession?: HTMLElement; manager?: HTMLElement; more?: HTMLElement } = {};
 	/** Debounce timer for `terminal-status`. */
 	private statusRenderTimer: ReturnType<typeof setTimeout> | null = null;
+	/** Row time elements to update every minute (`tickRelativeTimes`), rebuilt on every `render()`. */
+	private timeEls: { el: HTMLElement; epoch: number }[] = [];
+	private timeTickTimer: ReturnType<typeof setInterval> | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: AgentSessionsPlugin) {
 		super(leaf);
@@ -76,6 +79,13 @@ export class SideView extends ItemView {
 		this.register(() => {
 			if (this.statusRenderTimer) {
 				clearTimeout(this.statusRenderTimer);
+			}
+		});
+		this.timeTickTimer = setInterval(() => this.tickRelativeTimes(), 60000);
+		this.register(() => {
+			if (this.timeTickTimer) {
+				clearInterval(this.timeTickTimer);
+				this.timeTickTimer = null;
 			}
 		});
 
@@ -233,6 +243,7 @@ export class SideView extends ItemView {
 	private render(): void {
 		this.listEl.empty();
 		this.selection.clear();
+		this.timeEls = [];
 		const actions = createRowActions(
 			this.plugin,
 			(id) => this.onHoverShow(id),
@@ -267,12 +278,25 @@ export class SideView extends ItemView {
 			this.renderAttentionBadge(titleEl, attention);
 		}
 		for (const row of rows) {
-			renderRow(container, row, {
+			const el = renderRow(container, row, {
 				front: row.id === this.frontId,
 				selection: this.selection,
 				actions,
 				plugin: this.plugin,
 			});
+			if (row.last_activity) {
+				const timeEl = el.querySelector<HTMLElement>(".agent-sessions-row-time");
+				if (timeEl) {
+					this.timeEls.push({ el: timeEl, epoch: row.last_activity });
+				}
+			}
+		}
+	}
+
+	/** Updates each row's relative-time text in place, without rebuilding the list. */
+	private tickRelativeTimes(): void {
+		for (const { el, epoch } of this.timeEls) {
+			el.setText(formatRelativeTime(epoch));
 		}
 	}
 
