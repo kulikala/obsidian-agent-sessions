@@ -1,7 +1,7 @@
-// `agent-sessions json …` とデーモンが返す JSON の型（§5・§6.1・§6.5）。
-// 走査・判定のロジックは Python 側にある。ここは受け取る形だけを定める。
+// Types for the JSON returned by `agent-sessions json …` and the daemon. Scanning and
+// detection logic lives on the Python side — this only defines the shape received here.
 
-/** `json scan` の 1 セッション。 */
+/** A single session from `json scan`. */
 export interface ScanSession {
 	id: string;
 	agent: string;
@@ -15,20 +15,20 @@ export interface ScanSession {
 	transcript: string | null;
 }
 
-/** `sessions.json` のアーカイブ 1 件（§3）。 */
+/** One archived entry in `sessions.json`. */
 export interface ArchivedSession {
 	id: string;
 	name: string;
 	agent: string;
 }
 
-/** `sessions.json` の `sessions` の 1 件（§3）。プラグインが起動したセッションの控え。 */
+/** One entry in `sessions.json`'s `sessions` — the plugin's record of a session it started. */
 export interface StoreSessionEntry {
 	agent: string;
 	cwd: string;
 }
 
-/** `sessions.json` の内容（§3）。 */
+/** The contents of `sessions.json`. */
 export interface SessionStore {
 	folded: string[];
 	archived: ArchivedSession[];
@@ -36,13 +36,13 @@ export interface SessionStore {
 	sessions: Record<string, StoreSessionEntry>;
 }
 
-/** `json scan` の出力全体（§5）。 */
+/** The full output of `json scan`. */
 export interface ScanResult {
 	sessions: ScanSession[];
 	store: SessionStore;
 }
 
-/** デーモンの `list` が返す 1 セッション（§4.1）。 */
+/** A single session as returned by the daemon's `list`. */
 export interface DaemonSession {
 	id: string;
 	agent: string;
@@ -54,7 +54,7 @@ export interface DaemonSession {
 	exitedAt: number | null;
 }
 
-/** `~/.claude/sessions/<pid>.json`（起動中の台帳）を集約したもの。 */
+/** A summary aggregated from `~/.claude/sessions/<pid>.json` (the ledger of running sessions). */
 export interface LiveEntry {
 	status: string;
 	pid: number;
@@ -62,7 +62,7 @@ export interface LiveEntry {
 	updated_at: number;
 }
 
-/** `json live` の出力（§5）。 */
+/** The output of `json live`. */
 export interface LiveResult {
 	live: Record<string, LiveEntry>;
 	daemon: {
@@ -71,16 +71,16 @@ export interface LiveResult {
 	};
 }
 
-/** `json detail ID` の出力（§5）。 */
+/** The output of `json detail ID`. */
 export interface Detail {
 	last_user: string | null;
 	last_assistant: string | null;
-	/** 直近のスラッシュコマンド名（例 `/compact`。引数は含めない）。無ければ `null`。 */
+	/** The most recent slash command's name (e.g. `/compact`; arguments aren't included). `null` if there isn't one. */
 	last_command: string | null;
 	tools: string[];
 }
 
-/** `json usage ID` の 1 ターン（D-30, D-40）。`ts`／`last_ts` は epoch 秒（無ければ `null`）。 */
+/** A single turn from `json usage ID`. `ts`/`last_ts` are epoch seconds (`null` if absent). */
 export interface UsageTurn {
 	index: number;
 	ts: number | null;
@@ -99,7 +99,7 @@ export interface UsageTurn {
 	models: Record<string, number>;
 }
 
-/** `json usage ID` の合計（D-30, D-40）。`duration` は `first_ts`〜`last_ts` の秒数。 */
+/** The totals from `json usage ID`. `duration` is the number of seconds from `first_ts` to `last_ts`. */
 export interface UsageTotal {
 	calls: number;
 	input: number;
@@ -116,7 +116,7 @@ export interface UsageTotal {
 	context_last: number;
 }
 
-/** `json usage ID` の出力全体（D-30）。`from`／`to` は epoch 秒（指定が無ければ `null`）。 */
+/** The full output of `json usage ID`. `from`/`to` are epoch seconds (`null` if not given). */
 export interface UsageResult {
 	turns: UsageTurn[];
 	total: UsageTotal;
@@ -124,7 +124,7 @@ export interface UsageResult {
 	to: number | null;
 }
 
-/** `json stats` の窓・セッション別の集計 1 件（D-54・D-55）。 */
+/** One window/session usage summary from `json stats`. */
 export interface StatsUsage {
 	calls: number;
 	input: number;
@@ -134,7 +134,7 @@ export interface StatsUsage {
 	cost: number;
 }
 
-/** `json stats` の 1 つの枠（5 時間・7 日）（D-55）。`start`／`end` は epoch 秒。 */
+/** One window (5-hour or 7-day) from `json stats`. `start`/`end` are epoch seconds. */
 export interface StatsWindow {
 	start: number;
 	end: number;
@@ -143,7 +143,7 @@ export interface StatsWindow {
 	sessions: Record<string, StatsUsage>;
 }
 
-/** `json stats` の出力全体（D-54・D-55）。 */
+/** The full output of `json stats`. */
 export interface StatsResult {
 	windows: {
 		five_hour: StatsWindow;

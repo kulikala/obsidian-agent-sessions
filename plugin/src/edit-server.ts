@@ -1,10 +1,10 @@
-// プラグイン側ソケット（D-21）。`~/.agents/sessions/plugin.sock` で listen し、
-// `agent-sessions edit` からの `J {"op":"edit","seq","file","session","cwd"}` を受ける。
-// フレームは `daemon-client.ts` の `encodeFrame`／`FrameDecoder` を共用する（`J` のみ）。
+// The plugin's own socket. Listens on `~/.agents/sessions/plugin.sock` and receives
+// `J {"op":"edit","seq","file","session","cwd"}` from `agent-sessions edit`. Frames share
+// `daemon-client.ts`'s `encodeFrame`/`FrameDecoder` (using kind `J` only).
 //
-// 1 接続 1 要求。`reply` で応答して接続を閉じる。応答の前に相手が切れたら（claude 側の
-// 中断・`{"op":"cancel"}`）`req.onAbort` を呼ぶ。`stop()` は応答待ちの要求すべてに
-// `cancel` を返してから閉じる。
+// One request per connection. Replies via `reply`, then closes the connection. If the other
+// side disconnects before a reply is sent (claude's side aborting, or `{"op":"cancel"}`), calls
+// `req.onAbort`. `stop()` replies `cancel` to every still-pending request before closing.
 
 import * as fs from "node:fs";
 import * as net from "node:net";
@@ -15,19 +15,19 @@ export interface EditRequest {
 	file: string;
 	session: string;
 	cwd: string;
-	/** 応答の前に相手が切れたときに呼ばれる。ハンドラが設定する。 */
+	/** Called if the other side disconnects before a reply is sent. Set by the handler. */
 	onAbort: (() => void) | null;
 }
 
 export type EditReply = (ok: boolean, error?: string) => void;
 
 /**
- * 編集領域の結果（D-51）。`send`＝送る、`return`＝入力欄に戻る（内容を保って確定・送信しない）、
- * `cancel`＝タブを閉じた（元の内容）、`busy`＝既に編集中。
+ * The editor pane's outcome. `send` = send it, `return` = back to the prompt (keeps the content,
+ * commits it, doesn't submit), `cancel` = the tab closed (original content), `busy` = already editing.
  */
 export type EditOutcome = "send" | "return" | "cancel" | "busy";
 
-/** 結果から応答を決める：送る／入力欄に戻るは `ok`（exit 0）、それ以外はその名のエラー。 */
+/** Turns an outcome into a reply: send/return are `ok` (exit 0), everything else is an error named after the outcome. */
 export function editReplyFor(outcome: EditOutcome): { ok: boolean; error?: string } {
 	if (outcome === "send" || outcome === "return") {
 		return { ok: true };
@@ -35,7 +35,7 @@ export function editReplyFor(outcome: EditOutcome): { ok: boolean; error?: strin
 	return { ok: false, error: outcome };
 }
 
-/** 送るの後に送信列を送るか：プロンプト編集の一時ファイル（`claude-prompt-*`）だけ（D-51）。 */
+/** Whether to send the submit sequence after "send": only for a prompt-edit temp file (`claude-prompt-*`). */
 export function submitsAfterEdit(file: string): boolean {
 	return path.basename(file).startsWith("claude-prompt-");
 }
@@ -59,14 +59,14 @@ export class EditServer {
 		this.handler = handler;
 	}
 
-	/** 古いソケットを消して listen し、`chmod 0600`。 */
+	/** Removes any stale socket, starts listening, then `chmod 0600`. */
 	start(sockPath: string): Promise<void> {
 		this.sockPath = sockPath;
 		fs.mkdirSync(path.dirname(sockPath), { recursive: true, mode: 0o700 });
 		try {
 			fs.unlinkSync(sockPath);
 		} catch {
-			// 無ければよい。
+			// Fine if it wasn't there.
 		}
 		const server = net.createServer((socket) => this.accept(socket));
 		this.server = server;
@@ -78,14 +78,14 @@ export class EditServer {
 				try {
 					fs.chmodSync(sockPath, 0o600);
 				} catch {
-					// 失敗しても listen は続ける。
+					// Keep listening even if this fails.
 				}
 				resolve();
 			});
 		});
 	}
 
-	/** 応答待ちの要求に `cancel` を返し、接続と listen を閉じてソケットを消す。 */
+	/** Replies `cancel` to any still-pending request, then closes every connection and the listener, and removes the socket. */
 	stop(): void {
 		for (const conn of [...this.conns]) {
 			if (conn.req && !conn.replied) {
@@ -104,7 +104,7 @@ export class EditServer {
 			try {
 				fs.unlinkSync(this.sockPath);
 			} catch {
-				// 既に無ければよい。
+				// Fine if it's already gone.
 			}
 		}
 	}
@@ -153,7 +153,7 @@ export class EditServer {
 	private handleMessage(conn: Conn, msg: Record<string, unknown>): void {
 		const seq = typeof msg.seq === "number" ? msg.seq : 0;
 		if (msg.op === "cancel") {
-			// claude 側の中断（Ctrl+C／SIGTERM）。応答は要らない。
+			// claude's side aborted (Ctrl+C/SIGTERM). No reply needed.
 			if (conn.req && !conn.replied) {
 				conn.replied = true;
 				conn.req.onAbort?.();
@@ -187,7 +187,7 @@ export class EditServer {
 		this.handler(conn.req, (ok, error) => this.reply(conn, ok, error));
 	}
 
-	/** 応答して接続を閉じる。既に応答済み・切断済みなら何もしない。 */
+	/** Sends a reply and closes the connection. Does nothing if already replied or disconnected. */
 	private reply(conn: Conn, ok: boolean, error?: string): void {
 		if (conn.replied) {
 			return;
@@ -208,7 +208,7 @@ export class EditServer {
 		try {
 			conn.socket.write(encodeFrame("J", Buffer.from(JSON.stringify(body), "utf8")));
 		} catch {
-			// 相手が消えていれば書けない。close で片付く。
+			// Can't write if the other side is already gone — the `close` handler cleans up.
 		}
 	}
 }

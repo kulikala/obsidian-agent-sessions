@@ -1,19 +1,19 @@
 import { readFileSync, writeFileSync } from "fs";
 
-// npm version の version スクリプトから、plugin/ で cwd 実行される想定（`cd plugin && npm version <bump>`）。
+// Run as npm's `version` script, with cwd expected to be plugin/ (`cd plugin && npm version <bump>`).
 const targetVersion = process.env.npm_package_version;
 
-// plugin/manifest.json: version を追従させる。
+// plugin/manifest.json: bring its version in line.
 const manifest = JSON.parse(readFileSync("manifest.json", "utf8"));
 const { minAppVersion } = manifest;
 manifest.version = targetVersion;
 writeFileSync("manifest.json", JSON.stringify(manifest, null, "\t") + "\n");
 
-// リポジトリ直下の manifest.json は plugin/manifest.json の写し。
-// 審査 bot と BRAT は直下しか読まないため、ここで同期する。
+// The repo root's manifest.json is a copy of plugin/manifest.json.
+// The review bot and BRAT only read the root copy, so it's kept in sync here.
 writeFileSync("../manifest.json", JSON.stringify(manifest, null, "\t") + "\n");
 
-// リポジトリ直下の versions.json: バージョンごとの最小対応 Obsidian バージョン。
+// The repo root's versions.json: the minimum supported Obsidian version per plugin version.
 const versionsPath = "../versions.json";
 const versions = JSON.parse(readFileSync(versionsPath, "utf8"));
 if (!(targetVersion in versions)) {

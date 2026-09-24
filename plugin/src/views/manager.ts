@@ -1,6 +1,6 @@
-// セッションマネージャー（D-8・D-44・§6.2）：表・折畳・絞込・アーカイブ表示・詳細パネル。
-// サイドパネルとは見た目を変える（罫線のある表、等幅の日時列）。行の描画ロジック
-// （状態の印・名前・時刻の整形、⋯ の行メニュー）は `rows.ts` を再利用する。
+// The session manager: table, folding, filtering, showing the archive, and the detail panel.
+// Looks different from the side panel (a ruled table, a monospace date/time column). Row
+// rendering logic (status marker, name, time formatting, the `⋯` row menu) is reused from `rows.ts`.
 
 import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
 import type AgentSessionsPlugin from "../main";
@@ -41,11 +41,11 @@ const STATS_FETCH_INTERVAL_MS = 60000;
 const STATS_TICK_INTERVAL_MS = 1000;
 
 const COLUMN_COUNT = 7;
-/** カテゴリ別の横バー（D-64）に出す上位カテゴリの数。 */
+/** The number of top categories shown in the per-category horizontal bar. */
 const CATEGORY_BAR_TOP_N = 8;
-/** `terminal-status`（D-66 追補）は busy/idle のたびに飛んでくるので、まとめて描き直す間隔。 */
+/** `terminal-status` fires on every busy/idle change, so redraws are batched at this interval. */
 const TERMINAL_STATUS_DEBOUNCE_MS = 200;
-/** ドラッグで詰められる下部・解析領域の下限（px。T-70 追補）。 */
+/** The lower bound (px) the bottom analytics area can be dragged down to. */
 const MIN_ANALYSIS_HEIGHT = 120;
 
 export const VIEW_TYPE_MANAGER = "agent-sessions-manager";
@@ -71,20 +71,20 @@ export class ManagerView extends ItemView {
 	private cursor = -1;
 	private detailId: string | null = null;
 	private actions!: RowActions;
-	/** 前面のターミナルタブのセッション（詳細パネルの既定表示に使う）。 */
+	/** The frontmost terminal tab's session (used for the detail panel's default display). */
 	private frontId: string | null = null;
-	/** グループ見出し行の 5h／7d コスト合計（`render()` で作り直す。`categoryKeyOf` の鍵。D-64）。 */
+	/** Group heading rows' 5h/7d cost totals (rebuilt in `render()`, keyed by `categoryKeyOf`). */
 	private categoryTotalsByWindow: Record<"5h" | "7d", Map<string, CategoryTotal>> = {
 		"5h": new Map(),
 		"7d": new Map(),
 	};
-	/** グループ鍵ごとの asking／waiting の有無（`render()` で作り直す。T-78）。 */
+	/** Whether each group key has an asking/waiting row (rebuilt in `render()`). */
 	private groupUrgency: Map<string, GroupUrgency> = new Map();
 	private categoryBarEl!: HTMLElement;
-	/** `terminal-status` のデバウンス用タイマー（D-66 追補）。 */
+	/** Debounce timer for `terminal-status`. */
 	private statusRenderTimer: ReturnType<typeof setTimeout> | null = null;
-	/** 下部・解析領域（統計の帯＋カテゴリ別バー。T-70 追補）。見出しクリックで折畳、
-	 * ハンドルで高さを変える——どちらも `plugin.settings` に保存する。 */
+	/** The bottom analytics area (the usage bar plus the per-category bar). Clicking its heading
+	 * folds it, and its handle resizes it — both are saved to `plugin.settings`. */
 	private analysisEl!: HTMLElement;
 	private analysisCaretEl!: HTMLElement;
 	private analysisBodyEl!: HTMLElement;
@@ -112,9 +112,10 @@ export class ManagerView extends ItemView {
 		this.contentEl.addClass("agent-sessions-manager");
 		this.buildSkeleton();
 
-		// セッション一覧が変わるたび、表だけでなくカテゴリ別バーも作り直す（D-64）——
-		// `stats()`（daemon）の解決がセッション走査より早く終わっても、走査が終わり次第
-		// 追いつく（実機修正：走査未完了のまま `refreshStats()` が先に解決すると空になっていた）。
+		// Rebuild the per-category bar, not just the table, whenever the session list changes —
+		// this way, even if `stats()` (daemon) resolves before the session scan does, it catches
+		// up as soon as the scan finishes (previously, if `refreshStats()` resolved before the
+		// scan completed, the bar stayed empty).
 		this.register(this.plugin.index.onChange(() => {
 			this.renderCategoryBar();
 			this.render();
@@ -141,7 +142,7 @@ export class ManagerView extends ItemView {
 		this.wrapEl.focus();
 	}
 
-	/** タブの状態が変わるたびに来る `terminal-status` をまとめて描き直す（D-66 追補）。 */
+	/** Batches redraws triggered by `terminal-status`, which fires on every tab state change. */
 	private scheduleStatusRender(): void {
 		if (this.statusRenderTimer) {
 			return;
@@ -153,9 +154,10 @@ export class ManagerView extends ItemView {
 	}
 
 	/**
-	 * 言語が変わったとき（§6.9・D-56）：タブ見出しと骨組み（見出し・ツールバー・統計の帯）を
-	 * 描き直す。骨組みは固定文言（tooltip・列見出し・placeholder）を開いたときに 1 回だけ組むため、
-	 * 描き直すには作り直すのが早い（`statsResult`・選択・折畳は保つ）。
+	 * When the language changes: redraws the tab header and the skeleton (heading, toolbar,
+	 * usage bar). The skeleton's fixed strings (tooltips, column headings, placeholders) are
+	 * only built once when it's opened, so rebuilding it from scratch is faster than patching it
+	 * in place (`statsResult`, selection, and fold state are preserved).
 	 */
 	private refreshLanguage(): void {
 		const leaf = this.leaf as unknown as { updateHeader?: () => void };
@@ -167,7 +169,7 @@ export class ManagerView extends ItemView {
 		this.render();
 	}
 
-	/** `json stats`（D-54・D-55）：開いたとき・再走査・60 秒毎に読み直す。失敗したら帯に「—」。 */
+	/** `json stats`: re-read on open, on rescan, and every 60 seconds. Shows "—" on the bar if it fails. */
 	private async refreshStats(): Promise<void> {
 		try {
 			this.statsResult = await stats(this.plugin.agentSessionsPath(), this.plugin.vaultPath());
@@ -189,7 +191,7 @@ export class ManagerView extends ItemView {
 		}
 	}
 
-	// ---- 骨組み -----------------------------------------------------------------
+	// ---- Skeleton -----------------------------------------------------------------
 
 	private buildSkeleton(): void {
 		this.buildToolbar();
@@ -215,8 +217,8 @@ export class ManagerView extends ItemView {
 
 		this.detailEl = body.createDiv({ cls: "agent-sessions-manager-detail" });
 
-		// 下部・解析領域（T-70 追補：一覧を上、解析を下に入れ替えた——一覧が主役で、
-		// 解析はいつでも見返せる補助情報のため）。
+		// The bottom analytics area (list on top, analytics below — the list is the main focus,
+		// and the analytics are supplementary information you can glance back at anytime).
 		this.analysisHandleEl = this.contentEl.createDiv({ cls: "agent-sessions-drag-handle" });
 		this.bindAnalysisHandle();
 
@@ -230,7 +232,7 @@ export class ManagerView extends ItemView {
 		this.applyAnalysisCollapsed(this.plugin.settings.managerAnalysisCollapsed);
 	}
 
-	/** 解析領域の見出し：クリックで折畳（キャレット＋「解析」）。状態は設定に保存する。 */
+	/** The analytics area's heading: click to fold (a caret plus "Analysis"). Saves state to settings. */
 	private buildAnalysisHeader(): void {
 		const header = this.analysisEl.createDiv({ cls: "agent-sessions-manager-analysis-header" });
 		this.analysisCaretEl = header.createSpan({ cls: "agent-sessions-manager-analysis-caret" });
@@ -256,7 +258,7 @@ export class ManagerView extends ItemView {
 		this.contentEl.style.setProperty("--as-manager-analysis-h", `${px}px`);
 	}
 
-	/** 一覧と解析の間のドラッグハンドル（`views/side.ts` の詳細欄と同じ作り）。 */
+	/** The drag handle between the list and the analytics area (built the same way as `views/side.ts`'s detail pane). */
 	private bindAnalysisHandle(): void {
 		let dragging = false;
 		let startY = 0;
@@ -289,7 +291,7 @@ export class ManagerView extends ItemView {
 		});
 	}
 
-	/** 見出し行。「最終更新」「5h」「7d」はクリックで並べ替え（D-54）。 */
+	/** The heading row. "Last updated", "5h", "7d" sort the table when clicked. */
 	private buildHead(table: HTMLTableElement): void {
 		const thead = table.createEl("thead");
 		const tr = thead.createEl("tr", { cls: "agent-sessions-manager-row" });
@@ -321,7 +323,7 @@ export class ManagerView extends ItemView {
 		}
 	}
 
-	/** 統計の帯（5 時間枠・7 日枠。D-54）：使用率のバー・カウントダウン・コスト・トークン・呼出数・セッション数。 */
+	/** The usage bar (5-hour and 7-day windows): usage bar, countdown, cost, tokens, call count, session count. */
 	private buildStatsBar(): void {
 		this.statsBarEl = this.analysisBodyEl.createDiv({ cls: "agent-sessions-manager-stats" });
 		this.renderStatsBar();
@@ -333,8 +335,8 @@ export class ManagerView extends ItemView {
 		this.renderStatsCard(this.statsBarEl, t("stats.sevenDay"), this.statsResult?.windows.seven_day ?? null, true);
 	}
 
-	/** カード見出しの横に「リセットまで…」、下段はラベル付き 2×2（D-62）。`showPace` は
-	 * 7 日枠だけ真——「同じペースで足りるか」の判定（T-74）は週間枠にしか意味が無い。 */
+	/** "Resets in…" next to the card's heading, a labeled 2×2 grid below it. `showPace` is only
+	 * true for the 7-day window — the "will this pace last?" judgment only makes sense weekly. */
 	private renderStatsCard(container: HTMLElement, label: string, w: StatsWindow | null, showPace: boolean): void {
 		const card = container.createDiv({ cls: "agent-sessions-manager-stats-card" });
 
@@ -376,9 +378,10 @@ export class ManagerView extends ItemView {
 	}
 
 	/**
-	 * 7 日枠の使用率バーの下に 1 行：「同じペースで進んでも枠が足りるか」（T-74・`weeklyPace`）。
-	 * 順調なら緑、使い切る見込みならオレンジ＋1 日あたりの上限の目安（2 行目）、判定できなければ
-	 * 薄いグレーで理由を出す。tooltip に判定の根拠（経過％・使用％）。
+	 * One line below the 7-day window's usage bar: whether the window will last at the current
+	 * pace (`weeklyPace`). Green if on track, orange with a daily-cap estimate (second line) if
+	 * it'll run out, or muted gray with the reason if it can't be judged yet. The tooltip
+	 * explains the judgment (elapsed % and used %).
 	 */
 	private renderPaceLine(card: HTMLElement, w: StatsWindow | null): void {
 		const lineEl = card.createDiv({ cls: "agent-sessions-manager-stats-pace" });
@@ -427,7 +430,7 @@ export class ManagerView extends ItemView {
 		setTooltip(lineEl, tooltipText(pace.elapsedPct, pace.usedPct));
 	}
 
-	/** ラベル（薄）＋値（太字）の 1 マス。tooltip にその値の定義（D-62）。 */
+	/** A cell of a faint label plus a bold value. The tooltip defines what the value means. */
 	private renderMetric(container: HTMLElement, label: string, value: string, tooltip: string): void {
 		const cell = container.createDiv({ cls: "agent-sessions-manager-stats-metric" });
 		cell.createDiv({ cls: "agent-sessions-manager-stats-metric-label", text: label });
@@ -435,7 +438,7 @@ export class ManagerView extends ItemView {
 		setTooltip(cell, tooltip);
 	}
 
-	/** 統計の帯の下：「カテゴリ別（7 日枠）」の横バー（コスト上位 8。D-64）。 */
+	/** Below the usage bar: the "by category (7-day window)" horizontal bar (top 8 by cost). */
 	private buildCategoryBar(): void {
 		this.categoryBarEl = this.analysisBodyEl.createDiv({ cls: "agent-sessions-manager-category-bar" });
 		this.renderCategoryBar();
@@ -450,7 +453,7 @@ export class ManagerView extends ItemView {
 
 		const allRows = [...this.plugin.index.sessions.values()];
 		const totals = categoryTotals(allRows, this.statsResult, "7d");
-		// コスト 0（この枠で動いていない）のカテゴリは並べない（実機修正：D-64 追補）。
+		// Categories with 0 cost (inactive in this window) aren't listed.
 		const top = topCategoryTotals(totals, CATEGORY_BAR_TOP_N);
 		if (top.length === 0) {
 			this.categoryBarEl.createDiv({
@@ -474,17 +477,17 @@ export class ManagerView extends ItemView {
 		const isReal = isRealCategoryKey(entry.key);
 		const hueDeg = isReal ? paletteHueDeg(this.plugin.index.categoryColorIndex(entry.key)) : null;
 		if (hueDeg !== null) {
-			// 実際のカテゴリはチップ 1 つだけでラベルを表す——チップの文字＝カテゴリ名なので、
-			// 別にテキストを重ねて出さない（文字の重複解消。T-70 追補）。
+			// A real category is represented by its chip alone — the chip's text already is the
+			// category name, so no separate text is layered on top of it (avoids duplication).
 			renderCategoryChip(labelWrap, entry.key, this.plugin.index.categoryColorIndex(entry.key));
 		} else {
-			// 「カテゴリなし」「名前なし」はチップに出す色が無いので、地の文字で出す。
+			// "No category"/"No name" have no chip color to show, so they're shown as plain text.
 			labelWrap.createSpan({ cls: "agent-sessions-manager-category-bar-label-text", text: entry.label });
 		}
 		const track = item.createDiv({ cls: "agent-sessions-manager-category-bar-track" });
 		const barPct = maxCost > 0 ? (entry.cost / maxCost) * 100 : 0;
-		// バーの色もチップと同じ色相にする（T-70 追補）。「カテゴリなし」「名前なし」はチップが
-		// 無いので、バーも灰色のまま区別する。
+		// The bar's color matches its chip's hue. "No category"/"No name" have no chip, so their
+		// bar stays gray to set them apart.
 		const fill = track.createDiv({ cls: "agent-sessions-manager-category-bar-fill" });
 		if (hueDeg !== null) {
 			fill.style.setProperty("--as-chip-hue", String(hueDeg));
@@ -500,8 +503,8 @@ export class ManagerView extends ItemView {
 		this.registerDomEvent(item, "click", () => this.scrollToCategory(entry.key));
 	}
 
-	/** カテゴリ別バーのクリック：そのグループへスクロールして開く。見出しが無いカテゴリ
-	 * （「単独」）は、そのカテゴリの最初のセッション行を選んでスクロールする（D-64）。 */
+	/** Clicking the per-category bar: scrolls to and opens that group. For a category with no
+	 * heading of its own (a standalone one), selects and scrolls to that category's first session row instead. */
 	private scrollToCategory(key: string): void {
 		const groupIdx = this.rows.findIndex((r) => r.kind === "group" && r.key === key);
 		if (groupIdx >= 0) {
@@ -582,7 +585,7 @@ export class ManagerView extends ItemView {
 		menu.showAtMouseEvent(evt);
 	}
 
-	// ---- 表 ---------------------------------------------------------------------
+	// ---- Table ---------------------------------------------------------------------
 
 	private render(): void {
 		const store = loadStore(this.plugin.storePath());
@@ -595,14 +598,14 @@ export class ManagerView extends ItemView {
 		this.rows = sortRows(flattenTree(tree, this.showArchived), this.sortKey, this.statsResult);
 		this.cursor = moveSelection(this.rows, this.cursor, 0);
 		this.actions = createRowActions(this.plugin, (id) => this.selectById(id));
-		// グループ見出し行の 5h／7d コスト合計（D-64）：表に出ている行（絞込後）だけを数える
-		// ——見出しの `count`（`flattenTree` が渡す `group.rows.length`）と揃える。
+		// Group heading rows' 5h/7d cost totals: only counts rows shown in the table (post-filter)
+		// — matches the heading's `count` (`flattenTree`'s `group.rows.length`).
 		this.categoryTotalsByWindow = {
 			"5h": new Map(categoryTotals(sessionRows, this.statsResult, "5h").map((c) => [c.key, c])),
 			"7d": new Map(categoryTotals(sessionRows, this.statsResult, "7d").map((c) => [c.key, c])),
 		};
-		// グループ見出しの asking／waiting の印（T-78）：折畳んでいても中の状態を示すため、
-		// 絞込後の全セッション（`flattenTree` に渡した木を作る前）から数える。
+		// Group headings' asking/waiting marker: counted from all post-filter sessions (before
+		// building the tree passed to `flattenTree`), so it reflects state even while folded.
 		this.groupUrgency = urgencyByGroupKey(this.plugin, sessionRows, categoryKeyOf);
 
 		this.tableBodyEl.empty();
@@ -614,15 +617,14 @@ export class ManagerView extends ItemView {
 	private renderRow(mrow: ManagerRow, index: number): HTMLTableRowElement {
 		if (mrow.kind === "group") {
 			const tr = this.tableBodyEl.createEl("tr", { cls: "agent-sessions-manager-row is-group" });
-			// 見出し・折畳の三角・件数はマーク／名前／最終更新の 3 列分（時刻は持たない）。
-			// 5h・7d はそのカテゴリの合計を列の位置に揃える（D-64）。
+			// The heading, fold triangle, and count span the mark/name/last-updated columns (3
+			// columns; no time value). 5h/7d line up with that category's totals in their own column positions.
 			const headTd = tr.createEl("td", { cls: "agent-sessions-manager-col-name", attr: { colspan: "3" } });
 			const head = headTd.createDiv({ cls: "agent-sessions-manager-group-head" });
 			head.createSpan({ cls: "agent-sessions-manager-caret", text: mrow.folded ? "▸" : "▾" });
-			// 実カテゴリは `mrow.label === mrow.key`（グループ名そのもの）なので、チップと
-			// 同じ文字をテキストでも出すと二重表示になる。チップだけにする——「カテゴリなし」
-			// 「名前なし」はチップの色を持たないので、従来どおり文字のラベルを出す
-			// （T-70 追補：見出し行の文字の重複解消）。
+			// A real category has `mrow.label === mrow.key` (the group name itself), so showing
+			// that same text alongside the chip would duplicate it — use the chip alone.
+			// "No category"/"No name" have no chip color, so those keep the plain text label as before.
 			if (isRealCategoryKey(mrow.key)) {
 				renderCategoryChip(head, mrow.key, this.plugin.index.categoryColorIndex(mrow.key));
 			} else {
@@ -633,7 +635,7 @@ export class ManagerView extends ItemView {
 				this.renderGroupUrgencyMark(head, urgency);
 			}
 			head.createSpan({ cls: "agent-sessions-manager-group-count", text: String(mrow.count) });
-			// モデル・エフォートはセッション単位の値なので、見出し行は空にする（T-74）。
+			// Model and effort are per-session values, so the heading row leaves those cells empty.
 			tr.createEl("td", { cls: "agent-sessions-manager-col-model" });
 			tr.createEl("td", { cls: "agent-sessions-manager-col-effort" });
 			this.renderGroupCostCell(tr, "agent-sessions-manager-col-5h", "5h", mrow.key);
@@ -676,7 +678,7 @@ export class ManagerView extends ItemView {
 		if (row.archived) {
 			tr.addClass("is-archived");
 		}
-		// asking（答えを待っている）・waiting（busy→idle の後まだ見ていない）の行を目立たせる（T-78）。
+		// Makes rows that are asking (waiting for an answer) or waiting (idle since busy, not yet seen) stand out.
 		const attentionStatus = resolveRowStatus(this.plugin, row);
 		if (attentionStatus === "asking") {
 			tr.addClass("is-asking");
@@ -689,9 +691,9 @@ export class ManagerView extends ItemView {
 		const nameTd = tr.createEl("td", { cls: "agent-sessions-manager-col-name" });
 		const nameWrap = nameTd.createDiv({ cls: "agent-sessions-manager-name-cell" });
 		const category = categoryOf(row);
-		// 見出し（グループ・カテゴリなし・名前なし）の下に居る行（`indent`）は、その見出しが
-		// 既にカテゴリを 1 回出しているので行にはチップを付けない（重複表示の解消。T-70 追補）。
-		// 見出しの無い並び（5h／7d で並べ替えたとき）だけ、行にチップを付ける。
+		// A row under a heading (group, no-category, or no-name — `indent` is true) doesn't get
+		// its own chip, since the heading above it already shows the category once. Only rows in
+		// an unheaded list (sorted by 5h/7d) get a chip on the row itself.
 		if (category && !mrow.indent) {
 			renderCategoryChip(nameWrap, category, this.plugin.index.categoryColorIndex(category));
 		}
@@ -723,7 +725,7 @@ export class ManagerView extends ItemView {
 		return tr;
 	}
 
-	/** 5h／7d の列 1 セル：枠内にそのセッションの使用が無ければ空欄（D-54）。 */
+	/** One 5h/7d column cell: blank if that session had no usage within the window. */
 	private renderCostCell(tr: HTMLTableRowElement, cls: string, window: StatsWindow | undefined, id: string): void {
 		const cost = sessionCost(window ?? null, id);
 		tr.createEl("td", {
@@ -732,22 +734,23 @@ export class ManagerView extends ItemView {
 		});
 	}
 
-	/** モデル・エフォート列の 1 セル：短い表記（`short`）を出し、tooltip に完全な値
-	 * （`full`。無ければ「不明」）。値の出所は詳細パネルと同じ `statusline.get(id)`（T-74）。 */
+	/** One model/effort column cell: shows the short form (`short`), with the full value in the
+	 * tooltip (`full`, or "Unknown" if absent). The value comes from the same
+	 * `statusline.get(id)` the detail panel uses. */
 	private renderShortValueCell(tr: HTMLTableRowElement, cls: string, short: string, full: string | null): void {
 		const td = tr.createEl("td", { cls, text: short });
 		setTooltip(td, full ?? t("common.unknown"));
 	}
 
-	/** グループ見出しの小さな印：中に asking／waiting の行があれば（T-78）。並び順は変えない
-	 * ——折畳んでいても分かるように、見出しにだけ付ける。 */
+	/** A small marker on a group heading when it contains an asking/waiting row. Doesn't change
+	 * row order — shown only on the heading, so it's visible even while folded. */
 	private renderGroupUrgencyMark(head: HTMLElement, urgency: GroupUrgency): void {
 		const mark = head.createSpan({ cls: `agent-sessions-group-urgency agent-sessions-status-${urgency}` });
 		setIcon(mark, TERMINAL_STATUS_ICON[urgency]);
 		setTooltip(mark, urgency === "asking" ? t("attention.askingInGroup") : t("attention.waitingInGroup"));
 	}
 
-	/** グループ見出し行の 5h／7d の列 1 セル：そのカテゴリの合計（無ければ空欄。D-64）。 */
+	/** One 5h/7d column cell on a group heading row: that category's total, blank if there is none. */
 	private renderGroupCostCell(tr: HTMLTableRowElement, cls: string, window: "5h" | "7d", key: string): void {
 		const entry = this.categoryTotalsByWindow[window].get(key);
 		tr.createEl("td", {
@@ -758,14 +761,14 @@ export class ManagerView extends ItemView {
 
 	private toggleFold(group: Extract<ManagerRow, { kind: "group" }>): void {
 		if (group.key === ARCHIVED_GROUP) {
-			// アーカイブの見出しは折畳まない——「アーカイブを表示」の on/off で開閉する。
+			// The archive heading doesn't fold — it's shown/hidden via the "show archive" toggle instead.
 			return;
 		}
 		this.plugin.setFolded(group.key, !group.folded);
 		this.render();
 	}
 
-	// ---- 選択・キーボード操作（D-44：TUI と同じ ↑↓／Enter／`/`） -------------------------
+	// ---- Selection and keyboard controls (same ↑/↓, Enter, `/` as the TUI) -------------------------
 
 	private selectIndex(index: number): void {
 		this.cursor = index;
@@ -825,11 +828,11 @@ export class ManagerView extends ItemView {
 		}
 	}
 
-	// ---- 詳細パネル -----------------------------------------------------------------
+	// ---- Detail panel -----------------------------------------------------------------
 
 	/**
-	 * 選択が有ればそれ、無ければ既定（前面のターミナルタブのセッション、無ければ表の
-	 * 最初のセッション行）を表示する。どちらも無ければ空にする（実機修正：D-44）。
+	 * Shows the selected row if there is one; otherwise falls back to a default (the frontmost
+	 * terminal tab's session, or failing that, the table's first session row). Empties the panel if neither is available.
 	 */
 	private refreshDetail(): void {
 		const mrow = this.rows[this.cursor];

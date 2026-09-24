@@ -1,13 +1,14 @@
-// 入力の debounce と確定時の割り込み（T-75）。`views/editor-pane.ts` の内蔵エディタが、
-// 入力が落ち着くたびに一時ファイルへ自動保存するのに使う。`setTimeout` 以外は何も持たない
-// 純クラス——DOM にも obsidian にも依存しない（`marks.ts` と同じ理由でテストできるように）。
+// Debouncing input, with a way to force it early on commit. Used by `views/editor-pane.ts`'s
+// built-in editor to autosave to a temp file whenever input settles. A pure class with nothing
+// but a `setTimeout` — no dependency on the DOM or `obsidian` (kept testable, same reason as `marks.ts`).
 
 /**
- * `schedule()` を連続で呼んでも、最後の 1 回から `ms` 経ってはじめて `run` が呼ばれる
- * （＝入力のたびに延長される debounce）。確定（送る・入力欄に戻る）は `flush()` で、
- * 待っているタイマーを解除してから `run` を即呼ぶ——自動保存の書き込みと確定の書き込みが
- * 競合しない（片方が終わってからもう片方が始まる。二重に書くこともない）。取消は `cancel()`
- * だけ呼んで `run` を呼ばない（呼出側が別の内容を書く）。
+ * Calling `schedule()` repeatedly only lets `run` fire once `ms` has passed since the last
+ * call — i.e. a debounce extended by every keystroke. On commit (send, or back to prompt), call
+ * `flush()`, which cancels any pending timer and calls `run` immediately — so the autosave
+ * write and the commit write never race (one finishes before the other starts, and neither
+ * double-writes). Cancel calls only `cancel()` and never `run` (the caller writes something
+ * else itself).
  */
 export class SaveDebouncer {
 	private timer: ReturnType<typeof setTimeout> | null = null;
@@ -17,7 +18,7 @@ export class SaveDebouncer {
 		private readonly run: () => void
 	) {}
 
-	/** 入力があった：待っているタイマーがあれば解除して立て直す。 */
+	/** Input happened: cancels any pending timer and starts a new one. */
 	schedule(): void {
 		this.cancel();
 		this.timer = setTimeout(() => {
@@ -26,13 +27,13 @@ export class SaveDebouncer {
 		}, this.ms);
 	}
 
-	/** 確定：待っているタイマーを解除してから、待たずに `run` を呼ぶ。 */
+	/** Commit: cancels any pending timer, then calls `run` immediately. */
 	flush(): void {
 		this.cancel();
 		this.run();
 	}
 
-	/** 待っているタイマーだけ解除する（`run` は呼ばない）。 */
+	/** Cancels any pending timer only (never calls `run`). */
 	cancel(): void {
 		if (this.timer !== null) {
 			clearTimeout(this.timer);
@@ -40,7 +41,7 @@ export class SaveDebouncer {
 		}
 	}
 
-	/** タイマーが今も待っているか（テスト・デバッグ用）。 */
+	/** Whether a timer is currently pending (for tests/debugging). */
 	get pending(): boolean {
 		return this.timer !== null;
 	}

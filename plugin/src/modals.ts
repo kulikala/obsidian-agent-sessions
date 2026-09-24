@@ -1,4 +1,4 @@
-// 新規セッション・名前を変更・確認のダイアログ（§6.6・§6.12・D-63・T-70）。
+// The new-session, rename, and confirmation dialogs.
 
 import { App, Modal, Setting } from "obsidian";
 import type AgentSessionsPlugin from "./main";
@@ -13,13 +13,14 @@ interface ComposedNameField {
 }
 
 /**
- * カテゴリと名前を「1 つの入力欄」に見せる（T-70）：見た目は input 風の枠（div）の中に
- * `[カテゴリのチップ（有れば）][<input>]` が繋がって並ぶ。`<input>` に「カテゴリ: 」と打つ
- * （`tokenizeNameInput`）とその前の部分がチップになり、入力は残り（名前）に続く。名前が
- * 空の状態で Backspace、またはチップのクリックで、チップはテキストへ戻って編集できる。
- * カテゴリを入力中（まだチップになる前）は既存カテゴリの候補を出す（上下キー＋Enter／Tab／
- * クリックで確定）。確定はダイアログのボタンだけ（この欄の Enter では確定しない——候補選択中の
- * Enter は候補の確定）。
+ * Presents category and name as a single input field: an input-styled box (a div) holds
+ * `[category chip, if any][<input>]` side by side. Typing "Category: " into the `<input>`
+ * (detected by `tokenizeNameInput`) turns the part before it into a chip, and typing continues
+ * into what's left (the name). Backspace with an empty name, or clicking the chip, turns the
+ * chip back into editable text. While typing a category (before it becomes a chip), shows
+ * suggestions from existing categories (confirm with arrow keys + Enter/Tab, or a click).
+ * Confirming the whole field only happens via the dialog's own button (Enter in this field
+ * doesn't confirm it — Enter while a suggestion is highlighted confirms the suggestion instead).
  */
 function buildComposedNameField(
 	contentEl: HTMLElement,
@@ -49,7 +50,7 @@ function buildComposedNameField(
 		}
 	}
 
-	/** チップをテキストへ戻し、また編集できるようにする（Backspace・クリック共通）。 */
+	/** Turns the chip back into text so it can be edited again (shared by Backspace and click). */
 	function revertChip(): void {
 		if (!category) {
 			return;
@@ -98,8 +99,8 @@ function buildComposedNameField(
 			const itemEl = suggestEl.createDiv({ cls: "agent-sessions-name-suggest-item" });
 			renderCategoryChip(itemEl, cat, colorIndexFor(cat));
 			itemEl.createSpan({ cls: "agent-sessions-name-suggest-item-label", text: cat });
-			// mousedown（click ではなく）: 先に効かせないと、input の blur が先に起きて
-			// 候補が閉じてしまう（実機修正）。
+			// mousedown rather than click: needs to fire first, otherwise the input's blur fires
+			// first and closes the suggestions before the click registers.
 			itemEl.addEventListener("mousedown", (evt) => {
 				evt.preventDefault();
 				confirmCategory(cat);
@@ -114,8 +115,8 @@ function buildComposedNameField(
 		applyHighlight();
 	}
 
-	/** 候補から確定（クリック・Enter／Tab）：認識したそのタイミングで入力欄は空にする
-	 * （T-70 追補：入力した文字がそのまま残ると挙動が分かりにくい、との指摘）。 */
+	/** Confirming a suggestion (click, Enter, or Tab): clears the input field right when it's
+	 * recognized, so leftover typed characters don't make the behavior confusing. */
 	function confirmCategory(cat: string): void {
 		category = cat;
 		inputEl.value = "";
@@ -130,10 +131,11 @@ function buildComposedNameField(
 		}
 		const token = tokenizeNameInput(inputEl.value);
 		if (token) {
-			// `:` の確定・`：`＋空白のどちらも同じ規則（`tokenizeNameInput`）で判定する。
-			// 貼り付けで「カテゴリ: 名前」が一括で入っても同じ `input` イベントを通るので、
-			// 経路によらず認識した瞬間にカテゴリ・区切り文字を rest から取り除く
-			// （T-70 追補：入力した文字がそのまま残ると挙動が分かりにくい、との指摘）。
+			// A half-width `:` and a full-width `：` plus whitespace are both recognized by the
+			// same rule (`tokenizeNameInput`). Pasting "Category: Name" in one go still goes
+			// through this same `input` event, so regardless of how it arrived, the category and
+			// separator are stripped out of `rest` the moment they're recognized — leaving typed
+			// characters in place would make the behavior confusing.
 			category = token.category;
 			inputEl.value = token.rest;
 			closeSuggest();
@@ -178,7 +180,7 @@ function buildComposedNameField(
 			return;
 		}
 		if (evt.key === "Enter") {
-			// 確定はダイアログのボタンだけ（候補選択中の Enter は候補の確定。上で処理済み）。
+			// Only the dialog's own button confirms the field (Enter while a suggestion is highlighted confirms the suggestion instead, handled above).
 			evt.preventDefault();
 		}
 	});
@@ -196,7 +198,7 @@ function buildComposedNameField(
 	};
 }
 
-/** 新規セッション：カテゴリ・名前を 1 つの入力欄で入れ、「開始」で確定する。 */
+/** New session: enter category and name in one field, confirmed by "Start". */
 export class NewSessionModal extends Modal {
 	private field!: ComposedNameField;
 
@@ -236,9 +238,8 @@ export class NewSessionModal extends Modal {
 }
 
 /**
- * 名前を変更（§6.6・D-42・D-63・T-70）：いまの名前を `splitName` でカテゴリ・名前に分け、
- * 1 つの入力欄へチップ＋テキストで入れる。「変更」「キャンセル」のボタンだけで確定する
- * （Enter では確定しない）。
+ * Rename: splits the current name into category and name with `splitName`, and loads them into
+ * one field as a chip plus text. Only the "Rename"/"Cancel" buttons confirm it (Enter doesn't).
  */
 export class RenameSessionModal extends Modal {
 	private field!: ComposedNameField;
@@ -288,7 +289,7 @@ export class RenameSessionModal extends Modal {
 	}
 }
 
-/** 確認して実行する（セッションを終了、など）。 */
+/** Confirm-then-run (e.g. ending a session). */
 export class ConfirmModal extends Modal {
 	constructor(
 		app: App,

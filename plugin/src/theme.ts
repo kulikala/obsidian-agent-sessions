@@ -1,7 +1,7 @@
-// Obsidian の CSS 変数 → xterm のテーマ（§6.10）。
-// `background`・`foreground`・`cursor`・`selectionBackground` は変数から、
-// ANSI 16 色は明暗それぞれの固定表。色の読み取りは DOM を使うので
-// `buildTheme` だけを純関数にしてある。
+// Obsidian's CSS variables, turned into an xterm theme.
+// `background`/`foreground`/`cursor`/`selectionBackground` come from the variables; the ANSI 16
+// colors are a fixed table for each of light/dark. Reading colors needs the DOM, so only
+// `buildTheme` is kept as a pure function.
 
 import type { ITheme } from "@xterm/xterm";
 
@@ -53,7 +53,7 @@ export const ANSI_LIGHT: typeof ANSI_DARK = {
 const DEFAULT_DARK: ThemeVars = { background: "#202020", foreground: "#dadada", accent: "#7f6df2", selection: "rgba(127,109,242,0.3)" };
 const DEFAULT_LIGHT: ThemeVars = { background: "#ffffff", foreground: "#222222", accent: "#705dcf", selection: "rgba(112,93,207,0.25)" };
 
-/** 変数の値と明暗から xterm の `ITheme` を組む。空の値は明暗の既定に落とす。 */
+/** Builds xterm's `ITheme` from the variable values and light/dark. Empty values fall back to that mode's defaults. */
 export function buildTheme(vars: Partial<ThemeVars>, dark: boolean): ITheme {
 	const base = dark ? DEFAULT_DARK : DEFAULT_LIGHT;
 	const v: ThemeVars = {
@@ -74,8 +74,9 @@ export function buildTheme(vars: Partial<ThemeVars>, dark: boolean): ITheme {
 }
 
 /**
- * 色の文字列を `rgb()`／`rgba()` に正規化する。Obsidian の変数は `hsla(var(--…), 0.2)` の
- * ような形を取り、xterm は hsl を読めないため、一時要素の `color` に通して計算値を取る。
+ * Normalizes a color string to `rgb()`/`rgba()`. Obsidian's variables can take a form like
+ * `hsla(var(--…), 0.2)`, and xterm can't read hsl, so this runs the value through a temporary
+ * element's `color` and reads back the computed value.
  */
 function normalizeColor(el: HTMLElement, raw: string): string {
 	const value = raw.trim();
@@ -95,7 +96,7 @@ function normalizeColor(el: HTMLElement, raw: string): string {
 	}
 }
 
-/** 要素の計算済みスタイルから Obsidian の変数を読み、明暗は `body.theme-dark` で判定する。 */
+/** Reads Obsidian's variables from an element's computed style; light/dark is decided by `body.theme-dark`. */
 export function readObsidianTheme(el: HTMLElement): ITheme {
 	const style = getComputedStyle(el);
 	const read = (name: string) => normalizeColor(el, style.getPropertyValue(name));

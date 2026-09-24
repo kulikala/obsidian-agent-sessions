@@ -1,6 +1,6 @@
-// 送信キー（D-50・§6.8）。`~/.claude/keybindings.json`（正しくは `$CLAUDE_CONFIG_DIR`
-// 配下）の `Chat` コンテキストの `enter`・`meta+enter` を読み書きする。
-// Claude Code 全体の設定で、vault の `.claude/` は読まない。
+// The submit key. Reads and writes `enter`/`meta+enter` in the `Chat` context of
+// `~/.claude/keybindings.json` (more precisely, wherever `$CLAUDE_CONFIG_DIR` points).
+// This is a Claude Code-wide setting — the vault's `.claude/` is never read.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -10,12 +10,12 @@ export type EnterMode = "submit" | "newline" | "custom" | "unreadable";
 
 export interface EnterModeInfo {
 	mode: EnterMode;
-	/** `mode === 'custom'` のときの表示用の生値（`"enter → <値>"`）。 */
+	/** The raw value to display when `mode === 'custom'` (`"enter → <value>"`). */
 	raw?: string;
 }
 
 export interface ApplySubmitKeyResult {
-	/** 一致しない鍵が残っていて手で直す必要があるときの文言。 */
+	/** Set when a mismatched key was left behind and needs a manual fix. */
 	warning?: string;
 }
 
@@ -33,7 +33,7 @@ interface KeybindingsFile {
 const SCHEMA_URL = "https://www.schemastore.org/claude-code-keybindings.json";
 const DOCS_URL = "https://code.claude.com/docs/en/keybindings";
 
-/** `submitKey !== 'enter'` のときに `Chat` へ書く 2 鍵（§6.8・D-50）。 */
+/** The two keys written to `Chat` when `submitKey !== 'enter'`. */
 const ENTER_KEYS: Record<string, string> = {
 	enter: "chat:newline",
 	"meta+enter": "chat:submit",
@@ -65,12 +65,12 @@ function findChat(data: KeybindingsFile): KeybindingsBlock | undefined {
 }
 
 /**
- * 現在の Enter の役割を読む。
- * - ファイルが無い → `submit`
- * - JSON が壊れている／形が想定と違う → `unreadable`
- * - `Chat` の `enter` が無い、または `chat:submit` → `submit`
+ * Reads Enter's current role.
+ * - No file → `submit`
+ * - JSON is broken, or not the expected shape → `unreadable`
+ * - `Chat` has no `enter`, or it's `chat:submit` → `submit`
  * - `chat:newline` → `newline`
- * - それ以外 → `custom`（`raw` に `enter → <値>`）
+ * - Anything else → `custom` (`raw` holds `enter → <value>`)
  */
 export function readEnterMode(filePath: string): EnterModeInfo {
 	let text: string;
@@ -97,9 +97,9 @@ export function readEnterMode(filePath: string): EnterModeInfo {
 }
 
 /**
- * `Chat` コンテキストの生の鍵一覧を読む（§6.8・D-50）。`deriveSubmitKey` が `enter` と
- * `cmd+enter`／`super+enter` の有無から送信キーを導くのに使う。
- * ファイルが無い・読めない・`Chat` ブロックが無いときは `undefined`。
+ * Reads the raw key list from the `Chat` context. Used by `deriveSubmitKey` to derive the
+ * submit key from whether `enter` and `cmd+enter`/`super+enter` are present.
+ * `undefined` if the file doesn't exist, can't be read, or has no `Chat` block.
  */
 export function readChatBindings(filePath: string): Record<string, string> | undefined {
 	let text: string;
@@ -116,14 +116,15 @@ export function readChatBindings(filePath: string): Record<string, string> | und
 }
 
 /**
- * 送信キーの設定を `keybindings.json` に反映する（§6.8・D-50）。
- * - `submitKey !== 'enter'`：`Chat` ブロック（無ければ作る）に `enter: chat:newline`・
- *   `meta+enter: chat:submit` の 2 鍵を入れる。他の鍵・他のコンテキストは触らない。
- *   `$schema`・`$docs` が無ければ足す。
- * - `submitKey === 'enter'`：この 2 鍵のうち、自分が書いた値と一致するものだけ消す。空になった
- *   `Chat` ブロックは消す。一致しない鍵は残し `warning` を返す。
+ * Applies the submit-key setting to `keybindings.json`.
+ * - `submitKey !== 'enter'`: sets `enter: chat:newline` and `meta+enter: chat:submit` in the
+ *   `Chat` block (creating it if needed). Other keys and other contexts are left alone. Adds
+ *   `$schema`/`$docs` if they're missing.
+ * - `submitKey === 'enter'`: removes only the two keys above that still match the values this
+ *   code writes. Removes the `Chat` block if it ends up empty. Leaves any key whose value
+ *   doesn't match, and returns a `warning` for those.
  *
- * ファイルが読めない（壊れている）ときは書かずに `warning` を返す。
+ * If the file can't be read (it's broken), returns a `warning` without writing anything.
  */
 export function applySubmitKey(filePath: string, submitKey: string): ApplySubmitKeyResult {
 	const writing = submitKey !== "enter";
@@ -140,7 +141,7 @@ export function applySubmitKey(filePath: string, submitKey: string): ApplySubmit
 	}
 
 	if (text === null && !writing) {
-		// 書く必要が無く、ファイルも無い。何もしない。
+		// Nothing to write, and no file exists either — do nothing.
 		return {};
 	}
 
@@ -199,7 +200,7 @@ export function applySubmitKey(filePath: string, submitKey: string): ApplySubmit
 	return warning ? { warning } : {};
 }
 
-/** `keybindings.json` の置き場。`$CLAUDE_CONFIG_DIR` があればその配下。 */
+/** Where `keybindings.json` lives — under `$CLAUDE_CONFIG_DIR` if it's set. */
 export function defaultKeybindingsPath(homeDir: string, configDir?: string): string {
 	const base = configDir || path.join(homeDir, ".claude");
 	return path.join(base, "keybindings.json");

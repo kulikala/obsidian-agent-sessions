@@ -1,12 +1,12 @@
-// Claude Code の画面レイアウト（`~/.claude/settings.json` の `tui`）を読む（D-42）。
-// `fullscreen` のとき Claude は全画面を自分で描き直し、スクロールも自分で持つ——xterm の
-// スクロールバックには何も溜まらず、マーカーによるジャンプは成り立たない。そのときは
-// ジャンプを Claude のスクロールキー（PageUp／PageDown／End）に置き換える。
+// Reads Claude Code's screen layout (`tui` in `~/.claude/settings.json`). In `fullscreen`
+// mode, Claude redraws the whole screen itself and owns scrolling — nothing accumulates in
+// xterm's scrollback, so jumping via markers doesn't work. In that mode, jump is replaced with
+// Claude's own scroll keys (PageUp/PageDown/End).
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 
-/** `settings.json` の本文（無ければ `null`）から、`tui` が `fullscreen` かを判定する純関数。 */
+/** A pure function: whether `tui` is `fullscreen`, from `settings.json`'s contents (`null` if there's no file). */
 export function isFullscreenTui(text: string | null): boolean {
 	if (text === null) {
 		return false;
@@ -23,12 +23,12 @@ export function isFullscreenTui(text: string | null): boolean {
 	return (data as { tui?: unknown }).tui === "fullscreen";
 }
 
-/** Claude Code の `settings.json`（`CLAUDE_CONFIG_DIR` があればその下、無ければ `~/.claude`）。 */
+/** Claude Code's `settings.json` (under `CLAUDE_CONFIG_DIR` if it's set, otherwise `~/.claude`). */
 export function claudeSettingsPath(homeDir: string, configDir?: string): string {
 	return path.join(configDir || path.join(homeDir, ".claude"), "settings.json");
 }
 
-/** ファイルを読んで判定する。読めなければ `false`。 */
+/** Reads the file and checks it. `false` if it can't be read. */
 export function readFullscreenTui(settingsPath: string): boolean {
 	let text: string | null;
 	try {

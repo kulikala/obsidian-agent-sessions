@@ -1,21 +1,25 @@
-// JSON → グループ木（純関数）（D-7・D-8）。
-// グループ＝名前の `': '` より前（`agentsessions/model.py` の `split_name` と同じ）。
+// Builds a group tree from JSON (pure functions).
+// A group is whatever comes before `': '` in a name (matches `agentsessions/model.py`'s `split_name`).
 
 import type { Row } from "./index";
 import type { Store } from "./store";
 
 /**
- * 「その他」区分の識別子（`store.folded` のキー）。カテゴリの無い名前付きセッションと、
- * 名前の無いセッションをまとめた 1 つの区分。
+ * The identifier for the "Other" group (a key in `store.folded`): the one group that combines
+ * named sessions with no category and sessions with no name.
+ *
+ * Kept in Japanese ("その他のセッション") rather than translated, because it's persisted —
+ * it's written into existing users' `sessions.json` as a folded-group key, and changing the
+ * value would silently un-fold that group for everyone who had it folded.
  */
 export const OTHER_GROUP = "その他のセッション";
-/** 旧バージョンの `sessions.json` がこの識別子で畳んでいることがある。
- * `buildManagerTree` の折畳判定で読むためだけに残している——新規に書き込むことは無い。 */
+/** Older versions of `sessions.json` may have this group folded under this identifier instead.
+ * Kept only so `buildManagerTree`'s folded check still recognizes it — nothing writes it anymore. */
 const LEGACY_NO_CATEGORY_GROUP = "__no_category__";
 
 const GROUP_SEP = ": ";
 
-/** `"RIM: 議事メモ作成"` → `["RIM", "議事メモ作成"]`。区切りが無ければ `[null, name]`。 */
+/** `"Team: Weekly notes"` → `["Team", "Weekly notes"]`. Returns `[null, name]` if there's no separator. */
 export function splitName(name: string): [string | null, string] {
 	const idx = name.indexOf(GROUP_SEP);
 	if (idx > 0) {
@@ -43,8 +47,8 @@ export interface ArchivedEntry {
 
 export interface ManagerTree {
 	groups: GroupNode[];
-	/** 「その他」区分：カテゴリの無い名前付きセッション＋名前の無いセッション（T-74 追補で
-	 * 統合。中は最終更新順）。 */
+	/** The "Other" group: named sessions with no category plus unnamed sessions, combined into
+	 * one list sorted by last activity. */
 	others: { folded: boolean; rows: Row[] };
 	archived: ArchivedEntry[];
 }
@@ -59,9 +63,9 @@ function byMtimeDesc(list: Labeled[]): Labeled[] {
 }
 
 /**
- * グループ（見出し、折畳）→ その他（見出し、既定で折畳）→ アーカイブ。各区分の中は
- * 最終更新順（§6.2）。「その他」に載るのは、カテゴリの無い名前付きセッションと、名前が
- * 無く `child` が偽のセッション（無名の子セッションはどこにも出ない）。
+ * Order: groups (heading, foldable) → "Other" (heading, folded by default) → archive. Each
+ * section is sorted by last activity. "Other" holds named sessions with no category, plus
+ * unnamed sessions where `child` is false (unnamed child sessions don't appear anywhere).
  */
 export function buildManagerTree(rows: Row[], store: Store): ManagerTree {
 	const active = rows.filter((r) => !r.archived);
@@ -102,8 +106,8 @@ export function buildManagerTree(rows: Row[], store: Store): ManagerTree {
 		rows: byMtimeDesc(groupMap.get(name)!).map((c) => c.row),
 	}));
 
-	// 「その他」：カテゴリの無い名前付きセッション＋名前の無いセッションを 1 つにまとめ、
-	// 最終更新順に並べる（T-74 追補）。
+	// "Other": combines named sessions with no category and unnamed sessions into one list,
+	// sorted by last activity.
 	const otherRows = [...singleRows, ...unnamedOthers].sort((a, b) => b.last_activity - a.last_activity);
 
 	const archived: ArchivedEntry[] = [];
@@ -122,7 +126,7 @@ export function buildManagerTree(rows: Row[], store: Store): ManagerTree {
 
 	return {
 		groups,
-		// `LEGACY_NO_CATEGORY_GROUP` で畳んであっても「その他」は畳んだ扱いにする（後方互換）。
+		// Treat "Other" as folded if it was folded under `LEGACY_NO_CATEGORY_GROUP` too (backward compatibility).
 		others: {
 			folded: store.folded.includes(OTHER_GROUP) || store.folded.includes(LEGACY_NO_CATEGORY_GROUP),
 			rows: otherRows,
@@ -138,8 +142,8 @@ export interface SideList {
 }
 
 /**
- * 開いているタブ（タブの順）→ 起動中（タブが無い）→ 最近 N 件（§6.1）。
- * アーカイブ済みと名前の無い子セッションは「最近」に出さない。
+ * Order: open tabs (in tab order) → running (no tab) → the most recent N. Archived sessions and
+ * unnamed child sessions never appear in "recent".
  */
 export function buildSideList(rows: Row[], leavesOrder: string[], recentCount: number): SideList {
 	const byId = new Map(rows.map((r) => [r.id, r]));

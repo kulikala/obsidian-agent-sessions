@@ -1,6 +1,6 @@
-// `sessions.json` の読み書きとロック（§3・§3.1）。
-// `agentsessions/store.py` と同じ規則（キー名・`version: 1`・ロックの取り方・
-// 壊れたファイルの退避）で、ファイル形式は Python 側と完全互換にする。
+// Reading, writing, and locking `sessions.json`. Follows the same rules as
+// `agentsessions/store.py` (key names, `version: 1`, how the lock is taken, moving aside a
+// corrupt file), so the file format stays fully compatible with the Python side.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -16,11 +16,11 @@ export interface Store {
 	version: number;
 	folded: string[];
 	archived: ArchivedSession[];
-	/** 旧「未適用の名前変更」の控え。読んでそのまま書き戻すだけで、プラグインは使わない（D-42）。 */
+	/** Legacy record of pending renames. Read and written back unchanged; the plugin itself doesn't use it. */
 	pendingRenames: Record<string, string>;
 	sessions: Record<string, StoreSessionEntry>;
-	/** カテゴリ名 → パレット番号（0〜11）。一度決めたら変えない（`category.ts` の
-	 * `assignCategoryColor`。T-70）。サイド・マネージャーで同じカテゴリを同じ色にするための控え。 */
+	/** Category name → palette slot (0-11), never changed once assigned (`category.ts`'s
+	 * `assignCategoryColor`). Kept here so the side panel and manager give the same category the same color. */
 	categoryColors: Record<string, number>;
 	migratedFrom?: MigratedFrom;
 }
@@ -29,7 +29,7 @@ export function emptyStore(): Store {
 	return { version: 1, folded: [], archived: [], pendingRenames: {}, sessions: {}, categoryColors: {} };
 }
 
-/** ロックが `timeoutMs`（既定 2 秒）で取れなかったときの例外。 */
+/** Thrown when the lock can't be acquired within `timeoutMs` (default 2 seconds). */
 export class StoreLockError extends Error {}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -79,17 +79,17 @@ function timestamp(): string {
 	);
 }
 
-/** 壊れたファイルを `<path>.broken-<YYYYmmddHHMMSS>` に退避する。 */
+/** Moves a corrupt file aside to `<path>.broken-<YYYYmmddHHMMSS>`. */
 function moveAside(storePath: string): void {
 	const broken = `${storePath}.broken-${timestamp()}`;
 	try {
 		fs.renameSync(storePath, broken);
 	} catch {
-		// 退避できなくても読み込みは空の Store で続ける。
+		// Even if moving it aside fails, continue on with an empty Store.
 	}
 }
 
-/** 無ければ空の Store。壊れていれば退避して空の Store を返す。 */
+/** Returns an empty Store if the file doesn't exist. If it's corrupt, moves it aside and returns an empty Store. */
 export function loadStore(storePath: string): Store {
 	if (!fs.existsSync(storePath)) {
 		return emptyStore();
@@ -114,7 +114,7 @@ export function loadStore(storePath: string): Store {
 	return fromRecord(data);
 }
 
-/** tmp に書いて rename。呼び出し側がロックの中で呼ぶ前提（`updateStore` 参照）。 */
+/** Writes to tmp then renames. Assumes the caller holds the lock already (see `updateStore`). */
 function saveStore(storePath: string, store: Store): void {
 	const dir = path.dirname(storePath);
 	fs.mkdirSync(dir, { recursive: true });
@@ -145,7 +145,7 @@ const DEFAULT_LOCK: Required<LockOptions> = {
 	staleAfterMs: 10000,
 };
 
-/** `Atomics.wait` で同期的にブロックする（ロック待ちの busy-sleep）。 */
+/** Blocks synchronously via `Atomics.wait` (a busy-sleep while waiting for the lock). */
 function sleepSync(ms: number): void {
 	const view = new Int32Array(new SharedArrayBuffer(4));
 	Atomics.wait(view, 0, 0, ms);
@@ -162,15 +162,15 @@ function clearIfStale(lockPath: string, staleAfterMs: number): void {
 		try {
 			fs.rmdirSync(lockPath);
 		} catch {
-			// 他の書き手が既に取り直していれば失敗してよい。
+			// Fine if this fails because another writer already reclaimed it.
 		}
 	}
 }
 
-/** `mkdir` で排他を取る。`EEXIST` なら再試行し、`timeoutMs` で `StoreLockError`。 */
+/** Takes exclusive ownership via `mkdir`. Retries on `EEXIST`, throws `StoreLockError` after `timeoutMs`. */
 function acquireLock(lockPath: string, opts: Required<LockOptions>): void {
-	// ロックの親ディレクトリ（= sessions.json の置き場）がまだ無ければ作る。
-	// 無いまま `mkdirSync(lockPath)` を呼ぶと ENOENT になる。
+	// Create the lock's parent directory (where sessions.json lives) if it doesn't exist yet —
+	// calling `mkdirSync(lockPath)` without it would fail with ENOENT.
 	fs.mkdirSync(path.dirname(lockPath), { recursive: true });
 	const deadline = Date.now() + opts.timeoutMs;
 	for (;;) {
@@ -194,11 +194,11 @@ function releaseLock(lockPath: string): void {
 	try {
 		fs.rmdirSync(lockPath);
 	} catch {
-		// 既に消えていれば無視。
+		// Ignore if it's already gone.
 	}
 }
 
-/** ロックの中で読み→`fn(store)` で書き換え→保存。書き換えた Store を返す。 */
+/** Reads under the lock → mutates via `fn(store)` → saves. Returns the mutated Store. */
 export function updateStore(storePath: string, fn: (store: Store) => void, opts: LockOptions = {}): Store {
 	const merged = { ...DEFAULT_LOCK, ...opts };
 	const lockPath = `${storePath}.lock`;
@@ -213,11 +213,11 @@ export function updateStore(storePath: string, fn: (store: Store) => void, opts:
 	}
 }
 
-// --- 旧 `claude-sessions.md` の取り込み（§3） ---
+// --- Importing the old `claude-sessions.md` ---
 //
-// frontmatter は YAML だが、依存を増やさず `folded:`・`hidden:` の
-// `  - "..."` / `  - ...` 行だけを素朴に読む（`~/.config/dotfiles/cslib/store.py`
-// の `save_doc` が書く形と同じ）。`hidden` の各行は `"<id> | <name>"`。
+// The frontmatter is YAML, but rather than add a dependency, this just naively reads the
+// `folded:`/`hidden:` keys' `  - "..."` / `  - ...` lines (matching the shape
+// `~/.config/dotfiles/cslib/store.py`'s `save_doc` writes). Each `hidden` line is `"<id> | <name>"`.
 
 interface ParsedFrontmatter {
 	folded: string[];
@@ -284,9 +284,9 @@ function parseFrontmatter(text: string): ParsedFrontmatter {
 }
 
 /**
- * `sessions.json` が無く `mdPath` があれば、frontmatter の `folded` → `folded`、
- * `hidden` → `archived` に写し、`migratedFrom` を書く。`sessions.json` が既に
- * あるか `mdPath` が無ければ何もせず `null` を返す。
+ * When `sessions.json` doesn't exist but `mdPath` does, copies the frontmatter's `folded` to
+ * `folded` and `hidden` to `archived`, and writes `migratedFrom`. Does nothing and returns
+ * `null` if `sessions.json` already exists or `mdPath` doesn't.
  */
 export function migrateFromMarkdown(mdPath: string, storePath: string): Store | null {
 	if (fs.existsSync(storePath) || !fs.existsSync(mdPath)) {

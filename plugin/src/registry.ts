@@ -1,16 +1,17 @@
-// `~/.claude/sessions/<pid>.json` の監視（状態・pid・rc）（§6.5）。
+// Watches `~/.claude/sessions/<pid>.json` (status, pid, rc).
 //
-// 各ファイルは 1 プロセスの台帳（`pid, sessionId, cwd, startedAt, procStart,
+// Each file is a single process's record (`pid, sessionId, cwd, startedAt, procStart,
 // version, kind, entrypoint, name, nameSource, updatedAt, status, statusUpdatedAt,
-// bridgeSessionId, messagingSocketPath, waitingFor`）。pid が死んでいる台帳は無視する。
+// bridgeSessionId, messagingSocketPath, waitingFor`). Records whose pid is no longer alive are ignored.
 //
-// `status` は Claude Code 自身が書く生の値（`busy`・`shell`・`idle` に加えて、実機で
-// `waiting` も確認した。T-77）。`waiting` は AskUserQuestion・許可プロンプト・elicitation・
-// モデル切替の確認など「ダイアログを開いて答えを待っている」ときに Claude Code が自分で
-// 付ける値で、`waitingFor` にその理由（`"input needed"`・`"permission prompt"`・
-// `"dialog open"` 等、実行ファイルの文字列から採取。公式ドキュメントに payload の詳細な
-// 記述は無い）が添う。ターンが終わっただけの通常の待機（次の指示を待つだけ）は `idle` の
-// ままで、`waiting` にはならない——`terminal-status.ts` の `asking` はここへ足す。
+// `status` is the raw value Claude Code itself writes (`busy`, `shell`, `idle`, plus `waiting`,
+// confirmed on a real install). `waiting` is a value Claude Code sets itself whenever it has
+// opened a dialog and is waiting for an answer — AskUserQuestion, a permission prompt,
+// elicitation, confirming a model switch, etc. — and comes with `waitingFor` giving the reason
+// (strings like `"input needed"`, `"permission prompt"`, `"dialog open"`, gathered from the
+// executable; there's no documented spec for this payload). Ordinary idle time after a turn
+// just ends (simply waiting for the next instruction) stays `idle` and never becomes `waiting`
+// — `terminal-status.ts`'s `asking` builds on this.
 
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
@@ -21,7 +22,7 @@ export interface RegistryEntry {
 	pid: number;
 	rc: boolean;
 	updatedAt: number;
-	/** `status === "waiting"` のときの理由（T-77）。無ければ `undefined`。 */
+	/** The reason when `status === "waiting"`. `undefined` otherwise. */
 	waitingFor?: string;
 }
 
@@ -40,7 +41,7 @@ function isAlive(pid: number): boolean {
 		process.kill(pid, 0);
 		return true;
 	} catch (err) {
-		// ESRCH＝そのプロセスは無い。EPERM 等は存在はしている。
+		// ESRCH means the process doesn't exist; EPERM etc. mean it does.
 		return (err as NodeJS.ErrnoException).code !== "ESRCH";
 	}
 }
@@ -87,8 +88,8 @@ function isBusyLike(status: string): boolean {
 }
 
 /**
- * `~/.claude/sessions` の台帳を保持する。構築時に 1 回同期で読み込む。
- * `watch()` を呼ぶまで `fs.watch` は始めない（テストでは `refresh()` を直接呼ぶ）。
+ * Holds the ledger read from `~/.claude/sessions`. Reads synchronously once at construction;
+ * `fs.watch` doesn't start until `watch()` is called (tests call `refresh()` directly instead).
  */
 export class Registry extends EventEmitter {
 	private entries: Map<string, RegistryEntry>;
@@ -116,15 +117,16 @@ export class Registry extends EventEmitter {
 		return () => this.off("change", cb);
 	}
 
-	/** `busy`/`shell` → `idle` の遷移を通知する。 */
+	/** Fires on a `busy`/`shell` → `idle` transition. */
 	onIdle(cb: (id: string) => void): () => void {
 		this.on("idle", cb);
 		return () => this.off("idle", cb);
 	}
 
 	/**
-	 * `idle` → `busy`/`shell` の遷移を通知する（§6.7 応答の先頭マーカー）。初めて観測した
-	 * id が `busy`/`shell` のときも発火する（新規セッションの最初の応答にもマーカーが付く）。
+	 * Fires on an `idle` → `busy`/`shell` transition (used for the response marker at the start
+	 * of a jump). Also fires the first time an id is observed at all, if it's already
+	 * `busy`/`shell` (so a new session's first response still gets a marker).
 	 */
 	onBusy(cb: (id: string) => void): () => void {
 		this.on("busy", cb);
@@ -132,9 +134,10 @@ export class Registry extends EventEmitter {
 	}
 
 	/**
-	 * `id` の状態が `status` になるまで待つ（D-42）。遷移ではなく現在値を見る——既にその状態なら
-	 * 即 `true`。以後は `refresh` のたびに見直し、`timeoutMs` で諦めて `false`。
-	 * 初めて観測する id でも成り立つ。`busy` は `shell` も含む。
+	 * Waits until `id`'s state becomes `status`. Checks the current value, not a transition — if
+	 * it's already in that state, resolves `true` right away. Otherwise re-checks on every
+	 * `refresh` and gives up (`false`) after `timeoutMs`. Works even for an id that's never been
+	 * observed before. `busy` also matches `shell`.
 	 */
 	waitFor(id: string, status: "idle" | "busy", timeoutMs: number): Promise<boolean> {
 		const matches = (): boolean => {
@@ -163,7 +166,7 @@ export class Registry extends EventEmitter {
 		});
 	}
 
-	/** ディレクトリを読み直す。`fs.watch` が使えない環境向けに手動でも呼べる。 */
+	/** Re-reads the directory. Can also be called by hand for environments where `fs.watch` doesn't work. */
 	refresh(): void {
 		const next = readEntries(this.sessionsDir);
 		const prev = this.entries;
@@ -180,7 +183,7 @@ export class Registry extends EventEmitter {
 		this.emit("change");
 	}
 
-	/** `fs.watch` を始める（200 ms デバウンス）。停止用の関数を返す。 */
+	/** Starts `fs.watch` (200ms debounce). Returns a function to stop it. */
 	watch(): () => void {
 		if (!this.watcher) {
 			try {

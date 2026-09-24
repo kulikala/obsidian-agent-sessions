@@ -1,5 +1,5 @@
-// サイドパネル（D-7・D-43・§6.1）：4 領域（ナビ・一覧・詳細・セッション制限）の grid。
-// 一覧と詳細の間はドラッグハンドルで高さを変える（`settings.sideDetailHeight` に保存）。
+// The side panel: a grid of four areas (nav, list, detail, rate limit). The list and detail
+// areas' heights can be adjusted via a drag handle between them (saved to `settings.sideDetailHeight`).
 
 import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
 import type AgentSessionsPlugin from "../main";
@@ -17,9 +17,9 @@ import { LimitsView } from "./limits";
 
 export const VIEW_TYPE_SIDE = "agent-sessions-side";
 
-/** ドラッグで詰められる詳細欄の下限（px）。 */
+/** The lower bound (px) the detail pane can be dragged down to. */
 const MIN_DETAIL_HEIGHT = 80;
-/** `terminal-status`（D-66 追補）は busy/idle のたびに飛んでくるので、まとめて描き直す間隔。 */
+/** `terminal-status` fires on every busy/idle change, so redraws are batched at this interval. */
 const TERMINAL_STATUS_DEBOUNCE_MS = 200;
 
 export class SideView extends ItemView {
@@ -35,11 +35,11 @@ export class SideView extends ItemView {
 	private frontId: string | null = null;
 	private detailId: string | null = null;
 	private detailHeight = 220;
-	/** ホバーで一時的に詳細を差し替えている間は真（外れたら既定に戻す）。 */
+	/** True while a hover has temporarily swapped in a different detail view (reverts to default when it ends). */
 	private hovering = false;
-	/** ナビの 3 ボタン（言語が変わったら tooltip を描き直す。§6.9・D-56）。 */
+	/** The nav's three buttons (their tooltips are redrawn when the language changes). */
 	private navButtons: { newSession?: HTMLElement; manager?: HTMLElement; more?: HTMLElement } = {};
-	/** `terminal-status` のデバウンス用タイマー（D-66 追補）。 */
+	/** Debounce timer for `terminal-status`. */
 	private statusRenderTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: AgentSessionsPlugin) {
@@ -83,7 +83,7 @@ export class SideView extends ItemView {
 		this.onActiveLeafChange();
 	}
 
-	/** タブの状態が変わるたびに来る `terminal-status` をまとめて描き直す（D-66 追補）。 */
+	/** Batches redraws triggered by `terminal-status`, which fires on every tab state change. */
 	private scheduleStatusRender(): void {
 		if (this.statusRenderTimer) {
 			return;
@@ -94,7 +94,7 @@ export class SideView extends ItemView {
 		}, TERMINAL_STATUS_DEBOUNCE_MS);
 	}
 
-	// ---- 骨組み -----------------------------------------------------------------
+	// ---- Skeleton -----------------------------------------------------------------
 
 	private buildSkeleton(): void {
 		this.buildNav();
@@ -122,7 +122,7 @@ export class SideView extends ItemView {
 		this.navButtons.more = moreBtn;
 	}
 
-	/** 言語が変わったとき（§6.9・D-56）：ナビの tooltip と一覧・詳細を描き直す。 */
+	/** When the language changes: redraws the nav's tooltips, the list, and the detail pane. */
 	private refreshLanguage(): void {
 		if (this.navButtons.newSession) {
 			setTooltip(this.navButtons.newSession, t("action.newSession"));
@@ -170,7 +170,7 @@ export class SideView extends ItemView {
 		menu.showAtMouseEvent(evt);
 	}
 
-	// ---- 詳細欄の高さ（ドラッグハンドル） -----------------------------------------
+	// ---- Detail pane height (drag handle) -----------------------------------------
 
 	private applyDetailHeight(px: number): void {
 		this.detailHeight = px;
@@ -209,7 +209,7 @@ export class SideView extends ItemView {
 		});
 	}
 
-	// ---- 一覧 -------------------------------------------------------------------
+	// ---- List -------------------------------------------------------------------
 
 	private terminalLeaves(): WorkspaceLeaf[] {
 		return this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL);
@@ -239,8 +239,8 @@ export class SideView extends ItemView {
 			() => this.onHoverEnd()
 		);
 		const list = computeSideList(this.plugin.index.sessions, this.terminalLeaves(), this.plugin.settings.recentCount);
-		// 要対応（asking・waiting）の数は一覧全体（開いているタブ＋起動中＋最近）から数える
-		// （T-78）。「開いているタブ」の見出しの横にバッジを出す。
+		// The needs-attention (asking/waiting) count is tallied across the whole list (open
+		// tabs + running + recent), and shown as a badge next to the "open tabs" heading.
 		const attention = attentionCounts(this.plugin, [...list.openTabs, ...list.running, ...list.recent]);
 		this.renderSection(this.listEl, t("section.openTabs"), list.openTabs, actions, attention);
 		this.renderSection(this.listEl, t("section.running"), list.running, actions);
@@ -276,8 +276,8 @@ export class SideView extends ItemView {
 		}
 	}
 
-	/** 「入力待ち N」「未読 M」の小さなバッジ（T-78）。クリックで最初の asking
-	 * （無ければ waiting）のセッションを開く。 */
+	/** The small "needs input N" / "unread M" badge. Clicking it opens the first asking session
+	 * (or the first waiting one if there's no asking session). */
 	private renderAttentionBadge(container: HTMLElement, attention: AttentionCounts): void {
 		const badge = container.createSpan({ cls: "agent-sessions-attention-badge" });
 		if (attention.asking > 0) {
@@ -303,12 +303,12 @@ export class SideView extends ItemView {
 		}
 	}
 
-	// ---- 詳細欄 -----------------------------------------------------------------
+	// ---- Detail pane -----------------------------------------------------------------
 
 	/**
-	 * `registry`・`statusline` の変化：一覧を描き直し（`render()` が非ホバー時の既定表示も
-	 * 更新する）、制限ビューを読み直し、ホバー中ならそのセッションのバッジ等も生かして
-	 * おく（badge・ctx% の値を最新にする）。
+	 * On a `registry`/`statusline` change: redraws the list (`render()` also refreshes the
+	 * default detail view when not hovering), reloads the rate-limit view, and — if currently
+	 * hovering — keeps that session's detail current too (badge, ctx% values, etc.).
 	 */
 	private onRegistryOrStatusChange(): void {
 		this.render();
@@ -318,21 +318,22 @@ export class SideView extends ItemView {
 		}
 	}
 
-	/** ホバー開始（300 ms 後）：そのセッションに一時的に切り替える。 */
+	/** Hover started (after 300ms): temporarily switches to that session. */
 	private onHoverShow(id: string): void {
 		this.hovering = true;
 		void this.renderDetailFor(id);
 	}
 
-	/** ホバーが外れた：既定（前面のタブ／一覧の先頭）に戻す。 */
+	/** The hover ended: reverts to the default (the frontmost tab, or the top of the list). */
 	private onHoverEnd(): void {
 		this.hovering = false;
 		this.showDefaultDetail();
 	}
 
 	/**
-	 * 何も指していないときの詳細：前面のターミナルタブのセッション、無ければ一覧の先頭
-	 * （開いているタブ→起動中→最近の順）。どちらも無ければ空にする。
+	 * The detail shown when nothing is being pointed at: the frontmost terminal tab's session,
+	 * or failing that, the top of the list (open tabs → running → recent, in that order).
+	 * Empties the panel if neither is available.
 	 */
 	private showDefaultDetail(list?: SideList): void {
 		const id = this.defaultDetailId(list);

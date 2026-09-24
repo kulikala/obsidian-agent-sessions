@@ -1,4 +1,4 @@
-/* Agent Sessions — サイドパネル・マネージャー・ターミナル */
+/* Agent Sessions — side panel, manager, terminal */
 
 .agent-sessions-side {
 	display: grid;
@@ -17,7 +17,7 @@
 	min-height: 0;
 }
 
-/* ---- マネージャー：統計の帯（D-54） ---- */
+/* ---- Manager: stats bar ---- */
 
 .agent-sessions-manager-stats {
 	display: grid;
@@ -36,7 +36,7 @@
 	background: var(--background-secondary);
 }
 
-/* 見出しの横に「リセットまで…」（D-62）。 */
+/* "Resets in …" next to the heading. */
 .agent-sessions-manager-stats-head {
 	display: flex;
 	align-items: baseline;
@@ -69,8 +69,8 @@
 	font-weight: var(--font-semibold);
 }
 
-/* 7 日枠のペース判定（使用率の下、T-74）。順調は緑、使い切る見込みはオレンジ、
-   判定できないときは薄いグレー。 */
+/* The 7-day window's pace verdict, below the usage percentage. Green when on track, orange when
+   it looks like it'll run out, light gray when it can't be judged yet. */
 .agent-sessions-manager-stats-pace {
 	margin-top: var(--size-2-2);
 	font-size: var(--font-ui-smaller);
@@ -101,7 +101,7 @@
 	font-size: var(--font-ui-smaller);
 }
 
-/* 下段：ラベル付きの 2×2（D-62）。 */
+/* Bottom row: a labeled 2×2 grid. */
 .agent-sessions-manager-stats-metrics {
 	display: grid;
 	grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -127,7 +127,7 @@
 	white-space: nowrap;
 }
 
-/* ---- マネージャー：カテゴリ別の横バー（7 日枠。D-64） ---- */
+/* ---- Manager: per-category horizontal bar (7-day window) ---- */
 
 .agent-sessions-manager-category-bar {
 	padding: var(--size-4-2) var(--size-4-3);
@@ -167,7 +167,7 @@
 	background-color: var(--background-modifier-hover);
 }
 
-/* カテゴリのチップ（T-70。実際のカテゴリだけ——「単独」「その他」には付けない）＋ラベル。 */
+/* The category chip (only for actual categories — not shown for "standalone" or "other") plus the label. */
 .agent-sessions-manager-category-bar-label {
 	display: flex;
 	align-items: center;
@@ -192,8 +192,8 @@
 	overflow: hidden;
 }
 
-/* バーの色はチップと同じ色相にする（`--as-chip-hue` をチップと同じ式で。T-70 追補）。
-   実カテゴリでなければ（「その他」）`--as-chip-hue` を置かず、`.is-neutral` の灰色になる。 */
+/* The bar's color uses the same hue as the chip (`--as-chip-hue`, computed the same way as the
+   chip). For a non-real category ("other"), `--as-chip-hue` isn't set, so it falls back to `.is-neutral`'s gray. */
 .agent-sessions-manager-category-bar-fill {
 	height: 100%;
 	background-color: hsl(var(--as-chip-hue, 0) 45% 60%);
@@ -216,7 +216,7 @@
 	white-space: nowrap;
 }
 
-/* ---- マネージャー：ツールバー・本体・表（D-44・D-54） ---- */
+/* ---- Manager: toolbar, body, table ---- */
 
 .agent-sessions-manager-toolbar {
 	display: flex;
@@ -239,10 +239,10 @@
 	min-height: 0;
 }
 
-/* ---- マネージャー：下部・解析領域（統計の帯＋カテゴリ別バー。T-70 追補） ----
-   一覧（`.agent-sessions-manager-body`）を主役にして上へ、解析は下の固定高さの帯にした
-   （既定 240px、ドラッグハンドルで変えられ `managerAnalysisHeight` に保存。見出しクリックで
-   折畳、`managerAnalysisCollapsed` に保存）。 */
+/* ---- Manager: bottom analytics area (stats bar + per-category bar) ----
+   The tree (`.agent-sessions-manager-body`) takes priority and sits at top; analytics is a
+   fixed-height strip at the bottom (default 240px, resizable via the drag handle and saved to
+   `managerAnalysisHeight`; collapses on clicking the heading, saved to `managerAnalysisCollapsed`). */
 .agent-sessions-manager-analysis {
 	display: flex;
 	flex-direction: column;
@@ -307,7 +307,7 @@
 
 .agent-sessions-manager-row th,
 .agent-sessions-manager-row td {
-	/* 行の高さ 32px 以上（padding + line-height。D-54）。 */
+	/* Row height at least 32px (padding + line-height). */
 	padding: var(--size-4-2);
 	line-height: 1.4;
 	border-bottom: 1px solid var(--background-modifier-border);
@@ -350,8 +350,8 @@
 	opacity: 0.6;
 }
 
-/* asking・waiting の行（サイドと同じ考え方。T-78）。`<tr>` ではなく `<td>` に付ける——
-   `border-collapse: collapse` の表では `<tr>` 自体の背景・罫線が安定しないため。 */
+/* Asking/waiting rows (same idea as the side panel). Applied to `<td>` rather than `<tr>` —
+   with `border-collapse: collapse`, a `<tr>`'s own background/border don't render reliably. */
 .agent-sessions-manager-row.is-asking td {
 	background-color: hsl(320 70% 50% / 0.14);
 }
@@ -368,7 +368,7 @@
 	background-color: hsl(30 80% 50% / 0.1);
 }
 
-/* グループ見出しの asking／waiting の小さな印（T-78）。サイズは件数と同じ並びに収める。 */
+/* The small asking/waiting marker on a group heading. Sized to line up with the count. */
 .agent-sessions-group-urgency {
 	display: inline-flex;
 	align-items: center;
@@ -395,8 +395,8 @@
 	overflow: hidden;
 }
 
-/* 名前列の中身：カテゴリのチップ（T-70。有れば）＋名前。チップは省略しない——名前の側が
-   `…` になる。 */
+/* The name column's contents: the category chip (if any) plus the name. The chip is never
+   truncated — the name side gets the `…` instead. */
 .agent-sessions-manager-name-cell {
 	display: flex;
 	align-items: center;
@@ -413,7 +413,7 @@
 }
 
 .agent-sessions-manager-col-time {
-	/* `MM-DD HH:MM`（11 文字、等幅）が切れない幅（実機修正：D-54・D-61）。 */
+	/* Wide enough that `MM-DD HH:MM` (11 monospace characters) doesn't get clipped. */
 	width: 120px;
 	font-family: var(--font-monospace);
 	color: var(--text-muted);
@@ -467,8 +467,8 @@
 	cursor: pointer;
 }
 
-/* 幅が足りないときは フォルダ → エフォート → モデル → 5h の順に列を隠す
-   （`col` と `td`／`th` の両方。D-54・T-74）。 */
+/* When there isn't enough width, columns hide in this order: folder → effort → model → 5h
+   (both the `col` and the `td`/`th`). */
 @container (max-width: 599px) {
 	.agent-sessions-manager-table col.agent-sessions-manager-col-folder {
 		display: none;
@@ -517,8 +517,8 @@
 	color: var(--text-normal);
 }
 
-/* 区分の見出し行。直前の行（前のグループの最後の行など）と続いて見えないよう、上に
-   少し余白を持たせる。 */
+/* A section's heading row. A bit of top margin so it doesn't look like it's directly continuing
+   the previous row (e.g. the last row of the previous group). */
 .agent-sessions-manager-row.is-group td {
 	background-color: var(--background-secondary);
 	cursor: pointer;
@@ -543,8 +543,8 @@
 
 .agent-sessions-manager-group-count {
 	flex: 0 0 auto;
-	/* 実カテゴリの見出しはチップだけ（`flex: 1 1 auto` のラベルが無い）になったので、
-	   常に右端へ寄せる（T-70 追補）。 */
+	/* A real category's heading is now just a chip (no `flex: 1 1 auto` label), so this always
+	   pushes to the right edge. */
 	margin-left: auto;
 	color: var(--text-faint);
 	font-weight: var(--font-normal);
@@ -559,7 +559,7 @@
 	border-left: 1px solid var(--background-modifier-border);
 }
 
-/* ---- ナビ・ツールバー（§6.1・§6.2・D-43） ---- */
+/* ---- Nav, toolbar ---- */
 
 .agent-sessions-nav {
 	display: flex;
@@ -596,7 +596,7 @@
 	color: var(--text-accent);
 }
 
-/* ---- 一覧・木（§6.1・§6.2・D-43） ---- */
+/* ---- List, tree ---- */
 
 .agent-sessions-list-wrap {
 	display: flex;
@@ -613,7 +613,7 @@
 	overflow-x: hidden;
 }
 
-/* 一覧と詳細の間のドラッグハンドル（4px、D-43）。 */
+/* The 4px drag handle between the list and the detail pane. */
 .agent-sessions-drag-handle {
 	flex: 0 0 4px;
 	cursor: row-resize;
@@ -624,7 +624,7 @@
 	background-color: var(--text-accent);
 }
 
-/* マネージャーの解析領域を畳んだ間はハンドルも隠す（T-70 追補）。 */
+/* Hides the handle too while the manager's analytics area is collapsed. */
 .agent-sessions-drag-handle.is-hidden {
 	display: none;
 }
@@ -640,8 +640,8 @@
 	cursor: default;
 }
 
-/* 「入力待ち N」「未読 M」のバッジ（開いているタブの見出しの横。T-78）。0 件のときは
-   呼出側が作らない。クリックで最初の asking（無ければ waiting）のセッションを開く。 */
+/* The "Needs input N" / "Unread M" badge next to the "Open tabs" heading. The caller doesn't
+   create it at all when the count is 0. Clicking opens the first asking session (or waiting, if none is asking). */
 .agent-sessions-attention-badge {
 	display: inline-flex;
 	align-items: center;
@@ -706,9 +706,9 @@
 	opacity: 0.6;
 }
 
-/* asking（AskUserQuestion・許可プロンプト等で答えを待っている）・waiting（busy→idle の後、
-   まだ見ていない＝未読）の行を目立たせる（T-78）。asking が最優先——赤紫系の帯＋左端の
-   色帯＋名前を太字。waiting はそれより弱いオレンジ系の背景だけ。 */
+/* Makes asking (waiting for an answer — AskUserQuestion, a permission prompt, etc.) and waiting
+   (gone busy→idle but not yet seen — unread) rows stand out. Asking takes priority — a
+   pink/red-toned background, a left border stripe, and a bold name. Waiting is just a weaker orange-toned background. */
 .agent-sessions-row.is-asking {
 	background-color: hsl(320 70% 50% / 0.14);
 	border-left: 3px solid var(--color-pink, #d6409f);
@@ -723,10 +723,11 @@
 	background-color: hsl(30 80% 50% / 0.1);
 }
 
-/* 状態のアイコン（タブ見出しと同じ lucide、`setIcon`。T-76：色の点から差し替えた）。
-   色・動きは `color`（`agent-sessions-status-<status>`。D-66・D-66 追補）で決め、
-   アイコンの stroke（currentColor）に流用する——タブのアイコンと同じクラス・同じ動きを
-   そのまま共有できる。行の高さ・列幅は変えない（14px、マネージャーの印の列 24px に収まる）。 */
+/* The status icon (the same lucide icon as the tab header, via `setIcon`; this used to be a
+   plain color dot). Color and motion are set through `color` (the
+   `agent-sessions-status-<status>` class) and reused for the icon's stroke (`currentColor`), so
+   it shares the exact same class and motion as the tab's own icon. Row height and column width
+   are unchanged (14px, fitting inside the manager's 24px marker column). */
 .agent-sessions-row-mark {
 	display: inline-flex;
 	align-items: center;
@@ -742,12 +743,13 @@
 	height: 14px;
 }
 
-/* カテゴリのチップ（名前の `': '` より前。色は `sessions.json` の `categoryColors` に固定
-   割り当てたパレット番号。T-70）。省略しない——`flex: 0 0 auto` で縮めず、`max-width` も
-   持たない。狭いときは隣の名前（`.agent-sessions-row-name`）の側が `…` になる。
-   ダーク基調はそのまま（背景 40%/50%/.18・文字 45%/60%、実機でコントラスト比 6:1 以上を確認）。
-   ライトは背景が白に近く同じ明度だと読めない（実機で 3.5:1 止まり）ため、文字を暗めに
-   （45%/32%）落として 4.5:1 以上を確保する。 */
+/* The category chip (the part of the name before `': '`. Its color is a palette number fixed in
+   `sessions.json`'s `categoryColors`). Never truncated — doesn't shrink under `flex: 0 0 auto`
+   and has no `max-width`; when space is tight, the adjacent name (`.agent-sessions-row-name`)
+   gets the `…` instead. The dark theme is unchanged (background 40%/50%/.18, text 45%/60%,
+   confirmed at a 6:1+ contrast ratio on a real build). The light theme's near-white background
+   is unreadable at the same lightness (measured at only 3.5:1 on a real build), so text is
+   darkened (45%/32%) there to keep at least 4.5:1. */
 .agent-sessions-row-chip {
 	flex: 0 0 auto;
 	padding: 0 var(--size-4-1);
@@ -777,7 +779,7 @@
 	font-size: var(--font-ui-smaller);
 }
 
-/* 常時表示（D-43）。 */
+/* Always shown. */
 .agent-sessions-row-menu-btn {
 	flex: 0 0 auto;
 	padding: 0 var(--size-4-1);
@@ -788,7 +790,7 @@
 	color: var(--text-normal);
 }
 
-/* ---- 詳細欄（§6.1・D-43） ---- */
+/* ---- Detail pane ---- */
 
 .agent-sessions-detail {
 	padding: var(--size-4-2) var(--size-4-3);
@@ -800,7 +802,7 @@
 	border-top: 1px solid var(--background-modifier-border);
 }
 
-/* カテゴリのチップ（名前の上に小さく。T-70 追補）。 */
+/* The category chip, small above the name. */
 .agent-sessions-detail-category {
 	margin-bottom: var(--size-2-1);
 }
@@ -841,8 +843,7 @@
 	margin-bottom: var(--size-4-2);
 }
 
-/* `/compact` 直後は ctx がリセットされていて他と紛れる——ctx の横に小さく出す
-   （T-76 追補）。 */
+/* Right after `/compact`, ctx has been reset and could be mistaken for something else — shown small next to ctx. */
 .agent-sessions-detail-compacted {
 	flex: 0 0 auto;
 	padding: 0 var(--size-4-1);
@@ -939,7 +940,7 @@
 	color: var(--text-normal);
 }
 
-/* ---- セッション制限ビュー（§6.1・D-43） ---- */
+/* ---- Rate-limit view ---- */
 
 .agent-sessions-limits-host {
 	min-width: 0;
@@ -989,18 +990,19 @@
 	color: var(--text-muted);
 }
 
-/* ---- ターミナル（§6.3） ---- */
+/* ---- Terminal ---- */
 
-/* Obsidian の `.workspace-leaf-content .view-content` は padding と overflow: auto を持つ。
-   同じ詳細度で上書きできないので、leaf 側から書いて余白 0・はみ出し隠しにする（D-42）。 */
+/* Obsidian's own `.workspace-leaf-content .view-content` has padding and overflow: auto. It
+   can't be overridden at the same specificity, so this is written from the leaf side to zero the padding and hide overflow. */
 .workspace-leaf-content .view-content.agent-sessions-terminal {
 	position: relative;
 	padding: 0;
 	overflow: hidden;
 }
 
-/* 余白は `--as-pad`（ゆったり 12px／コンパクト 4px／なし 0）。padding は xterm の親ではなく
-   この外側の要素に付ける（FitAddon は xterm の親の計算済み幅・高さで列数・行数を決める）。 */
+/* Padding is `--as-pad` (comfortable 12px / compact 4px / none 0). It's applied to this outer
+   element rather than xterm's direct parent (FitAddon computes column/row count from its
+   parent's already-computed width/height). */
 .agent-sessions-terminal-body {
 	position: absolute;
 	inset: 0;
@@ -1012,8 +1014,8 @@
 	overflow: hidden;
 }
 
-/* xterm を直接包む要素。padding 0・overflow hidden（fit の結果より大きく描かれた瞬間も
-   スクロールバーを出さない）。fit はこの要素の計算済み高さで行数を決める。 */
+/* The element that directly wraps xterm. padding 0, overflow hidden (so a scrollbar never
+   flashes even the instant it's drawn larger than the fit result). fit determines row count from this element's computed height. */
 .agent-sessions-terminal-term {
 	flex: 1 1 auto;
 	min-height: 0;
@@ -1027,10 +1029,11 @@
 	height: 100%;
 }
 
-/* ---- 編集領域（D-22）：本体を上下に割って下に置く ---- */
+/* ---- Editor pane: splits the body top/bottom, placed below ---- */
 
-/* 高さは設定 `editorHeight` を上限とし、ターミナルの最小 8 行（`min-height`）を優先して縮む。
-   編集領域の下限は 4 行＋バー（行の高さは `.agent-sessions-editor-text` の line-height と合わせる。T-75）。 */
+/* Height is capped by the `editorHeight` setting, but shrinks in favor of the terminal's minimum
+   8 rows (`min-height`). The editor pane's own floor is 4 rows plus the bar (its row height
+   matches `.agent-sessions-editor-text`'s line-height). */
 .agent-sessions-terminal-editor {
 	flex: 0 1 var(--as-editor-height, 40%);
 	min-height: calc(4em * var(--as-editor-line-height, 1.7) + 2.4em);
@@ -1063,7 +1066,7 @@
 	min-height: 0;
 	width: 100%;
 	resize: none;
-	/* ターミナルの詰まった行間よりゆったり目に（T-75。和文と英数の混じる文面で読みやすい値）。 */
+	/* Looser than the terminal's tight line spacing — easier to read for text mixing Japanese and Latin/numeric characters. */
 	line-height: var(--as-editor-line-height, 1.7);
 	letter-spacing: var(--as-editor-letter-spacing, 0.03em);
 	background-color: var(--background-primary);
@@ -1096,8 +1099,8 @@
 	background-color: var(--background-modifier-hover);
 }
 
-/* タブ見出し・行の印のアイコン：状態ごとの色・動き（`terminal-status.ts`・D-66）。
-   行側（side.ts・manager.ts・rows.ts）への適用はここのクラスを付けるだけで済む。 */
+/* The tab header's and row markers' icon: color and motion per state (see `terminal-status.ts`).
+   Applying it to rows (side.ts, manager.ts, rows.ts) is just a matter of adding these classes. */
 @keyframes agent-sessions-pulse {
 	0%,
 	100% {
@@ -1142,8 +1145,8 @@
 	animation: agent-sessions-pulse 1.2s ease-in-out infinite;
 }
 
-/* claude 自身が答えを待っている（AskUserQuestion・許可プロンプト等。T-77）。`waiting`
-   （ターンは終わったが未読）より優先度が高いので、赤紫系で区別する。 */
+/* claude itself is waiting on an answer (AskUserQuestion, a permission prompt, etc). Ranks above
+   `waiting` (the turn ended but hasn't been seen), so it's distinguished with a pink/red tone. */
 .agent-sessions-status-asking {
 	color: var(--color-pink, #d6428e);
 	animation: agent-sessions-pulse-scale 1.2s ease-in-out infinite;
@@ -1156,8 +1159,8 @@
 	display: inline-block;
 }
 
-/* compact 直後・まだ次の指示を送っていない（T-77 追補）。ctx がリセットされていて
-   「未読の入力待ち」（waiting）と紛れるので、落ち着いた青緑・動き無しで区別する。 */
+/* Right after a compact, before the next instruction has been sent. ctx has been reset and could
+   be mistaken for "waiting" (unread), so it's distinguished with a calm teal and no motion. */
 .agent-sessions-status-compacted {
 	color: var(--color-cyan, #2a9d8f);
 }
@@ -1192,7 +1195,7 @@
 	}
 }
 
-/* ---- カテゴリ・名前のダイアログ（T-70）：1 つの入力枠に「チップ＋<input>」を繋げる ---- */
+/* ---- Category/name dialog: a chip plus an <input> joined into a single input box ---- */
 
 .agent-sessions-name-input {
 	position: relative;
@@ -1227,7 +1230,7 @@
 	margin: 0;
 }
 
-/* カテゴリの入力候補（既存カテゴリの候補、チップ付き。カテゴリ確定前だけ出す）。 */
+/* Category suggestions (candidates from existing categories, shown with a chip; only shown before a category is confirmed). */
 .agent-sessions-name-suggest {
 	position: absolute;
 	left: 0;
@@ -1294,7 +1297,7 @@
 	gap: var(--size-4-2);
 }
 
-/* ---- セッション解析結果モーダル（D-45） ---- */
+/* ---- Session analytics modal ---- */
 .agent-sessions-usage-modal {
 	width: 90vw;
 	max-width: 1100px;
@@ -1617,7 +1620,7 @@
 	}
 }
 
-/* ---- 以下は @xterm/xterm/css/xterm.css（esbuild は css を束ねないためここに置く） ---- */
+/* ---- Everything below is @xterm/xterm/css/xterm.css (esbuild doesn't bundle CSS, so it's inlined here) ---- */
 
 /**
  * Copyright (c) 2014 The xterm.js authors. All rights reserved.
@@ -1838,7 +1841,7 @@
     position: relative;
 }
 
-/* 改行キーの設定が keybindings.json と食い違っているときの警告（§6.8・D-41 追補）。 */
+/* The warning shown when the newline-key setting disagrees with keybindings.json. */
 .agent-sessions-settings-mismatch {
 	color: var(--text-error);
 }

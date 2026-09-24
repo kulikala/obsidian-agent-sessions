@@ -1,5 +1,5 @@
-// ターミナルタブの状態（純関数、D-66）。`obsidian` にも `terminal.ts` にも依存しない——
-// サイドパネル・マネージャーの行の印も、この状態と CSS クラスを共有する（D-66 追補）。
+// A terminal tab's status, as pure functions. Depends on neither `obsidian` nor `terminal.ts` —
+// the side panel's and manager's row markers share this same status and its CSS classes.
 
 import type { MessageKey } from "./i18n";
 import type { Row } from "./index";
@@ -18,35 +18,37 @@ export type TerminalStatus =
 	| "error";
 
 export interface TerminalStatusInput {
-	/** デーモン不通・claude 不在・起動失敗（`exited` を除く終了理由がある）。 */
+	/** Daemon unreachable, claude missing, or a start failure (an exit reason other than `exited`). */
 	error: boolean;
-	/** claude が終了した。 */
+	/** claude has exited. */
 	exited: boolean;
-	/** 内蔵エディタが開いている。 */
+	/** The built-in editor is open. */
 	editing: boolean;
-	/** attach／start の途中。 */
+	/** In the middle of attach/start. */
 	connecting: boolean;
 	/**
-	 * registry の状態——claude 自身が `~/.claude/sessions/<pid>.json` に書く生の値
-	 * （台帳が無ければ `null`）。`waiting` は claude 自身の値で、AskUserQuestion・許可
-	 * プロンプト・elicitation 等「ダイアログを開いて答えを待っている」ときに立つ（T-77・
-	 * `registry.ts` 冒頭）。下の `waiting`（bool）フィールドとは別物——名前が同じだけで
-	 * 意味が違う（そちらは「ターンは終わったが、まだこのタブを見ていない」）。
+	 * The registry's status — the raw value claude itself writes to
+	 * `~/.claude/sessions/<pid>.json` (`null` with no ledger entry). `waiting` is claude's own
+	 * value, set while a dialog is open and waiting for an answer (AskUserQuestion, a permission
+	 * prompt, elicitation, etc — see the top of `registry.ts`). This is distinct from the
+	 * `waiting` (bool) field below despite the shared name — that one means "the turn ended, but
+	 * this tab hasn't been viewed yet."
 	 */
 	registryStatus: "busy" | "shell" | "waiting" | "idle" | null | undefined;
-	/** `busy→idle` の後、まだそのタブを前面にしていない（claude 自身の `waiting` とは別。上参照）。 */
+	/** After `busy→idle`, this tab still hasn't been brought to front (distinct from claude's own `waiting` above). */
 	waiting: boolean;
 	/**
-	 * compact（手動 `/compact`・自動の文脈圧縮とも）の直後で、まだ次の指示を送っていない
-	 * （`CompactedTracker`。T-77 追補）。ctx がリセットされていて「未読の入力待ち」
-	 * （`waiting`）と紛れるので別の状態にする。
+	 * Right after a compact (manual `/compact` or automatic context compaction), before the next
+	 * instruction has been sent (`CompactedTracker`). Kept as its own state rather than folded
+	 * into "waiting for input" (`waiting`), since the context having just been reset is a
+	 * distinct thing to signal.
 	 */
 	compacted: boolean;
-	/** デーモンに attach 済み。 */
+	/** Attached to the daemon. */
 	attached: boolean;
 }
 
-/** 優先順：error＞exited＞asking＞editing＞connecting＞running-shell＞working＞waiting＞compacted＞detached＞idle。 */
+/** Priority order: error > exited > asking > editing > connecting > running-shell > working > waiting > compacted > detached > idle. */
 export function terminalStatus(input: TerminalStatusInput): TerminalStatus {
 	if (input.error) {
 		return "error";
@@ -81,7 +83,7 @@ export function terminalStatus(input: TerminalStatusInput): TerminalStatus {
 	return "idle";
 }
 
-/** 状態ごとのアイコン（Lucide、§D-66 の表）。 */
+/** The icon for each status (Lucide). */
 export const TERMINAL_STATUS_ICON: Record<TerminalStatus, string> = {
 	connecting: "loader",
 	working: "loader-circle",
@@ -96,7 +98,7 @@ export const TERMINAL_STATUS_ICON: Record<TerminalStatus, string> = {
 	error: "triangle-alert",
 };
 
-/** タブ見出し・行の印に共通で立てる CSS クラス（色・動きは `styles.css` 側）。 */
+/** The CSS class shared by the tab header and row markers (color and motion live in `styles.css`). */
 export function terminalStatusClass(status: TerminalStatus): string {
 	return `agent-sessions-status-${status}`;
 }
@@ -115,7 +117,7 @@ export const ALL_TERMINAL_STATUSES: readonly TerminalStatus[] = [
 	"error",
 ];
 
-/** 状態名の tooltip キー（`status.*`。タブ見出し・行の印で共有。D-66 追補）。 */
+/** The tooltip key for each status name (`status.*`), shared by the tab header and row markers. */
 export const STATUS_LABEL_KEY: Record<TerminalStatus, MessageKey> = {
 	connecting: "status.connecting",
 	working: "status.working",
@@ -130,7 +132,7 @@ export const STATUS_LABEL_KEY: Record<TerminalStatus, MessageKey> = {
 	error: "status.error",
 };
 
-/** 優先順（`terminalStatus` の分岐順と同じ、高い方が先）。複数ビュー・行の合成に使う（D-66 追補）。 */
+/** Priority order (same order as `terminalStatus`'s branches, highest first). Used to combine several views/rows. */
 const PRIORITY_ORDER: readonly TerminalStatus[] = [
 	"error",
 	"exited",
@@ -145,16 +147,16 @@ const PRIORITY_ORDER: readonly TerminalStatus[] = [
 	"idle",
 ];
 
-/** `a`・`b` のうち優先順の高い方（同じセッションに複数タブがあるときの合成。D-66 追補）。 */
+/** Whichever of `a`/`b` has higher priority (combines multiple tabs open on the same session). */
 export function higherPriorityStatus(a: TerminalStatus, b: TerminalStatus): TerminalStatus {
 	return PRIORITY_ORDER.indexOf(a) <= PRIORITY_ORDER.indexOf(b) ? a : b;
 }
 
 /**
- * タブが無い行の状態（分かる範囲。D-66 追補）：`row.status`（走査結果に合成済みの registry
- * 状態）・`row.exited`・`row.daemon`・`row.compacted` だけで決まる分——`working`・
- * `running-shell`・`asking`・`exited`・`compacted`・`idle`・`detached`（＝起動中でない）の
- * どれかにしかならない。
+ * A row's status without a tab, as far as it can be known: determined only from `row.status`
+ * (the registry status already merged into the scan result), `row.exited`, `row.daemon`, and
+ * `row.compacted` — so it can only ever come out as `working`, `running-shell`, `asking`,
+ * `exited`, `compacted`, `idle`, or `detached` (not running).
  */
 export function rowTerminalStatus(row: Row): TerminalStatus {
 	return terminalStatus({
@@ -169,14 +171,15 @@ export function rowTerminalStatus(row: Row): TerminalStatus {
 	});
 }
 
-/** `resolveRowStatus` が読む最小限。`AgentSessionsPlugin` はこれを満たす（構造的に）。 */
+/** The minimum `resolveRowStatus` needs to read. `AgentSessionsPlugin` satisfies this structurally. */
 export interface TerminalStatusSource {
 	terminalStatuses: Map<string, TerminalStatus>;
 }
 
 /**
- * 行の状態：その id のタブが開いていれば `source.terminalStatuses` の値（`TerminalView` が
- * 書く、実際の状態）、無ければ `rowTerminalStatus`（`Row` だけから分かる範囲。D-66 追補）。
+ * A row's status: `source.terminalStatuses`'s value (written by `TerminalView`, the actual
+ * status) if a tab is open for that id, otherwise `rowTerminalStatus` (as far as it can be
+ * known from `Row` alone).
  */
 export function resolveRowStatus(source: TerminalStatusSource, row: Row): TerminalStatus {
 	return source.terminalStatuses.get(row.id) ?? rowTerminalStatus(row);

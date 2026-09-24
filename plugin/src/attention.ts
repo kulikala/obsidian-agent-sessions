@@ -1,8 +1,8 @@
-// 「ユーザーのアテンションが要る」セッションの集計（純関数、T-78）。
-// asking（AskUserQuestion・許可プロンプト等で Claude が答えを待っている）→ waiting
-// （busy→idle の後、まだそのタブを前面にしていない＝未読）の順で優先度が高い
-// （`terminal-status.ts` の `terminalStatus` の優先順と同じ）。
-// `obsidian` には依存しない（テストは test/attention.test.ts）。
+// Tallies sessions that need the user's attention (pure functions). Priority order, highest
+// first: asking (Claude is waiting on an answer — AskUserQuestion, a permission prompt, etc.)
+// then waiting (went busy→idle but that tab hasn't been brought to front yet, i.e. unread) —
+// the same priority order as `terminal-status.ts`'s `terminalStatus`. No dependency on
+// `obsidian` (tested in test/attention.test.ts).
 
 import type { Row } from "./index";
 import { resolveRowStatus, type TerminalStatusSource } from "./terminal-status";
@@ -10,12 +10,12 @@ import { resolveRowStatus, type TerminalStatusSource } from "./terminal-status";
 export interface AttentionCounts {
 	asking: number;
 	waiting: number;
-	/** クリックで開くセッション：最初の asking、無ければ最初の waiting。どちらも無ければ `null`。 */
+	/** The session a click should open: the first asking one, or failing that the first waiting one. `null` if neither exists. */
 	jumpToId: string | null;
 }
 
-/** `rows` のうち asking／waiting の件数と、ジャンプ先（asking 優先）を数える（サイドパネルの
- * バッジ。T-78）。 */
+/** Counts asking/waiting sessions among `rows`, and picks a jump target (asking takes
+ * priority). Backs the side panel's badge. */
 export function attentionCounts(source: TerminalStatusSource, rows: Row[]): AttentionCounts {
 	let asking = 0;
 	let waiting = 0;
@@ -41,9 +41,10 @@ export function attentionCounts(source: TerminalStatusSource, rows: Row[]): Atte
 export type GroupUrgency = "asking" | "waiting";
 
 /**
- * グループ鍵（`keyOf`）ごとの最優先状態（asking > waiting）。折畳の有無に関わらず、
- * `rows` 全体から数える——マネージャーの見出しは畳んでいても中の状態を示す必要がある
- * （T-78）。アーカイブ済みは数えない。該当が無いグループの鍵は含めない。
+ * The highest-priority status (asking > waiting) for each group key (`keyOf`). Counted across
+ * all of `rows` regardless of whether the group is folded — the manager's group heading needs
+ * to reflect what's inside even when collapsed. Archived rows aren't counted. Groups with no
+ * matching row are left out of the result.
  */
 export function urgencyByGroupKey(
 	source: TerminalStatusSource,

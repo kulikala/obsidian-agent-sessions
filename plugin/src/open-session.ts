@@ -1,5 +1,5 @@
-// 1 セッション＝1 タブ（§6.4）。`openSession` の本体を、workspace の必要な操作だけを
-// インターフェースで受ける形にし、`obsidian` に依存させない（vitest でモックする）。
+// One session per tab. `openSession`'s implementation takes only the workspace operations it
+// needs through an interface, so it doesn't depend on `obsidian` (mocked in vitest).
 
 export const VIEW_TYPE_TERMINAL = "agent-sessions-terminal";
 
@@ -17,19 +17,19 @@ export interface WorkspaceLike<L extends LeafLike> {
 export interface OpenSessionOptions {
 	agent?: string;
 	cwd?: string;
-	/** 新規セッション（transcript がまだ無い）。`start` の argv が `--session-id` になる。 */
+	/** A brand-new session (no transcript yet). Makes `start`'s argv use `--session-id`. */
 	fresh?: boolean;
 }
 
-/** 既存の leaf のうち、ターミナルビューで state の `id` が一致するもの。 */
+/** The existing leaf, if any, that's a terminal view whose state `id` matches. */
 export function findTerminalLeaf<L extends LeafLike>(workspace: WorkspaceLike<L>, id: string): L | undefined {
 	return workspace.getLeavesOfType(VIEW_TYPE_TERMINAL).find((leaf) => leaf.getViewState().state?.id === id);
 }
 
 /**
- * `openSession(id)` の中身。同じ `id` の leaf があれば `revealLeaf`、無ければ
- * `getLeaf('tab')` → `setViewState`。同じ `id` の呼出が進行中なら、その Promise を返す
- * （`opening`）。`setViewState` が終わってから `opening` から消す。
+ * `openSession(id)`'s implementation. `revealLeaf`s an existing leaf for the same `id`, or
+ * otherwise `getLeaf('tab')` then `setViewState`. If a call for the same `id` is already in
+ * flight, returns that same promise (`opening`) — removed from `opening` once `setViewState` finishes.
  */
 export class SessionOpener<L extends LeafLike> {
 	readonly opening = new Map<string, Promise<L>>();

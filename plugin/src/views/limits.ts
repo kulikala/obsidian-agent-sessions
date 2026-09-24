@@ -1,22 +1,23 @@
-// セッション制限ビュー（D-43・I-61・I-68 事実）。
-// `~/.agents/sessions/status/*.json` はアカウント共通の `rate_limits` を持つ。ファイルごとに
-// 前回書いた時刻（mtime）が違うので、`rate_limits` を持つファイルのうち最新のものを使う
-// （前提：アカウントを切り替えて並行使用しない）。5h・7d のバー・使用率・リセットまでの
-// カウントダウン（`resets_at` が無ければ「—」）を 1 秒毎に更新する。
+// The rate-limit view.
+// `~/.agents/sessions/status/*.json` files each carry the account-wide `rate_limits`. Since
+// each file's last-written time (mtime) differs, this uses whichever file with `rate_limits`
+// was written most recently (assumes the account isn't being used from multiple places at
+// once). Updates the 5h/7d bars, usage percentage, and countdown to reset (shown as "—" when
+// `resets_at` is absent) once per second.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { t } from "../i18n";
 
 export interface RateLimitWindow {
-	/** `null` は「リセットを過ぎたばかりで、まだ新しい rate_limits が届いていない」
-	 * （`rollForwardWindow` が先送りした直後。T-74 追補）。 */
+	/** `null` means "just past reset, with no fresh `rate_limits` yet" (right after
+	 * `rollForwardWindow` has rolled it forward). */
 	usedPercentage: number | null;
 	resetsAt: number | null;
 }
 
-/** 5 時間枠・7 日枠の長さ（秒）。`agentsessions/stats.py` の `FIVE_HOUR_SECONDS`・
- * `SEVEN_DAY_SECONDS` と同じ値（Python 側と共有はできないので、ここでも持つ）。 */
+/** Lengths of the 5-hour and 7-day windows, in seconds. Matches `agentsessions/stats.py`'s
+ * `FIVE_HOUR_SECONDS`/`SEVEN_DAY_SECONDS` (can't be shared with the Python side, so it's duplicated here). */
 export const FIVE_HOUR_SECONDS = 5 * 60 * 60;
 export const SEVEN_DAY_SECONDS = 7 * 24 * 60 * 60;
 
@@ -25,7 +26,7 @@ export interface LimitsInfo {
 	sevenDay: RateLimitWindow | null;
 }
 
-/** `readLimitsFiles` が集める 1 ファイル分。純関数のテスト（`pickLatestLimits`）から使う形。 */
+/** One file's worth of what `readLimitsFiles` collects. Shaped for use by the pure-function test (`pickLatestLimits`). */
 export interface RawLimitsFile {
 	mtimeMs: number;
 	rate_limits?: {
@@ -47,8 +48,8 @@ function windowOf(raw: { used_percentage?: unknown; resets_at?: unknown } | unde
 }
 
 /**
- * `rate_limits` を持つファイルのうち最新 mtime のものから `five_hour`／`seven_day` を取る。
- * 該当ファイルが無ければ `null`。
+ * Takes `five_hour`/`seven_day` from whichever file with `rate_limits` has the newest mtime.
+ * `null` if there's no such file.
  */
 export function pickLatestLimits(files: RawLimitsFile[]): LimitsInfo | null {
 	const candidates = files.filter((f) => f.rate_limits);
@@ -63,11 +64,11 @@ export function pickLatestLimits(files: RawLimitsFile[]): LimitsInfo | null {
 }
 
 /**
- * `w.resetsAt` が `now` より過去なら、`durationSeconds`（5 時間枠／7 日枠の長さ）ずつ
- * 先へ送って「今の窓」の `resetsAt` にする（T-74 追補：`agentsessions/stats.py` の
- * `_roll_forward` と同じ規則）。リセットを過ぎた直後、まだ新しい `rate_limits` が
- * 届いていない間は `usedPercentage` を `null`（不明）にする。`w` が `null`、または
- * `resetsAt` が無ければそのまま返す（先送りできないため）。
+ * If `w.resetsAt` is in the past relative to `now`, rolls it forward in steps of
+ * `durationSeconds` (the 5-hour/7-day window length) to get the current window's `resetsAt`
+ * (same rule as `agentsessions/stats.py`'s `_roll_forward`). Right after a reset, while no fresh
+ * `rate_limits` has arrived yet, sets `usedPercentage` to `null` (unknown). Returns `w` as-is if
+ * it's `null` or has no `resetsAt` (nothing to roll forward).
  */
 export function rollForwardWindow(w: RateLimitWindow | null, durationSeconds: number, now: number): RateLimitWindow | null {
 	if (!w || w.resetsAt == null || w.resetsAt >= now) {
@@ -77,7 +78,7 @@ export function rollForwardWindow(w: RateLimitWindow | null, durationSeconds: nu
 	return { usedPercentage: null, resetsAt: w.resetsAt + periods * durationSeconds };
 }
 
-/** `h:mm:ss`（0 未満は 0 に丸める）。24 時間以上は秒を落として `N 日 h:mm` にする（D-54）。 */
+/** `h:mm:ss` (clamped to 0 if negative). 24 hours or more drops the seconds and switches to "Nd h:mm". */
 export function formatCountdown(seconds: number): string {
 	const s = Math.max(0, Math.round(seconds));
 	const pad = (n: number) => String(n).padStart(2, "0");
@@ -92,7 +93,7 @@ export function formatCountdown(seconds: number): string {
 	return `${totalHours}:${pad(m)}:${pad(sec)}`;
 }
 
-// ---- ファイル読み込み（node:fs）。DOM 側は `LimitsView` に閉じ込める。 -----------------------
+// ---- File reading (node:fs). DOM handling is kept inside `LimitsView`. -----------------------
 
 function readLimitsFiles(statusDir: string): RawLimitsFile[] {
 	let names: string[];
@@ -109,13 +110,13 @@ function readLimitsFiles(statusDir: string): RawLimitsFile[] {
 			const raw = JSON.parse(fs.readFileSync(full, "utf8"));
 			out.push({ mtimeMs: stat.mtimeMs, rate_limits: raw?.rate_limits });
 		} catch {
-			// 壊れた・読めないファイルは無視。
+			// Ignore files that are corrupt or unreadable.
 		}
 	}
 	return out;
 }
 
-/** バー＋`NN%`＋「リセットまで h:mm:ss」を 5h・7d の 2 行で描く。 */
+/** Draws two rows (5h and 7d), each a bar plus `NN%` plus "resets in h:mm:ss". */
 export class LimitsView {
 	private fiveHourEl!: HTMLElement;
 	private sevenDayEl!: HTMLElement;
@@ -133,7 +134,7 @@ export class LimitsView {
 		this.tickTimer = setInterval(() => this.render(), 1000);
 	}
 
-	/** `status/` の内容を読み直す（`StatusLine` の変化・再走査のたびに呼ぶ）。 */
+	/** Re-reads `status/`'s contents (called whenever the statusLine changes or on every rescan). */
 	reload(): void {
 		this.info = pickLatestLimits(readLimitsFiles(this.statusDir));
 		this.render();
@@ -147,8 +148,9 @@ export class LimitsView {
 	}
 
 	private render(): void {
-		// 1 秒毎に呼ばれるたび、`now` を最新にして先送りを判定し直す（T-74 追補）——
-		// `reload()` の間隔に関わらず、リセットを過ぎた瞬間から常に「今の窓」を出す。
+		// Refreshes `now` and re-evaluates roll-forward every time this is called (once a
+		// second) — so the window shown is always the current one from the moment it resets,
+		// independent of how often `reload()` runs.
 		const now = Date.now() / 1000;
 		this.renderWindow(this.fiveHourEl, "5h", rollForwardWindow(this.info?.fiveHour ?? null, FIVE_HOUR_SECONDS, now));
 		this.renderWindow(this.sevenDayEl, "7d", rollForwardWindow(this.info?.sevenDay ?? null, SEVEN_DAY_SECONDS, now));

@@ -1,7 +1,8 @@
-// セッション解析結果のモーダル（D-45）。`json usage ID` を 1 回呼び、以後の区間選択・
-// 「全体」・「コピー」はローカルの `sumRange`／`toMarkdown`／`nextSelection` だけで完結する
-// （CLI を呼び直さない）。区間はターン表の行クリックで選ぶ——1 回目が開始行、2 回目が終了行、
-// 開始行をもう一度クリックすると解除（全体に戻る）。カード・バー・凡例は選んだ区間の値。
+// The session analytics modal. Calls `json usage ID` once; range selection, "Whole", and "Copy"
+// afterward are handled entirely by the local `sumRange`/`toMarkdown`/`nextSelection` (the CLI
+// isn't called again). A range is picked by clicking rows in the turn table — the first click is
+// the start row, the second is the end row, and clicking the start row again clears the
+// selection (back to "whole"). Cards, bars, and the legend reflect the selected range.
 
 import { App, Modal, Notice } from "obsidian";
 import { usage } from "./backend";
@@ -33,9 +34,9 @@ function messageOf(err: unknown): string {
 
 export class UsageModal extends Modal {
 	private result: UsageResult | null = null;
-	// 名前は `selection` にしない——Obsidian の `Modal.open()` が「閉じるときに戻すテキスト選択」を
-	// `this.selection = { win, range, focusEl }` として自分で書き込むため、同名だと即座に上書き
-	// される（実機で確認済み）。
+	// Not named `selection` — Obsidian's `Modal.open()` writes its own `this.selection = {
+	// win, range, focusEl }` (the text selection to restore on close), so a field with that name
+	// gets overwritten immediately (confirmed on a real build).
 	private turnSelection: Selection = null;
 	private bodyEl!: HTMLElement;
 	private copyBtn!: HTMLButtonElement;
@@ -87,7 +88,7 @@ export class UsageModal extends Modal {
 		this.buildBody(this.result.turns);
 	}
 
-	/** カード・バー・ツール使用・ターン表の入れ物を 1 回だけ組む。以後は renderSelection() だけが動く。 */
+	/** Builds the containers for cards, bars, tool use, and the turn table just once. After this, only renderSelection() runs. */
 	private buildBody(turns: UsageTurn[]): void {
 		this.subtitleEl = this.bodyEl.createDiv({ cls: "agent-sessions-usage-subtitle" });
 		this.cardsEl = this.bodyEl.createDiv({ cls: "agent-sessions-usage-cards" });
@@ -136,7 +137,7 @@ export class UsageModal extends Modal {
 		this.renderSelection();
 	}
 
-	/** 選択（全体／開始行待ち／確定区間）に応じて、副題・カード・バー・行の強調だけを描き直す。 */
+	/** Redraws just the subtitle, cards, bars, and row highlighting, based on the selection (whole / waiting for start row / a confirmed range). */
 	private renderSelection(): void {
 		const result = this.result;
 		if (!result) {

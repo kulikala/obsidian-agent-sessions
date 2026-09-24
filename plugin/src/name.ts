@@ -1,22 +1,22 @@
-// 名前の組み立て・カテゴリ候補（純関数、D-63・T-70）。ダイアログの 1 つの入力欄と
-// `splitName`（`tree.ts`）を行き来する。
+// Building names and category suggestions (pure functions). Bridges the naming dialog's single
+// input field and `splitName` (`tree.ts`).
 
 import { t } from "./i18n";
 import { splitName } from "./tree";
 
 /**
- * タブ見出しに出す表示名（T-72）。`Row.name`（または `TerminalView` の控え）があればそれ、
- * 無ければ「無題 <id8>」。`terminal.ts` の `getDisplayText()` と `main.ts` の deferred タブ
- * 直しの両方で使う——どちらも同じ規則で名前を決めるため。
+ * The display name shown in a tab header. Uses `Row.name` (or `TerminalView`'s own copy of it)
+ * if there is one, otherwise "Untitled <id8>". Used both by `terminal.ts`'s `getDisplayText()`
+ * and by `main.ts`'s deferred-tab fixup, so both derive the name the same way.
  */
 export function sessionDisplayName(name: string | null | undefined, id: string): string {
 	return name || t("common.untitled", { id: id.slice(0, 8) });
 }
 
 /**
- * カテゴリと名前から `"カテゴリ: 名前"` を組み立てる（`splitName` の逆）。
- * 名前が空なら（カテゴリだけでも）空文字を返す——名前の無いセッションと同じ扱い。
- * カテゴリが空なら名前だけ。前後の空白はどちらも落とす。
+ * Builds `"Category: Name"` from a category and a name (the inverse of `splitName`). Returns an
+ * empty string if the name is empty, even with a category given — treated the same as a
+ * nameless session. With no category, returns just the name. Trims both.
  */
 export function composeName(category: string, name: string): string {
 	const trimmedName = name.trim();
@@ -30,7 +30,7 @@ export function composeName(category: string, name: string): string {
 	return `${trimmedCategory}: ${trimmedName}`;
 }
 
-/** 名前の並び（`Row.name` 相当）から、既存のカテゴリ候補を重複無く辞書順で作る。 */
+/** Builds a deduplicated, alphabetically sorted list of existing category candidates from a list of names (`Row.name`-shaped). */
 export function listCategories(names: (string | null | undefined)[]): string[] {
 	const set = new Set<string>();
 	for (const name of names) {
@@ -50,15 +50,17 @@ export interface NameInputToken {
 	rest: string;
 }
 
-/** 全角コロンの直後に空白が来て初めて区切りと認める（IME の変換途中で `：` だけが
- * 先に入ることがあるため）。半角 `:` は確定した時点で区切り（続く空白は要らない）。 */
+/** Only recognizes a full-width colon as the separator once it's followed by a space (during
+ * IME composition, `：` alone can land before the rest is confirmed). A half-width `:` is a
+ * separator as soon as it's typed (no trailing space needed). */
 const FULL_WIDTH_COLON_SPACE_RE = /：\s/;
 
 /**
- * 命名ダイアログの単一入力欄の生テキストから「カテゴリ: 名前」の区切りを見つける
- * （T-70）。半角 `:` が有れば、その時点で区切り（前がカテゴリ、後ろが名前）。無ければ
- * 全角 `：` の直後に空白が来た時点で区切る。どちらも無ければ `null`（まだカテゴリを
- * 入力中——呼出側は候補を出し続ける）。区切り文字自身（コロン・空白）は前後どちらにも残さない。
+ * Finds the "Category: Name" split point in the naming dialog's single input field's raw text.
+ * A half-width `:` is the split point as soon as it appears (category before, name after).
+ * Otherwise, a full-width `：` followed by a space is the split point. If neither is present,
+ * returns `null` (the category is still being typed — the caller keeps showing suggestions).
+ * The separator itself (colon and space) is dropped from both sides.
  */
 export function tokenizeNameInput(text: string): NameInputToken | null {
 	const halfIdx = text.indexOf(":");
@@ -75,7 +77,7 @@ export function tokenizeNameInput(text: string): NameInputToken | null {
 	return null;
 }
 
-/** カテゴリ入力中の候補：`categories` を部分一致・大小無視で絞り込む（空なら全件）。 */
+/** Suggestions while typing a category: filters `categories` by case-insensitive substring match (returns everything if `query` is empty). */
 export function filterCategories(categories: string[], query: string): string[] {
 	const q = query.trim().toLowerCase();
 	if (!q) {

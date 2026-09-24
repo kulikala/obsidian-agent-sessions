@@ -1,8 +1,8 @@
-// vault の場所を `~/.agents/sessions/vault.json` へ書く（T-80）。`agent-sessions` は
-// 既定の vault を持たないので、python 側（`agentsessions/config.py` の `_resolve_vault`）が
-// env `AGENT_SESSIONS_VAULT` の次にここを読み、Obsidian の外（TUI・CLI）から呼んでも
-// vault を見失わないようにする。書き方は `ui-state.ts` の `writeUiState` と同じ
-// （tmp に書いて rename）。
+// Writes the vault's location to `~/.agents/sessions/vault.json`. `agent-sessions` has no
+// default vault, so the Python side (`_resolve_vault` in `agentsessions/config.py`) reads this
+// after the `AGENT_SESSIONS_VAULT` env var, so vault location isn't lost even when called from
+// outside Obsidian (TUI, CLI). Writes the same way `ui-state.ts`'s `writeUiState` does (tmp,
+// then rename).
 
 import * as fs from "node:fs";
 import * as path from "node:path";
@@ -11,7 +11,7 @@ export interface VaultState {
 	vault: string;
 }
 
-/** `runtimeDir`（`~/.agents/sessions`）へ `vault.json` を書く。`onload` から呼ぶ。 */
+/** Writes `vault.json` into `runtimeDir` (`~/.agents/sessions`). Called from `onload`. */
 export function writeVaultState(runtimeDir: string, vaultPath: string): void {
 	fs.mkdirSync(runtimeDir, { recursive: true });
 	const state: VaultState = { vault: vaultPath };

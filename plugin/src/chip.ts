@@ -1,12 +1,12 @@
-// カテゴリのチップ 1 つの描画（T-70）。サイド（`views/rows.ts`）・マネージャー
-// （`views/manager.ts`）・命名ダイアログ（`modals.ts`）で共通の見た目にするための、
-// DOM を組み立てるだけの小さな関数。`modals.ts` と `views/rows.ts` の両方から使うため
-// 循環 import を避けてここに独立させる（`rows.ts` は `modals.ts` の `RenameSessionModal` を、
-// `modals.ts` はチップの描画を、互いに要る）。
+// Renders a single category chip. A small DOM-building function shared by the side panel
+// (`views/rows.ts`), the manager (`views/manager.ts`), and the naming dialog (`modals.ts`) so
+// they all look the same. Kept in its own module, separate from `modals.ts` and `views/rows.ts`,
+// to avoid a circular import between them (`rows.ts` needs `modals.ts`'s `RenameSessionModal`,
+// and `modals.ts` needs the chip renderer — each would need the other).
 
 import { paletteHueDeg } from "./category";
 
-/** 色は `colorIndex`（`SessionIndex.categoryColorIndex` のパレット番号）が決める。 */
+/** The color comes from `colorIndex` (a palette slot from `SessionIndex.categoryColorIndex`). */
 export function renderCategoryChip(container: HTMLElement, category: string, colorIndex: number): HTMLElement {
 	const chip = container.createSpan({ cls: "agent-sessions-row-chip", text: category });
 	chip.style.setProperty("--as-chip-hue", String(paletteHueDeg(colorIndex)));

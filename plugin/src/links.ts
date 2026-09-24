@@ -1,33 +1,34 @@
-// リンクと `@` 挿入（§6.3 ヘッダの操作・§6.7 D-13）。
+// Links and `@` insertion (header actions).
 //
-// `findPathCandidates`・`resolveToVault`・`buildAtToken`・`selectionLineRange` は純関数
-// （テストは test/links.test.ts）。`obsidian`・`@xterm/xterm` は型だけを使い、実行時の値は
-// 呼出側（`views/terminal.ts`・`main.ts`）から受け取る——`obsidian` パッケージは型定義だけで
-// 実体を持たず、値として import すると vitest から読み込めない。
+// `findPathCandidates`, `resolveToVault`, `buildAtToken`, and `selectionLineRange` are pure
+// functions (tested in test/links.test.ts). `obsidian` and `@xterm/xterm` are used only for
+// their types; runtime values are passed in by the caller (`views/terminal.ts`, `main.ts`) —
+// the `obsidian` package has no runtime implementation, only type definitions, so importing it
+// as a value would fail to load under vitest.
 
 import * as path from "node:path";
 import type { App } from "obsidian";
 import type { ILink, ILinkProvider, Terminal } from "@xterm/xterm";
 
-/** 行から拾うパスらしき文字列。`\w./~-` の並びに拡張子、任意で `:行[:桁]`。 */
+/** A string in a line that looks like a path: a run of `\w./~-` plus an extension, with an optional `:line[:col]`. */
 const CANDIDATE_RE = /([\w./~-]+\.[A-Za-z0-9]+)(?::(\d+)(?::(\d+))?)?/g;
-/** 候補から URL を除くための当たり判定。 */
+/** Matches URLs, so they can be excluded from candidates. */
 const URL_RE = /\w+:\/\/\S+/g;
 
 export interface PathCandidate {
-	/** 行の中の文字列そのもの（`:行` を含む）。 */
+	/** The literal text in the line (including `:line`). */
 	text: string;
-	/** 行内の開始位置（0 始まり、文字単位）。 */
+	/** Start position within the line (0-based, in characters). */
 	start: number;
-	/** 終了位置（exclusive）。 */
+	/** End position (exclusive). */
 	end: number;
-	/** `:行[:桁]` を除いたパス部分。 */
+	/** The path part, with `:line[:col]` stripped off. */
 	path: string;
-	/** 行番号（1 始まり）。無ければ `undefined`。 */
+	/** Line number (1-based). `undefined` if there isn't one. */
 	line?: number;
 }
 
-/** 行文字列からパスらしき候補を拾う。URL は除く（§6.7）。 */
+/** Picks out path-like candidates from a line of text, excluding URLs. */
 export function findPathCandidates(line: string): PathCandidate[] {
 	const urlRanges: Array<[number, number]> = [];
 	for (const m of line.matchAll(URL_RE)) {
@@ -53,8 +54,9 @@ export function findPathCandidates(line: string): PathCandidate[] {
 }
 
 /**
- * 候補パスを vault 相対に直す。絶対パスは vault 配下なら相対に、相対パスは `cwd` からの
- * 相対を vault 相対に直す（`..` は正規化する）。vault の外なら `null`。
+ * Turns a candidate path into a vault-relative one. An absolute path becomes relative if it's
+ * inside the vault; a relative path is resolved against `cwd`, then made vault-relative
+ * (normalizing `..`). Returns `null` if it falls outside the vault.
  */
 export function resolveToVault(candidate: string, cwd: string, vaultPath: string): string | null {
 	const abs = path.isAbsolute(candidate) ? path.normalize(candidate) : path.resolve(cwd, candidate);
@@ -66,8 +68,9 @@ export function resolveToVault(candidate: string, cwd: string, vaultPath: string
 }
 
 /**
- * `@` 挿入のトークン。絶対パス `absPath` をセッションの `cwd` からの相対にする（`cwd` の外なら
- * 絶対のまま）。複数行選択なら `#L{from}-{to}`（1 始まり）を付け、空白を含めば引用符で囲む。
+ * Builds the token for `@` insertion. Makes the absolute path `absPath` relative to the
+ * session's `cwd` (left absolute if it's outside `cwd`). Appends `#L{from}-{to}` (1-based) for
+ * a multi-line selection, and quotes the result if it contains whitespace.
  */
 export function buildAtToken(absPath: string, cwd: string, range?: { from: number; to: number }): string {
 	const rel = path.relative(cwd, absPath);
@@ -79,12 +82,12 @@ export function buildAtToken(absPath: string, cwd: string, range?: { from: numbe
 	return /\s/.test(p) ? `"${p}"` : p;
 }
 
-/** `Editor` の必要な部分だけ（`obsidian` の値を import しないための最小形）。 */
+/** Only the part of `Editor` this needs (a minimal shape so `obsidian`'s value doesn't have to be imported). */
 export interface EditorLike {
 	getCursor(side: "from" | "to"): { line: number };
 }
 
-/** 選択が複数行にまたがるときだけ `{from, to}`（0 始まりの行）。 */
+/** `{from, to}` (0-based lines), only when the selection spans multiple lines. */
 export function selectionLineRange(editor: EditorLike): { from: number; to: number } | undefined {
 	const from = editor.getCursor("from").line;
 	const to = editor.getCursor("to").line;
@@ -94,12 +97,12 @@ export function selectionLineRange(editor: EditorLike): { from: number; to: numb
 export interface VaultLinkProviderDeps {
 	app: App;
 	terminal: Terminal;
-	/** 呼出のたびに取る（セッションの `cwd` は起動後変わらないが、関数で受けておく）。 */
+	/** Fetched on every call (a session's `cwd` doesn't change after start, but this is a function to keep it live anyway). */
 	cwd: () => string;
 	vaultPath: string;
 }
 
-/** `Terminal.registerLinkProvider` に載せる（§6.7）。実在確認とクリック時の遷移を担う。 */
+/** Registered with `Terminal.registerLinkProvider`. Checks that a path exists and handles navigating to it on click. */
 export class VaultLinkProvider implements ILinkProvider {
 	constructor(private deps: VaultLinkProviderDeps) {}
 
@@ -130,7 +133,7 @@ export class VaultLinkProvider implements ILinkProvider {
 		callback(links.length > 0 ? links : undefined);
 	}
 
-	/** `openLinkText` でメイン領域に開き、行番号があればそこへカーソルを移す。 */
+	/** Opens it in the main area via `openLinkText`, and moves the cursor there if a line number was given. */
 	private async open(relPath: string, line: number | undefined): Promise<void> {
 		const { app } = this.deps;
 		await app.workspace.openLinkText(relPath, "", "tab");

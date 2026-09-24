@@ -1,6 +1,5 @@
-// `~/.agents/sessions/status/<id>.json` の監視とステータスバーの整形（§6.1）。
-// ファイルは `agent-sessions status` が Claude Code の statusLine から受けた
-// JSON をそのまま書いたもの。
+// Watches `~/.agents/sessions/status/<id>.json` and formats the status bar text. The file is
+// written by `agent-sessions status`, verbatim from the JSON it receives from Claude Code's statusLine.
 
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
@@ -49,7 +48,7 @@ function readStatus(statusDir: string, id: string): StatusInfo | null {
 	};
 }
 
-/** `status/` ディレクトリの監視。`get(id)` は毎回ファイルを読む（軽い JSON 1 件）。 */
+/** Watches the `status/` directory. `get(id)` reads the file fresh every time (a single lightweight JSON file). */
 export class StatusLine extends EventEmitter {
 	private watcher: fs.FSWatcher | null = null;
 	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -65,7 +64,7 @@ export class StatusLine extends EventEmitter {
 		return readStatus(this.statusDir, id);
 	}
 
-	/** `status/` ディレクトリの絶対パス（`views/limits.ts` が同じ場所を読む）。 */
+	/** The `status/` directory's absolute path (`views/limits.ts` reads the same place). */
 	get dir(): string {
 		return this.statusDir;
 	}
@@ -75,7 +74,7 @@ export class StatusLine extends EventEmitter {
 		return () => this.off("change", cb);
 	}
 
-	/** テスト向け：変化を通知するだけ（`get` は毎回読むので状態を持たない）。 */
+	/** For tests: just fires the change notification (`get` re-reads every time, so there's no state to update). */
 	refresh(): void {
 		this.emit("change");
 	}
@@ -112,13 +111,13 @@ export class StatusLine extends EventEmitter {
 }
 
 /**
- * `Opus 5 · high · ctx 42% · rc ● · 5h 37% · 7d 12%`。
- * モデル・エフォートが無ければ「デフォルト」、他の値が無ければ `—`。
- * `rc` は `~/.claude/sessions` の `bridgeSessionId` の有無（`registry.ts` の
- * `RegistryEntry.rc`）。台帳自体が無ければ `null` を渡す——接続中（`true`）だけ `rc ●`、
- * それ以外（`false`・`null`）は `rc ○`（D-60）。
+ * `Opus 5 · high · ctx 42% · rc ● · 5h 37% · 7d 12%`. Model/effort fall back to the "Default"
+ * label when absent; the other values fall back to `—`. `rc` reflects whether
+ * `~/.claude/sessions` has a `bridgeSessionId` (`registry.ts`'s `RegistryEntry.rc`) — pass
+ * `null` when there's no ledger entry at all; only connected (`true`) shows `rc ●`, everything
+ * else (`false`/`null`) shows `rc ○`.
  */
-/** `effort` は文字列（`high`）でも `{level: "high"}` でも来る。 */
+/** `effort` can arrive as either a plain string (`high`) or `{level: "high"}`. */
 function effortOf(v: unknown): unknown {
 	if (v && typeof v === "object" && "level" in (v as Record<string, unknown>)) {
 		return (v as Record<string, unknown>).level;

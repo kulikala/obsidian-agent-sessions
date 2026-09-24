@@ -1,12 +1,12 @@
-// デーモンのソケットとフレーム（§4.1）・セッションの保持（§4.2）・接続エラー（§7）。
+// The daemon's socket and frame format, session persistence, and connection errors.
 //
-// フレーム：
+// Frame:
 //   +------+----------------+---------+
 //   | type | length (u32 BE)| payload |
 //   | 1 B  | 4 B            | n B     |
 //   +------+----------------+---------+
-// type は 'J'（JSON、要求・応答・イベント）・'D'（生バイト、PTY の入出力）・
-// 'R'（デーモン→、attach 直後の再生バッファ）。
+// `type` is 'J' (JSON — requests, responses, events), 'D' (raw bytes — PTY input/output), or
+// 'R' (daemon-to-client only: the replay buffer sent right after attach).
 
 import { EventEmitter } from "node:events";
 import * as net from "node:net";
@@ -25,7 +25,7 @@ export interface Frame {
 const KIND_BYTE: Record<FrameKind, number> = { J: 0x4a, D: 0x44, R: 0x52 };
 const BYTE_KIND: Record<number, FrameKind> = { 0x4a: "J", 0x44: "D", 0x52: "R" };
 
-/** ソケットの既定パス（`~/.agents/sessions/daemon.sock`。§3）。 */
+/** The socket's default path (`~/.agents/sessions/daemon.sock`). */
 export function defaultSockPath(): string {
 	return join(homedir(), ".agents", "sessions", "daemon.sock");
 }
@@ -38,7 +38,7 @@ export function encodeFrame(kind: FrameKind, payload: Uint8Array | Buffer): Buff
 	return Buffer.concat([header, body]);
 }
 
-/** 受信バイト列からフレームを切り出す。フレーム境界をまたぐ分割にも対応する。 */
+/** Cuts frames out of a received byte stream. Handles data split across frame boundaries. */
 export class FrameDecoder {
 	private buf: Buffer = Buffer.alloc(0);
 
@@ -72,7 +72,7 @@ export interface JsonResponse {
 	[key: string]: unknown;
 }
 
-/** デーモンに接続できない（§7：Python が無い／ソケットが作れない／`agent-sessions` が無い）。 */
+/** The daemon can't be reached (Python is missing, the socket couldn't be created, or `agent-sessions` isn't found). */
 export class DaemonUnavailableError extends Error {}
 
 interface Pending {
@@ -81,14 +81,14 @@ interface Pending {
 }
 
 /**
- * デーモンのソケットクライアント（§4.1）。
+ * The daemon's socket client.
  *
- * イベント：
- * - `data`（Buffer）：`D` フレーム＝PTY の出力
- * - `replay`（Buffer）：`R` フレーム＝attach 直後の再生チャンク
- * - `replayed`：再生の終わり（`{"ev":"replayed"}`）
- * - `exit`（id, code）：セッションの終了（`{"ev":"exit",…}`）
- * - `close`：ソケットが閉じた
+ * Events:
+ * - `data` (Buffer): a `D` frame — PTY output
+ * - `replay` (Buffer): an `R` frame — a replay chunk sent right after attach
+ * - `replayed`: replay finished (`{"ev":"replayed"}`)
+ * - `exit` (id, code): a session exited (`{"ev":"exit",…}`)
+ * - `close`: the socket closed
  */
 export class DaemonClient extends EventEmitter {
 	private socket: net.Socket | null = null;
@@ -234,8 +234,8 @@ function delay(ms: number): Promise<void> {
 const ENSURE_ATTEMPTS = 3;
 
 /**
- * デーモンに接続する。繋がらなければ `agentSessionsPath daemon --detach` を起動し、
- * 1 秒待って再試行する（§6.3・§7）。3 回失敗したら `DaemonUnavailableError`。
+ * Connects to the daemon. If it can't connect, starts `agentSessionsPath daemon --detach` and
+ * retries after a 1-second wait. Throws `DaemonUnavailableError` after 3 failed attempts.
  */
 export async function ensureDaemon(sockPath: string, agentSessionsPath: string): Promise<DaemonClient> {
 	let lastErr: unknown;

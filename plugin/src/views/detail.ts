@@ -1,6 +1,6 @@
-// 詳細ビュー（サイドパネル・マネージャー共用の部品。D-43・§6.1・§6.2）。
-// 名前・バッジ（モデル／エフォート／rc）・コンテキスト使用率のドーナツ・総トークン／
-// 総コスト・直近の指示／応答（クリックで展開）・ツール・フォルダ・ID を描く。
+// The detail view — a component shared by the side panel and the manager. Renders the name,
+// badges (model/effort/rc), a context-usage donut, total tokens/cost, the last instruction and
+// response (click to expand), tools, folder, and ID.
 
 import { renderCategoryChip } from "../chip";
 import type { Row } from "../index";
@@ -14,25 +14,25 @@ export interface DetailContext {
 	row: Row;
 	detail: Detail | null;
 	statusInfo: StatusInfo | null;
-	/** `registry.get(id)?.rc ?? null`。台帳が無ければ `null`。 */
+	/** `registry.get(id)?.rc ?? null`. `null` when there's no ledger entry. */
 	rc: boolean | null;
-	/** `json usage` を呼ぶ関数。呼出側（`side.ts`・`manager.ts`）が `agentSessionsPath` を持つ。 */
+	/** Calls `json usage`. The caller (`side.ts`/`manager.ts`) holds `agentSessionsPath`. */
 	fetchUsage: () => Promise<UsageResult>;
-	/** カテゴリのチップ色（パレット番号）。呼出側が `SessionIndex.categoryColorIndex` を渡す
-	 * （T-70 追補：名前の上に小さくチップ、名前はカテゴリを除いた部分にする——一覧・帯と
-	 * 同じ色で、文字の重複はしない）。 */
+	/** The category chip's color (a palette index). The caller passes `SessionIndex.categoryColorIndex`
+	 * — a small chip goes above the name, and the name itself is shown with the category
+	 * stripped out, so it uses the same color as the list/bar and the text isn't duplicated. */
 	categoryColorIndex: (category: string) => number;
 }
 
 const USAGE_TTL_MS = 60000;
 const usageCache = new Map<string, { at: number; total: UsageTotal | null }>();
 
-/** `入力 + 出力 + cache 読出 + cache 作成`。 */
+/** `input + output + cache read + cache create`. */
 export function totalTokens(total: Pick<UsageTotal, "input" | "output" | "cache_read" | "cache_create">): number {
 	return total.input + total.output + total.cache_read + total.cache_create;
 }
 
-/** `$x.xx`。 */
+/** `$x.xx`. */
 export function formatCost(cost: number): string {
 	return `$${cost.toFixed(2)}`;
 }
@@ -41,7 +41,7 @@ function displayName(row: Row): string {
 	return row.name || row.label || t("common.untitled", { id: row.id.slice(0, 8) });
 }
 
-/** 名前欄に出す「カテゴリ（有れば）」「カテゴリを除いた名前」の組（T-70 追補）。 */
+/** The (category if any, name with category stripped) pair shown in the name field. */
 export function categoryAndLabel(row: Row): { category: string | null; label: string } {
 	if (row.name) {
 		const [category, rest] = splitName(row.name);
@@ -50,9 +50,9 @@ export function categoryAndLabel(row: Row): { category: string | null; label: st
 	return { category: null, label: displayName(row) };
 }
 
-/** `obsidian` の `setIcon`／`setTooltip` は遅延 require（`rows.ts` の `require("electron")` と同じ理由：
- * 純関数（`totalTokens`・`formatCost`）だけをテストで import するとき、`obsidian` の
- * 解決に失敗させないため）。 */
+/** `obsidian`'s `setIcon`/`setTooltip` are required lazily (same reason as `rows.ts`'s
+ * `require("electron")`: so importing just the pure functions — `totalTokens`, `formatCost` —
+ * in tests doesn't fail trying to resolve `obsidian`). */
 function makeIconButton(container: HTMLElement, icon: string, tooltip: string, onClick: () => void): HTMLElement {
 	const { setIcon, setTooltip } = require("obsidian") as typeof import("obsidian");
 	const btn = container.createSpan({ cls: "agent-sessions-detail-icon-btn" });
@@ -65,7 +65,7 @@ function makeIconButton(container: HTMLElement, icon: string, tooltip: string, o
 	return btn;
 }
 
-/** コンテキスト使用率の小さな SVG ドーナツ（28px）。`percent` が無ければ薄いリングだけ。 */
+/** A small (28px) SVG donut for context usage. Just a faint ring if `percent` is absent. */
 function renderDonut(container: HTMLElement, percent: number | null): void {
 	const size = 28;
 	const stroke = 4;
@@ -119,7 +119,7 @@ function renderBadges(container: HTMLElement, statusInfo: StatusInfo | null, rc:
 	row.createSpan({ cls: "agent-sessions-badge", text: statusInfo?.effort ?? t("common.default") });
 	const rcBadge = row.createSpan({ cls: "agent-sessions-badge" });
 	rcBadge.appendText("rc ");
-	// 台帳が無い（`null`）ときも ○。接続中（`true`）だけ ●（D-60）。
+	// ○ both when there's no ledger entry (`null`) and when disconnected; only ● when connected (`true`).
 	const dot = rcBadge.createSpan({
 		cls: "agent-sessions-badge-rc-dot",
 		text: rc ? "●" : "○",
@@ -127,7 +127,7 @@ function renderBadges(container: HTMLElement, statusInfo: StatusInfo | null, rc:
 	dot.toggleClass("is-connected", !!rc);
 }
 
-/** クリックで折畳／展開する 1 枚のカード（`-webkit-line-clamp: 6`）。 */
+/** A card that collapses/expands on click (`-webkit-line-clamp: 6`). */
 function renderCard(container: HTMLElement, label: string, value: string | null | undefined): void {
 	const card = container.createDiv({ cls: "agent-sessions-detail-card" });
 	card.createDiv({ cls: "agent-sessions-detail-card-label", text: label });
@@ -139,7 +139,7 @@ function renderCard(container: HTMLElement, label: string, value: string | null 
 	});
 }
 
-/** ラベル＋値の 1 行。値の `span` を返す（あとから書き換えられるように）。 */
+/** A label+value row. Returns the value's `span` so it can be updated later. */
 function field(container: HTMLElement, label: string, value: string): { el: HTMLElement; valueEl: HTMLElement } {
 	const el = container.createDiv({ cls: "agent-sessions-detail-field" });
 	el.createSpan({ cls: "agent-sessions-detail-label", text: label });
@@ -147,7 +147,7 @@ function field(container: HTMLElement, label: string, value: string): { el: HTML
 	return { el, valueEl };
 }
 
-/** `id` のキャッシュ済み `total` を返す。無ければ `null`（未取得か古い）。 */
+/** Returns `id`'s cached `total`. `undefined` if there's none (not fetched yet, or stale). */
 function cachedTotal(id: string): UsageTotal | null | undefined {
 	const entry = usageCache.get(id);
 	if (!entry || Date.now() - entry.at > USAGE_TTL_MS) {
@@ -156,7 +156,7 @@ function cachedTotal(id: string): UsageTotal | null | undefined {
 	return entry.total;
 }
 
-/** 詳細ビュー本体。`ctx` が `null` なら空にする。 */
+/** The detail view's body. Empties the container when `ctx` is `null`. */
 export function renderDetail(container: HTMLElement, ctx: DetailContext | null): void {
 	container.empty();
 	if (!ctx) {
@@ -175,8 +175,9 @@ export function renderDetail(container: HTMLElement, ctx: DetailContext | null):
 
 	const statsRow = container.createDiv({ cls: "agent-sessions-detail-stats" });
 	renderDonut(statsRow, statusInfo?.ctxPercent ?? null);
-	// compact 済み（SessionStart source=compact 〜 次の UserPromptSubmit）は ctx が 0 近くで
-	// 他と紛れるので、ctx の横に小さく出す。`row.compacted` は印ファイルから来るので、タブが無い行でも判定できる。
+	// Right after a compact (SessionStart source=compact until the next UserPromptSubmit), ctx
+	// is near 0 and easy to mistake for other states, so show a small marker next to it.
+	// `row.compacted` comes from the marker file, so this works even for rows without a tab.
 	if (row.compacted) {
 		statsRow.createSpan({ cls: "agent-sessions-detail-compacted", text: t("detail.compacted") });
 	}

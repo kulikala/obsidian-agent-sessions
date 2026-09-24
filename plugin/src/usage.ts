@@ -1,6 +1,6 @@
-// トークン集計（D-30・D-40・D-45）。`json usage ID` の結果を、選んだ区間（ターンの `index`、
-// 両端含む）で合計し直し、表示・コピー用の Markdown にする。純関数のみ——`obsidian`・
-// `@xterm/xterm` には依存しない（テストは test/usage.test.ts）。
+// Token accounting. Re-sums `json usage ID`'s results over a selected range (turn `index`,
+// inclusive of both ends) and formats it for display and Markdown copy. Pure functions only —
+// no dependency on `obsidian` or `@xterm/xterm` (tested in test/usage.test.ts).
 
 import { t } from "./i18n";
 import type { UsageTotal, UsageTurn } from "./types";
@@ -26,9 +26,10 @@ function emptyTotal(): UsageTotal {
 }
 
 /**
- * `from`〜`to`（ターンの `index`、両端含む。順不同で渡してよい）に入るターンの合計。
- * `cost`・`tools`（名前ごとの合計）に加え、区間内のターンの `ts`（開始）〜`last_ts`
- * （最後に数えた assistant 行）の幅を `duration` にする（両方揃わなければ `null`）。
+ * Sums the turns whose `index` falls within `from`–`to` (inclusive; can be passed in either
+ * order). Besides `cost` and `tools` (summed per name), `duration` is the span from the
+ * earliest turn's `ts` (start) to the latest counted assistant row's `last_ts` within the range
+ * (`null` unless both are available).
  */
 export function sumRange(turns: UsageTurn[], from: number, to: number): UsageTotal {
 	const lo = Math.min(from, to);
@@ -60,20 +61,20 @@ export function sumRange(turns: UsageTurn[], from: number, to: number): UsageTot
 	return total;
 }
 
-/** 3 桁区切り。 */
+/** Comma-separated thousands. */
 export function formatNumber(n: number): string {
 	return n.toLocaleString("en-US");
 }
 
-/** `999`→`999`、`1,234`→`1.2k`、`1,234,567`→`1.2M`、`1,234,000,000`→`1.2B`。
- * カードとターン表の入出力、詳細ビューの総トークンに使う。 */
+/** `999`→`999`, `1,234`→`1.2k`, `1,234,567`→`1.2M`, `1,234,000,000`→`1.2B`.
+ * Used for input/output on cards and the turn table, and total tokens in the detail view. */
 export function formatK(n: number): string {
 	const abs = Math.abs(n);
 	if (abs < 1000) {
 		return String(n);
 	}
 	if (abs < 1_000_000) {
-		// 丸めで桁が繰り上がる場合（例: 999,950 → 1.0M）は M 側の表記に回す。
+		// If rounding carries into the next magnitude (e.g. 999,950 → 1.0M), defer to the M formatting.
 		const rounded = Math.round(n / 100) * 100;
 		if (Math.abs(rounded) >= 1_000_000) {
 			return formatK(rounded);
@@ -81,7 +82,7 @@ export function formatK(n: number): string {
 		return `${(n / 1000).toFixed(1)}k`;
 	}
 	if (abs < 1_000_000_000) {
-		// 同じ理由で、M から B へ繰り上がる場合（例: 999,950,000 → 1.0B）は B 側の表記に回す。
+		// Same reasoning, for M carrying into B (e.g. 999,950,000 → 1.0B).
 		const rounded = Math.round(n / 100_000) * 100_000;
 		if (Math.abs(rounded) >= 1_000_000_000) {
 			return formatK(rounded);
@@ -91,7 +92,7 @@ export function formatK(n: number): string {
 	return `${(n / 1_000_000_000).toFixed(1)}B`;
 }
 
-/** `$0.005` 未満は `<$0.01`、それ以外は小数 2 桁。 */
+/** Below `$0.005` shows `<$0.01`; otherwise two decimal places. */
 export function formatCost(n: number): string {
 	if (n > 0 && n < 0.005) {
 		return "<$0.01";
@@ -99,7 +100,7 @@ export function formatCost(n: number): string {
 	return `$${n.toFixed(2)}`;
 }
 
-/** `duration`（秒）を `h m` にする。`null` は「—」。 */
+/** Formats `duration` (seconds) as `h m`. `null` shows as "—". */
 export function formatDuration(seconds: number | null): string {
 	if (seconds === null || !Number.isFinite(seconds) || seconds < 0) {
 		return "—";
@@ -110,7 +111,7 @@ export function formatDuration(seconds: number | null): string {
 	return `${h}h ${m}m`;
 }
 
-/** `MM-DD HH:MM`（ローカル）。`null` は「—」（「（開始前）」ターンなど ts が無い場合）。 */
+/** `MM-DD HH:MM` (local time). `null` shows as "—" (turns with no `ts`, e.g. one recorded before the session started). */
 export function formatEpoch(ts: number | null): string {
 	if (ts === null) {
 		return "—";
@@ -120,7 +121,7 @@ export function formatEpoch(ts: number | null): string {
 	return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** 区間選択の状態。`null`＝全体。`end === null`＝開始行だけ選んで終了行待ち。 */
+/** Range-selection state. `null` = whole. `end === null` = only the start row is picked, waiting for the end row. */
 export interface TurnSelection {
 	anchor: number;
 	end: number | null;
@@ -128,10 +129,10 @@ export interface TurnSelection {
 export type Selection = TurnSelection | null;
 
 /**
- * ターン表の行クリック 1 回分を状態に適用する（D-45）。
- * - 全体、または確定済みの区間の最中にクリック → そのターンを新しい開始行にする。
- * - 開始行だけ選んでいる最中に同じ行をクリック → 解除（全体に戻る）。
- * - 開始行だけ選んでいる最中に別の行をクリック → その行を終了行にして確定する。
+ * Applies one click on a turn-table row to the selection state.
+ * - Clicking while "whole" or a confirmed range is active → that turn becomes the new start row.
+ * - Clicking the same row while only the start row is selected → clears it (back to "whole").
+ * - Clicking a different row while only the start row is selected → that row becomes the end row, confirming the range.
  */
 export function nextSelection(cur: Selection, clickedIndex: number): Selection {
 	if (cur === null || cur.end !== null) {
@@ -144,9 +145,10 @@ export function nextSelection(cur: Selection, clickedIndex: number): Selection {
 }
 
 /**
- * 選択状態を、ターン表に効かせる実際の区間にする（開始行だけの間は、その 1 行だけの区間）。
- * 「全体」は `turns` の並び（先頭・末尾）に頼らず、全ターンの `index` の最小・最大から求める
- * ——ターンが無ければ `{0, 0}`（NaN にはしない）。
+ * Turns the selection state into the actual range to apply to the turn table (while only the
+ * start row is selected, that's a range of just that one row). "Whole" is computed from the
+ * min/max of every turn's `index`, not from `turns`' array order (first/last element) — `{0, 0}`
+ * if there are no turns (never `NaN`).
  */
 export function effectiveRange(sel: Selection, turns: UsageTurn[]): { from: number; to: number; pending: boolean } {
 	if (sel === null) {
@@ -167,14 +169,15 @@ export function effectiveRange(sel: Selection, turns: UsageTurn[]): { from: numb
 	return { from: Math.min(sel.anchor, sel.end), to: Math.max(sel.anchor, sel.end), pending: false };
 }
 
-/** 改行を詰め、Markdown の表を壊す `|` を逃がす。 */
+/** Collapses newlines/whitespace and escapes `|` so it doesn't break the Markdown table. */
 function escapeCell(text: string): string {
 	return text.replace(/\s+/g, " ").trim().replace(/\|/g, "\\|");
 }
 
 /**
- * カードの値（コスト・トークン・ターン数・期間）と、選んだ区間のターン表を Markdown にする
- * （コピー用）。「入力」は非キャッシュ＋cache 読出＋cache 作成の合計（カードと同じ定義）。
+ * Formats the card values (cost, tokens, turn count, duration) and the selected range's turn
+ * table as Markdown, for copying. "Input" is uncached + cache read + cache create, same
+ * definition as the card.
  */
 export function toMarkdown(turns: UsageTurn[], from: number, to: number, total: UsageTotal): string {
 	const lo = Math.min(from, to);

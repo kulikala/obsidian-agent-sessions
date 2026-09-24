@@ -1,4 +1,4 @@
-// 行の描画・選択・行メニュー（サイドパネルとマネージャーで共用。§6.1・§6.2）。詳細欄は views/detail.ts。
+// Row rendering, selection, and the row menu — shared by the side panel and the manager. The detail pane is views/detail.ts.
 
 import { Menu, setIcon, setTooltip } from "obsidian";
 import { renderCategoryChip } from "../chip";
@@ -16,35 +16,34 @@ export interface RowActions {
 	toggleArchive(row: Row): void;
 	endSession(id: string): void;
 	copyId(id: string): void;
-	/** 300 ms ホバーで呼ばれる。 */
+	/** Called after a 300ms hover. */
 	showDetail(id: string): void;
-	/** ホバーが外れたら呼ばれる（既定の表示に戻すため。D-43 実機修正）。 */
+	/** Called when the hover ends (to revert to the default display). */
 	hideDetail?(): void;
-	/** セッション解析結果のモーダルを開く（D-31・D-45）。 */
+	/** Opens the session-analytics modal. */
 	showUsage(id: string): void;
 	/**
-	 * 直近のスラッシュコマンド（`json detail` の `last_command`。例 `/compact`。引数は
-	 * 含めない）。取得済みなら同期で返す——新たに `json detail` を呼ばない
-	 * （`index.getCachedDetail`）。無ければ `undefined`（「セッションを圧縮」を非活性に
-	 * しない）。
+	 * The most recent slash command (`json detail`'s `last_command`, e.g. `/compact`; excludes
+	 * arguments). Returns synchronously if already fetched — doesn't call `json detail` itself
+	 * (`index.getCachedDetail`). `undefined` if not fetched yet (doesn't disable "compact session" in that case).
 	 */
 	lastUserPrompt?(id: string): string | undefined;
 }
 
 export interface RenderRowOptions {
-	/** 前面のターミナルタブの行を強調する（サイドパネルの「開いているタブ」）。 */
+	/** Highlights the row for the frontmost terminal tab (the side panel's "open tabs"). */
 	front?: boolean;
-	/** マネージャーの子行のようにインデントする。 */
+	/** Indents this row like a manager child row. */
 	indent?: boolean;
 	selection: RowSelection;
 	actions: RowActions;
-	/** 状態の印（`rowStatusMark`）が `terminalStatuses` を読むのに使う（D-66 追補）。 */
+	/** The status marker (`rowStatusMark`) uses this to read `terminalStatuses`. */
 	plugin: AgentSessionsPlugin;
 }
 
 const HOVER_DELAY_MS = 300;
 
-/** 選択中の行を 1 つだけ持つ（強調のみ。`⋯` は常時表示——選択とは独立）。 */
+/** Holds at most one selected row (highlighting only — `⋯` is always shown, independent of selection). */
 export class RowSelection {
 	private current: HTMLElement | null = null;
 
@@ -63,10 +62,10 @@ export class RowSelection {
 }
 
 /**
- * 状態の印を 1 つ作って積む：タブが開いていれば `plugin.terminalStatuses` の実際の状態、
- * 無ければ `Row` だけから分かる範囲（`resolveRowStatus`）。タブ見出しと同じアイコン
- * （`TERMINAL_STATUS_ICON`）・色・動きの CSS クラス、tooltip も状態名で揃える
- * （D-66 追補・T-76：色の点から、タブと同じ lucide アイコンに変えた）。
+ * Creates and appends a single status marker: the tab's actual status from
+ * `plugin.terminalStatuses` if it's open, otherwise whatever can be told from the `Row` alone
+ * (`resolveRowStatus`). Uses the same icon (`TERMINAL_STATUS_ICON`), color/motion CSS class, and
+ * tooltip as the tab header, so they stay consistent.
  */
 export function rowStatusMark(container: HTMLElement, plugin: AgentSessionsPlugin, row: Row): HTMLElement {
 	const status = resolveRowStatus(plugin, row);
@@ -80,7 +79,7 @@ export function displayName(row: Row): string {
 	return row.name || row.label || t("common.untitled", { id: row.id.slice(0, 8) });
 }
 
-/** `row` のカテゴリ（名前の `': '` より前。`tree.ts` の `splitName` と同じ）。無ければ `null`。 */
+/** `row`'s category (the part of the name before `': '`, same split as `tree.ts`'s `splitName`). `null` if there isn't one. */
 export function categoryOf(row: Row): string | null {
 	if (!row.name) {
 		return null;
@@ -89,8 +88,9 @@ export function categoryOf(row: Row): string | null {
 }
 
 /**
- * 表・一覧に出す名前：カテゴリが有ればそれを除いた分（`splitName` の 2 要素目）、
- * 無ければ `displayName`（`label`／無題）に落ちる（D-65。マネージャーの表と一覧で共用）。
+ * The name shown in tables and lists: the part after the category if there is one (`splitName`'s
+ * second element), otherwise falls back to `displayName` (`label` / "Untitled"). Shared by the
+ * manager's table and lists.
  */
 export function rowLabel(row: Row): string {
 	if (row.name) {
@@ -110,8 +110,8 @@ export function formatTime(epochSeconds: number): string {
 	return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-/** 行メニュー（名前を変更・セッションを圧縮・アーカイブ・終了・セッション解析結果・ID をコピー）。
- * `manager.ts` の表からも同じものを開く（D-44：⋯・右クリック共通）。 */
+/** The row menu (rename, compact session, archive, end session, session analytics, copy ID).
+ * `manager.ts`'s table opens the same menu — shared by both the `⋯` button and right-click. */
 export function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): void {
 	const menu = new Menu();
 	menu.addItem((item) =>
@@ -160,7 +160,7 @@ export function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): voi
 	menu.showAtMouseEvent(evt);
 }
 
-/** 1 行を描く：`状態の印  名前  時刻  ▣  ⋯`。`⋯` は常時表示（D-43）。 */
+/** Renders one row: `status-marker  name  time  ▣  ⋯`. `⋯` is always shown. */
 export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptions): HTMLElement {
 	const el = container.createDiv({ cls: "agent-sessions-row" });
 	if (opts.front) {
@@ -174,7 +174,7 @@ export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptio
 	}
 
 	rowStatusMark(el, opts.plugin, row);
-	// asking（答えを待っている）・waiting（busy→idle の後まだ見ていない）の行を目立たせる（T-78）。
+	// Makes rows that are asking (waiting for an answer) or waiting (idle since busy, not yet seen) stand out.
 	const attentionStatus = resolveRowStatus(opts.plugin, row);
 	if (attentionStatus === "asking") {
 		el.addClass("is-asking");
@@ -226,7 +226,7 @@ export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptio
 	return el;
 }
 
-/** グループの見出し行（折畳の三角と件数）。クリックで `onToggle`。 */
+/** A group heading row (a fold triangle and a count). Clicking it calls `onToggle`. */
 export function renderGroupHeader(
 	container: HTMLElement,
 	name: string,
@@ -246,9 +246,9 @@ export function renderGroupHeader(
 }
 
 /**
- * サイドパネル・マネージャー共通の行アクション。`openSession`・`rename`・`compact`・
- * `toggleArchive`・`endSession`・`copyId` は両ビューで同じ振る舞い（§6.6）。
- * `onShowDetail` だけビューごと（詳細欄の描画先が違う）。
+ * Row actions shared by the side panel and the manager. `openSession`, `rename`, `compact`,
+ * `toggleArchive`, `endSession`, and `copyId` behave the same in both views; only
+ * `onShowDetail` differs per view (each renders the detail pane somewhere different).
  */
 export function createRowActions(
 	plugin: AgentSessionsPlugin,

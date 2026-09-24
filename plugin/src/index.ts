@@ -1,6 +1,6 @@
-// 走査結果＋起動中＋タブの合成、購読（D-2・D-8・D-11・D-17）。
-// `obsidian` には依存しない。呼び出しは `backend.ts` の関数を注入して受け取る
-// （vitest でモックできるように）。
+// Combines scan results with running-daemon state and tab state, and lets views subscribe to
+// changes. No dependency on `obsidian` — the calls into `backend.ts` are injected as functions
+// (so they can be mocked in vitest).
 
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
@@ -12,12 +12,12 @@ import { StatusLine } from "./statusline";
 import { loadStore, updateStore, type Store } from "./store";
 import type { Detail, LiveResult, ScanResult, ScanSession } from "./types";
 
-/** 走査結果（Python）に、起動中の台帳とタブの状態を合成した 1 行。 */
+/** One row: a scan result (from Python) combined with the running-daemon ledger and tab state. */
 export interface Row extends ScanSession {
 	status: string | null;
-	/** `status === "waiting"`（claude 自身の「asking」）のときの理由（T-77）。それ以外は `null`。 */
+	/** The reason when `status === "waiting"` (claude's own "asking"). `null` otherwise. */
 	waitingFor: string | null;
-	/** compact 直後・まだ次の指示を送っていないか（`CompactedTracker`。T-77 追補）。 */
+	/** Whether the session just compacted and hasn't had the next instruction sent yet (`CompactedTracker`). */
 	compacted: boolean;
 	pid: number | null;
 	rc: boolean;
@@ -35,14 +35,14 @@ export interface SessionIndexDeps {
 	eventsLogPath: string;
 	sessionsDir: string;
 	statusDir: string;
-	/** compact 直後の印の置き場（T-77 追補）。 */
+	/** Where the just-compacted marker files live. */
 	compactedDir: string;
 }
 
 const RESCAN_INTERVAL_MS = 60000;
-/** `registry` の変化から `refreshLive()` までのデバウンス（§6.1・§6.3）。 */
+/** Debounce from a `registry` change to `refreshLive()`. */
 const LIVE_DEBOUNCE_MS = 1000;
-/** `waitForName` の再走査の間隔・諦める上限（T-72）。 */
+/** `waitForName`'s rescan interval and give-up timeout. */
 const WAIT_NAME_POLL_MS = 300;
 const WAIT_NAME_TIMEOUT_MS = 5000;
 
@@ -67,12 +67,13 @@ function rowFromScan(s: ScanSession, openTabIds: Set<string>, store: Store): Row
 }
 
 /**
- * 走査で作った Row（`fresh`）に、既存 Row（`previous`）が持っていた `status`・
- * `waitingFor`・`pid`・`rc`・`daemon`・`exited`・`compacted` を引き継ぐ。走査結果
- * （`json scan`）はこれらを知らないため（`rowFromScan` はどれも既定値で埋める）、
- * `applyScanResult` の直後に必ず `applyRegistry`／`applyCompacted` が呼ばれて
- * registry・`CompactedTracker` の今の値へ当て直すが、`mergeRow` 自身も前の Row から
- * 引き継いでおくことで、途中の状態が矛盾しない（asking・compacted の印が一瞬消えない）。
+ * Carries `status`, `waitingFor`, `pid`, `rc`, `daemon`, `exited`, and `compacted` over from the
+ * existing Row (`previous`) onto a freshly scanned Row (`fresh`). The scan result (`json scan`)
+ * doesn't know any of these (`rowFromScan` fills them all with defaults), and
+ * `applyScanResult` is always immediately followed by `applyRegistry`/`applyCompacted` to
+ * reapply the registry's and `CompactedTracker`'s current values anyway — but having `mergeRow`
+ * itself carry them over too means there's no inconsistent state in between (the asking/compacted
+ * markers never flicker off for a moment).
  */
 export function mergeRow(fresh: Row, previous: Row | undefined): Row {
 	if (!previous) {
@@ -91,18 +92,18 @@ export function mergeRow(fresh: Row, previous: Row | undefined): Row {
 }
 
 /**
- * 走査結果（`json scan`）・起動中（`json live`）・タブの状態を 1 つの
- * `Map<id, Row>` に合成する。3 つのビューがこれを 1 つ共有して購読する（§6.2）。
+ * Combines the scan result (`json scan`), running-daemon state (`json live`), and tab state
+ * into one `Map<id, Row>`. All three views share and subscribe to this one instance.
  */
 export class SessionIndex extends EventEmitter {
 	readonly sessions = new Map<string, Row>();
 	readonly registry: Registry;
 	readonly statusline: StatusLine;
-	/** compact 直後の印（T-77 追補）。 */
+	/** Just-compacted markers. */
 	readonly compactedTracker: CompactedTracker;
 
 	private openTabIds = new Set<string>();
-	/** カテゴリ名 → パレット番号（`sessions.json` の `categoryColors` の写し。T-70）。 */
+	/** Category name → palette slot (a copy of `sessions.json`'s `categoryColors`). */
 	private categoryColors: Record<string, number> = {};
 	private detailCache = new Map<string, Detail>();
 	private timer: ReturnType<typeof setInterval> | null = null;
@@ -129,8 +130,8 @@ export class SessionIndex extends EventEmitter {
 			this.applyCompacted();
 			this.emit("change");
 		});
-		// busy→idle（/compact・/rename の送信が終わった直後を含む）で detail のキャッシュを
-		// 捨てる。次の getDetail が新しい last_command・last_user 等を読み直す。
+		// Drop the detail cache on busy→idle (including right after sending /compact or
+		// /rename) so the next getDetail re-reads the new last_command, last_user, etc.
 		this.registryIdleUnsubscribe = this.registry.onIdle((id) => this.invalidateDetail(id));
 		this.eventsOffset = this.currentEventsLogSize();
 	}
@@ -140,13 +141,13 @@ export class SessionIndex extends EventEmitter {
 		return () => this.off("change", cb);
 	}
 
-	/** `json scan` が失敗したときに通知する（前回の結果は保たれる）。 */
+	/** Notified when `json scan` fails (the previous result is kept). */
 	onError(cb: (message: string) => void): () => void {
 		this.on("scanError", cb);
 		return () => this.off("scanError", cb);
 	}
 
-	/** ビューが見えている間だけ 60 秒毎に再走査する。停止用の関数を返す。 */
+	/** Rescans every 60 seconds, but only while a view is visible. Returns a function to stop. */
 	addVisible(): () => void {
 		this.visibleCount++;
 		this.ensureTimer();
@@ -164,15 +165,16 @@ export class SessionIndex extends EventEmitter {
 		this.emit("change");
 	}
 
-	/** 全セッションの名前から、ダイアログの「カテゴリ」欄に出す候補（D-63）。 */
+	/** Category suggestions for the naming dialog's "Category" field, derived from every session's name. */
 	categories(): string[] {
 		return listCategories([...this.sessions.values()].map((row) => row.name));
 	}
 
 	/**
-	 * `category` の表示色（パレット番号）。`sessions.json` に確定済みならそれ（不変）。
-	 * まだ確定していなければ（次の走査で `syncCategoryColors` が確定するまでの間の）見込みの
-	 * 番号を、書き戻さずその場で返す——ダイアログでカテゴリを入力中のプレビューに使う（T-70）。
+	 * The display color (palette slot) for `category`. Returns the value already committed to
+	 * `sessions.json` if there is one (it never changes). If not yet committed, computes a
+	 * tentative slot on the spot without writing it back (used to preview the color while typing
+	 * a category in the dialog, until `syncCategoryColors` commits one on the next scan).
 	 */
 	categoryColorIndex(category: string): number {
 		const existing = this.categoryColors[category];
@@ -183,8 +185,8 @@ export class SessionIndex extends EventEmitter {
 	}
 
 	/**
-	 * `sessions.json` を読み直し、`archived`・`categoryColors` を再適用する。
-	 * 走査をやり直さなくても、アーカイブ・折畳をすぐ画面に反映できる。
+	 * Re-reads `sessions.json` and reapplies `archived`/`categoryColors`. Lets archiving and
+	 * folding show up on screen right away without needing a full rescan.
 	 */
 	refreshStore(): void {
 		const store = loadStore(this.deps.storePath);
@@ -196,10 +198,11 @@ export class SessionIndex extends EventEmitter {
 	}
 
 	/**
-	 * 今のセッション一覧に出てくるカテゴリのうち、まだ `sessions.json` の `categoryColors`
-	 * に無いものへ番号を割り当てて書き戻す（`category.ts` の `ensureCategoryColors`）。
-	 * 割り当てが無ければ何もしない（ロックを取らない）。ロックが取れなくても、UI は
-	 * `categoryColorIndex` の見込み割当でしのぎ、次の走査で改めて確定を試みる。
+	 * Assigns and writes back a slot for any category in the current session list that
+	 * `sessions.json`'s `categoryColors` doesn't have yet (`category.ts`'s
+	 * `ensureCategoryColors`). Does nothing (doesn't take the lock) if there's nothing to
+	 * assign. If the lock can't be acquired, the UI just falls back to `categoryColorIndex`'s
+	 * tentative assignment and this tries again on the next scan.
 	 */
 	private syncCategoryColors(): void {
 		const categories = this.categories();
@@ -212,7 +215,7 @@ export class SessionIndex extends EventEmitter {
 			});
 			this.categoryColors = { ...updated.categoryColors };
 		} catch {
-			// 次の走査で改めて確定を試みる。
+			// Try again on the next scan.
 		}
 	}
 
@@ -226,22 +229,22 @@ export class SessionIndex extends EventEmitter {
 		return detail;
 	}
 
-	/** `getDetail` が既に取得済みならそれを同期で返す。無ければ `null`（ここでは取得しない）。 */
+	/** Returns `getDetail`'s cached result synchronously if it's already been fetched, otherwise `null` (doesn't fetch it here). */
 	getCachedDetail(id: string): Detail | null {
 		return this.detailCache.get(id) ?? null;
 	}
 
-	/** `id` の detail キャッシュを捨てる。次の `getDetail`/`getCachedDetail` は読み直す。 */
+	/** Drops `id`'s detail cache entry. The next `getDetail`/`getCachedDetail` re-fetches it. */
 	invalidateDetail(id: string): void {
 		this.detailCache.delete(id);
 	}
 
-	/** 全走査（`rescan()` と同じ）。 */
+	/** A full scan (same as `rescan()`). */
 	async scan(): Promise<void> {
 		return this.rescan();
 	}
 
-	/** `only` が有れば該当 ID だけ再走査してキャッシュを更新する（`json scan --only`）。 */
+	/** With `only` given, rescans just those ids and updates the cache (`json scan --only`). */
 	async rescan(only?: string[]): Promise<void> {
 		let result: ScanResult;
 		try {
@@ -259,13 +262,14 @@ export class SessionIndex extends EventEmitter {
 	}
 
 	/**
-	 * `/rename NAME` が書いた名前が `sessions.get(id).name` に現れるまで待つ（T-72）。
-	 * `/rename` はモデルを呼ばないコマンドなので `busy` にならず、`events.log` にも
-	 * hook イベントが来ない——明示的に `rescan([id])` を繰り返さないと、次の周期走査
-	 * （`RESCAN_INTERVAL_MS`）まで `Row.name` もタブの題名も変わらない。`rescan` は毎回
-	 * `change` を発火するので、一致すれば購読側（`TerminalView.refreshName`・
-	 * `refreshDeferredTerminalTabs`）が自分で描き直す。`timeoutMs` に達しても一致しなければ
-	 * 諦めて `false`（呼出側は何もしなくてよい——いずれ周期走査で追いつく）。
+	 * Waits for the name `/rename NAME` wrote to show up in `sessions.get(id).name`. `/rename`
+	 * doesn't call the model, so it never goes `busy`, and no hook event reaches `events.log`
+	 * either — without repeatedly calling `rescan([id])` explicitly, neither `Row.name` nor the
+	 * tab title would update until the next periodic scan (`RESCAN_INTERVAL_MS`). `rescan` fires
+	 * `change` every time, so once the name matches, subscribers (`TerminalView.refreshName`,
+	 * `refreshDeferredTerminalTabs`) redraw themselves. Gives up and returns `false` if
+	 * `timeoutMs` passes without a match — the caller doesn't need to do anything in that case,
+	 * since the periodic scan will catch up eventually anyway.
 	 */
 	async waitForName(
 		id: string,
@@ -288,10 +292,10 @@ export class SessionIndex extends EventEmitter {
 	}
 
 	/**
-	 * `json live` の `daemon.sessions` から行ごとの `daemon`／`exited` を導く（§6.1・§6.3）。
-	 * 失敗（デーモン未起動など）は静かに無視し、`daemon:false` として扱う——`json scan` の
-	 * 失敗と違って `Notice` は出さない。呼出：`start()` の初回走査の後・`registry` の変化
-	 * のたび（1 秒デバウンス）・60 秒タイマー・`rescan()` の後。
+	 * Derives each row's `daemon`/`exited` from `json live`'s `daemon.sessions`. Failures (e.g.
+	 * the daemon isn't running) are silently ignored and treated as `daemon:false` — unlike a
+	 * `json scan` failure, this never shows a `Notice`. Called: after `start()`'s first scan, on
+	 * every `registry` change (1-second debounce), on the 60-second timer, and after `rescan()`.
 	 */
 	async refreshLive(): Promise<void> {
 		let result: LiveResult;
@@ -305,7 +309,7 @@ export class SessionIndex extends EventEmitter {
 		}
 	}
 
-	/** `events.log` の追記を検知したら呼ぶ（手動でも、`fs.watch` からでも）。 */
+	/** Called when an append to `events.log` is detected (by hand, or from `fs.watch`). */
 	checkEventsLog(): void {
 		let text: string;
 		try {
@@ -338,7 +342,7 @@ export class SessionIndex extends EventEmitter {
 					ids.add(event.session_id);
 				}
 			} catch {
-				// 壊れた行は無視。
+				// Ignore malformed lines.
 			}
 		}
 		if (ids.size > 0) {
@@ -347,8 +351,8 @@ export class SessionIndex extends EventEmitter {
 	}
 
 	/**
-	 * `registry.watch()` と `events.log` の監視を始め、最初の 1 回を走査する。
-	 * 停止用の関数を返す。
+	 * Starts `registry.watch()` and watching `events.log`, and does one initial scan. Returns a
+	 * function to stop.
 	 */
 	start(): () => void {
 		void this.rescan();
@@ -446,7 +450,7 @@ export class SessionIndex extends EventEmitter {
 		}
 	}
 
-	/** 行を書き換え、1 件でも `daemon`／`exited` が変わったら真を返す。 */
+	/** Mutates rows in place; returns true if `daemon`/`exited` changed for even one of them. */
 	private applyLive(result: LiveResult): boolean {
 		const running = result.daemon.running;
 		const byId = new Map(result.daemon.sessions.map((s) => [s.id, s]));
@@ -474,7 +478,7 @@ export class SessionIndex extends EventEmitter {
 		}
 	}
 
-	/** compact 直後の印を合成する（T-77 追補）。`applyRegistry` と同じ形。 */
+	/** Applies the just-compacted marker to rows. Same shape as `applyRegistry`. */
 	private applyCompacted(): void {
 		for (const row of this.sessions.values()) {
 			row.compacted = this.compactedTracker.has(row.id);

@@ -1,8 +1,9 @@
-// ジャンプ（§6.7 D-13・D-41）。指示（送信キーが押された位置）と応答の先頭（`idle → busy`）を
-// マーカーとして覚え、前の指示・次の指示・最後の応答へ飛べるようにする。xterm には依存しない——
-// `registerMarker` を包んだ `MarkerSource` を `views/terminal.ts` から受け取る純クラス。
+// Jump: remembers instructions (where the submit key was pressed) and the start of each
+// response (`idle → busy`) as markers, so the UI can jump to the previous instruction, next
+// instruction, or last response. Has no dependency on xterm — a pure class that receives a
+// `MarkerSource` wrapping `registerMarker` from `views/terminal.ts`.
 
-/** xterm の `IMarker` を包んだ最小形。破棄済みなら `isDisposed` が真。 */
+/** A minimal wrapper around xterm's `IMarker`. `isDisposed` is true once it's been disposed. */
 export interface MarkerHandle {
 	readonly line: number;
 	readonly isDisposed: boolean;
@@ -19,8 +20,8 @@ export class MarkTracker {
 	constructor(private source: MarkerSource) {}
 
 	/**
-	 * 指示を送った位置としてマーカーを打つ。`views/terminal.ts` の `sendSubmit()` から、
-	 * 送信キーが押されたときだけ明示的に呼ばれる（`onData` の `\r` からは記録しない。§6.7）。
+	 * Places a marker where an instruction was sent. Called explicitly by `views/terminal.ts`'s
+	 * `sendSubmit()` only when the submit key is pressed (not recorded from `onData`'s `\r`).
 	 */
 	markInstruction(): void {
 		const marker = this.source.registerMarker();
@@ -29,7 +30,7 @@ export class MarkTracker {
 		}
 	}
 
-	/** 応答の先頭（`registry` の `idle → busy`）を記録する。最後の 1 つだけ保持する。 */
+	/** Records the start of a response (`registry`'s `idle → busy`). Keeps only the most recent one. */
 	onBusy(): void {
 		const marker = this.source.registerMarker();
 		if (marker) {
@@ -37,17 +38,17 @@ export class MarkTracker {
 		}
 	}
 
-	/** 表示先頭 `viewportY` より上で最も近い指示の行。無ければ `null`。 */
+	/** The nearest instruction's line above the top of the viewport (`viewportY`). `null` if there isn't one. */
 	prev(viewportY: number): number | null {
 		return this.nearest(viewportY, "up");
 	}
 
-	/** 表示先頭 `viewportY` より下で最も近い指示の行。無ければ `null`。 */
+	/** The nearest instruction's line below the top of the viewport (`viewportY`). `null` if there isn't one. */
 	next(viewportY: number): number | null {
 		return this.nearest(viewportY, "down");
 	}
 
-	/** 最後の応答の先頭行。破棄済みなら `null`。 */
+	/** The last response's starting line. `null` if it's been disposed. */
 	lastResponse(): number | null {
 		if (this.response?.isDisposed) {
 			this.response = undefined;

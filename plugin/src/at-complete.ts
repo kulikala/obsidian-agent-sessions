@@ -1,18 +1,19 @@
-// 編集領域の `@` 補完（D-22）。純関数。`obsidian` は import しない
-// （候補の絞り込みは呼出側が `prepareFuzzySearch` で行う）。
+// `@` completion for the editor pane. Pure functions — `obsidian` is never imported here
+// (narrowing candidates with `prepareFuzzySearch` is left to the caller).
 
 import * as path from "node:path";
 
 export interface AtQuery {
-	/** `@` の位置（0 始まり）。 */
+	/** Where `@` is (0-based). */
 	start: number;
-	/** `@` の直後からカーソルまで。 */
+	/** Everything from right after `@` up to the cursor. */
 	query: string;
 }
 
 /**
- * カーソルの直前にある `@検索語` を切り出す。`@` は行頭か空白の直後にあり、`@` から
- * カーソルまでに空白が無いときだけ補完の対象にする。無ければ `null`。
+ * Extracts an `@query` sitting right before the cursor. Only treated as completable when `@`
+ * is at the start of the line or right after whitespace, and there's no whitespace between `@`
+ * and the cursor. Returns `null` if there isn't one.
  */
 export function findAtQuery(text: string, cursor: number): AtQuery | null {
 	const end = Math.max(0, Math.min(cursor, text.length));
@@ -38,7 +39,7 @@ export interface Completion {
 	cursor: number;
 }
 
-/** `text[start, end)` を `@relPath ` に置き換え、その直後にカーソルを置く。 */
+/** Replaces `text[start, end)` with `@relPath ` and places the cursor right after it. */
 export function applyCompletion(text: string, start: number, end: number, relPath: string): Completion {
 	const replacement = `@${relPath} `;
 	return {
@@ -53,9 +54,9 @@ function isInside(parent: string, child: string): boolean {
 }
 
 /**
- * vault 相対パス `vaultRel` を、セッションの `cwd` から見た相対パスにする。`cwd` が vault の
- * 中なら `../` で辿る相対、`cwd` が vault の外なら絶対のまま。区切りは `/`、空白を含めば
- * 引用符で囲む。
+ * Turns a vault-relative path `vaultRel` into one relative to the session's `cwd`. If `cwd` is
+ * inside the vault, this walks back up with `../` as needed; if `cwd` is outside the vault, it
+ * stays absolute. Uses `/` as the separator, and quotes the result if it contains whitespace.
  */
 export function relPathFor(vaultPath: string, vaultRel: string, cwd: string): string {
 	const abs = path.join(vaultPath, vaultRel);
