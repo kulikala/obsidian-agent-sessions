@@ -1,6 +1,6 @@
 // Settings types and defaults. Doesn't depend on `obsidian` (plain data definitions only).
 
-import type { LanguageSetting } from "./i18n";
+import { allLangs, type Lang, type LanguageSetting } from "./i18n";
 
 export type Padding = "comfortable" | "compact" | "none";
 
@@ -83,7 +83,7 @@ export function mergeSettings(data: unknown, isMac = true): AgentSessionsSetting
 		unknown
 	>;
 	delete saved.newlineKey;
-	if (saved.language !== "auto" && saved.language !== "ja" && saved.language !== "en") {
+	if (saved.language !== "auto" && !allLangs().includes(saved.language as Lang)) {
 		delete saved.language;
 	}
 	if (!SUBMIT_KEYS.includes(saved.submitKey as SubmitKey)) {

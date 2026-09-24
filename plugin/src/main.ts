@@ -17,7 +17,7 @@ import { detail, live, loginEnv, resolveAgentSessionsPath, resolveClaude, scan }
 import { DaemonClient, defaultSockPath, ensureDaemon } from "./backend/daemon-client";
 import { EditServer, editReplyFor, submitsAfterEdit, type EditReply, type EditRequest } from "./backend/edit-server";
 import { SessionIndex } from "./sessions/index";
-import { getLang, readObsidianLang, resolveLang, setLang, t } from "./i18n";
+import { getLang, languageOptions, readObsidianLang, resolveLang, setLang, t } from "./i18n";
 import { applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./terminal/keybindings";
 import { reconcileSubmitKey, sendSequence } from "./terminal/keys";
 import { buildAtToken, selectionLineRange } from "./terminal/links";
@@ -1034,11 +1034,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			.setName(t("settings.language.name"))
 			.addDropdown((dropdown) =>
 				dropdown
-					.addOptions({
-						auto: t("settings.language.optionAuto"),
-						ja: t("settings.language.optionJa"),
-						en: t("settings.language.optionEn"),
-					})
+					.addOptions(languageOptions())
 					.setValue(this.plugin.settings.language)
 					.onChange(async (value) => {
 						this.plugin.settings.language = value as AgentSessionsSettings["language"];

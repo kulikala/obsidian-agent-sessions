@@ -121,6 +121,10 @@ cd ..
 python3 -W error -m unittest discover -s tests -t .   # Python (standard library only)
 ```
 
+### Adding a language
+
+Add `plugin/src/i18n/locales/<code>.ts` (a `Partial<Record<MessageKey, string>>` plus a `<CODE>_SELF_NAME` autonym — see `locales/ja.ts`) and `agentsessions/i18n/locales/<code>.py` (a `MESSAGES` dict — see `locales/ja.py`), then register each one, one line apiece, in `i18n/index.ts`'s `LOCALES` and `i18n/__init__.py`'s `_TABLES`. A locale can start out partial; a key it hasn't filled in yet falls back to English on both sides. See [`docs/design.md`](docs/design.md#17-i18n).
+
 ### Release (maintainers)
 
 ```sh

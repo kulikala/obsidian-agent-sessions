@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { getLang, resolveLang, setLang, t, type MessageKey } from "../src/i18n";
+import { allLangs, getLang, languageOptions, resolveLang, setLang, t } from "../../src/i18n";
 
 // This file intentionally switches languages. Reset back to English (the
 // default, set in test/setup.ts) so it doesn't leak into other tests.
@@ -8,7 +8,7 @@ afterEach(() => {
 });
 
 describe("resolveLang", () => {
-	it("passes through when the setting is ja or en", () => {
+	it("passes through when the setting is a specific language", () => {
 		expect(resolveLang("ja", null)).toBe("ja");
 		expect(resolveLang("en", "ja")).toBe("en");
 	});
@@ -17,7 +17,11 @@ describe("resolveLang", () => {
 		expect(resolveLang("auto", "ja")).toBe("ja");
 	});
 
-	it("resolves auto to English when obsidianLang is anything other than ja (including null)", () => {
+	it("resolves auto by prefix-matching a longer Obsidian language string (e.g. ja-JP)", () => {
+		expect(resolveLang("auto", "ja-JP")).toBe("ja");
+	});
+
+	it("resolves auto to English when obsidianLang is anything other than a registered locale's prefix (including null)", () => {
 		expect(resolveLang("auto", null)).toBe("en");
 		expect(resolveLang("auto", "en")).toBe("en");
 		expect(resolveLang("auto", "fr")).toBe("en");
@@ -59,23 +63,24 @@ describe("t (placeholder substitution)", () => {
 	});
 });
 
-describe("dictionary (ja and en have matching key sets)", () => {
-	it("resolves the same MessageKey in both languages", () => {
-		// `en` is declared as `Record<MessageKey, string>`, so the fact that this compiles
-		// already guarantees the key sets match. This also confirms at runtime that every
-		// key resolves to a non-empty string.
-		const sampleKeys: MessageKey[] = [
-			"action.newSession",
-			"common.untitled",
-			"error.claudeMissing",
-			"usage.md.title",
-			"settings.language.name",
-		];
-		for (const key of sampleKeys) {
-			setLang("ja");
-			expect(t(key).length).toBeGreaterThan(0);
-			setLang("en");
-			expect(t(key).length).toBeGreaterThan(0);
-		}
+describe("allLangs / languageOptions", () => {
+	it("lists every registered locale's code", () => {
+		expect(allLangs()).toEqual(["en", "ja"]);
+	});
+
+	it("shows each locale's own autonym, regardless of the current display language", () => {
+		setLang("ja");
+		const options = languageOptions();
+		expect(options.en).toBe("English");
+		expect(options.ja).toBe("日本語");
+		// "auto" isn't a language of its own, so it's translated like any other UI string.
+		expect(options.auto).toBe("自動");
+
+		setLang("en");
+		// The autonyms don't change when the display language does...
+		expect(languageOptions().en).toBe("English");
+		expect(languageOptions().ja).toBe("日本語");
+		// ...but "auto"'s label does.
+		expect(languageOptions().auto).toBe("Auto");
 	});
 });

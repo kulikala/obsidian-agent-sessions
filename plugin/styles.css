@@ -1197,11 +1197,24 @@
 
 .agent-sessions-status-connecting {
 	color: var(--text-faint);
-	animation: agent-sessions-spin 1s linear infinite;
 }
 
 .agent-sessions-status-working {
 	color: var(--text-accent);
+}
+
+/* The spin's `transform: rotate(...)` is applied to the lucide `<svg>` itself (not the wrapping
+   `.agent-sessions-row-mark`/`.workspace-tab-header-inner-icon` element it's toggled on) so that
+   `transform-box: fill-box` can make `transform-origin` mean "the center of the icon's own
+   rendered geometry" — otherwise the browser computes the default border-box origin from the
+   svg's viewBox coordinate space rather than its actual rendered size, which visibly rotates
+   around a point offset from the icon's circle (this is the same class selector reused by the
+   tab header, the side panel, and the manager's row marks — see `terminal-status.ts`'s
+   `terminalStatusClass`). */
+.agent-sessions-status-connecting svg,
+.agent-sessions-status-working svg {
+	transform-box: fill-box;
+	transform-origin: center;
 	animation: agent-sessions-spin 1s linear infinite;
 }
 
@@ -1251,8 +1264,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.agent-sessions-status-connecting,
-	.agent-sessions-status-working,
+	.agent-sessions-status-connecting svg,
+	.agent-sessions-status-working svg,
 	.agent-sessions-status-running-shell,
 	.agent-sessions-status-asking,
 	.agent-sessions-status-waiting {

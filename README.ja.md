@@ -119,6 +119,15 @@ cd ..
 python3 -W error -m unittest discover -s tests -t .   # Python（標準ライブラリのみ）
 ```
 
+### 言語を追加するには
+
+`plugin/src/i18n/locales/<code>.ts`（`Partial<Record<MessageKey, string>>` と、自称名を持つ
+`<CODE>_SELF_NAME` の組——`locales/ja.ts` を参照）と `agentsessions/i18n/locales/<code>.py`
+（`MESSAGES` 辞書——`locales/ja.py` を参照）を追加し、それぞれ1行ずつ `i18n/index.ts` の
+`LOCALES` と `i18n/__init__.py` の `_TABLES` に登録する。言語は不完全な状態から始めてよく、
+未対応のキーはどちらの側でも英語にフォールバックする。詳細は
+[`docs/design.md`](docs/design.md#17-i18n) を参照。
+
 ### リリース（メンテナ向け）
 
 ```sh
