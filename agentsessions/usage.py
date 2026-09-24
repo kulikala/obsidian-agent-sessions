@@ -4,7 +4,10 @@ Counts `message.usage` from `assistant` lines, de-duplicated by `message.id`.
 `isSidechain` and `isMeta` lines are skipped (same as `detail.read_detail`).
 Turns are split on `user` lines where `detail.is_human_prompt` is true.
 Any usage that appears before the first instruction is grouped into a single
-"(before first prompt)" turn.
+turn with `before_first=True` and an empty `prompt` — display text for that
+turn (e.g. "(before first prompt)") is the caller's job, so it can be shown
+in whichever language the UI is in; this module doesn't carry any display
+strings of its own.
 Lines where `message.model` is `<synthetic>` aren't counted.
 `cost` (via `pricing.cost`) and `tools` (tallying `tool_use` blocks in `content`
 by `name`) are accumulated per turn with the same de-duplication.
@@ -17,7 +20,6 @@ from typing import Dict, List, Optional
 
 from . import detail, pricing
 
-BEFORE_LABEL = '(before first prompt)'
 PROMPT_HEAD_LEN = 60
 
 
@@ -38,6 +40,7 @@ class Turn:
     last_ts: Optional[float] = None     # ts of the last assistant line counted within this turn
     context_last: int = 0               # input + cache_read + cache_create for that same call
     models: Dict[str, int] = field(default_factory=dict)
+    before_first: bool = False          # the synthetic turn for usage before the first prompt
 
     def to_dict(self) -> dict:
         return {
@@ -56,6 +59,7 @@ class Turn:
             'last_ts': self.last_ts,
             'context_last': self.context_last,
             'models': dict(self.models),
+            'before_first': self.before_first,
         }
 
 
@@ -125,7 +129,7 @@ def collect(path: str) -> List[dict]:
             target = current
             if target is None:
                 if before is None:
-                    before = Turn(index=-1, ts=None, prompt=BEFORE_LABEL)
+                    before = Turn(index=-1, ts=None, prompt='', before_first=True)
                 target = before
 
             model = message.get('model')
@@ -165,8 +169,8 @@ def summarize(turns: List[dict], from_ts: Optional[float] = None,
               to_ts: Optional[float] = None) -> dict:
     """Sum up `turns` (the output of `collect`). `from_ts`/`to_ts` are matched against
     each turn's start time (inclusive on both ends). If neither is given, all turns
-    are summed. A turn with no `ts` (the "(before first prompt)" turn) is excluded
-    from the total whenever a range is given.
+    are summed. A turn with no `ts` (the `before_first` turn) is excluded from the
+    total whenever a range is given.
 
     `total` also carries `cost`, `tools` (totals per name), `duration` (seconds from
     the first human instruction's ts to the last assistant line's ts), `first_ts`,

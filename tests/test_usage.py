@@ -34,7 +34,7 @@ def _user(ts, text, **flags):
 
 
 FIXTURE = [
-    # usage before the first instruction (goes into the "(before first prompt)" turn)
+    # usage before the first instruction (goes into the before_first turn)
     _assistant('2024-01-01T00:00:00.000Z', 'pre1', 'claude-3-x', {'input': 10, 'output': 5}),
     # isSidechain: not counted
     _assistant('2024-01-01T00:00:01.000Z', 'side1', 'claude-3-x', {'input': 999, 'output': 999},
@@ -86,8 +86,10 @@ class UsageTest(unittest.TestCase):
     def test_turn_count_and_labels(self):
         turns = usage.collect(self.path)
         self.assertEqual(len(turns), 4)
-        self.assertEqual(turns[0]['prompt'], usage.BEFORE_LABEL)
+        self.assertTrue(turns[0]['before_first'])
+        self.assertEqual(turns[0]['prompt'], '')
         self.assertIsNone(turns[0]['ts'])
+        self.assertFalse(turns[1]['before_first'])
         self.assertEqual(turns[1]['prompt'], 'first instruction')
         self.assertEqual(turns[2]['prompt'], 'second instruction')
         self.assertEqual(turns[3]['prompt'], 'third instruction')
