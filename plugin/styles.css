@@ -281,10 +281,18 @@
 	flex: 1 1 auto;
 	min-height: 0;
 	overflow-y: auto;
+	cursor: pointer;
 }
 
 .agent-sessions-manager-analysis.is-collapsed .agent-sessions-manager-analysis-body {
 	display: none;
+}
+
+/* Click-to-refresh feedback while `json stats` is being re-fetched (a real async round trip,
+   unlike the side panel's equivalent). */
+.agent-sessions-manager-analysis-body.is-refreshing {
+	cursor: progress;
+	opacity: 0.6;
 }
 
 .agent-sessions-manager-table-wrap {
@@ -951,27 +959,39 @@
 	font-size: var(--font-ui-smaller);
 	min-width: 0;
 	border-top: 1px solid var(--background-modifier-border);
+	cursor: pointer;
 }
 
+/* Click-to-refresh feedback (shared with the manager's analysis area). The read itself is
+   effectively instant, so this is held on for a minimum duration rather than tied to any real
+   loading state. */
+.agent-sessions-limits.is-refreshing {
+	cursor: progress;
+	opacity: 0.6;
+}
+
+/* Fixed columns (label, bar, %, countdown) so the bar's width never depends on how wide its
+   neighbors' text is — otherwise the 5h and 7d bars would end up different lengths depending on
+   digit count (e.g. "8%" vs "70%", or a countdown with a day count vs one without). */
 .agent-sessions-limits-row {
-	display: flex;
+	display: grid;
+	grid-template-columns: auto 1fr 3em 6.5em;
 	align-items: center;
-	gap: var(--size-4-2);
+	column-gap: var(--size-4-2);
 	min-width: 0;
 	padding: 2px 0;
 }
 
 .agent-sessions-limits-label {
-	flex: 0 0 auto;
 	color: var(--text-muted);
 }
 
 .agent-sessions-limits-bar {
-	flex: 1 1 auto;
 	height: 6px;
 	border-radius: var(--radius-s);
 	background-color: var(--background-modifier-border);
 	overflow: hidden;
+	min-width: 0;
 }
 
 .agent-sessions-limits-bar-fill {
@@ -980,13 +1000,13 @@
 }
 
 .agent-sessions-limits-pct {
-	flex: 0 0 auto;
 	text-align: right;
 	font-variant-numeric: tabular-nums;
 }
 
 .agent-sessions-limits-countdown {
-	flex: 0 0 auto;
+	text-align: right;
+	font-variant-numeric: tabular-nums;
 	color: var(--text-muted);
 }
 

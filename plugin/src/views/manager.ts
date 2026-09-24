@@ -90,6 +90,8 @@ export class ManagerView extends ItemView {
 	private analysisBodyEl!: HTMLElement;
 	private analysisHandleEl!: HTMLElement;
 	private analysisHeight = 240;
+	/** Guards `refreshStatsFromClick()` against overlapping calls from rapid clicks. */
+	private refreshingStats = false;
 
 	constructor(leaf: WorkspaceLeaf, plugin: AgentSessionsPlugin) {
 		super(leaf);
@@ -181,6 +183,26 @@ export class ManagerView extends ItemView {
 		this.render();
 	}
 
+	/**
+	 * Clicking the analytics area re-fetches `json stats` right away, rather than waiting for the
+	 * next scheduled fetch. Rapid clicks collapse into one (ignored while a fetch is already in
+	 * progress), and `is-refreshing` gives visible feedback while the request is in flight —
+	 * unlike `views/limits.ts`'s equivalent, this is a real async round trip, not just a flash.
+	 */
+	private async refreshStatsFromClick(): Promise<void> {
+		if (this.refreshingStats) {
+			return;
+		}
+		this.refreshingStats = true;
+		this.analysisBodyEl.addClass("is-refreshing");
+		try {
+			await this.refreshStats();
+		} finally {
+			this.refreshingStats = false;
+			this.analysisBodyEl.removeClass("is-refreshing");
+		}
+	}
+
 	private onActiveLeafChange(): void {
 		const activeLeaf = this.app.workspace.activeLeaf;
 		const state = activeLeaf?.view.getViewType() === VIEW_TYPE_TERMINAL ? activeLeaf.getViewState().state : undefined;
@@ -225,6 +247,8 @@ export class ManagerView extends ItemView {
 		this.analysisEl = this.contentEl.createDiv({ cls: "agent-sessions-manager-analysis" });
 		this.buildAnalysisHeader();
 		this.analysisBodyEl = this.analysisEl.createDiv({ cls: "agent-sessions-manager-analysis-body" });
+		this.registerDomEvent(this.analysisBodyEl, "click", () => void this.refreshStatsFromClick());
+		setTooltip(this.analysisBodyEl, t("action.clickToRefresh"));
 		this.buildStatsBar();
 		this.buildCategoryBar();
 
@@ -500,7 +524,11 @@ export class ManagerView extends ItemView {
 			cls: "agent-sessions-manager-category-bar-value",
 			text: t("stats.categoryBar.itemCost", { cost: formatCost(entry.cost), share }),
 		});
-		this.registerDomEvent(item, "click", () => this.scrollToCategory(entry.key));
+		this.registerDomEvent(item, "click", (evt) => {
+			// Keep this from also triggering the analysis area's click-to-refresh.
+			evt.stopPropagation();
+			this.scrollToCategory(entry.key);
+		});
 	}
 
 	/** Clicking the per-category bar: scrolls to and opens that group. For a category with no

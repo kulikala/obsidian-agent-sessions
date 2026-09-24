@@ -3,11 +3,14 @@
 // each file's last-written time (mtime) differs, this uses whichever file with `rate_limits`
 // was written most recently (assumes the account isn't being used from multiple places at
 // once). Updates the 5h/7d bars, usage percentage, and countdown to reset (shown as "—" when
-// `resets_at` is absent) once per second.
+// `resets_at` is absent) once per second, and re-reads the source files immediately on click.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { t } from "../i18n";
+
+/** How long the "is-refreshing" visual state stays on after a click (the read itself is near-instant). */
+const REFRESH_FLASH_MS = 200;
 
 export interface RateLimitWindow {
 	/** `null` means "just past reset, with no fresh `rate_limits` yet" (right after
@@ -116,20 +119,29 @@ function readLimitsFiles(statusDir: string): RawLimitsFile[] {
 	return out;
 }
 
-/** Draws two rows (5h and 7d), each a bar plus `NN%` plus "resets in h:mm:ss". */
+/** Draws two rows (5h and 7d), each a bar plus `NN%` plus the countdown to reset. Clicking re-reads the source files right away. */
 export class LimitsView {
+	private hostEl: HTMLElement;
 	private fiveHourEl!: HTMLElement;
 	private sevenDayEl!: HTMLElement;
 	private info: LimitsInfo | null = null;
 	private tickTimer: ReturnType<typeof setInterval> | null = null;
+	private refreshing = false;
+	private refreshFlashTimer: ReturnType<typeof setTimeout> | null = null;
 
 	constructor(
 		container: HTMLElement,
 		private statusDir: string
 	) {
-		const el = container.createDiv({ cls: "agent-sessions-limits" });
-		this.fiveHourEl = el.createDiv({ cls: "agent-sessions-limits-row" });
-		this.sevenDayEl = el.createDiv({ cls: "agent-sessions-limits-row" });
+		this.hostEl = container.createDiv({ cls: "agent-sessions-limits" });
+		this.fiveHourEl = this.hostEl.createDiv({ cls: "agent-sessions-limits-row" });
+		this.sevenDayEl = this.hostEl.createDiv({ cls: "agent-sessions-limits-row" });
+		this.hostEl.addEventListener("click", () => this.refreshFromClick());
+		// `obsidian`'s `setTooltip` is required lazily (same reason as `views/detail.ts`'s
+		// `makeIconButton`: so importing just the pure functions in tests doesn't fail trying to
+		// resolve `obsidian`).
+		const { setTooltip } = require("obsidian") as typeof import("obsidian");
+		setTooltip(this.hostEl, t("action.clickToRefresh"));
 		this.reload();
 		this.tickTimer = setInterval(() => this.render(), 1000);
 	}
@@ -140,10 +152,35 @@ export class LimitsView {
 		this.render();
 	}
 
+	/**
+	 * Clicking re-reads `status/*.json` right away, rather than waiting for the next automatic
+	 * refresh — note that the `rate_limits` values themselves only change when claude's own
+	 * statusLine hook next writes them, so this just re-reads whatever is currently on disk.
+	 * Rapid clicks collapse into one (ignored while a refresh is already in progress); the brief
+	 * `is-refreshing` class gives visible feedback even though the read itself is effectively instant.
+	 */
+	private refreshFromClick(): void {
+		if (this.refreshing) {
+			return;
+		}
+		this.refreshing = true;
+		this.hostEl.addClass("is-refreshing");
+		this.reload();
+		this.refreshFlashTimer = setTimeout(() => {
+			this.refreshing = false;
+			this.hostEl.removeClass("is-refreshing");
+			this.refreshFlashTimer = null;
+		}, REFRESH_FLASH_MS);
+	}
+
 	dispose(): void {
 		if (this.tickTimer) {
 			clearInterval(this.tickTimer);
 			this.tickTimer = null;
+		}
+		if (this.refreshFlashTimer) {
+			clearTimeout(this.refreshFlashTimer);
+			this.refreshFlashTimer = null;
 		}
 	}
 
@@ -165,9 +202,6 @@ export class LimitsView {
 		bar.style.width = `${pct}%`;
 		el.createSpan({ cls: "agent-sessions-limits-pct", text: w?.usedPercentage != null ? `${Math.round(w.usedPercentage)}%` : "—" });
 		const countdown = w?.resetsAt != null ? formatCountdown(w.resetsAt - Date.now() / 1000) : null;
-		el.createSpan({
-			cls: "agent-sessions-limits-countdown",
-			text: countdown != null ? t("stats.resetsIn", { countdown }) : "—",
-		});
+		el.createSpan({ cls: "agent-sessions-limits-countdown", text: countdown ?? "—" });
 	}
 }

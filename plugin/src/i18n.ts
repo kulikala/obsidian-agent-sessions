@@ -85,6 +85,7 @@ const ja = {
 	"action.matchFile": "ファイルに合わせる",
 	"action.write": "書き込む",
 	"action.copy": "コピー",
+	"action.clickToRefresh": "クリックで最新に更新",
 
 	// ---- Generic ----
 	"common.default": "デフォルト",
@@ -324,6 +325,7 @@ const en: Record<MessageKey, string> = {
 	"action.matchFile": "Match the file",
 	"action.write": "Write",
 	"action.copy": "Copy",
+	"action.clickToRefresh": "Click to refresh",
 
 	"common.default": "Default",
 	"common.none": "(none)",
