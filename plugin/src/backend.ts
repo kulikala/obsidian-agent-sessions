@@ -12,10 +12,11 @@ export class BackendError extends Error {}
 
 /**
  * `$SHELL` が無いときの既定のログインシェル（§4.2・§7 非macOS対応）。macOS は `zsh`
- * （既定シェル）、非 macOS は `bash`（大半のディストリビューションに入っている）。
+ * （既定シェル）。非 macOS は `bash` だと Ubuntu/WSL2 の一部・最小構成の環境に無いことが
+ * あるため `/bin/sh`（POSIX 準拠で `-l -c` も使え、ほぼすべての Linux にある）にする。
  */
 export function defaultLoginShell(isMac: boolean): string {
-	return isMac ? "/bin/zsh" : "/bin/bash";
+	return isMac ? "/bin/zsh" : "/bin/sh";
 }
 
 /** 設定の `agentSessionsPath` が空のときの既定（§6.9）。 */

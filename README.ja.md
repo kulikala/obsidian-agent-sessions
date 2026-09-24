@@ -21,7 +21,7 @@
 
 - macOS で動作確認。Linux（WSLg 上の Linux 版 Obsidian を含む）は対応（検証中）——ターミナルのキー割当と Python 側にプラットフォーム分岐を持つが、通しでの動作確認はまだ済んでいない。Windows はネイティブ非対応（WSLg 等で Linux 版 Obsidian を動かす形になる）。
 - Obsidian desktop、1.7.2 以降（`isDesktopOnly`。プロセスの起動と Unix ソケットを使うため）。
-- 標準ライブラリのみを使う Python 3.9 以降。通常は `/usr/bin/python3`（パスはプラグインの設定で変更できる）。
+- 標準ライブラリのみを使う Python 3.9 以降。`$PATH`（`python3`）から見つける（プラグインの設定でパスを指定すればそちらを使う）。
 - [Claude Code](https://claude.com/claude-code) CLI（インストール済みで `PATH` にあるか、プラグインの設定でパスを指定する）。
 - ソースからプラグインをビルドする場合のみ、Node.js と npm（[開発](#開発)を参照）。
 

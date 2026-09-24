@@ -26,7 +26,7 @@ describe("defaultLoginShell（非macOS対応：$SHELL が無いときの既定�
 		expect(defaultLoginShell(true)).toBe("/bin/zsh");
 	});
 
-	it("非 macOS は bash", () => {
-		expect(defaultLoginShell(false)).toBe("/bin/bash");
+	it("非 macOS は sh（bash が無い最小環境もあるため）", () => {
+		expect(defaultLoginShell(false)).toBe("/bin/sh");
 	});
 });

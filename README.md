@@ -21,7 +21,7 @@ Run and manage [Claude Code](https://claude.com/claude-code) sessions as termina
 
 - Tested on macOS. Linux (including Linux Obsidian under WSLg) is supported but not yet verified — the terminal keybindings and Python-side code have platform branches for it, but it hasn't been run end-to-end yet. Windows is not natively supported (Obsidian must be the Linux build, e.g. under WSLg).
 - Obsidian desktop, version 1.7.2 or later (`isDesktopOnly`, since the plugin spawns processes and opens Unix sockets).
-- Python 3.9+ using only the standard library, normally at `/usr/bin/python3` (the path is configurable in the plugin settings).
+- Python 3.9+ using only the standard library, found via `$PATH` (`python3`) unless a path is set in the plugin settings.
 - The [Claude Code](https://claude.com/claude-code) CLI, installed and either on your `PATH` or pointed to from the plugin settings.
 - Node.js and npm, only if you are building the plugin from source (see [Development](#development)).
 
