@@ -128,6 +128,8 @@ cd plugin && npm version patch   # or minor / major; updates plugin/manifest.jso
 git push && git push --tags
 ```
 
+`plugin/.npmrc` sets `tag-version-prefix=""`, so the tag `npm version` creates is the bare version number (e.g. `0.1.1`, not `v0.1.1`) — exactly matching `manifest.json`'s `version`, which is what Obsidian's release tooling expects.
+
 Pushing the tag runs `.github/workflows/release.yml`, which builds the plugin and attaches `main.js`, `manifest.json`, and `styles.css` to a draft GitHub Release. Review the draft, then publish it.
 
 ## License

@@ -126,6 +126,8 @@ cd plugin && npm version patch   # minor / major も可。plugin/manifest.json�
 git push && git push --tags
 ```
 
+`plugin/.npmrc` で `tag-version-prefix=""` を設定してあるので、`npm version` が打つタグは素のバージョン番号（`v0.1.1` ではなく `0.1.1`）——`manifest.json` の `version` と完全に一致する。Obsidian のリリース側のツールが期待する形。
+
 タグを push すると `.github/workflows/release.yml` が走り、プラグインをビルドして `main.js`・`manifest.json`・`styles.css` を GitHub Release の draft に添付する。draft の内容を確認してから公開する。
 
 ## ライセンス
