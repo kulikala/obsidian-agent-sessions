@@ -6,6 +6,7 @@ import {
 	formatEpoch,
 	formatK,
 	nextSelection,
+	promptOrBeforeFirst,
 	sumRange,
 	toMarkdown,
 } from "../src/usage";
@@ -324,5 +325,22 @@ describe("toMarkdown (for copying)", () => {
 	it("produces the same table whether from/to are swapped or not", () => {
 		const total = sumRange(TURNS, 0, 1);
 		expect(toMarkdown(TURNS, 0, 1, total)).toBe(toMarkdown(TURNS, 1, 0, total));
+	});
+
+	it("shows the before-first-prompt placeholder for a before_first turn instead of its (empty) prompt", () => {
+		const turns: UsageTurn[] = [turn({ index: 0, ts: 1700000000, prompt: "", before_first: true })];
+		const total = sumRange(turns, 0, 0);
+		const md = toMarkdown(turns, 0, 0, total);
+		expect(md).toContain("（開始前）");
+	});
+});
+
+describe("promptOrBeforeFirst", () => {
+	it("shows the turn's own prompt when before_first is unset", () => {
+		expect(promptOrBeforeFirst(turn({ index: 0, prompt: "hello" }))).toBe("hello");
+	});
+
+	it("shows the before-first-prompt placeholder when before_first is true, ignoring the (empty) prompt", () => {
+		expect(promptOrBeforeFirst(turn({ index: 0, prompt: "", before_first: true }))).toBe("（開始前）");
 	});
 });

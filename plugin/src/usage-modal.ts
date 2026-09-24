@@ -14,6 +14,7 @@ import {
 	formatEpoch,
 	formatK,
 	nextSelection,
+	promptOrBeforeFirst,
 	sumRange,
 	toMarkdown,
 } from "./usage";
@@ -116,11 +117,12 @@ export class UsageModal extends Modal {
 			const row = tbody.createEl("tr");
 			row.createEl("td", { text: String(turn.index) });
 			row.createEl("td", { text: formatEpoch(turn.ts), cls: "agent-sessions-usage-num" });
+			const promptText = promptOrBeforeFirst(turn) || t("usage.emptyPrompt");
 			const promptTd = row.createEl("td", {
 				cls: "agent-sessions-usage-prompt",
-				text: turn.prompt || t("usage.emptyPrompt"),
+				text: promptText,
 			});
-			promptTd.setAttribute("title", turn.prompt);
+			promptTd.setAttribute("title", promptText);
 			row.createEl("td", {
 				text: formatK(turn.input + turn.cache_read + turn.cache_create),
 				cls: "agent-sessions-usage-num",

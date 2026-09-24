@@ -85,6 +85,8 @@ export interface UsageTurn {
 	index: number;
 	ts: number | null;
 	prompt: string;
+	/** True for the pseudo-turn representing everything before the first real prompt (`prompt` is empty in that case). */
+	before_first?: boolean;
 	calls: number;
 	input: number;
 	cache_create: number;

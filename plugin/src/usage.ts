@@ -175,6 +175,15 @@ function escapeCell(text: string): string {
 }
 
 /**
+ * The prompt text to show for a turn. `before_first` marks the pseudo-turn that stands in for
+ * everything before the first real prompt (its `prompt` is empty), so that gets a dedicated
+ * placeholder instead of falling through to "(empty)".
+ */
+export function promptOrBeforeFirst(turn: UsageTurn): string {
+	return turn.before_first ? t("usage.beforeFirstPrompt") : turn.prompt;
+}
+
+/**
  * Formats the card values (cost, tokens, turn count, duration) and the selected range's turn
  * table as Markdown, for copying. "Input" is uncached + cache read + cache create, same
  * definition as the card.
@@ -200,7 +209,7 @@ export function toMarkdown(turns: UsageTurn[], from: number, to: number, total: 
 	for (const t of rows) {
 		const input = t.input + t.cache_read + t.cache_create;
 		lines.push(
-			`| ${t.index} | ${formatEpoch(t.ts)} | ${escapeCell(t.prompt)} | ${formatK(input)} | ` +
+			`| ${t.index} | ${formatEpoch(t.ts)} | ${escapeCell(promptOrBeforeFirst(t))} | ${formatK(input)} | ` +
 				`${formatK(t.output)} | ${formatCost(t.cost)} |`
 		);
 	}
