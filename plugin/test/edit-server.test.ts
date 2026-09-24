@@ -1,5 +1,5 @@
-// 実ソケットで `EditServer` の往復（D-21）。ソケットは `/tmp/as-<pid>-<hex>/` に置く
-// （Unix ソケットのパスは 104 バイト未満）。
+// Round-trips `EditServer` over a real socket. The socket lives under `/tmp/as-<pid>-<hex>/`
+// (Unix socket paths must stay under 104 bytes).
 
 import { randomBytes } from "node:crypto";
 import { mkdirSync, rmSync, statSync } from "node:fs";
@@ -45,7 +45,7 @@ function editBody(session = "s1"): Record<string, unknown> {
 	return { op: "edit", seq: 1, file: "/tmp/x.md", session, cwd: "/v" };
 }
 
-describe("EditServer（D-21）", () => {
+describe("EditServer", () => {
 	let dir: string;
 	let sockPath: string;
 	let server: EditServer;
@@ -62,7 +62,7 @@ describe("EditServer（D-21）", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("listen 後にソケットは 0600、edit → ok:true で閉じる", async () => {
+	it("the socket is 0600 after listen; an edit request replies ok:true and closes", async () => {
 		const seen: EditRequest[] = [];
 		server.onEdit((req, reply) => {
 			seen.push(req);
@@ -79,7 +79,7 @@ describe("EditServer（D-21）", () => {
 		expect(seen[0]).toMatchObject({ file: "/tmp/x.md", session: "s1", cwd: "/v" });
 	});
 
-	it("no-tab と busy と cancel を error で返す", async () => {
+	it("returns no-tab, busy, and cancel as errors", async () => {
 		server.onEdit((req, reply) => {
 			if (req.session === "none") {
 				reply(false, "no-tab");
@@ -102,7 +102,7 @@ describe("EditServer（D-21）", () => {
 		}
 	});
 
-	it("応答の前に相手が切れたら onAbort を呼ぶ（reply は届かない）", async () => {
+	it("calls onAbort if the peer disconnects before a reply is sent (the reply never arrives)", async () => {
 		let aborted = 0;
 		let pendingReply: EditReply | null = null;
 		server.onEdit((req, reply) => {
@@ -124,7 +124,7 @@ describe("EditServer（D-21）", () => {
 		expect(aborted).toBe(1);
 	});
 
-	it("op:cancel でも onAbort を呼ぶ", async () => {
+	it("also calls onAbort on op:cancel", async () => {
 		let aborted = 0;
 		server.onEdit((req) => {
 			req.onAbort = () => {
@@ -141,9 +141,9 @@ describe("EditServer（D-21）", () => {
 		expect(aborted).toBe(1);
 	});
 
-	it("stop() は応答待ちに cancel を返し、ソケットを消す", async () => {
+	it("stop() replies cancel to any pending request and removes the socket", async () => {
 		server.onEdit(() => {
-			// 応答しない（編集中のまま）。
+			// Never reply (leaves the edit pending).
 		});
 		await server.start(sockPath);
 
@@ -156,7 +156,7 @@ describe("EditServer（D-21）", () => {
 		expect(server.listening).toBe(false);
 	});
 
-	it("start() は古いソケットを消して listen し直す", async () => {
+	it("start() removes a stale socket file and listens again", async () => {
 		server.onEdit((_req, reply) => reply(true));
 		await server.start(sockPath);
 		server.stop();
@@ -170,22 +170,22 @@ describe("EditServer（D-21）", () => {
 	});
 });
 
-describe("editReplyFor・submitsAfterEdit（D-51）", () => {
-	it("送る・入力欄に戻るは ok、取消・busy はその名のエラー", () => {
+describe("editReplyFor / submitsAfterEdit", () => {
+	it("send and return-to-input are ok; cancel and busy are errors named after themselves", () => {
 		expect(editReplyFor("send")).toEqual({ ok: true });
 		expect(editReplyFor("return")).toEqual({ ok: true });
 		expect(editReplyFor("cancel")).toEqual({ ok: false, error: "cancel" });
 		expect(editReplyFor("busy")).toEqual({ ok: false, error: "busy" });
 	});
 
-	it("送信列を続けるのはプロンプト編集の一時ファイルだけ", () => {
+	it("only a prompt-edit temp file continues on to submit", () => {
 		expect(submitsAfterEdit("/var/folders/x/T/claude-prompt-1234-abcd.md")).toBe(true);
 		expect(submitsAfterEdit("/Users/x/.claude/keybindings.json")).toBe(false);
 		expect(submitsAfterEdit("/v/CLAUDE.md")).toBe(false);
 		expect(submitsAfterEdit("/tmp/claude-prompt-dir/notes.md")).toBe(false);
 	});
 
-	it("ソケット越しに、送る／入力欄に戻るは ok:true、取消は ok:false,error:cancel が届く", async () => {
+	it("over the socket, send/return arrive as ok:true and cancel arrives as ok:false with error:cancel", async () => {
 		const dir = `/tmp/as-${process.pid}-${randomBytes(3).toString("hex")}`;
 		mkdirSync(dir, { recursive: true });
 		const sockPath = join(dir, "p.sock");

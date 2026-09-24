@@ -27,75 +27,76 @@ function row(overrides: Partial<Row> & Pick<Row, "id">): Row {
 	};
 }
 
-/** `resolveRowStatus` は `source.terminalStatuses` を見るだけなので、id→状態の Map で
- * 直接組み立てられる（`asking` はまだ `TerminalStatus` に無いので文字列のまま渡す）。 */
+/** `resolveRowStatus` only looks at `source.terminalStatuses`, so it can be built
+ * directly from an id → state map (`asking` isn't in `TerminalStatus` yet, so it's
+ * passed through as a plain string). */
 function source(statuses: Record<string, string>): { terminalStatuses: Map<string, TerminalStatus> } {
 	return { terminalStatuses: new Map(Object.entries(statuses)) as Map<string, TerminalStatus> };
 }
 
-describe("attentionCounts（T-78）", () => {
-	it("asking・waiting をそれぞれ数える", () => {
+describe("attentionCounts", () => {
+	it("counts asking and waiting separately", () => {
 		const rows = [row({ id: "a" }), row({ id: "b" }), row({ id: "c" }), row({ id: "d" })];
 		const counts = attentionCounts(source({ a: "asking", b: "waiting", c: "waiting", d: "idle" }), rows);
 		expect(counts.asking).toBe(1);
 		expect(counts.waiting).toBe(2);
 	});
 
-	it("どちらも無ければ 0・jumpToId は null", () => {
+	it("is 0 for both and jumpToId is null when neither is present", () => {
 		const rows = [row({ id: "a" }), row({ id: "b" })];
 		const counts = attentionCounts(source({ a: "idle", b: "working" }), rows);
 		expect(counts).toEqual({ asking: 0, waiting: 0, jumpToId: null });
 	});
 
-	it("jumpToId は asking を優先する（並びで waiting が先でも）", () => {
+	it("prefers asking for jumpToId (even when waiting appears first in the list)", () => {
 		const rows = [row({ id: "a" }), row({ id: "b" })];
 		const counts = attentionCounts(source({ a: "waiting", b: "asking" }), rows);
 		expect(counts.jumpToId).toBe("b");
 	});
 
-	it("asking が無ければ最初の waiting", () => {
+	it("falls back to the first waiting entry when there is no asking", () => {
 		const rows = [row({ id: "a" }), row({ id: "b" })];
 		const counts = attentionCounts(source({ a: "idle", b: "waiting" }), rows);
 		expect(counts.jumpToId).toBe("b");
 	});
 
-	it("同じ状態が複数あれば最初の 1 件だけを jumpToId にする", () => {
+	it("uses only the first match as jumpToId when multiple rows share the same state", () => {
 		const rows = [row({ id: "a" }), row({ id: "b" })];
 		const counts = attentionCounts(source({ a: "asking", b: "asking" }), rows);
 		expect(counts.jumpToId).toBe("a");
 	});
 });
 
-describe("urgencyByGroupKey（T-78）", () => {
+describe("urgencyByGroupKey", () => {
 	const keyOf = (r: Row): string => r.folder;
 
-	it("グループごとに最優先の状態（asking > waiting）を持つ", () => {
+	it("holds the highest-priority state per group (asking > waiting)", () => {
 		const rows = [
 			row({ id: "a", folder: "g1" }),
 			row({ id: "b", folder: "g1" }),
 			row({ id: "c", folder: "g2" }),
 		];
 		const map = urgencyByGroupKey(source({ a: "waiting", b: "asking", c: "waiting" }), rows, keyOf);
-		expect(map.get("g1")).toBe("asking"); // waiting と asking が混在 → asking が勝つ
+		expect(map.get("g1")).toBe("asking"); // waiting and asking are mixed → asking wins
 		expect(map.get("g2")).toBe("waiting");
 	});
 
-	it("該当が無いグループは鍵を持たない", () => {
+	it("does not have a key for a group with no matching rows", () => {
 		const rows = [row({ id: "a", folder: "g1" })];
 		const map = urgencyByGroupKey(source({ a: "idle" }), rows, keyOf);
 		expect(map.has("g1")).toBe(false);
 		expect(map.size).toBe(0);
 	});
 
-	it("折畳（rows に子が含まれない状態）とは無関係に、渡された rows 全体から数える", () => {
-		// マネージャーが畳んだグループの子も渡せば拾える、という契約を確認するだけ
-		// （折畳の判定自体は呼出側の責務）。
+	it("counts across all rows passed in, regardless of whether children are collapsed out of rows", () => {
+		// Just confirms the contract that a collapsed group's children are still
+		// picked up if included in rows (deciding what's collapsed is the caller's job).
 		const rows = [row({ id: "a", folder: "g1" })];
 		const map = urgencyByGroupKey(source({ a: "asking" }), rows, keyOf);
 		expect(map.get("g1")).toBe("asking");
 	});
 
-	it("アーカイブ済みは数えない", () => {
+	it("does not count archived rows", () => {
 		const rows = [row({ id: "a", folder: "g1", archived: true })];
 		const map = urgencyByGroupKey(source({ a: "asking" }), rows, keyOf);
 		expect(map.has("g1")).toBe(false);

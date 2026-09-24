@@ -24,7 +24,7 @@ function tmpDir(prefix: string): string {
 	return mkdtempSync(join(tmpdir(), prefix));
 }
 
-describe("loadStore / updateStore 往復", () => {
+describe("loadStore / updateStore round-trip", () => {
 	let dir: string;
 	let storePath: string;
 
@@ -37,7 +37,7 @@ describe("loadStore / updateStore 往復", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("書いたものをそのまま読める", () => {
+	it("reads back exactly what was written", () => {
 		updateStore(storePath, (store) => {
 			store.folded.push("RIM");
 			store.archived.push({ id: "a", name: "x", agent: "claude" });
@@ -55,20 +55,22 @@ describe("loadStore / updateStore 往復", () => {
 		});
 	});
 
-	it("無いファイルは空の Store", () => {
+	it("returns an empty Store when the file is missing", () => {
 		expect(loadStore(join(dir, "missing.json"))).toEqual(emptyStore());
 	});
 
-	it("categoryColors を落とさず書いたものをそのまま読める（T-70）", () => {
+	it("reads back categoryColors without dropping entries", () => {
 		updateStore(storePath, (store) => {
 			store.categoryColors.RIM = 3;
+			// Japanese fixture: categoryColors keys are free-form category names, so this
+			// exercises round-tripping a non-ASCII key.
 			store.categoryColors["スキル開発"] = 0;
 		});
 
 		expect(loadStore(storePath).categoryColors).toEqual({ RIM: 3, スキル開発: 0 });
 	});
 
-	it("親ディレクトリが無い状態から update できる（.agents/sessions/ がまだ無い vault）", () => {
+	it("can update when the parent directory doesn't exist yet (a vault with no .agents/sessions/ yet)", () => {
 		const nested = join(dir, ".agents", "sessions", "sessions.json");
 		expect(existsSync(join(dir, ".agents"))).toBe(false);
 
@@ -79,7 +81,7 @@ describe("loadStore / updateStore 往復", () => {
 		expect(loadStore(nested).folded).toEqual(["RIM"]);
 	});
 
-	it("壊れた JSON は退避して空の Store を返す", () => {
+	it("quarantines broken JSON and returns an empty Store", () => {
 		writeFileSync(storePath, "{not json", "utf8");
 
 		expect(loadStore(storePath)).toEqual(emptyStore());
@@ -89,7 +91,7 @@ describe("loadStore / updateStore 往復", () => {
 		expect(readFileSync(join(dir, broken[0]), "utf8")).toBe("{not json");
 	});
 
-	it("オブジェクトでない JSON も壊れた扱い", () => {
+	it("treats JSON that isn't an object as broken too", () => {
 		writeFileSync(storePath, "[1, 2, 3]", "utf8");
 
 		expect(loadStore(storePath)).toEqual(emptyStore());
@@ -98,7 +100,7 @@ describe("loadStore / updateStore 往復", () => {
 	});
 });
 
-describe("ロック", () => {
+describe("locking", () => {
 	let dir: string;
 	let storePath: string;
 	let lockPath: string;
@@ -113,7 +115,7 @@ describe("ロック", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("2 秒（既定）で取れなければ StoreLockError", () => {
+	it("throws StoreLockError if the lock can't be acquired within the (default) 2 seconds", () => {
 		mkdirSync(lockPath);
 		try {
 			expect(() => updateStore(storePath, () => {}, { timeoutMs: 200, retryIntervalMs: 50 })).toThrow(
@@ -124,7 +126,7 @@ describe("ロック", () => {
 		}
 	});
 
-	it("10 秒より古いロックは壊れたものとして消し、取り直す", () => {
+	it("treats a lock older than 10 seconds as stale, removes it, and reacquires", () => {
 		mkdirSync(lockPath);
 		const old = new Date(Date.now() - 20000);
 		utimesSync(lockPath, old, old);
@@ -143,8 +145,8 @@ describe("ロック", () => {
 	});
 });
 
-describe("updateStore の排他（2 プロセス）", () => {
-	it("同時に書いても更新を失わない", async () => {
+describe("updateStore mutual exclusion (2 processes)", () => {
+	it("doesn't lose updates when writing concurrently", async () => {
 		const dir = tmpDir("agent-sessions-concurrency-");
 		const bundlePath = join(dir, "store.bundle.cjs");
 		buildSync({
@@ -187,14 +189,14 @@ describe("migrateFromMarkdown", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("folded と hidden を folded／archived に写す（引用符あり・無し混在）", () => {
+	it("copies folded and hidden into folded/archived (mixing quoted and unquoted entries)", () => {
 		const md = [
 			"---",
 			"folded:",
 			'  - "RIM"',
-			"  - その他のセッション",
+			"  - Other session",
 			"hidden:",
-			'  - "5778f81f-0be9-4744-aa4c-9f6d5211bd5c | 酔い酒鮨庵"',
+			'  - "5778f81f-0be9-4744-aa4c-9f6d5211bd5c | Late night sushi"',
 			"---",
 			"# Claude sessions",
 			"",
@@ -205,15 +207,15 @@ describe("migrateFromMarkdown", () => {
 
 		const result = migrateFromMarkdown(mdPath, storePath);
 
-		expect(result?.folded).toEqual(["RIM", "その他のセッション"]);
+		expect(result?.folded).toEqual(["RIM", "Other session"]);
 		expect(result?.archived).toEqual([
-			{ id: "5778f81f-0be9-4744-aa4c-9f6d5211bd5c", name: "酔い酒鮨庵", agent: "claude" },
+			{ id: "5778f81f-0be9-4744-aa4c-9f6d5211bd5c", name: "Late night sushi", agent: "claude" },
 		]);
 		expect(result?.migratedFrom?.path).toBe(mdPath);
 		expect(loadStore(storePath)).toEqual(result);
 	});
 
-	it("sessions.json が既にあれば何もしない", () => {
+	it("does nothing when sessions.json already exists", () => {
 		const mdPath = join(dir, "claude-sessions.md");
 		const storePath = join(dir, "sessions.json");
 		writeFileSync(mdPath, "---\nfolded:\n  - RIM\n---\n", "utf8");
@@ -226,28 +228,29 @@ describe("migrateFromMarkdown", () => {
 		expect(loadStore(storePath)).toEqual(before);
 	});
 
-	it("md が無ければ何もしない", () => {
+	it("does nothing when the markdown file doesn't exist", () => {
 		const storePath = join(dir, "sessions.json");
 
 		expect(migrateFromMarkdown(join(dir, "missing.md"), storePath)).toBeNull();
 		expect(existsSync(storePath)).toBe(false);
 	});
 
-	it("frontmatter の後にテーブル本体が続いていても、archived は hidden の一覧だけで決まる", () => {
-		// テーブル本体（`| 名前 | ... | id |` の行）は `migrateFromMarkdown` が読まない
-		// （見るのは frontmatter の `hidden:` だけ）——本体があっても無視されることを確認する。
+	it("determines archived from the hidden list alone, even when a table body follows the frontmatter", () => {
+		// migrateFromMarkdown doesn't read the table body (the `| name | ... | id |` rows) —
+		// it only looks at `hidden:` in the frontmatter — so confirm the body is ignored even
+		// when present.
 		const md = [
 			"---",
 			"folded:",
 			'  - "RIM"',
 			"hidden:",
-			'  - "5778f81f-0be9-4744-aa4c-9f6d5211bd5c | 酔い酒鮨庵"',
+			'  - "5778f81f-0be9-4744-aa4c-9f6d5211bd5c | Late night sushi"',
 			"---",
 			"# Claude sessions",
 			"",
-			"| 名前 | フォルダ | 更新 | ID |",
+			"| Name | Folder | Updated | ID |",
 			"|---|---|---|---|",
-			"| 別のセッション | v | 2026-01-01 12:00 | 11111111-1111-1111-1111-111111111111 |",
+			"| Another session | v | 2026-01-01 12:00 | 11111111-1111-1111-1111-111111111111 |",
 			"",
 		].join("\n");
 		const mdPath = join(dir, "claude-sessions.md");
@@ -257,7 +260,7 @@ describe("migrateFromMarkdown", () => {
 		const result = migrateFromMarkdown(mdPath, storePath);
 
 		expect(result?.archived).toEqual([
-			{ id: "5778f81f-0be9-4744-aa4c-9f6d5211bd5c", name: "酔い酒鮨庵", agent: "claude" },
+			{ id: "5778f81f-0be9-4744-aa4c-9f6d5211bd5c", name: "Late night sushi", agent: "claude" },
 		]);
 	});
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_SETTINGS, defaultFontFamily, mergeSettings, SUBMIT_KEYS_NON_MAC } from "../src/settings";
 
 describe("DEFAULT_SETTINGS", () => {
-	it("§6.9 の既定値を持つ", () => {
+	it("has the expected default values", () => {
 		expect(DEFAULT_SETTINGS).toEqual({
 			fontFamily: 'Menlo, "Hiragino Sans", monospace',
 			fontSize: 13,
@@ -22,54 +22,54 @@ describe("DEFAULT_SETTINGS", () => {
 	});
 });
 
-describe("mergeSettings（D-50）", () => {
-	it("廃止した newlineKey と、今の型に無い旧 submitKey は捨てる", () => {
+describe("mergeSettings", () => {
+	it("drops the removed newlineKey and an old submitKey value no longer in the current type", () => {
 		const merged = mergeSettings({ newlineKey: "enter", submitKey: "super+enter", fontSize: 15 });
 		expect(merged).not.toHaveProperty("newlineKey");
 		expect(merged.submitKey).toBe("enter");
 		expect(merged.fontSize).toBe(15);
 	});
 
-	it("今の型の submitKey は保つ", () => {
+	it("keeps a submitKey value that's in the current type", () => {
 		expect(mergeSettings({ submitKey: "cmd+enter" }).submitKey).toBe("cmd+enter");
 	});
 
-	it("保存データが無ければ既定値", () => {
+	it("falls back to defaults when there's no saved data", () => {
 		expect(mergeSettings(null)).toEqual(DEFAULT_SETTINGS);
 	});
 });
 
-describe("mergeSettings（非macOS対応）", () => {
-	it("非 macOS の新規インストール（保存データ無し）は非 macOS の既定フォント", () => {
+describe("mergeSettings (non-macOS support)", () => {
+	it("uses the non-macOS default font on a fresh non-macOS install (no saved data)", () => {
 		expect(mergeSettings(null, false).fontFamily).toBe(defaultFontFamily(false));
 	});
 
-	it("非 macOS でも fontFamily が既に保存されていれば変えない（macOS で保存した値のまま）", () => {
+	it("does not change fontFamily on non-macOS when one is already saved (keeps the value saved on macOS)", () => {
 		const merged = mergeSettings({ fontFamily: 'Menlo, "Hiragino Sans", monospace' }, false);
 		expect(merged.fontFamily).toBe('Menlo, "Hiragino Sans", monospace');
 	});
 
-	it("非 macOS では cmd+enter を捨てて既定（enter）に戻す", () => {
+	it("drops cmd+enter on non-macOS and falls back to the default (enter)", () => {
 		expect(mergeSettings({ submitKey: "cmd+enter" }, false).submitKey).toBe("enter");
 	});
 
-	it("macOS（既定の呼び出し）では cmd+enter を保つ", () => {
+	it("keeps cmd+enter on macOS (the default call)", () => {
 		expect(mergeSettings({ submitKey: "cmd+enter" }).submitKey).toBe("cmd+enter");
 	});
 });
 
-describe("defaultFontFamily（非macOS対応。Menlo は Linux に無い）", () => {
-	it("macOS は Menlo", () => {
+describe("defaultFontFamily (non-macOS support; Menlo isn't available on Linux)", () => {
+	it("is Menlo on macOS", () => {
 		expect(defaultFontFamily(true)).toBe('Menlo, "Hiragino Sans", monospace');
 	});
 
-	it("非 macOS は CJK 幅の揃うフォント", () => {
+	it("is a font with matching CJK widths on non-macOS", () => {
 		expect(defaultFontFamily(false)).toBe('"DejaVu Sans Mono", "Noto Sans Mono CJK JP", monospace');
 	});
 });
 
 describe("SUBMIT_KEYS_NON_MAC", () => {
-	it("cmd+enter を含まない", () => {
+	it("does not include cmd+enter", () => {
 		expect(SUBMIT_KEYS_NON_MAC).toEqual(["enter", "shift+enter", "ctrl+enter", "alt+enter"]);
 	});
 });

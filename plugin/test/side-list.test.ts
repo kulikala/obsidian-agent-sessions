@@ -31,17 +31,17 @@ function leaf(id: string | undefined): TerminalLeafLike {
 }
 
 describe("leafIdsOf", () => {
-	it("state.id が文字列の leaf だけ、その順で拾う", () => {
+	it("picks up only leaves whose state.id is a string, in that order", () => {
 		expect(leafIdsOf([leaf("a"), leaf(undefined), leaf("b")])).toEqual(["a", "b"]);
 	});
 
-	it("leaf が無ければ空配列", () => {
+	it("is an empty array when there are no leaves", () => {
 		expect(leafIdsOf([])).toEqual([]);
 	});
 });
 
 describe("computeSideList", () => {
-	it("開いているタブはタブの順、起動中・最近は最終更新順に区分けする", () => {
+	it("sorts open tabs in tab order, and running/recent by last-updated order", () => {
 		const sessions = new Map<string, Row>([
 			["a", row({ id: "a", daemon: true, last_activity: 10 })],
 			["b", row({ id: "b", daemon: true, last_activity: 20 })],
@@ -52,15 +52,15 @@ describe("computeSideList", () => {
 
 		const list = computeSideList(sessions, leaves, 10);
 
-		// 開いているタブ：タブの順（leaves の並び）。
+		// Open tabs: in tab order (the order of leaves).
 		expect(list.openTabs.map((r) => r.id)).toEqual(["b", "a"]);
-		// 起動中：タブが無い daemon 行は無い（a・b とも開いている）。
+		// Running: no daemon row without a tab (both a and b are already open).
 		expect(list.running).toEqual([]);
-		// 最近：残り（c, d）を最終更新順。
+		// Recent: the rest (c, d), by last-updated order.
 		expect(list.recent.map((r) => r.id)).toEqual(["c", "d"]);
 	});
 
-	it("recentCount で最近の件数を絞る", () => {
+	it("limits the recent count via recentCount", () => {
 		const sessions = new Map<string, Row>(
 			Array.from({ length: 5 }, (_, i) => [String(i), row({ id: String(i), last_activity: i })])
 		);

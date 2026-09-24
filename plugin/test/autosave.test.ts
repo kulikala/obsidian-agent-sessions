@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SaveDebouncer } from "../src/autosave";
 
-describe("SaveDebouncer（T-75：内蔵エディタの自動保存）", () => {
+describe("SaveDebouncer (autosave for the built-in editor)", () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
 	});
@@ -10,7 +10,7 @@ describe("SaveDebouncer（T-75：内蔵エディタの自動保存）", () => {
 		vi.useRealTimers();
 	});
 
-	it("schedule から ms 経つと run が 1 回呼ばれる", () => {
+	it("calls run once after ms has passed since schedule", () => {
 		const run = vi.fn();
 		const d = new SaveDebouncer(800, run);
 		d.schedule();
@@ -20,7 +20,7 @@ describe("SaveDebouncer（T-75：内蔵エディタの自動保存）", () => {
 		expect(run).toHaveBeenCalledTimes(1);
 	});
 
-	it("ms の間に連続で schedule すると、最後の 1 回から ms 経ってはじめて run が 1 回だけ呼ばれる（debounce）", () => {
+	it("calls run only once, ms after the last schedule call, when scheduled repeatedly within ms (debounce)", () => {
 		const run = vi.fn();
 		const d = new SaveDebouncer(800, run);
 		d.schedule();
@@ -34,7 +34,7 @@ describe("SaveDebouncer（T-75：内蔵エディタの自動保存）", () => {
 		expect(run).toHaveBeenCalledTimes(1);
 	});
 
-	it("flush は待っているタイマーを解除してから即 run を呼ぶ（確定が自動保存を待たない）", () => {
+	it("flush cancels the pending timer and calls run immediately (an explicit save doesn't wait for autosave)", () => {
 		const run = vi.fn();
 		const d = new SaveDebouncer(800, run);
 		d.schedule();
@@ -42,19 +42,19 @@ describe("SaveDebouncer（T-75：内蔵エディタの自動保存）", () => {
 		d.flush();
 		expect(run).toHaveBeenCalledTimes(1);
 
-		// 解除したタイマーは後から発火しない＝二重に書かれない。
+		// The cancelled timer never fires later, so the save isn't written twice.
 		vi.advanceTimersByTime(1000);
 		expect(run).toHaveBeenCalledTimes(1);
 	});
 
-	it("flush は待っているタイマーが無くても run を呼ぶ（入力していなくても確定は書く）", () => {
+	it("flush calls run even when no timer is pending (an explicit save writes even without prior input)", () => {
 		const run = vi.fn();
 		const d = new SaveDebouncer(800, run);
 		d.flush();
 		expect(run).toHaveBeenCalledTimes(1);
 	});
 
-	it("cancel は待っているタイマーを消すだけで run は呼ばない（取消は元の内容を別に書く）", () => {
+	it("cancel only clears the pending timer and does not call run (a cancel writes the original content separately)", () => {
 		const run = vi.fn();
 		const d = new SaveDebouncer(800, run);
 		d.schedule();
@@ -63,7 +63,7 @@ describe("SaveDebouncer（T-75：内蔵エディタの自動保存）", () => {
 		expect(run).not.toHaveBeenCalled();
 	});
 
-	it("flush の後に schedule すると、また新しいタイマーで run が呼ばれる", () => {
+	it("calling schedule after flush starts a new timer that calls run again", () => {
 		const run = vi.fn();
 		const d = new SaveDebouncer(800, run);
 		d.schedule();
@@ -75,7 +75,7 @@ describe("SaveDebouncer（T-75：内蔵エディタの自動保存）", () => {
 		expect(run).toHaveBeenCalledTimes(2);
 	});
 
-	it("pending はタイマーが待っている間だけ true", () => {
+	it("pending is true only while a timer is waiting", () => {
 		const d = new SaveDebouncer(800, () => undefined);
 		expect(d.pending).toBe(false);
 		d.schedule();
@@ -84,7 +84,7 @@ describe("SaveDebouncer（T-75：内蔵エディタの自動保存）", () => {
 		expect(d.pending).toBe(false);
 	});
 
-	it("pending は flush・cancel の後は false", () => {
+	it("pending is false after flush or cancel", () => {
 		const d = new SaveDebouncer(800, () => undefined);
 		d.schedule();
 		d.flush();

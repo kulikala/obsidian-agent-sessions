@@ -17,44 +17,44 @@ describe("writeUiState", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("submitKey と対応する記号を ui.json に書く", () => {
+	it("writes submitKey and its matching symbol to ui.json", () => {
 		writeUiState(runtimeDir, "cmd+enter");
 		const data = JSON.parse(readFileSync(join(runtimeDir, "ui.json"), "utf8"));
 		expect(data).toEqual({ submitKey: "cmd+enter", submitSymbol: "⌘⏎" });
 	});
 
-	it("enter は ⏎", () => {
+	it("maps enter to ⏎", () => {
 		writeUiState(runtimeDir, "enter");
 		const data = JSON.parse(readFileSync(join(runtimeDir, "ui.json"), "utf8"));
 		expect(data.submitSymbol).toBe("⏎");
 	});
 
-	it("ディレクトリが無ければ作る", () => {
+	it("creates the directory if it doesn't exist", () => {
 		expect(existsSync(runtimeDir)).toBe(false);
 		writeUiState(runtimeDir, "shift+enter");
 		expect(existsSync(join(runtimeDir, "ui.json"))).toBe(true);
 	});
 
-	it("tmp ファイルを残さない", () => {
+	it("doesn't leave a tmp file behind", () => {
 		writeUiState(runtimeDir, "ctrl+enter");
 		const files = readdirSync(runtimeDir);
 		expect(files).toEqual(["ui.json"]);
 	});
 
-	it("書き直すと上書きされる", () => {
+	it("overwrites the file when written again", () => {
 		writeUiState(runtimeDir, "enter");
 		writeUiState(runtimeDir, "alt+enter");
 		const data = JSON.parse(readFileSync(join(runtimeDir, "ui.json"), "utf8"));
 		expect(data).toEqual({ submitKey: "alt+enter", submitSymbol: "⌥⏎" });
 	});
 
-	it("非 macOS は短い文字表記（statusLine 用。§14 非macOS対応）", () => {
+	it("uses short text symbols on non-macOS (for the status line)", () => {
 		writeUiState(runtimeDir, "ctrl+enter", false);
 		const data = JSON.parse(readFileSync(join(runtimeDir, "ui.json"), "utf8"));
 		expect(data).toEqual({ submitKey: "ctrl+enter", submitSymbol: "C-⏎" });
 	});
 
-	it("非 macOS の enter は macOS と同じ ⏎", () => {
+	it("still maps non-macOS enter to the same ⏎ as macOS", () => {
 		writeUiState(runtimeDir, "enter", false);
 		const data = JSON.parse(readFileSync(join(runtimeDir, "ui.json"), "utf8"));
 		expect(data.submitSymbol).toBe("⏎");

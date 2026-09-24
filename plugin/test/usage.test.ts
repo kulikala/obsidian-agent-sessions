@@ -35,7 +35,7 @@ const TURNS: UsageTurn[] = [
 	turn({
 		index: 0,
 		ts: 1700000000,
-		prompt: "（開始前）",
+		prompt: "(before start)",
 		calls: 1,
 		input: 10,
 		output: 5,
@@ -47,7 +47,7 @@ const TURNS: UsageTurn[] = [
 	turn({
 		index: 1,
 		ts: 1700000100,
-		prompt: "こんにちは",
+		prompt: "hello",
 		calls: 2,
 		input: 100,
 		cache_create: 50,
@@ -62,7 +62,7 @@ const TURNS: UsageTurn[] = [
 	turn({
 		index: 2,
 		ts: 1700000200,
-		prompt: "続き",
+		prompt: "continued",
 		calls: 3,
 		input: 200,
 		cache_read: 100,
@@ -75,8 +75,8 @@ const TURNS: UsageTurn[] = [
 	}),
 ];
 
-describe("sumRange（§D-45）", () => {
-	it("全区間を合計する（cost・tools・duration・context_last を含む）", () => {
+describe("sumRange", () => {
+	it("sums the whole range (cost, tools, duration, context_last included)", () => {
 		const total = sumRange(TURNS, 0, 2);
 		expect(total.calls).toBe(6);
 		expect(total.input).toBe(310);
@@ -93,7 +93,7 @@ describe("sumRange（§D-45）", () => {
 		expect(total.context_last).toBe(300);
 	});
 
-	it("部分区間だけ合計する", () => {
+	it("sums only a partial range", () => {
 		const total = sumRange(TURNS, 1, 2);
 		expect(total.cost).toBeCloseTo(0.13, 6);
 		expect(total.tools).toEqual({ Read: 3, Bash: 1 });
@@ -103,7 +103,7 @@ describe("sumRange（§D-45）", () => {
 		expect(total.context_last).toBe(300);
 	});
 
-	it("1 ターンだけの区間", () => {
+	it("a range of just one turn", () => {
 		const total = sumRange(TURNS, 1, 1);
 		expect(total.cost).toBeCloseTo(0.05, 6);
 		expect(total.tools).toEqual({ Read: 1, Bash: 1 });
@@ -111,11 +111,11 @@ describe("sumRange（§D-45）", () => {
 		expect(total.context_last).toBe(170);
 	});
 
-	it("from と to が逆でも同じ結果になる", () => {
+	it("gives the same result whether from/to are swapped or not", () => {
 		expect(sumRange(TURNS, 2, 1)).toEqual(sumRange(TURNS, 1, 2));
 	});
 
-	it("範囲外なら 0 埋め・空で返し、duration は null になる", () => {
+	it("returns zero-filled/empty values for an out-of-range selection, with duration null", () => {
 		const total = sumRange(TURNS, 10, 20);
 		expect(total.calls).toBe(0);
 		expect(total.cost).toBe(0);
@@ -125,122 +125,123 @@ describe("sumRange（§D-45）", () => {
 		expect(total.duration).toBeNull();
 	});
 
-	it("ターンが無くても壊れない", () => {
+	it("doesn't break when there are no turns", () => {
 		const total = sumRange([], 0, 0);
 		expect(total.calls).toBe(0);
 		expect(total.tools).toEqual({});
 		expect(total.duration).toBeNull();
 	});
 
-	it("区間内のいずれかのターンが estimated なら真になる", () => {
+	it("is true when any turn in the range is estimated", () => {
 		const turns = [TURNS[0], turn({ ...TURNS[1], estimated: true }), TURNS[2]];
 		expect(sumRange(turns, 0, 1).estimated).toBe(true);
 		expect(sumRange(turns, 2, 2).estimated).toBe(false);
 	});
 });
 
-describe("formatK（§D-45 k／M 表記）", () => {
-	it("1000 未満はそのまま", () => {
+describe("formatK (k/M notation)", () => {
+	it("leaves values under 1000 as-is", () => {
 		expect(formatK(999)).toBe("999");
 		expect(formatK(0)).toBe("0");
 	});
 
-	it("千は k、小数 1 桁", () => {
+	it("shows thousands as k, with one decimal place", () => {
 		expect(formatK(1234)).toBe("1.2k");
 	});
 
-	it("百万は M、小数 1 桁", () => {
+	it("shows millions as M, with one decimal place", () => {
 		expect(formatK(1234567)).toBe("1.2M");
 	});
 
-	it("丸めで k から M へ繰り上がる場合は M 側を出す", () => {
+	it("shows M when rounding carries a value from k up to M", () => {
 		expect(formatK(999950)).toBe("1.0M");
 	});
 
-	it("十億は B、小数 1 桁。丸めで M から B へ繰り上がる場合は B 側を出す", () => {
+	it("shows billions as B, with one decimal place; shows B when rounding carries M up to B", () => {
 		expect(formatK(1_234_000_000)).toBe("1.2B");
 		expect(formatK(999_950_000)).toBe("1.0B");
 	});
 });
 
-describe("formatCost（§D-45 コスト表記）", () => {
-	it("$0.005 未満は <$0.01", () => {
+describe("formatCost (cost notation)", () => {
+	it("shows <$0.01 for anything under $0.005", () => {
 		expect(formatCost(0.001)).toBe("<$0.01");
 		expect(formatCost(0.0049)).toBe("<$0.01");
 	});
 
-	it("それ以外は小数 2 桁", () => {
+	it("otherwise shows two decimal places", () => {
 		expect(formatCost(0.0051)).toBe("$0.01");
 		expect(formatCost(12.3)).toBe("$12.30");
 		expect(formatCost(0)).toBe("$0.00");
 	});
 });
 
-describe("formatDuration（§D-45 h m 表記）", () => {
-	it("秒を h m にする", () => {
+describe("formatDuration (h m notation)", () => {
+	it("converts seconds to h m", () => {
 		expect(formatDuration(300)).toBe("0h 5m");
 		expect(formatDuration(448920)).toBe("124h 42m");
 		expect(formatDuration(0)).toBe("0h 0m");
 	});
 
-	it("null や負の値は「—」", () => {
+	it("shows the em dash for null or negative values", () => {
 		expect(formatDuration(null)).toBe("—");
 		expect(formatDuration(-1)).toBe("—");
 	});
 });
 
-describe("formatEpoch（§D-45 MM-DD HH:MM）", () => {
-	it("epoch 秒をローカルの MM-DD HH:MM にする", () => {
+describe("formatEpoch (MM-DD HH:MM)", () => {
+	it("converts an epoch second to local MM-DD HH:MM", () => {
 		const ts = Math.floor(new Date(2024, 2, 5, 9, 7, 30).getTime() / 1000);
 		expect(formatEpoch(ts)).toBe("03-05 09:07");
 	});
 
-	it("1 桁の月日時分を 0 埋めする", () => {
+	it("zero-pads single-digit month/day/hour/minute", () => {
 		const ts = Math.floor(new Date(2024, 0, 1, 1, 2, 0).getTime() / 1000);
 		expect(formatEpoch(ts)).toBe("01-01 01:02");
 	});
 
-	it("null は「—」（ts の無い（開始前）ターンなど）", () => {
+	it("shows the em dash for null (e.g. a turn with no ts, like one before the session starts)", () => {
 		expect(formatEpoch(null)).toBe("—");
 	});
 });
 
-describe("nextSelection（§D-45 行クリックの区間選択）", () => {
-	it("全体からクリック → 開始行だけの選択になる", () => {
+describe("nextSelection (range selection via row clicks)", () => {
+	it("clicking while nothing is selected selects just the start row", () => {
 		expect(nextSelection(null, 5)).toEqual({ anchor: 5, end: null });
 	});
 
-	it("開始行だけの選択中に同じ行をクリック → 解除（全体）", () => {
+	it("clicking the same row again while only the start row is selected clears the selection", () => {
 		expect(nextSelection({ anchor: 5, end: null }, 5)).toBeNull();
 	});
 
-	it("開始行だけの選択中に別の行をクリック → 終了行が決まり確定する", () => {
+	it("clicking a different row while only the start row is selected fixes the end row and confirms the range", () => {
 		expect(nextSelection({ anchor: 5, end: null }, 8)).toEqual({ anchor: 5, end: 8 });
 	});
 
-	it("確定済みの区間の最中にクリック → その行を新しい開始行にする", () => {
+	it("clicking while a range is already confirmed makes the clicked row the new start row", () => {
 		expect(nextSelection({ anchor: 5, end: 8 }, 2)).toEqual({ anchor: 2, end: null });
 	});
 });
 
-describe("effectiveRange（§D-45 選択状態 → 実際の区間）", () => {
-	it("全体は先頭〜末尾のターンになる", () => {
+describe("effectiveRange (selection state to actual range)", () => {
+	it("no selection spans the first turn through the last", () => {
 		expect(effectiveRange(null, TURNS)).toEqual({ from: 0, to: 2, pending: false });
 	});
 
-	it("開始行だけの選択は、その 1 行だけの区間になる", () => {
+	it("a start-row-only selection becomes a range of just that one row", () => {
 		expect(effectiveRange({ anchor: 1, end: null }, TURNS)).toEqual({ from: 1, to: 1, pending: true });
 	});
 
-	it("確定済みの区間は順不同でも from ≦ to になる", () => {
+	it("a confirmed range always has from <= to, regardless of click order", () => {
 		expect(effectiveRange({ anchor: 8, end: 3 }, TURNS)).toEqual({ from: 3, to: 8, pending: false });
 		expect(effectiveRange({ anchor: 3, end: 8 }, TURNS)).toEqual({ from: 3, to: 8, pending: false });
 	});
 });
 
-describe("全体（未選択）のカード計算（§D-45 モーダルの renderSelection と同じ手順）", () => {
-	// モーダルは selection === null のとき effectiveRange(null, turns) → sumRange → 件数フィルタ
-	// という手順で「全体」のカードを出す。ここで #NaN や 0 ターンにならないことを固定する。
+describe("card totals for the whole (unselected) range (same steps the modal's renderSelection uses)", () => {
+	// When selection is null, the modal builds the "whole range" card by going
+	// effectiveRange(null, turns) -> sumRange -> count filter. These tests pin
+	// down that the result is never #NaN and never a 0-turn count.
 	function selectAll(turns: UsageTurn[]) {
 		const { from, to, pending } = effectiveRange(null, turns);
 		const total = sumRange(turns, from, to);
@@ -248,7 +249,7 @@ describe("全体（未選択）のカード計算（§D-45 モーダルの rende
 		return { from, to, pending, total, count };
 	}
 
-	it("3 ターンなら、全体は #0〜#2・3 ターンになる（NaN にならない）", () => {
+	it("with 3 turns, the whole range is #0-#2, 3 turns (never NaN)", () => {
 		const { from, to, pending, total, count } = selectAll(TURNS);
 		expect(from).toBe(0);
 		expect(to).toBe(2);
@@ -259,7 +260,7 @@ describe("全体（未選択）のカード計算（§D-45 モーダルの rende
 		expect(total.cost).toBeCloseTo(0.14, 6);
 	});
 
-	it("ターン数が多くても、全体の件数はターン総数と一致する", () => {
+	it("even with many turns, the whole-range count matches the total turn count", () => {
 		const many: UsageTurn[] = Array.from({ length: 40 }, (_, i) =>
 			turn({ index: i, ts: 1700000000 + i * 100, prompt: `#${i}`, input: i, output: i, cost: 0.001 * i, last_ts: 1700000050 + i * 100 })
 		);
@@ -269,7 +270,7 @@ describe("全体（未選択）のカード計算（§D-45 モーダルの rende
 		expect(count).toBe(40);
 	});
 
-	it("1 ターンしか無いセッションでも壊れない", () => {
+	it("doesn't break for a session with only one turn", () => {
 		const single = [TURNS[0]];
 		const { from, to, count } = selectAll(single);
 		expect(from).toBe(0);
@@ -278,8 +279,11 @@ describe("全体（未選択）のカード計算（§D-45 モーダルの rende
 	});
 });
 
-describe("toMarkdown（§D-45 コピー用）", () => {
-	it("表は選んだ区間のターンだけを出し、カードの値を見出しに付ける", () => {
+// test/setup.ts defaults the test locale to "ja", so toMarkdown's rendered
+// text below is the current Japanese UI copy from src/i18n.ts; these
+// assertions are checking that actual rendered output, not incidental filler.
+describe("toMarkdown (for copying)", () => {
+	it("the table lists only turns in the selected range, with the card values in the header", () => {
 		const total = sumRange(TURNS, 1, 2);
 		const md = toMarkdown(TURNS, 1, 2, total);
 
@@ -290,17 +294,17 @@ describe("toMarkdown（§D-45 コピー用）", () => {
 		expect(md).not.toMatch(/^\| 0 \|/m);
 		expect(md).toMatch(/^\| 1 \|/m);
 		expect(md).toMatch(/^\| 2 \|/m);
-		expect(md).not.toContain("（開始前）");
+		expect(md).not.toContain("(before start)");
 	});
 
-	it("概算のときは「（概算）」を付ける", () => {
+	it("marks estimated totals with the estimated suffix", () => {
 		const turns = [turn({ ...TURNS[1], estimated: true })];
 		const total = sumRange(turns, 1, 1);
 		const md = toMarkdown(turns, 1, 1, total);
 		expect(md).toContain("（概算）");
 	});
 
-	it("入力は非キャッシュ＋cache 読出＋cache 作成の合計を k／M で出す", () => {
+	it("shows input as k/M-formatted non-cache + cache-read + cache-create total", () => {
 		const big: UsageTurn[] = [
 			turn({ index: 0, ts: 1700000000, prompt: "x", input: 1000000, cache_read: 234567, output: 89012 }),
 		];
@@ -310,14 +314,14 @@ describe("toMarkdown（§D-45 コピー用）", () => {
 		expect(md).toContain(formatK(89012));
 	});
 
-	it("指示中の改行と `|` を潰す・逃がす", () => {
+	it("collapses newlines and escapes `|` in the prompt text", () => {
 		const withPipe: UsageTurn[] = [turn({ index: 0, ts: 1700000000, prompt: "a\n|b|  c" })];
 		const total = sumRange(withPipe, 0, 0);
 		const md = toMarkdown(withPipe, 0, 0, total);
 		expect(md).toContain("a \\|b\\| c");
 	});
 
-	it("from と to が逆でも同じ表になる", () => {
+	it("produces the same table whether from/to are swapped or not", () => {
 		const total = sumRange(TURNS, 0, 1);
 		expect(toMarkdown(TURNS, 0, 1, total)).toBe(toMarkdown(TURNS, 1, 0, total));
 	});

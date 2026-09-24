@@ -18,41 +18,41 @@ describe("readEnterMode", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("ファイルが無ければ submit", () => {
+	it("is submit when the file doesn't exist", () => {
 		expect(readEnterMode(filePath)).toEqual({ mode: "submit" });
 	});
 
-	it("Chat の enter が無ければ submit", () => {
+	it("is submit when the Chat block has no enter binding", () => {
 		writeFileSync(filePath, JSON.stringify({ bindings: [{ context: "Chat", bindings: { "ctrl+j": "chat:newline" } }] }));
 		expect(readEnterMode(filePath)).toEqual({ mode: "submit" });
 	});
 
-	it("enter が chat:submit なら submit", () => {
+	it("is submit when enter is bound to chat:submit", () => {
 		writeFileSync(filePath, JSON.stringify({ bindings: [{ context: "Chat", bindings: { enter: "chat:submit" } }] }));
 		expect(readEnterMode(filePath)).toEqual({ mode: "submit" });
 	});
 
-	it("enter が chat:newline なら newline", () => {
+	it("is newline when enter is bound to chat:newline", () => {
 		writeFileSync(filePath, JSON.stringify({ bindings: [{ context: "Chat", bindings: { enter: "chat:newline" } }] }));
 		expect(readEnterMode(filePath)).toEqual({ mode: "newline" });
 	});
 
-	it("enter がそれ以外なら custom（raw に生値）", () => {
+	it("is custom (raw holds the literal binding) for anything else", () => {
 		writeFileSync(filePath, JSON.stringify({ bindings: [{ context: "Chat", bindings: { enter: "chat:clear" } }] }));
 		expect(readEnterMode(filePath)).toEqual({ mode: "custom", raw: "enter → chat:clear" });
 	});
 
-	it("Chat ブロックが無ければ submit", () => {
+	it("is submit when there's no Chat block at all", () => {
 		writeFileSync(filePath, JSON.stringify({ bindings: [{ context: "Other", bindings: { enter: "x" } }] }));
 		expect(readEnterMode(filePath)).toEqual({ mode: "submit" });
 	});
 
-	it("JSON が壊れていれば unreadable", () => {
+	it("is unreadable when the JSON is malformed", () => {
 		writeFileSync(filePath, "{not json");
 		expect(readEnterMode(filePath)).toEqual({ mode: "unreadable" });
 	});
 
-	it("bindings が配列でなければ unreadable", () => {
+	it("is unreadable when bindings isn't an array", () => {
 		writeFileSync(filePath, JSON.stringify({ bindings: {} }));
 		expect(readEnterMode(filePath)).toEqual({ mode: "unreadable" });
 	});
@@ -71,21 +71,21 @@ describe("readChatBindings", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("ファイルが無ければ undefined", () => {
+	it("returns undefined when the file doesn't exist", () => {
 		expect(readChatBindings(filePath)).toBeUndefined();
 	});
 
-	it("JSON が壊れていれば undefined", () => {
+	it("returns undefined when the JSON is malformed", () => {
 		writeFileSync(filePath, "{not json");
 		expect(readChatBindings(filePath)).toBeUndefined();
 	});
 
-	it("Chat ブロックが無ければ undefined", () => {
+	it("returns undefined when there's no Chat block", () => {
 		writeFileSync(filePath, JSON.stringify({ bindings: [{ context: "Other", bindings: { enter: "x" } }] }));
 		expect(readChatBindings(filePath)).toBeUndefined();
 	});
 
-	it("Chat の生の鍵一覧をそのまま返す（実機の例）", () => {
+	it("returns the Chat block's raw key map unchanged (a real-world example)", () => {
 		writeFileSync(
 			filePath,
 			JSON.stringify({
@@ -113,7 +113,7 @@ describe("applySubmitKey", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("enter 以外：ファイルが無ければ作り、2 鍵と $schema/$docs を入れる", () => {
+	it("for a non-enter key: creates the file if missing, writing both keys plus $schema/$docs", () => {
 		const result = applySubmitKey(filePath, "cmd+enter");
 		expect(result).toEqual({});
 
@@ -127,13 +127,13 @@ describe("applySubmitKey", () => {
 		});
 	});
 
-	it("enter：ファイルが無ければ何もしない（作らない）", () => {
+	it("for enter: does nothing (doesn't create the file) if it's missing", () => {
 		const result = applySubmitKey(filePath, "enter");
 		expect(result).toEqual({});
 		expect(() => readFileSync(filePath, "utf8")).toThrow();
 	});
 
-	it("cmd+enter → enter で 2 鍵が消え、空になった Chat ブロックごと消える", () => {
+	it("switching cmd+enter back to enter removes both keys, and the now-empty Chat block along with them", () => {
 		applySubmitKey(filePath, "cmd+enter");
 		const result = applySubmitKey(filePath, "enter");
 		expect(result).toEqual({});
@@ -142,7 +142,7 @@ describe("applySubmitKey", () => {
 		expect(data.bindings.find((b: { context: string }) => b.context === "Chat")).toBeUndefined();
 	});
 
-	it("他のコンテキスト・他の鍵は触らない", () => {
+	it("leaves other contexts and other keys untouched", () => {
 		writeFileSync(
 			filePath,
 			JSON.stringify({
@@ -163,11 +163,11 @@ describe("applySubmitKey", () => {
 		applySubmitKey(filePath, "enter");
 		data = JSON.parse(readFileSync(filePath, "utf8"));
 		chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
-		// 自分で足していない ctrl+j は残る。Chat ブロックも残る（空でないので）。
+		// ctrl+j wasn't added by us, so it survives; the Chat block survives too (it's not empty).
 		expect(chat.bindings).toEqual({ "ctrl+j": "chat:newline" });
 	});
 
-	it("一致しない値の鍵は消さずに warning を返す", () => {
+	it("returns a warning and leaves mismatched keys alone instead of deleting them", () => {
 		writeFileSync(
 			filePath,
 			JSON.stringify({ bindings: [{ context: "Chat", bindings: { enter: "chat:clear", "meta+enter": "chat:submit" } }] })
@@ -177,18 +177,18 @@ describe("applySubmitKey", () => {
 		expect(result.warning).toContain("enter");
 		const data = JSON.parse(readFileSync(filePath, "utf8"));
 		const chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
-		// enter は想定と違う値だったので残る。meta+enter は一致したので消える。
+		// enter had an unexpected value, so it's left in place; meta+enter matched, so it's removed.
 		expect(chat.bindings).toEqual({ enter: "chat:clear" });
 	});
 
-	it("壊れた JSON には書かず warning を返す", () => {
+	it("doesn't write to malformed JSON, and returns a warning instead", () => {
 		writeFileSync(filePath, "{not json");
 		const result = applySubmitKey(filePath, "cmd+enter");
 		expect(result.warning).toBeTruthy();
 		expect(readFileSync(filePath, "utf8")).toBe("{not json");
 	});
 
-	it("enter 以外の送信キーはどれも同じ 2 鍵を書く（alt+enter・shift+enter・ctrl+enter）", () => {
+	it("writes the same two keys for every non-enter submit key (alt+enter, shift+enter, ctrl+enter)", () => {
 		for (const submitKey of ["alt+enter", "shift+enter", "ctrl+enter"]) {
 			applySubmitKey(filePath, submitKey);
 			const data = JSON.parse(readFileSync(filePath, "utf8"));
@@ -198,7 +198,7 @@ describe("applySubmitKey", () => {
 		}
 	});
 
-	it("enter へ戻すと、実機と同じ形（cmd+enter を足したもの）から自分の 2 鍵だけ消える", () => {
+	it("switching back to enter from a real-world shape (with cmd+enter added) removes only our own two keys", () => {
 		writeFileSync(
 			filePath,
 			JSON.stringify({
@@ -214,53 +214,53 @@ describe("applySubmitKey", () => {
 	});
 });
 
-describe("deriveSubmitKey（D-50）", () => {
-	it("実機の {enter:chat:newline, meta+enter:chat:submit, cmd+enter:chat:submit} → cmd+enter", () => {
+describe("deriveSubmitKey", () => {
+	it("a real-world {enter:chat:newline, meta+enter:chat:submit, cmd+enter:chat:submit} resolves to cmd+enter", () => {
 		expect(
 			deriveSubmitKey({ enter: "chat:newline", "meta+enter": "chat:submit", "cmd+enter": "chat:submit" })
 		).toBe("cmd+enter");
 	});
 
-	it("super+enter でも cmd+enter", () => {
+	it("super+enter also resolves to cmd+enter", () => {
 		expect(deriveSubmitKey({ enter: "chat:newline", "super+enter": "chat:submit" })).toBe("cmd+enter");
 	});
 
-	it("{enter:chat:newline, meta+enter:chat:submit} → alt+enter", () => {
+	it("{enter:chat:newline, meta+enter:chat:submit} resolves to alt+enter", () => {
 		expect(deriveSubmitKey({ enter: "chat:newline", "meta+enter": "chat:submit" })).toBe("alt+enter");
 	});
 
-	it("空・無し・enter が chat:submit → enter", () => {
+	it("empty, missing, or enter already bound to chat:submit all resolve to enter", () => {
 		expect(deriveSubmitKey({})).toBe("enter");
 		expect(deriveSubmitKey(undefined)).toBe("enter");
 		expect(deriveSubmitKey({ enter: "chat:submit", "cmd+enter": "chat:submit" })).toBe("enter");
 	});
 });
 
-describe("reconcileSubmitKey（D-50）", () => {
+describe("reconcileSubmitKey", () => {
 	const newlineMode = { enter: "chat:newline", "meta+enter": "chat:submit" };
 
-	it("ファイルが Enter＝改行で設定も enter 以外なら、設定を保つ（shift/ctrl はファイルから区別できない）", () => {
+	it("keeps the configured value when the file has Enter=newline and the setting isn't enter (shift/ctrl can't be told apart from the file alone)", () => {
 		expect(reconcileSubmitKey(newlineMode, "shift+enter")).toBe("shift+enter");
 		expect(reconcileSubmitKey(newlineMode, "cmd+enter")).toBe("cmd+enter");
 	});
 
-	it("ファイルが Enter＝改行で設定が enter なら、導いた値", () => {
+	it("derives the value from the file when it has Enter=newline and the setting is enter", () => {
 		expect(reconcileSubmitKey(newlineMode, "enter")).toBe("alt+enter");
 		expect(reconcileSubmitKey({ ...newlineMode, "cmd+enter": "chat:submit" }, "enter")).toBe("cmd+enter");
 	});
 
-	it("ファイルが既定で設定が enter 以外なら enter", () => {
+	it("resolves to enter when the file is at its default and the setting isn't enter", () => {
 		expect(reconcileSubmitKey(undefined, "cmd+enter")).toBe("enter");
 		expect(reconcileSubmitKey({}, "enter")).toBe("enter");
 	});
 });
 
 describe("defaultKeybindingsPath", () => {
-	it("CLAUDE_CONFIG_DIR が無ければ ~/.claude 配下", () => {
+	it("falls under ~/.claude when CLAUDE_CONFIG_DIR isn't set", () => {
 		expect(defaultKeybindingsPath("/Users/x")).toBe("/Users/x/.claude/keybindings.json");
 	});
 
-	it("CLAUDE_CONFIG_DIR があればその配下", () => {
+	it("falls under CLAUDE_CONFIG_DIR when it is set", () => {
 		expect(defaultKeybindingsPath("/Users/x", "/custom/config")).toBe("/custom/config/keybindings.json");
 	});
 });

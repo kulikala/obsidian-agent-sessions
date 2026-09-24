@@ -15,24 +15,24 @@ describe("StatusLine.get", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("effort が {level} の形でも読む", () => {
+	it("reads effort even when it's shaped as {level}", () => {
 		writeFileSync(join(dir, "s1.json"), JSON.stringify({ model: { display_name: "Opus 5" }, effort: { level: "high" } }));
 		const status = new StatusLine(dir);
 		expect(status.get("s1")?.effort).toBe("high");
 	});
 
-	it("ファイルが無ければ null", () => {
+	it("is null when the file doesn't exist", () => {
 		const status = new StatusLine(dir);
 		expect(status.get("missing")).toBeNull();
 	});
 
-	it("壊れた JSON は null", () => {
+	it("is null for malformed JSON", () => {
 		writeFileSync(join(dir, "a.json"), "{not json", "utf8");
 		const status = new StatusLine(dir);
 		expect(status.get("a")).toBeNull();
 	});
 
-	it("statusLine の JSON をそのまま読む", () => {
+	it("reads the statusLine JSON as-is", () => {
 		writeFileSync(
 			join(dir, "a.json"),
 			JSON.stringify({
@@ -53,7 +53,7 @@ describe("StatusLine.get", () => {
 		});
 	});
 
-	it("一部のキーが無ければ null で埋める", () => {
+	it("fills missing keys with null", () => {
 		writeFileSync(join(dir, "a.json"), JSON.stringify({ model: { display_name: "Sonnet 5" } }), "utf8");
 		const status = new StatusLine(dir);
 		expect(status.get("a")).toEqual({
@@ -67,29 +67,30 @@ describe("StatusLine.get", () => {
 });
 
 describe("formatStatus", () => {
-	it("揃っているとき", () => {
+	it("when everything is present", () => {
 		expect(
 			formatStatus({ model: "Opus 5", effort: "high", ctxPercent: 42, fiveHour: 37, sevenDay: 12 }, true)
 		).toBe("Opus 5 · high · ctx 42% · rc ● · 5h 37% · 7d 12%");
 	});
 
-	it("rc が偽なら ○", () => {
+	it("shows ○ when rc is false", () => {
 		expect(
 			formatStatus({ model: "Opus 5", effort: "high", ctxPercent: 42, fiveHour: 37, sevenDay: 12 }, false)
 		).toContain("rc ○");
 	});
 
-	it("rc が null（台帳なし）でも ○（D-60。● は接続中だけ）", () => {
+	it("shows ○ when rc is null, i.e. no ledger entry (● means actively connected only)", () => {
 		expect(
 			formatStatus({ model: "Opus 5", effort: "high", ctxPercent: 42, fiveHour: 37, sevenDay: 12 }, null)
 		).toContain("rc ○");
 	});
 
-	it("モデル・エフォートが無ければデフォルト、他が無ければ —", () => {
+	it("falls back to デフォルト (default) when model/effort are missing, and — for everything else", () => {
+		// Japanese fixture: "デフォルト" is the real UI-facing fallback string the app renders.
 		expect(formatStatus(null, null)).toBe("デフォルト · デフォルト · ctx — · rc ○ · 5h — · 7d —");
 	});
 
-	it("info はあるが一部だけ欠ける", () => {
+	it("info is present but some fields are missing", () => {
 		expect(formatStatus({ model: "Sonnet 5", effort: null, ctxPercent: 10, fiveHour: null, sevenDay: null }, true)).toBe(
 			"Sonnet 5 · デフォルト · ctx 10% · rc ● · 5h — · 7d —"
 		);

@@ -1,109 +1,110 @@
 import { describe, expect, it } from "vitest";
 import { buildAtToken, findPathCandidates, resolveToVault, selectionLineRange } from "../src/links";
 
-describe("findPathCandidates（§6.7）", () => {
-	it("行番号付きの相対パスを拾う", () => {
-		const out = findPathCandidates("エラー: docs/design.md:10 を見て");
+describe("findPathCandidates", () => {
+	it("picks up a relative path with a line number", () => {
+		const out = findPathCandidates("Error: see docs/design.md:10");
 		expect(out).toHaveLength(1);
 		expect(out[0]).toMatchObject({ text: "docs/design.md:10", path: "docs/design.md", line: 10 });
 	});
 
-	it("./ で始まる相対パスを拾う", () => {
-		const out = findPathCandidates("参照: ./a/b.md はここ");
+	it("picks up a relative path starting with ./", () => {
+		const out = findPathCandidates("See ./a/b.md here");
 		expect(out).toHaveLength(1);
 		expect(out[0]).toMatchObject({ text: "./a/b.md", path: "./a/b.md", line: undefined });
 	});
 
-	it("行:桁付きの絶対パスを拾う", () => {
-		const out = findPathCandidates("/abs/vault/x.md:3:4 でエラー");
+	it("picks up an absolute path with line:column", () => {
+		const out = findPathCandidates("Error at /abs/vault/x.md:3:4");
 		expect(out).toHaveLength(1);
 		expect(out[0]).toMatchObject({ text: "/abs/vault/x.md:3:4", path: "/abs/vault/x.md", line: 3 });
 	});
 
-	it("URL は候補に含めない", () => {
-		const out = findPathCandidates("詳細は https://example.com/docs/design.md:10 を参照");
+	it("does not include a URL as a candidate", () => {
+		const out = findPathCandidates("See https://example.com/docs/design.md:10 for details");
 		expect(out).toHaveLength(0);
 	});
 
-	it("文中の URL とパスが両方あれば、パスだけ拾う", () => {
-		const out = findPathCandidates("https://example.com/a.html を見た後 docs/design.md を開く");
+	it("picks up only the path when both a URL and a path appear in the text", () => {
+		const out = findPathCandidates("After viewing https://example.com/a.html, open docs/design.md");
 		expect(out).toHaveLength(1);
 		expect(out[0].path).toBe("docs/design.md");
 	});
 
-	it("末尾の句読点を候補に含めない", () => {
-		const out = findPathCandidates("見て docs/design.md。次へ");
+	it("does not include trailing punctuation in the candidate", () => {
+		const out = findPathCandidates("See docs/design.md. Next up");
 		expect(out).toHaveLength(1);
 		expect(out[0].text).toBe("docs/design.md");
 	});
 
-	it("拡張子の無い語は候補にしない", () => {
-		const out = findPathCandidates("これは README ではない");
+	it("does not treat a word without an extension as a candidate", () => {
+		const out = findPathCandidates("This is not README");
 		expect(out).toHaveLength(0);
 	});
 
-	it("開始・終了位置は文字単位のオフセット", () => {
-		const out = findPathCandidates("見て docs/design.md ね");
-		expect(out[0].start).toBe(3);
-		expect(out[0].end).toBe(3 + "docs/design.md".length);
+	it("reports start/end as character-based offsets", () => {
+		const prefix = "see ";
+		const out = findPathCandidates(`${prefix}docs/design.md now`);
+		expect(out[0].start).toBe(prefix.length);
+		expect(out[0].end).toBe(prefix.length + "docs/design.md".length);
 	});
 });
 
-describe("resolveToVault（§6.7）", () => {
+describe("resolveToVault", () => {
 	const vault = "/Users/me/vault";
 
-	it("vault 配下の絶対パスは vault 相対にする", () => {
+	it("converts an absolute path under vault into a vault-relative path", () => {
 		expect(resolveToVault("/Users/me/vault/docs/design.md", "/Users/me/vault", vault)).toBe("docs/design.md");
 	});
 
-	it("cwd からの相対パスを vault 相対にする", () => {
+	it("converts a path relative to cwd into a vault-relative path", () => {
 		expect(resolveToVault("design.md", "/Users/me/vault/docs", vault)).toBe("docs/design.md");
 	});
 
-	it("`..` を含む相対パスを正規化する", () => {
+	it("normalizes a relative path containing `..`", () => {
 		expect(resolveToVault("../docs/design.md", "/Users/me/vault/sub", vault)).toBe("docs/design.md");
 	});
 
-	it("vault の外の絶対パスは null", () => {
+	it("returns null for an absolute path outside vault", () => {
 		expect(resolveToVault("/etc/passwd", "/Users/me/vault", vault)).toBeNull();
 	});
 
-	it("vault の外へ出る相対パスは null", () => {
+	it("returns null for a relative path that resolves outside vault", () => {
 		expect(resolveToVault("../../etc/passwd", "/Users/me/vault", vault)).toBeNull();
 	});
 });
 
-describe("buildAtToken（§6.7 `@` 挿入）", () => {
-	it("cwd からの相対パスにする", () => {
+describe("buildAtToken (`@` mention insertion)", () => {
+	it("converts to a path relative to cwd", () => {
 		expect(buildAtToken("/Users/me/vault/docs/design.md", "/Users/me/vault", undefined)).toBe("docs/design.md");
 	});
 
-	it("cwd の外なら絶対パスのまま", () => {
+	it("keeps the absolute path when it falls outside cwd", () => {
 		expect(buildAtToken("/Users/me/vault/docs/design.md", "/other/project", undefined)).toBe(
 			"/Users/me/vault/docs/design.md"
 		);
 	});
 
-	it("複数行選択なら #L{from}-{to}（1 始まり）を付ける", () => {
+	it("appends #L{from}-{to} (1-based) for a multi-line selection", () => {
 		expect(buildAtToken("/v/docs/design.md", "/v", { from: 9, to: 19 })).toBe("docs/design.md#L10-20");
 	});
 
-	it("1 行だけの選択には行範囲を付けない", () => {
+	it("does not append a line range for a single-line selection", () => {
 		expect(buildAtToken("/v/docs/design.md", "/v", { from: 4, to: 4 })).toBe("docs/design.md");
 	});
 
-	it("空白を含むパスは引用符で囲む", () => {
+	it("wraps a path containing whitespace in quotes", () => {
 		expect(buildAtToken("/v/docs/my notes.md", "/v", undefined)).toBe('"docs/my notes.md"');
 	});
 });
 
 describe("selectionLineRange", () => {
-	it("複数行にまたがるときだけ範囲を返す", () => {
+	it("returns a range only when the selection spans multiple lines", () => {
 		const editor = { getCursor: (side: "from" | "to") => ({ line: side === "from" ? 2 : 5 }) };
 		expect(selectionLineRange(editor)).toEqual({ from: 2, to: 5 });
 	});
 
-	it("同じ行なら undefined", () => {
+	it("returns undefined when it's the same line", () => {
 		const editor = { getCursor: () => ({ line: 3 }) };
 		expect(selectionLineRange(editor)).toBeUndefined();
 	});

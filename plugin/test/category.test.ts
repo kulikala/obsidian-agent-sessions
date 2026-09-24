@@ -1,60 +1,60 @@
 import { describe, expect, it } from "vitest";
 import { assignCategoryColor, ensureCategoryColors, PALETTE_SIZE, paletteHueDeg } from "../src/category";
 
-describe("paletteHueDeg（T-70）", () => {
-	it("0〜11 を 0〜330（30 刻み）にする", () => {
+describe("paletteHueDeg", () => {
+	it("maps 0-11 to 0-330 in steps of 30", () => {
 		expect(paletteHueDeg(0)).toBe(0);
 		expect(paletteHueDeg(1)).toBe(30);
 		expect(paletteHueDeg(11)).toBe(330);
 	});
 
-	it("範囲外は畳み込む", () => {
+	it("wraps out-of-range indices", () => {
 		expect(paletteHueDeg(12)).toBe(0);
 		expect(paletteHueDeg(-1)).toBe(330);
 	});
 });
 
-describe("assignCategoryColor（T-70）", () => {
-	it("新規カテゴリには、まだ使われていない番号のうち最小のものを割り当てる", () => {
+describe("assignCategoryColor", () => {
+	it("assigns a new category the smallest unused index", () => {
 		const colors: Record<string, number> = { a: 0, b: 2 };
 		expect(assignCategoryColor(colors, "c")).toBe(1);
 		expect(colors.c).toBe(1);
 	});
 
-	it("既存カテゴリの番号は不変", () => {
+	it("leaves an existing category's index unchanged", () => {
 		const colors: Record<string, number> = { a: 5 };
 		expect(assignCategoryColor(colors, "a")).toBe(5);
 		expect(assignCategoryColor(colors, "a")).toBe(5);
 		expect(colors).toEqual({ a: 5 });
 	});
 
-	it("12 個すべて使われていたら、最も使用回数の少ない番号（同数なら小さいほう）を選ぶ", () => {
+	it("picks the least-used index (ties broken by the smaller index) once all 12 are taken", () => {
 		const colors: Record<string, number> = {};
 		for (let i = 0; i < PALETTE_SIZE; i++) {
 			colors[`cat${i}`] = i;
 		}
-		// ここで番号 0 が 2 回使われた状態にしておく。
+		// Make index 0 used twice.
 		colors.extra = 0;
 
 		expect(assignCategoryColor(colors, "new")).toBe(1);
 	});
 
-	it("空にした状態から順番に割り当てると 0, 1, 2, … の順になる", () => {
+	it("assigns 0, 1, 2, ... in order when starting from empty", () => {
 		const colors: Record<string, number> = {};
 		const assigned = ["a", "b", "c"].map((name) => assignCategoryColor(colors, name));
 		expect(assigned).toEqual([0, 1, 2]);
 	});
 });
 
-describe("ensureCategoryColors（T-70）", () => {
-	it("無いカテゴリだけ割り当て、変更が有れば真を返す", () => {
+describe("ensureCategoryColors", () => {
+	it("assigns only the missing categories and returns true when it changed anything", () => {
 		const colors: Record<string, number> = { a: 0 };
 		expect(ensureCategoryColors(colors, ["a", "b"])).toBe(true);
 		expect(colors.a).toBe(0);
 		expect(colors.b).toBe(1);
 	});
 
-	it("すべて既に割当済みなら何もせず偽を返す", () => {
+	it("does nothing and returns false when everything is already assigned", () => {
 		const colors: Record<string, number> = { a: 0, b: 1 };
 		expect(ensureCategoryColors(colors, ["a", "b"])).toBe(false);
 		expect(colors).toEqual({ a: 0, b: 1 });

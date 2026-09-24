@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
 import { defaultLoginShell, envWithVault } from "../src/backend";
 
-describe("envWithVault（T-80：json … を呼ぶすべての経路に AGENT_SESSIONS_VAULT を通す）", () => {
-	it("base に AGENT_SESSIONS_VAULT を重ねる", () => {
+describe("envWithVault (ensures every code path that calls json… gets AGENT_SESSIONS_VAULT)", () => {
+	it("overlays AGENT_SESSIONS_VAULT onto the base env", () => {
 		const base = { PATH: "/usr/bin", AGENT_SESSIONS_VAULT: "old" };
 		const result = envWithVault("/tmp/vault", base);
 		expect(result).toEqual({ PATH: "/usr/bin", AGENT_SESSIONS_VAULT: "/tmp/vault" });
 	});
 
-	it("base に無ければ追加するだけ", () => {
+	it("just adds the key when the base env doesn't have it", () => {
 		const result = envWithVault("/tmp/vault", { PATH: "/usr/bin" });
 		expect(result).toEqual({ PATH: "/usr/bin", AGENT_SESSIONS_VAULT: "/tmp/vault" });
 	});
 
-	it("base を書き換えない（新しいオブジェクトを返す）", () => {
+	it("does not mutate the base env (returns a new object)", () => {
 		const base = { PATH: "/usr/bin" };
 		const result = envWithVault("/tmp/vault", base);
 		expect(base).toEqual({ PATH: "/usr/bin" });
@@ -21,12 +21,12 @@ describe("envWithVault（T-80：json … を呼ぶすべての経路に AGENT_SE
 	});
 });
 
-describe("defaultLoginShell（非macOS対応：$SHELL が無いときの既定）", () => {
-	it("macOS は zsh", () => {
+describe("defaultLoginShell (non-macOS fallback when $SHELL is unset)", () => {
+	it("is zsh on macOS", () => {
 		expect(defaultLoginShell(true)).toBe("/bin/zsh");
 	});
 
-	it("非 macOS は sh（bash が無い最小環境もあるため）", () => {
+	it("is sh on non-macOS (some minimal environments lack bash)", () => {
 		expect(defaultLoginShell(false)).toBe("/bin/sh");
 	});
 });

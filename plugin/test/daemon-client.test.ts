@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DaemonClient, encodeFrame, FrameDecoder } from "../src/daemon-client";
 
 describe("encodeFrame / FrameDecoder", () => {
-	it("1 フレームを往復できる", () => {
+	it("round-trips a single frame", () => {
 		const payload = Buffer.from(JSON.stringify({ op: "hello", seq: 1 }), "utf8");
 		const encoded = encodeFrame("J", payload);
 		const decoder = new FrameDecoder();
@@ -16,7 +16,7 @@ describe("encodeFrame / FrameDecoder", () => {
 		expect(frames[0].payload.toString("utf8")).toBe(payload.toString("utf8"));
 	});
 
-	it("複数フレームを連結して渡しても分解できる", () => {
+	it("splits multiple frames even when they arrive concatenated", () => {
 		const a = encodeFrame("D", Buffer.from("abc"));
 		const b = encodeFrame("J", Buffer.from('{"ev":"replayed"}'));
 		const decoder = new FrameDecoder();
@@ -25,7 +25,7 @@ describe("encodeFrame / FrameDecoder", () => {
 		expect(frames[0].payload.toString("utf8")).toBe("abc");
 	});
 
-	it("フレームの途中で分割されて届いても、揃うまで待つ", () => {
+	it("waits for the rest when a frame arrives split mid-way", () => {
 		const full = encodeFrame("D", Buffer.from("0123456789"));
 		const decoder = new FrameDecoder();
 
@@ -41,10 +41,10 @@ describe("encodeFrame / FrameDecoder", () => {
 		expect(frames[0].payload.toString("utf8")).toBe("0123456789");
 	});
 
-	it("先頭バイトが長さの直前で切れても次の feed で揃う", () => {
+	it("recovers on the next feed even when the split lands right before the length bytes", () => {
 		const full = encodeFrame("J", Buffer.from("{}"));
 		const decoder = new FrameDecoder();
-		// 種別 1B + 長さ 4B の途中（3B）で切る。
+		// Cut after 3 bytes, in the middle of the 1-byte kind + 4-byte length header.
 		expect(decoder.feed(full.subarray(0, 3))).toHaveLength(0);
 		const frames = decoder.feed(full.subarray(3));
 		expect(frames).toHaveLength(1);
@@ -52,7 +52,7 @@ describe("encodeFrame / FrameDecoder", () => {
 	});
 });
 
-/** `J` フレームで来た要求を読み、ハンドラの返り値を同じ `seq` で返すだけのモックサーバー。 */
+/** A mock server that reads requests arriving as `J` frames and echoes the handler's return value back with the same `seq`. */
 function startMockServer(
 	sockPath: string,
 	handle: (op: string, args: Record<string, unknown>, socket: net.Socket) => unknown
@@ -88,7 +88,7 @@ describe("DaemonClient", () => {
 		server = undefined;
 	});
 
-	it("request が同じ seq の応答に対応する", async () => {
+	it("request matches a response by its seq", async () => {
 		server = await startMockServer(sockPath, (op) => ({ echo: op }));
 		const client = new DaemonClient(sockPath);
 		await client.connect();
@@ -100,9 +100,10 @@ describe("DaemonClient", () => {
 		client.close();
 	});
 
-	it("先に送った要求の応答が後から届いても、seq で正しい呼び出し元に届く", async () => {
-		// hello（先に送る）の応答をわざと遅らせ、list（後に送る）の応答を先に書く。
-		// request() が送信順ではなく seq で応答を振り分けていることを確かめる。
+	it("routes a response to the right caller by seq, even when it arrives out of order", async () => {
+		// Deliberately delay the response to "hello" (sent first) and write the response to
+		// "list" (sent second) right away, to confirm request() dispatches by seq rather than
+		// send order.
 		server = await new Promise<net.Server>((resolve, reject) => {
 			const s = net.createServer((socket) => {
 				const decoder = new FrameDecoder();
@@ -135,12 +136,12 @@ describe("DaemonClient", () => {
 		client.close();
 	});
 
-	it("D フレームは data イベント、J の ev は replayed/exit イベントになる", async () => {
+	it("a D frame becomes a data event; a J frame's ev becomes a replayed/exit event", async () => {
 		server = await new Promise<net.Server>((resolve, reject) => {
 			const s = net.createServer((socket) => {
-				socket.write(encodeFrame("R", Buffer.from("再生分")));
+				socket.write(encodeFrame("R", Buffer.from("replay-data")));
 				socket.write(encodeFrame("J", Buffer.from('{"ev":"replayed"}')));
-				socket.write(encodeFrame("D", Buffer.from("出力")));
+				socket.write(encodeFrame("D", Buffer.from("output")));
 				socket.write(encodeFrame("J", Buffer.from('{"ev":"exit","id":"abc","code":0}')));
 			});
 			s.once("error", reject);
@@ -171,14 +172,14 @@ describe("DaemonClient", () => {
 		await new Promise((resolve) => setTimeout(resolve, 50));
 
 		expect(seen).toEqual(["replay", "replayed", "data", "exit"]);
-		expect(replay[0]?.toString("utf8")).toBe("再生分");
-		expect(dataChunks[0]?.toString("utf8")).toBe("出力");
+		expect(replay[0]?.toString("utf8")).toBe("replay-data");
+		expect(dataChunks[0]?.toString("utf8")).toBe("output");
 		expect(exitArgs).toEqual(["abc", 0]);
 
 		client.close();
 	});
 
-	it("close イベントはソケットが閉じたときに届く", async () => {
+	it("fires a close event when the socket closes", async () => {
 		server = await startMockServer(sockPath, () => ({}));
 		const client = new DaemonClient(sockPath);
 		await client.connect();

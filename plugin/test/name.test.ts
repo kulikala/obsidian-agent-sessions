@@ -4,89 +4,93 @@ import { composeName, filterCategories, listCategories, sessionDisplayName, toke
 import { splitName } from "../src/tree";
 
 describe("composeName", () => {
-	it("カテゴリと名前を ': ' で組み立てる", () => {
+	it("joins category and name with ': '", () => {
+		// Japanese fixture: category/name text as it actually appears in the product.
 		expect(composeName("スキル開発", "セッション管理")).toBe("スキル開発: セッション管理");
 	});
 
-	it("カテゴリが空なら名前だけ", () => {
+	it("returns just the name when category is empty", () => {
 		expect(composeName("", "セッション管理")).toBe("セッション管理");
 	});
 
-	it("カテゴリが空白だけでも名前だけ", () => {
+	it("returns just the name when category is whitespace only", () => {
 		expect(composeName("   ", "セッション管理")).toBe("セッション管理");
 	});
 
-	it("名前が空ならカテゴリがあっても空文字", () => {
+	it("returns empty string when name is empty, even with a category", () => {
 		expect(composeName("スキル開発", "")).toBe("");
 		expect(composeName("スキル開発", "   ")).toBe("");
 	});
 
-	it("前後の空白を落とす", () => {
+	it("trims leading/trailing whitespace", () => {
 		expect(composeName(" スキル開発 ", " セッション管理 ")).toBe("スキル開発: セッション管理");
 	});
 
-	it("両方空なら空文字", () => {
+	it("returns empty string when both are empty", () => {
 		expect(composeName("", "")).toBe("");
 	});
 });
 
-describe("composeName と splitName の往復", () => {
-	it("カテゴリ有り", () => {
+describe("composeName and splitName round-trip", () => {
+	it("with a category", () => {
+		// Japanese fixture: realistic category/name pair used elsewhere in the suite.
 		const composed = composeName("RIM", "議事メモ作成");
 		expect(splitName(composed)).toEqual(["RIM", "議事メモ作成"]);
 	});
 
-	it("カテゴリ無し", () => {
+	it("without a category", () => {
 		const composed = composeName("", "酔い酒鮨庵");
 		expect(splitName(composed)).toEqual([null, "酔い酒鮨庵"]);
 	});
 });
 
 describe("listCategories", () => {
-	it("名前からカテゴリを拾い、重複無く辞書順にする", () => {
+	it("collects categories from names, de-duplicated and sorted", () => {
 		expect(
 			listCategories(["RIM: 議事メモ作成", "RIM: 更新", "ZERO: 提案", "単独のセッション", null, "", "ZERO: 続き"])
 		).toEqual(["RIM", "ZERO"]);
 	});
 
-	it("カテゴリが無ければ空配列", () => {
+	it("returns an empty array when there are no categories", () => {
 		expect(listCategories(["単独", null, undefined, ""])).toEqual([]);
 	});
 
-	it("五十音順に並べる", () => {
+	it("sorts in Japanese gojūon (kana) order", () => {
+		// Japanese fixture: verifies gojūon ordering, not plain code-point order.
 		expect(listCategories(["う: a", "あ: b", "い: c"])).toEqual(["あ", "い", "う"]);
 	});
 });
 
-describe("tokenizeNameInput（T-70：命名ダイアログの単一入力欄）", () => {
-	it("半角 `:` はその時点で区切り（続く空白は要らない）", () => {
+describe("tokenizeNameInput (single input field of the naming dialog)", () => {
+	it("a half-width `:` splits immediately (no trailing space required)", () => {
 		expect(tokenizeNameInput("カテゴリ:名前")).toEqual({ category: "カテゴリ", rest: "名前" });
 	});
 
-	it("半角 `:` の後に空白が有っても区切りは同じ（空白は落とす）", () => {
+	it("a half-width `:` still splits with a trailing space (the space is dropped)", () => {
 		expect(tokenizeNameInput("カテゴリ: 名前")).toEqual({ category: "カテゴリ", rest: "名前" });
 		expect(tokenizeNameInput("カテゴリ: ")).toEqual({ category: "カテゴリ", rest: "" });
 	});
 
-	it("全角 `：` は直後に空白が来て初めて区切り", () => {
+	it("a full-width `：` only splits once a space follows it", () => {
 		expect(tokenizeNameInput("カテゴリ： 名前")).toEqual({ category: "カテゴリ", rest: "名前" });
 	});
 
-	it("全角 `：` の直後に空白が無ければ、まだ区切らない（null）", () => {
+	it("a full-width `：` with no following space does not split yet (null)", () => {
 		expect(tokenizeNameInput("カテゴリ：名前")).toBeNull();
 	});
 
-	it("コロンが無ければ null（まだカテゴリを入力中）", () => {
+	it("no colon at all means null (still typing the category)", () => {
 		expect(tokenizeNameInput("カテゴリ")).toBeNull();
 		expect(tokenizeNameInput("")).toBeNull();
 	});
 
-	it("カテゴリ側の前後の空白は落とす", () => {
+	it("trims leading/trailing whitespace from the category side", () => {
 		expect(tokenizeNameInput(" カテゴリ :名前")).toEqual({ category: "カテゴリ", rest: "名前" });
 	});
 
-	it("区切りを認識したら、カテゴリ名・区切り文字はどちらも rest に残らない（T-70 追補：" +
-		"『入力した文字がそのまま残ってしまう』の解消。貼り付けで一括入力された場合も同じ規則で処理される）", () => {
+	it("once a separator is recognized, neither the category text nor the separator character " +
+		"remains in `rest` (fixes a bug where the typed characters were left behind; pasting the " +
+		"whole string at once follows the same rule)", () => {
 		const half = tokenizeNameInput("スキル開発: 資料の見直し");
 		expect(half).toEqual({ category: "スキル開発", rest: "資料の見直し" });
 		expect(half?.rest.includes("スキル開発")).toBe(false);
@@ -99,44 +103,45 @@ describe("tokenizeNameInput（T-70：命名ダイアログの単一入力欄）"
 	});
 });
 
-describe("filterCategories（T-70）", () => {
-	it("部分一致・大小無視で絞り込む", () => {
+describe("filterCategories", () => {
+	it("filters by case-insensitive substring match", () => {
 		expect(filterCategories(["RIM", "ZERO", "rim2"], "rim")).toEqual(["RIM", "rim2"]);
 	});
 
-	it("空の問い合わせは全件をそのまま返す", () => {
+	it("an empty query returns everything unchanged", () => {
 		expect(filterCategories(["RIM", "ZERO"], "")).toEqual(["RIM", "ZERO"]);
 		expect(filterCategories(["RIM", "ZERO"], "   ")).toEqual(["RIM", "ZERO"]);
 	});
 
-	it("一致が無ければ空配列", () => {
+	it("returns an empty array when nothing matches", () => {
 		expect(filterCategories(["RIM", "ZERO"], "no-match")).toEqual([]);
 	});
 });
 
-describe("sessionDisplayName（T-72）", () => {
-	it("名前があればそのまま", () => {
+describe("sessionDisplayName", () => {
+	it("returns the name as-is when present", () => {
+		// Japanese fixture: category/name text as it actually appears in the product.
 		expect(sessionDisplayName("スキル開発: セッション管理", "01234567-89ab-cdef-0123-456789abcdef")).toBe(
 			"スキル開発: セッション管理"
 		);
 	});
 
-	it("名前が空文字なら「無題 <id8>」（日本語）", () => {
+	it("falls back to '無題 <id8>' (Japanese) when the name is an empty string", () => {
 		setLang("ja");
 		expect(sessionDisplayName("", "01234567-89ab-cdef-0123-456789abcdef")).toBe("無題 01234567");
 	});
 
-	it("名前が null なら「無題 <id8>」", () => {
+	it("falls back to '無題 <id8>' when the name is null", () => {
 		setLang("ja");
 		expect(sessionDisplayName(null, "01234567-89ab-cdef-0123-456789abcdef")).toBe("無題 01234567");
 	});
 
-	it("名前が undefined なら「無題 <id8>」", () => {
+	it("falls back to '無題 <id8>' when the name is undefined", () => {
 		setLang("ja");
 		expect(sessionDisplayName(undefined, "01234567-89ab-cdef-0123-456789abcdef")).toBe("無題 01234567");
 	});
 
-	it("英語では Untitled <id8>", () => {
+	it("falls back to 'Untitled <id8>' in English", () => {
 		setLang("en");
 		expect(sessionDisplayName(null, "01234567-89ab-cdef-0123-456789abcdef")).toBe("Untitled 01234567");
 	});

@@ -1,30 +1,31 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { getLang, resolveLang, setLang, t, type MessageKey } from "../src/i18n";
 
-// このファイルは意図的に言語を切り替える。他のテストへ漏れないよう、日本語（既定。test/setup.ts）に戻す。
+// This file intentionally switches languages. Reset back to Japanese (the
+// default, set in test/setup.ts) so it doesn't leak into other tests.
 afterEach(() => {
 	setLang("ja");
 });
 
-describe("resolveLang（D-56）", () => {
-	it("設定が ja／en ならそのまま", () => {
+describe("resolveLang", () => {
+	it("passes through when the setting is ja or en", () => {
 		expect(resolveLang("ja", null)).toBe("ja");
 		expect(resolveLang("en", "ja")).toBe("en");
 	});
 
-	it("auto は obsidianLang が ja なら日本語", () => {
+	it("resolves auto to Japanese when obsidianLang is ja", () => {
 		expect(resolveLang("auto", "ja")).toBe("ja");
 	});
 
-	it("auto は obsidianLang が ja 以外（null を含む）なら英語", () => {
+	it("resolves auto to English when obsidianLang is anything other than ja (including null)", () => {
 		expect(resolveLang("auto", null)).toBe("en");
 		expect(resolveLang("auto", "en")).toBe("en");
 		expect(resolveLang("auto", "fr")).toBe("en");
 	});
 });
 
-describe("setLang／getLang", () => {
-	it("切り替えた値を読める", () => {
+describe("setLang / getLang", () => {
+	it("reads back the value that was switched to", () => {
 		setLang("en");
 		expect(getLang()).toBe("en");
 		setLang("ja");
@@ -32,34 +33,37 @@ describe("setLang／getLang", () => {
 	});
 });
 
-describe("t（プレースホルダの置換）", () => {
-	it("{name} を置換する", () => {
+describe("t (placeholder substitution)", () => {
+	it("substitutes {name}", () => {
+		// Japanese fixture: exercises the actual ja dictionary value, not just the en one.
 		setLang("ja");
 		expect(t("notice.waitingForInput", { name: "RIM" })).toBe("RIM：指示待ち");
 		setLang("en");
 		expect(t("notice.waitingForInput", { name: "RIM" })).toBe("RIM: waiting for input");
 	});
 
-	it("複数のプレースホルダを置換する", () => {
+	it("substitutes multiple placeholders", () => {
 		setLang("en");
 		expect(t("usage.range", { from: 1, to: 3 })).toBe("#1–#3");
 	});
 
-	it("vars に無い名前はそのまま残す", () => {
+	it("leaves a name untouched when it's not in vars", () => {
 		setLang("en");
 		expect(t("notice.renameFailed", {})).toBe("Failed to rename: {error}");
 	});
 
-	it("vars を渡さないキーはテンプレートのまま", () => {
+	it("leaves the template as-is for a key that takes no vars", () => {
+		// Japanese fixture: confirms the real ja dictionary value is returned unmodified.
 		setLang("ja");
 		expect(t("action.newSession")).toBe("新規セッション");
 	});
 });
 
-describe("辞書（ja・en のキー集合が一致すること）", () => {
-	it("同じ MessageKey で両方引ける", () => {
-		// `en` は `Record<MessageKey, string>` で宣言してあるので、コンパイルが通ること自体が
-		// キー集合の一致を保証する。ここでは実行時にも全キーが空文字列でないことを確かめる。
+describe("dictionary (ja and en have matching key sets)", () => {
+	it("resolves the same MessageKey in both languages", () => {
+		// `en` is declared as `Record<MessageKey, string>`, so the fact that this compiles
+		// already guarantees the key sets match. This also confirms at runtime that every
+		// key resolves to a non-empty string.
 		const sampleKeys: MessageKey[] = [
 			"action.newSession",
 			"common.untitled",

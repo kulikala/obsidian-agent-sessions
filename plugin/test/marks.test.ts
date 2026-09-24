@@ -9,7 +9,7 @@ class FakeMarker implements MarkerHandle {
 class FakeSource implements MarkerSource {
 	markers: FakeMarker[] = [];
 	nextLine = 0;
-	/** `undefined` を返すよう仕込むと「登録できない」状態を再現できる。 */
+	/** Setting this makes registerMarker return `undefined`, simulating a state where registration fails. */
 	fail = false;
 
 	registerMarker(): MarkerHandle | undefined {
@@ -22,8 +22,8 @@ class FakeSource implements MarkerSource {
 	}
 }
 
-describe("MarkTracker（§6.7 ジャンプ）", () => {
-	it("markInstruction を指示として記録する", () => {
+describe("MarkTracker (jump to marker)", () => {
+	it("records markInstruction as an instruction mark", () => {
 		const source = new FakeSource();
 		const tracker = new MarkTracker(source);
 		source.nextLine = 5;
@@ -31,7 +31,7 @@ describe("MarkTracker（§6.7 ジャンプ）", () => {
 		expect(tracker.prev(10)).toBe(5);
 	});
 
-	it("3 回指示すると、前の指示は表示先頭に最も近いものから戻る", () => {
+	it("returns the previous instruction closest to the top of view first, after marking three times", () => {
 		const source = new FakeSource();
 		const tracker = new MarkTracker(source);
 		for (const line of [1, 5, 9]) {
@@ -44,7 +44,7 @@ describe("MarkTracker（§6.7 ジャンプ）", () => {
 		expect(tracker.prev(1)).toBeNull();
 	});
 
-	it("次の指示は表示先頭より下で最も近いもの", () => {
+	it("returns the next instruction as the closest one below the top of view", () => {
 		const source = new FakeSource();
 		const tracker = new MarkTracker(source);
 		for (const line of [1, 5, 9]) {
@@ -56,7 +56,7 @@ describe("MarkTracker（§6.7 ジャンプ）", () => {
 		expect(tracker.next(9)).toBeNull();
 	});
 
-	it("破棄済みのマーカーは前後どちらからも捨てる", () => {
+	it("drops a disposed marker from both prev and next", () => {
 		const source = new FakeSource();
 		const tracker = new MarkTracker(source);
 		source.nextLine = 1;
@@ -67,7 +67,7 @@ describe("MarkTracker（§6.7 ジャンプ）", () => {
 		expect(tracker.prev(100)).toBe(1);
 	});
 
-	it("registerMarker が undefined を返しても壊れない", () => {
+	it("does not break when registerMarker returns undefined", () => {
 		const source = new FakeSource();
 		source.fail = true;
 		const tracker = new MarkTracker(source);
@@ -77,7 +77,7 @@ describe("MarkTracker（§6.7 ジャンプ）", () => {
 		expect(tracker.lastResponse()).toBeNull();
 	});
 
-	it("onBusy は最後の 1 つだけ保持する", () => {
+	it("onBusy keeps only the most recent one", () => {
 		const source = new FakeSource();
 		const tracker = new MarkTracker(source);
 		source.nextLine = 2;
@@ -87,7 +87,7 @@ describe("MarkTracker（§6.7 ジャンプ）", () => {
 		expect(tracker.lastResponse()).toBe(8);
 	});
 
-	it("応答マーカーが破棄済みなら null", () => {
+	it("is null when the response marker has been disposed", () => {
 		const source = new FakeSource();
 		const tracker = new MarkTracker(source);
 		source.nextLine = 3;

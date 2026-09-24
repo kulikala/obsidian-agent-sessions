@@ -8,7 +8,7 @@ function mark(dir: string, id: string): void {
 	writeFileSync(join(dir, `${id}.json`), JSON.stringify({ compactedAt: 1700000000 }), "utf8");
 }
 
-describe("CompactedTracker（T-77 追補：compact 直後・未入力の印）", () => {
+describe("CompactedTracker (marking a session as just-compacted with no input yet)", () => {
 	let dir: string;
 
 	beforeEach(() => {
@@ -19,19 +19,19 @@ describe("CompactedTracker（T-77 追補：compact 直後・未入力の印）",
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("ディレクトリが無ければ has は常に false（フックがまだ一度も走っていない）", () => {
+	it("has is always false when the directory doesn't exist (the hook has never run yet)", () => {
 		const tracker = new CompactedTracker(join(dir, "does-not-exist"));
 		expect(tracker.has("a")).toBe(false);
 	});
 
-	it("<id>.json があれば has が true", () => {
+	it("has is true when <id>.json exists", () => {
 		mark(dir, "a");
 		const tracker = new CompactedTracker(dir);
 		expect(tracker.has("a")).toBe(true);
 		expect(tracker.has("b")).toBe(false);
 	});
 
-	it(".json 以外のファイルは無視する", () => {
+	it("ignores files other than .json", () => {
 		writeFileSync(join(dir, "a.json.tmp"), "{}", "utf8");
 		writeFileSync(join(dir, "README"), "x", "utf8");
 		const tracker = new CompactedTracker(dir);
@@ -39,7 +39,7 @@ describe("CompactedTracker（T-77 追補：compact 直後・未入力の印）",
 		expect(tracker.has("a.json")).toBe(false);
 	});
 
-	it("refresh で読み直し、change を発火する", () => {
+	it("reloads on refresh and fires change", () => {
 		const tracker = new CompactedTracker(dir);
 		expect(tracker.has("a")).toBe(false);
 
@@ -52,7 +52,7 @@ describe("CompactedTracker（T-77 追補：compact 直後・未入力の印）",
 		expect(changes).toBe(1);
 	});
 
-	it("マークが消えれば refresh の後 has が false に戻る（UserPromptSubmit・SessionEnd 相当）", () => {
+	it("has goes back to false after refresh once the mark is gone (equivalent to UserPromptSubmit/SessionEnd)", () => {
 		mark(dir, "a");
 		const tracker = new CompactedTracker(dir);
 		expect(tracker.has("a")).toBe(true);
@@ -63,7 +63,7 @@ describe("CompactedTracker（T-77 追補：compact 直後・未入力の印）",
 		expect(tracker.has("a")).toBe(false);
 	});
 
-	it("watch/stop は例外を投げない（ディレクトリが後から出来ても）", () => {
+	it("watch/stop does not throw (even if the directory is created later)", () => {
 		const missing = join(dir, "later");
 		const tracker = new CompactedTracker(missing);
 		const stop = tracker.watch();

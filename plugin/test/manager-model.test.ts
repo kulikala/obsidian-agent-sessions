@@ -53,10 +53,11 @@ function tree(overrides: Partial<ManagerTree> = {}): ManagerTree {
 	};
 }
 
-describe("flattenTree（D-44・T-70 追補・T-74 追補）", () => {
-	it("グループ→その他（カテゴリなし＋名前なしを統合した 1 区分）の順に見出しと子を並べる", () => {
-		const g1 = row({ id: "1", name: "RIM: 議事メモ" });
-		const noCategory = row({ id: "2", name: "カテゴリなしの名前" });
+describe("flattenTree", () => {
+	it("orders headers and children as groups, then 'other' (uncategorized + unnamed merged into one bucket)", () => {
+		// Japanese fixture: labels below assert against the app's ja UI strings ("その他" / OTHER_GROUP's label).
+		const g1 = row({ id: "1", name: "RIM: Meeting notes" });
+		const noCategory = row({ id: "2", name: "Name without a category" });
 		const unnamed = row({ id: "3", name: null });
 		const t = tree({
 			groups: [{ name: "RIM", folded: false, rows: [g1] }],
@@ -72,78 +73,79 @@ describe("flattenTree（D-44・T-70 追補・T-74 追補）", () => {
 		]);
 	});
 
-	it("畳まれたグループは子を出さない", () => {
-		const child = row({ id: "1", name: "RIM: 議事メモ" });
+	it("doesn't emit children for a folded group", () => {
+		const child = row({ id: "1", name: "RIM: Meeting notes" });
 		const t = tree({ groups: [{ name: "RIM", folded: true, rows: [child] }] });
 		const rows = flattenTree(t, false);
 		expect(rows).toEqual<ManagerRow[]>([{ kind: "group", key: "RIM", label: "RIM", count: 1, folded: true }]);
 	});
 
-	it("畳まれた「その他」は見出しだけで子を出さない", () => {
-		const noCategory = row({ id: "1", name: "カテゴリなしの名前" });
+	it("a folded 'other' bucket emits only its header, no children", () => {
+		const noCategory = row({ id: "1", name: "Name without a category" });
 		const t = tree({ others: { folded: true, rows: [noCategory] } });
 		const rows = flattenTree(t, false);
 		expect(rows).toEqual<ManagerRow[]>([{ kind: "group", key: OTHER_GROUP, label: "その他", count: 1, folded: true }]);
 	});
 
-	it("その他が空なら見出しを出さない", () => {
+	it("emits no header when 'other' is empty", () => {
 		const t = tree({ others: { folded: false, rows: [] } });
 		expect(flattenTree(t, false)).toEqual([]);
 	});
 
-	it("showArchived が偽ならアーカイブを出さない", () => {
-		const t = tree({ archived: [{ id: "1", name: "旧", agent: "claude", row: null }] });
+	it("doesn't emit archived when showArchived is false", () => {
+		const t = tree({ archived: [{ id: "1", name: "Old", agent: "claude", row: null }] });
 		expect(flattenTree(t, false)).toEqual([]);
 	});
 
-	it("showArchived が真なら見出し＋子（畳まない）。row が無ければ archived-orphan", () => {
-		const withRow = row({ id: "1", name: "残っている" });
+	it("emits header + children (never folded) when showArchived is true; a missing row becomes archived-orphan", () => {
+		const withRow = row({ id: "1", name: "Still here" });
 		const t = tree({
 			archived: [
-				{ id: "1", name: "残っている", agent: "claude", row: withRow },
-				{ id: "2", name: "もう無い", agent: "claude", row: null },
+				{ id: "1", name: "Still here", agent: "claude", row: withRow },
+				{ id: "2", name: "Gone now", agent: "claude", row: null },
 			],
 		});
 		const rows = flattenTree(t, true);
+		// Japanese fixture: asserts against ARCHIVED_GROUP's actual ja label.
 		expect(rows).toEqual<ManagerRow[]>([
 			{ kind: "group", key: ARCHIVED_GROUP, label: "アーカイブ（2）", count: 2, folded: false },
 			{ kind: "session", row: withRow, indent: true },
-			{ kind: "archived-orphan", id: "2", name: "もう無い" },
+			{ kind: "archived-orphan", id: "2", name: "Gone now" },
 		]);
 	});
 
-	it("アーカイブが空なら showArchived が真でも見出しを出さない", () => {
+	it("emits no header when archived is empty, even with showArchived true", () => {
 		expect(flattenTree(tree({ archived: [] }), true)).toEqual([]);
 	});
 });
 
-describe("moveSelection（D-44）", () => {
+describe("moveSelection", () => {
 	const rows: ManagerRow[] = [
 		{ kind: "session", row: row({ id: "1" }), indent: false },
 		{ kind: "session", row: row({ id: "2" }), indent: false },
 		{ kind: "session", row: row({ id: "3" }), indent: false },
 	];
 
-	it("範囲内なら delta を足すだけ", () => {
+	it("just adds delta when within range", () => {
 		expect(moveSelection(rows, 1, 1)).toBe(2);
 		expect(moveSelection(rows, 1, -1)).toBe(0);
 	});
 
-	it("下端・上端を超えない", () => {
+	it("doesn't go past the top or bottom edge", () => {
 		expect(moveSelection(rows, 2, 1)).toBe(2);
 		expect(moveSelection(rows, 0, -1)).toBe(0);
 	});
 
-	it("delta: 0 は現在値をクランプするだけ（選択の再検証に使える）", () => {
+	it("delta: 0 just clamps the current value (useful for re-validating a selection)", () => {
 		expect(moveSelection(rows, 5, 0)).toBe(2);
 		expect(moveSelection(rows, -1, 0)).toBe(0);
 	});
 
-	it("行が無ければ -1", () => {
+	it("returns -1 when there are no rows", () => {
 		expect(moveSelection([], 0, 1)).toBe(-1);
 	});
 
-	it("cur が -1（未選択）から下へ行くと先頭に入る", () => {
+	it("moving down from cur -1 (nothing selected) lands on the first row", () => {
 		expect(moveSelection(rows, -1, 1)).toBe(0);
 	});
 });
@@ -163,29 +165,29 @@ function statsWindow(overrides: Partial<StatsWindow> = {}): StatsWindow {
 	};
 }
 
-describe("sessionCost（D-54）", () => {
-	it("枠が無ければ null", () => {
+describe("sessionCost", () => {
+	it("returns null when there's no window", () => {
 		expect(sessionCost(null, "1")).toBeNull();
 	});
 
-	it("枠内にそのセッションの使用が無ければ null", () => {
+	it("returns null when the window has no usage for that session", () => {
 		const w = statsWindow({ sessions: { "1": usage(2.5) } });
 		expect(sessionCost(w, "2")).toBeNull();
 	});
 
-	it("有ればそのコスト", () => {
+	it("returns the cost when it's there", () => {
 		const w = statsWindow({ sessions: { "1": usage(2.5) } });
 		expect(sessionCost(w, "1")).toBe(2.5);
 	});
 });
 
-describe("sortRows（D-54）", () => {
-	it("updated はそのまま（グループの木の並び）を返す", () => {
+describe("sortRows", () => {
+	it("leaves 'updated' order as-is (the group tree's own order)", () => {
 		const rows: ManagerRow[] = [{ kind: "session", row: row({ id: "1" }), indent: false }];
 		expect(sortRows(rows, "updated", null)).toBe(rows);
 	});
 
-	it("5h／7d はグループを外し、枠内のコストの降順に並べる。使用の無い行は下", () => {
+	it("5h/7d flatten out groups and sort by descending in-window cost, with unused rows last", () => {
 		const g1 = row({ id: "1" });
 		const g2 = row({ id: "2" });
 		const single = row({ id: "3" });
@@ -194,7 +196,7 @@ describe("sortRows（D-54）", () => {
 			{ kind: "session", row: g1, indent: true },
 			{ kind: "session", row: g2, indent: true },
 			{ kind: "session", row: single, indent: false },
-			{ kind: "archived-orphan", id: "9", name: "旧" },
+			{ kind: "archived-orphan", id: "9", name: "Old" },
 		];
 		const stats: StatsResult = {
 			windows: {
@@ -207,7 +209,7 @@ describe("sortRows（D-54）", () => {
 		expect(sorted.every((r) => r.kind === "session" && r.indent === false)).toBe(true);
 	});
 
-	it("stats が無ければ全行が使用無し扱い（渡された順のまま）", () => {
+	it("treats every row as unused when there are no stats (keeps the given order)", () => {
 		const rows: ManagerRow[] = [
 			{ kind: "session", row: row({ id: "1" }), indent: true },
 			{ kind: "session", row: row({ id: "2" }), indent: false },
@@ -217,8 +219,8 @@ describe("sortRows（D-54）", () => {
 	});
 });
 
-describe("windowSummary（D-54）", () => {
-	it("トークンは入力＋出力＋cache 読出＋cache 作成、セッション数は sessions のキー数", () => {
+describe("windowSummary", () => {
+	it("tokens are input + output + cache read + cache create; session count is the key count of sessions", () => {
 		const w = statsWindow({
 			total: { calls: 3, input: 10, output: 20, cache_read: 5, cache_create: 1, cost: 1.23 },
 			sessions: { a: usage(1), b: usage(2) },
@@ -226,42 +228,42 @@ describe("windowSummary（D-54）", () => {
 		expect(windowSummary(w)).toEqual({ tokens: 36, sessionCount: 2 });
 	});
 
-	it("sessions が空なら 0", () => {
+	it("is 0 when sessions is empty", () => {
 		expect(windowSummary(statsWindow()).sessionCount).toBe(0);
 	});
 });
 
-describe("categoryKeyOf（D-64・D-65）", () => {
-	it("グループ名付きの名前はグループ部分", () => {
-		expect(categoryKeyOf(row({ id: "1", name: "RIM: 議事メモ" }))).toBe("RIM");
+describe("categoryKeyOf", () => {
+	it("a name with a group prefix returns the group part", () => {
+		expect(categoryKeyOf(row({ id: "1", name: "RIM: Meeting notes" }))).toBe("RIM");
 	});
 
-	it("グループの無い名前も、名前が無いのも同じ「その他」(OTHER_GROUP) 扱い（T-74 追補で統合）", () => {
-		const key = categoryKeyOf(row({ id: "1", name: "カテゴリなしのセッション" }));
+	it("a name without a group and a missing name both fall into 'other' (OTHER_GROUP)", () => {
+		const key = categoryKeyOf(row({ id: "1", name: "Session without a category" }));
 		expect(key).toBe(OTHER_GROUP);
 		expect(key).toBe(categoryKeyOf(row({ id: "2", name: null })));
 	});
 });
 
-describe("isRealCategoryKey（T-70）", () => {
-	it("実際のカテゴリ名は真", () => {
+describe("isRealCategoryKey", () => {
+	it("is true for an actual category name", () => {
 		expect(isRealCategoryKey("RIM")).toBe(true);
-		expect(isRealCategoryKey(categoryKeyOf(row({ id: "1", name: "RIM: 議事メモ" })))).toBe(true);
+		expect(isRealCategoryKey(categoryKeyOf(row({ id: "1", name: "RIM: Meeting notes" })))).toBe(true);
 	});
 
-	it("「その他」「アーカイブ」は偽", () => {
-		expect(isRealCategoryKey(categoryKeyOf(row({ id: "1", name: "カテゴリなしのセッション" })))).toBe(false);
+	it("is false for the 'other' and 'archived' buckets", () => {
+		expect(isRealCategoryKey(categoryKeyOf(row({ id: "1", name: "Session without a category" })))).toBe(false);
 		expect(isRealCategoryKey(OTHER_GROUP)).toBe(false);
 		expect(isRealCategoryKey(ARCHIVED_GROUP)).toBe(false);
 	});
 });
 
-describe("categoryTotals（D-64）", () => {
-	it("グループごとにコストとセッション数を合計する", () => {
+describe("categoryTotals", () => {
+	it("sums cost and session count per group", () => {
 		const rows: Row[] = [
-			row({ id: "1", name: "RIM: 議事メモ" }),
-			row({ id: "2", name: "RIM: 別件" }),
-			row({ id: "3", name: "ZERO: 提案" }),
+			row({ id: "1", name: "RIM: Meeting notes" }),
+			row({ id: "2", name: "RIM: Other matter" }),
+			row({ id: "3", name: "ZERO: Proposal" }),
 		];
 		const stats: StatsResult = {
 			windows: {
@@ -276,44 +278,45 @@ describe("categoryTotals（D-64）", () => {
 		expect(zero).toEqual({ key: "ZERO", label: "ZERO", cost: 5, count: 1 });
 	});
 
-	it("グループの無い名前・名前の無いセッションはまとめて「その他」になる（T-74 追補）", () => {
-		const rows: Row[] = [row({ id: "1", name: "カテゴリなしの名前" }), row({ id: "2", name: null })];
+	it("groups a name without a group and a missing name together into 'other'", () => {
+		const rows: Row[] = [row({ id: "1", name: "Name without a category" }), row({ id: "2", name: null })];
 		const totals = categoryTotals(rows, null, "5h");
+		// Japanese fixture: asserts against OTHER_GROUP's actual ja label.
 		expect(totals).toEqual([{ key: OTHER_GROUP, label: "その他", cost: 0, count: 2 }]);
 	});
 
-	it("アーカイブ済み・無名の子セッションは数えない", () => {
+	it("doesn't count archived sessions or unnamed child sessions", () => {
 		const rows: Row[] = [
-			row({ id: "1", name: "RIM: 議事メモ", archived: true }),
+			row({ id: "1", name: "RIM: Meeting notes", archived: true }),
 			row({ id: "2", name: null, child: true }),
-			row({ id: "3", name: "RIM: 現存分" }),
+			row({ id: "3", name: "RIM: Still active" }),
 		];
 		const totals = categoryTotals(rows, null, "5h");
 		expect(totals).toEqual([{ key: "RIM", label: "RIM", cost: 0, count: 1 }]);
 	});
 
-	it("window に使用が無ければコストは 0", () => {
-		const rows: Row[] = [row({ id: "1", name: "RIM: 議事メモ" })];
+	it("cost is 0 when the window has no usage", () => {
+		const rows: Row[] = [row({ id: "1", name: "RIM: Meeting notes" })];
 		expect(categoryTotals(rows, null, "5h")).toEqual([{ key: "RIM", label: "RIM", cost: 0, count: 1 }]);
 	});
 });
 
-describe("topCategoryTotals（D-64 追補）", () => {
+describe("topCategoryTotals", () => {
 	function total(key: string, cost: number): CategoryTotal {
 		return { key, label: key, cost, count: 1 };
 	}
 
-	it("コスト 0 のカテゴリは除く", () => {
-		const totals = [total("RIM", 0), total("ZERO", 5), total("その他", 0)];
+	it("excludes categories with 0 cost", () => {
+		const totals = [total("RIM", 0), total("ZERO", 5), total("Other", 0)];
 		expect(topCategoryTotals(totals, 8)).toEqual([total("ZERO", 5)]);
 	});
 
-	it("残りをコスト降順で並べ、上位 n 件に絞る", () => {
+	it("sorts the rest by descending cost and caps at the top n", () => {
 		const totals = [total("A", 1), total("B", 3), total("C", 2)];
 		expect(topCategoryTotals(totals, 2)).toEqual([total("B", 3), total("C", 2)]);
 	});
 
-	it("全部 0 なら空配列", () => {
+	it("returns an empty array when everything is 0", () => {
 		expect(topCategoryTotals([total("A", 0), total("B", 0)], 8)).toEqual([]);
 	});
 });
@@ -321,16 +324,16 @@ describe("topCategoryTotals（D-64 追補）", () => {
 const DAY = 86400;
 const WEEK = 7 * DAY;
 
-describe("weeklyPace（T-74）", () => {
-	it("usedPct が無ければ unknown", () => {
+describe("weeklyPace", () => {
+	it("is unknown when usedPct is missing", () => {
 		expect(weeklyPace(null, 0, WEEK, 100, 50)).toEqual({ kind: "unknown" });
 	});
 
-	it("枠の長さが 0 以下でも unknown", () => {
+	it("is unknown even with a window length of 0 or less", () => {
 		expect(weeklyPace(10, 100, 100, 200, 50)).toEqual({ kind: "unknown" });
 	});
 
-	it("経過が 6 時間未満なら too-early", () => {
+	it("is too-early when less than 6 hours have elapsed", () => {
 		const result = weeklyPace(10, 0, WEEK, 3600, 50);
 		expect(result.kind).toBe("too-early");
 		if (result.kind === "too-early") {
@@ -338,15 +341,16 @@ describe("weeklyPace（T-74）", () => {
 		}
 	});
 
-	it("予測が 100 以下なら on-track（順調）", () => {
-		// 経過 50%（3.5 日）で使用 40% → 予測 80%。
+	it("is on-track when the projection is 100 or under", () => {
+		// 50% elapsed (3.5 days) at 40% used -> 80% projected.
 		const result = weeklyPace(40, 0, WEEK, WEEK / 2, 100);
 		expect(result).toEqual({ kind: "on-track", projectedPct: 80, elapsedPct: 50, usedPct: 40 });
 	});
 
-	it("予測が 100 を超えたら over-pace（使い切る見込み時刻・1 日あたりの上限）", () => {
-		// 経過 50%（3.5 日）で使用 70% → 予測 140%。このペースなら経過 5 日で使い切り、
-		// リセット（7 日）まで 2 日 0 時間残る。残り 3.5 日で 30% 分の余地。
+	it("is over-pace when the projection exceeds 100 (gives an exhaustion time and a daily cap)", () => {
+		// 50% elapsed (3.5 days) at 70% used -> 140% projected. At this pace the budget runs
+		// out at day 5, leaving 2 days 0 hours before the 7-day reset. That leaves 30% of
+		// headroom over the remaining 3.5 days.
 		const result = weeklyPace(70, 0, WEEK, WEEK / 2, 140);
 		expect(result.kind).toBe("over-pace");
 		if (result.kind === "over-pace") {
@@ -360,8 +364,9 @@ describe("weeklyPace（T-74）", () => {
 		}
 	});
 
-	it("使い切る見込み時刻がリセットの直前（日をまたがない）なら daysBeforeReset は 0", () => {
-		// 経過 50%（3.5 日）で使用 90% → 予測 180%。使い切りは経過 ×100/90 ≈ 3.888…日。
+	it("daysBeforeReset is 0 when exhaustion lands just before the reset (no full day left)", () => {
+		// 50% elapsed (3.5 days) at 90% used -> 180% projected. Exhaustion is at elapsed *
+		// 100/90 ≈ 3.888… days.
 		const result = weeklyPace(90, 0, WEEK, WEEK / 2, 90);
 		expect(result.kind).toBe("over-pace");
 		if (result.kind === "over-pace") {
@@ -370,33 +375,34 @@ describe("weeklyPace（T-74）", () => {
 	});
 });
 
-describe("formatWeekdayTime（T-74）", () => {
-	it("ローカル時刻で「<曜日> HH:MM」にする", () => {
+describe("formatWeekdayTime", () => {
+	it("formats local time as '<weekday> HH:MM'", () => {
 		const d = new Date(2026, 0, 5, 14, 30, 0);
 		const epochSeconds = d.getTime() / 1000;
+		// Japanese fixture: asserts against the app's actual ja weekday abbreviations.
 		const weekdayJa = ["日", "月", "火", "水", "木", "金", "土"][d.getDay()];
 		const weekdayEn = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getDay()];
 		expect(formatWeekdayTime(epochSeconds, "ja")).toBe(`${weekdayJa} 14:30`);
 		expect(formatWeekdayTime(epochSeconds, "en")).toBe(`${weekdayEn} 14:30`);
 	});
 
-	it("時・分は 2 桁ゼロ埋め", () => {
+	it("zero-pads hours and minutes to 2 digits", () => {
 		const d = new Date(2026, 5, 1, 9, 5, 0);
 		const epochSeconds = d.getTime() / 1000;
 		expect(formatWeekdayTime(epochSeconds, "ja")).toMatch(/^. 09:05$/);
 	});
 });
 
-describe("shortModelName（T-74）", () => {
-	it("末尾の `(...)` を落とす", () => {
+describe("shortModelName", () => {
+	it("drops a trailing `(...)`", () => {
 		expect(shortModelName("Opus 5.5 (1M context)")).toBe("Opus 5.5");
 	});
 
-	it("付記が無ければそのまま", () => {
+	it("leaves the name as-is when there's no parenthetical", () => {
 		expect(shortModelName("Sonnet 5")).toBe("Sonnet 5");
 	});
 
-	it("null なら空文字", () => {
+	it("returns an empty string for null", () => {
 		expect(shortModelName(null)).toBe("");
 	});
 });

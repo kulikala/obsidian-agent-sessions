@@ -1,4 +1,5 @@
-// 2 プロセスから同時に updateStore を叩く側。folded に count 件足す。
+// One side of two processes hammering updateStore concurrently. Appends `count`
+// entries to `folded`.
 // argv: [bundlePath, storePath, tag, count]
 const { updateStore } = require(process.argv[2]);
 const storePath = process.argv[3];

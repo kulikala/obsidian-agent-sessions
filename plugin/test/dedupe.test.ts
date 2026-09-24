@@ -40,8 +40,8 @@ class FakeWorkspace implements WorkspaceLike<FakeLeaf> {
 	}
 }
 
-describe("SessionOpener（§6.4 の多重呼出）", () => {
-	it("同じ id を 3 回同時に呼んでも leaf の生成は 1 回", async () => {
+describe("SessionOpener (concurrent calls)", () => {
+	it("creates the leaf only once even when the same id is called three times concurrently", async () => {
 		const ws = new FakeWorkspace();
 		const opener = new SessionOpener(ws);
 		const results = await Promise.all([opener.open("s1"), opener.open("s1"), opener.open("s1")]);
@@ -55,7 +55,7 @@ describe("SessionOpener（§6.4 の多重呼出）", () => {
 		expect(opener.opening.size).toBe(0);
 	});
 
-	it("開いた後の呼出は revealLeaf だけで leaf を作らない", async () => {
+	it("after opening, subsequent calls only call revealLeaf and don't create a new leaf", async () => {
 		const ws = new FakeWorkspace();
 		const opener = new SessionOpener(ws);
 		const first = await opener.open("s1", { agent: "claude", cwd: "/v" });
@@ -66,7 +66,7 @@ describe("SessionOpener（§6.4 の多重呼出）", () => {
 		expect(first.revealed).toBe(2);
 	});
 
-	it("別の id は別の leaf になり、fresh は state に載る", async () => {
+	it("a different id gets a different leaf, and fresh is carried into state", async () => {
 		const ws = new FakeWorkspace();
 		const opener = new SessionOpener(ws);
 		const [a, b] = await Promise.all([opener.open("a"), opener.open("b", { fresh: true, cwd: "/v" })]);
@@ -75,7 +75,7 @@ describe("SessionOpener（§6.4 の多重呼出）", () => {
 		expect(b.getViewState().state).toEqual({ id: "b", agent: "claude", cwd: "/v", fresh: true });
 	});
 
-	it("setViewState が失敗しても opening から消え、次の呼出は作り直す", async () => {
+	it("removes the entry from opening even when setViewState fails, so the next call creates it again", async () => {
 		const ws = new FakeWorkspace();
 		let fail = true;
 		ws.setDelay = async () => {

@@ -8,8 +8,8 @@ import {
 	type RawLimitsFile,
 } from "../src/views/limits";
 
-describe("pickLatestLimits（D-43）", () => {
-	it("rate_limits を持つ最新 mtime のファイルから five_hour・seven_day を取る", () => {
+describe("pickLatestLimits", () => {
+	it("takes five_hour and seven_day from the file with the latest mtime that has rate_limits", () => {
 		const files: RawLimitsFile[] = [
 			{ mtimeMs: 100, rate_limits: { five_hour: { used_percentage: 10, resets_at: 1000 } } },
 			{
@@ -27,7 +27,7 @@ describe("pickLatestLimits（D-43）", () => {
 		});
 	});
 
-	it("rate_limits の無いファイルは無視する", () => {
+	it("ignores files without rate_limits", () => {
 		const files: RawLimitsFile[] = [
 			{ mtimeMs: 500 },
 			{ mtimeMs: 100, rate_limits: { five_hour: { used_percentage: 5, resets_at: 10 } } },
@@ -38,7 +38,7 @@ describe("pickLatestLimits（D-43）", () => {
 		});
 	});
 
-	it("resets_at が無ければ null", () => {
+	it("is null when resets_at is missing", () => {
 		const files: RawLimitsFile[] = [{ mtimeMs: 1, rate_limits: { five_hour: { used_percentage: 5 } } }];
 		expect(pickLatestLimits(files)).toEqual({
 			fiveHour: { usedPercentage: 5, resetsAt: null },
@@ -46,26 +46,26 @@ describe("pickLatestLimits（D-43）", () => {
 		});
 	});
 
-	it("該当ファイルが無ければ null", () => {
+	it("is null when there is no matching file", () => {
 		expect(pickLatestLimits([])).toBeNull();
 		expect(pickLatestLimits([{ mtimeMs: 1 }])).toBeNull();
 	});
 });
 
-describe("rollForwardWindow（T-74 追補）", () => {
-	it("resetsAt が now より未来ならそのまま", () => {
+describe("rollForwardWindow", () => {
+	it("leaves the window unchanged when resetsAt is still in the future relative to now", () => {
 		const w = { usedPercentage: 42, resetsAt: 2000 };
 		expect(rollForwardWindow(w, FIVE_HOUR_SECONDS, 1000)).toEqual(w);
 	});
 
-	it("resetsAt がちょうど now でも先送りしない", () => {
+	it("does not roll forward when resetsAt equals now exactly", () => {
 		const w = { usedPercentage: 42, resetsAt: 1000 };
 		expect(rollForwardWindow(w, FIVE_HOUR_SECONDS, 1000)).toEqual(w);
 	});
 
-	it("resetsAt が過去なら 1 期分先へ送り、usedPercentage は null にする", () => {
+	it("rolls forward by one period and nulls out usedPercentage when resetsAt is in the past", () => {
 		const resetsAt = 1_700_000_000;
-		const now = resetsAt + 60; // 1 分前にリセットを過ぎている
+		const now = resetsAt + 60; // the reset time passed one minute ago
 		const w = { usedPercentage: 88, resetsAt };
 		expect(rollForwardWindow(w, FIVE_HOUR_SECONDS, now)).toEqual({
 			usedPercentage: null,
@@ -73,7 +73,7 @@ describe("rollForwardWindow（T-74 追補）", () => {
 		});
 	});
 
-	it("2 期分以上ずれていても必要な回数だけ先へ送る", () => {
+	it("rolls forward as many periods as needed when more than one period has elapsed", () => {
 		const resetsAt = 1_700_000_000;
 		const now = resetsAt + 2 * SEVEN_DAY_SECONDS + 100;
 		const w = { usedPercentage: 50, resetsAt };
@@ -83,35 +83,38 @@ describe("rollForwardWindow（T-74 追補）", () => {
 		});
 	});
 
-	it("resetsAt が無ければそのまま（先送りできない）", () => {
+	it("leaves the window unchanged when resetsAt is missing (nothing to roll forward)", () => {
 		const w = { usedPercentage: 10, resetsAt: null };
 		expect(rollForwardWindow(w, FIVE_HOUR_SECONDS, 1_700_000_000)).toEqual(w);
 	});
 
-	it("w が null ならそのまま null", () => {
+	it("stays null when the window itself is null", () => {
 		expect(rollForwardWindow(null, FIVE_HOUR_SECONDS, 1_700_000_000)).toBeNull();
 	});
 });
 
-describe("formatCountdown（D-43）", () => {
-	it("h:mm:ss にする", () => {
+describe("formatCountdown", () => {
+	it("formats as h:mm:ss", () => {
 		expect(formatCountdown(3725)).toBe("1:02:05");
 	});
 
-	it("1 時間未満は 0 時間台", () => {
+	it("uses a single 0 digit for the hour when under an hour", () => {
 		expect(formatCountdown(65)).toBe("0:01:05");
 	});
 
-	it("負数は 0 に丸める", () => {
+	it("clamps negative values to 0", () => {
 		expect(formatCountdown(-10)).toBe("0:00:00");
 	});
 
-	it("端数は丸める", () => {
+	it("rounds fractional seconds", () => {
 		expect(formatCountdown(59.6)).toBe("0:01:00");
 	});
 
-	it("24 時間以上は秒を落として「N 日 h:mm」にする（D-54）", () => {
-		// 2 日と 3 時間 5 分 10 秒。
+	it("drops the seconds and formats as 'N 日 h:mm' at 24 hours or more", () => {
+		// 2 days, 3 hours, 5 minutes, 10 seconds.
+		// Japanese fixture: the expected output is the actual UI-facing countdown
+		// string the app renders (day unit is displayed in Japanese), not
+		// incidental test dressing.
 		expect(formatCountdown(2 * 86400 + 3 * 3600 + 5 * 60 + 10)).toBe("2 日 3:05");
 	});
 });

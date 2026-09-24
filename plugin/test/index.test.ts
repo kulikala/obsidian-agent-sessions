@@ -49,13 +49,13 @@ function row(overrides: Partial<Row> & Pick<Row, "id">): Row {
 	};
 }
 
-describe("mergeRow（走査で作った Row に前の Row の起動中情報を引き継ぐ。T-79）", () => {
-	it("前の Row が無ければ走査結果のまま", () => {
+describe("mergeRow (carries the previous Row's in-flight info onto a freshly scanned Row)", () => {
+	it("keeps the scan result as-is when there's no previous Row", () => {
 		const fresh = row({ id: "a", waitingFor: null, compacted: false });
 		expect(mergeRow(fresh, undefined)).toBe(fresh);
 	});
 
-	it("status・pid・rc・daemon・exited を前の Row から引き継ぐ", () => {
+	it("carries status/pid/rc/daemon/exited over from the previous Row", () => {
 		const fresh = row({ id: "a" });
 		const previous = row({ id: "a", status: "busy", pid: 123, rc: true, daemon: true, exited: 1700000000 });
 		const merged = mergeRow(fresh, previous);
@@ -66,20 +66,23 @@ describe("mergeRow（走査で作った Row に前の Row の起動中情報を�
 		expect(merged.exited).toBe(1700000000);
 	});
 
-	it("waitingFor・compacted も前の Row から引き継ぐ——applyRegistry／applyCompacted が" +
-		"当て直すまでの間に asking・compacted の印が一瞬消えないようにする", () => {
-		const fresh = row({ id: "a", waitingFor: null, compacted: false });
-		const previous = row({ id: "a", waitingFor: "permission prompt", compacted: true });
-		const merged = mergeRow(fresh, previous);
-		expect(merged.waitingFor).toBe("permission prompt");
-		expect(merged.compacted).toBe(true);
-	});
+	it(
+		"also carries waitingFor/compacted over from the previous Row — so the asking/compacted " +
+			"marks don't briefly disappear before applyRegistry/applyCompacted reapply them",
+		() => {
+			const fresh = row({ id: "a", waitingFor: null, compacted: false });
+			const previous = row({ id: "a", waitingFor: "permission prompt", compacted: true });
+			const merged = mergeRow(fresh, previous);
+			expect(merged.waitingFor).toBe("permission prompt");
+			expect(merged.compacted).toBe(true);
+		}
+	);
 
-	it("走査結果側の値（name・folder 等）は前の Row で上書きしない", () => {
-		const fresh = row({ id: "a", name: "新しい名前", folder: "new-folder" });
-		const previous = row({ id: "a", name: "古い名前", folder: "old-folder" });
+	it("doesn't let the previous Row overwrite scan-side values (name, folder, etc.)", () => {
+		const fresh = row({ id: "a", name: "New name", folder: "new-folder" });
+		const previous = row({ id: "a", name: "Old name", folder: "old-folder" });
 		const merged = mergeRow(fresh, previous);
-		expect(merged.name).toBe("新しい名前");
+		expect(merged.name).toBe("New name");
 		expect(merged.folder).toBe("new-folder");
 	});
 });
@@ -115,24 +118,24 @@ describe("SessionIndex", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("scan で sessions map が埋まる", async () => {
+	it("fills the sessions map on scan", async () => {
 		scanImpl = async () => ({
-			sessions: [scanSession({ id: "a", name: "RIM: 会議" })],
+			sessions: [scanSession({ id: "a", name: "RIM: Meeting" })],
 			store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
 		});
 		const index = new SessionIndex(deps);
 		await index.scan();
 
 		const row = index.sessions.get("a");
-		expect(row?.name).toBe("RIM: 会議");
+		expect(row?.name).toBe("RIM: Meeting");
 		expect(row?.hasTab).toBe(false);
 		expect(row?.archived).toBe(false);
 		expect(row?.daemon).toBe(false);
 	});
 
-	it("scan で見つかったカテゴリに色番号を割り当て sessions.json へ書き戻す（T-70）", async () => {
+	it("assigns color indices to categories found by scan and writes them back to sessions.json", async () => {
 		scanImpl = async () => ({
-			sessions: [scanSession({ id: "a", name: "RIM: 会議" }), scanSession({ id: "b", name: "ZERO: 提案" })],
+			sessions: [scanSession({ id: "a", name: "RIM: Meeting" }), scanSession({ id: "b", name: "ZERO: Proposal" })],
 			store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
 		});
 		const index = new SessionIndex(deps);
@@ -143,12 +146,12 @@ describe("SessionIndex", () => {
 		expect(rimColor).not.toBe(zeroColor);
 		expect(loadStore(deps.storePath).categoryColors).toEqual({ RIM: rimColor, ZERO: zeroColor });
 
-		// もう一度走査しても割当は変わらない（一度決めたら不変）。
+		// Scanning again doesn't change the assignment (fixed once decided).
 		await index.scan();
 		expect(index.categoryColorIndex("RIM")).toBe(rimColor);
 	});
 
-	it("scan が失敗したら前回の結果を保ち onError で通知する", async () => {
+	it("keeps the previous result and notifies via onError when scan fails", async () => {
 		scanImpl = async () => ({
 			sessions: [scanSession({ id: "a" })],
 			store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
@@ -168,7 +171,7 @@ describe("SessionIndex", () => {
 		expect(errors).toEqual(["boom"]);
 	});
 
-	it("refreshLive が daemon/exited を反映する（running:false なら全部消える）", async () => {
+	it("refreshLive reflects daemon/exited (running:false clears everything)", async () => {
 		scanImpl = async () => ({
 			sessions: [scanSession({ id: "a" })],
 			store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
@@ -189,7 +192,7 @@ describe("SessionIndex", () => {
 		expect(index.sessions.get("a")?.exited).toBeNull();
 	});
 
-	it("scan のたびに live も反映し、daemon.sessions に含まれる id は daemon: true になる（§6.1・§6.3）", async () => {
+	it("also reflects live on every scan; an id present in daemon.sessions gets daemon: true", async () => {
 		scanImpl = async () => ({
 			sessions: [scanSession({ id: "a" }), scanSession({ id: "b" })],
 			store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
@@ -208,7 +211,7 @@ describe("SessionIndex", () => {
 		expect(index.sessions.get("b")?.daemon).toBe(false);
 	});
 
-	it("live が失敗しても静かに無視する（scanError は出さず daemon: false のまま）", async () => {
+	it("silently ignores a failure in live (no scanError; stays daemon: false)", async () => {
 		scanImpl = async () => ({
 			sessions: [scanSession({ id: "a" })],
 			store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
@@ -227,7 +230,7 @@ describe("SessionIndex", () => {
 		const errors: string[] = [];
 		index.onError((message) => errors.push(message));
 		liveImpl = async () => {
-			throw new Error("daemon 未起動");
+			throw new Error("daemon not running");
 		};
 		await index.refreshLive();
 
@@ -235,7 +238,7 @@ describe("SessionIndex", () => {
 		expect(index.sessions.get("a")?.daemon).toBe(false);
 	});
 
-	it("setOpenTabs が hasTab を更新する", async () => {
+	it("setOpenTabs updates hasTab", async () => {
 		scanImpl = async () => ({
 			sessions: [scanSession({ id: "a" }), scanSession({ id: "b" })],
 			store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
@@ -248,9 +251,9 @@ describe("SessionIndex", () => {
 		expect(index.sessions.get("b")?.hasTab).toBe(true);
 	});
 
-	it("store.archived を見て archived を立てる", async () => {
+	it("sets archived by checking store.archived", async () => {
 		updateStore(deps.storePath, (s) => {
-			s.archived.push({ id: "a", name: "旧名", agent: "claude" });
+			s.archived.push({ id: "a", name: "Old name", agent: "claude" });
 		});
 		scanImpl = async () => ({
 			sessions: [scanSession({ id: "a" }), scanSession({ id: "b" })],
@@ -263,14 +266,14 @@ describe("SessionIndex", () => {
 		expect(index.sessions.get("b")?.archived).toBe(false);
 	});
 
-	it("getDetail はキャッシュする", async () => {
+	it("getDetail caches its result", async () => {
 		const index = new SessionIndex(deps);
 		await index.getDetail("a");
 		await index.getDetail("a");
 		expect(detailCalls).toEqual(["a"]);
 	});
 
-	it("invalidateDetail はキャッシュを消し、次の getDetail が呼び直す", async () => {
+	it("invalidateDetail clears the cache so the next getDetail re-fetches", async () => {
 		const index = new SessionIndex(deps);
 		await index.getDetail("a");
 		expect(detailCalls).toEqual(["a"]);
@@ -280,7 +283,7 @@ describe("SessionIndex", () => {
 		expect(detailCalls).toEqual(["a", "a"]);
 	});
 
-	it("registry の busy→idle で detail キャッシュを自動で捨てる（/compact・/rename の後を想定）", async () => {
+	it("automatically drops the detail cache on a registry busy->idle transition (e.g. after /compact or /rename)", async () => {
 		mkdirSync(deps.sessionsDir, { recursive: true });
 		const sessionFile = join(deps.sessionsDir, "a.json");
 		writeFileSync(sessionFile, JSON.stringify({ pid: process.pid, sessionId: "a", status: "busy" }), "utf8");
@@ -296,10 +299,10 @@ describe("SessionIndex", () => {
 		expect(detailCalls).toEqual(["a", "a"]);
 	});
 
-	describe("waitForName（T-72：/rename は busy にならず events.log にも来ないので明示的に待つ）", () => {
-		it("既に一致していれば rescan を呼ばずに true", async () => {
+	describe("waitForName (explicitly polled because /rename never goes busy and never hits events.log)", () => {
+		it("returns true without calling rescan when the name already matches", async () => {
 			scanImpl = async () => ({
-				sessions: [scanSession({ id: "a", name: "新しい名前" })],
+				sessions: [scanSession({ id: "a", name: "New name" })],
 				store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
 			});
 			const index = new SessionIndex(deps);
@@ -309,18 +312,18 @@ describe("SessionIndex", () => {
 			scanImpl = async () => {
 				scanCalls++;
 				return {
-					sessions: [scanSession({ id: "a", name: "新しい名前" })],
+					sessions: [scanSession({ id: "a", name: "New name" })],
 					store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
 				};
 			};
 
-			expect(await index.waitForName("a", "新しい名前", 200, 5)).toBe(true);
+			expect(await index.waitForName("a", "New name", 200, 5)).toBe(true);
 			expect(scanCalls).toBe(0);
 		});
 
-		it("数回の再走査の後に一致すれば true（rescan のたび change も発火する）", async () => {
+		it("returns true once it matches after a few rescans (each rescan also fires change)", async () => {
 			scanImpl = async () => ({
-				sessions: [scanSession({ id: "a", name: "旧名" })],
+				sessions: [scanSession({ id: "a", name: "Old name" })],
 				store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
 			});
 			const index = new SessionIndex(deps);
@@ -331,34 +334,34 @@ describe("SessionIndex", () => {
 			index.onChange(() => changes++);
 			scanImpl = async (only) => {
 				scanCalls++;
-				const name = scanCalls >= 3 ? "新しい名前" : "旧名";
+				const name = scanCalls >= 3 ? "New name" : "Old name";
 				return {
 					sessions: [scanSession({ id: "a", name })],
 					store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
 				};
 			};
 
-			expect(await index.waitForName("a", "新しい名前", 500, 5)).toBe(true);
+			expect(await index.waitForName("a", "New name", 500, 5)).toBe(true);
 			expect(scanCalls).toBeGreaterThanOrEqual(3);
 			expect(changes).toBeGreaterThanOrEqual(3);
-			expect(index.sessions.get("a")?.name).toBe("新しい名前");
+			expect(index.sessions.get("a")?.name).toBe("New name");
 		});
 
-		it("timeoutMs に達しても一致しなければ false で諦める", async () => {
+		it("gives up with false once timeoutMs is reached without a match", async () => {
 			scanImpl = async () => ({
-				sessions: [scanSession({ id: "a", name: "旧名" })],
+				sessions: [scanSession({ id: "a", name: "Old name" })],
 				store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
 			});
 			const index = new SessionIndex(deps);
 			await index.scan();
 
-			expect(await index.waitForName("a", "新しい名前", 20, 5)).toBe(false);
-			expect(index.sessions.get("a")?.name).toBe("旧名");
+			expect(await index.waitForName("a", "New name", 20, 5)).toBe(false);
+			expect(index.sessions.get("a")?.name).toBe("Old name");
 		});
 	});
 
-	describe("compacted（T-77 追補：compact 直後・未入力の印を row に合成する）", () => {
-		it("compactedDir に <id>.json があれば row.compacted が true", async () => {
+	describe("compacted (merges the just-compacted, no-input-yet mark onto the row)", () => {
+		it("row.compacted is true when compactedDir has an <id>.json", async () => {
 			mkdirSync(deps.compactedDir, { recursive: true });
 			writeFileSync(join(deps.compactedDir, "a.json"), JSON.stringify({ compactedAt: 1 }), "utf8");
 			scanImpl = async () => ({
@@ -372,7 +375,7 @@ describe("SessionIndex", () => {
 			expect(index.sessions.get("b")?.compacted).toBe(false);
 		});
 
-		it("印が無ければ compacted は false（デフォルト）", async () => {
+		it("compacted defaults to false when there's no mark", async () => {
 			scanImpl = async () => ({
 				sessions: [scanSession({ id: "a" })],
 				store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
@@ -383,7 +386,7 @@ describe("SessionIndex", () => {
 			expect(index.sessions.get("a")?.compacted).toBe(false);
 		});
 
-		it("compactedTracker の change で change が発火し、印が消えれば row.compacted も false に戻る", async () => {
+		it("a compactedTracker change fires change, and row.compacted goes back to false once the mark is gone", async () => {
 			mkdirSync(deps.compactedDir, { recursive: true });
 			writeFileSync(join(deps.compactedDir, "a.json"), JSON.stringify({ compactedAt: 1 }), "utf8");
 			scanImpl = async () => ({

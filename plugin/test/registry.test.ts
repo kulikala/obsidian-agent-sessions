@@ -21,7 +21,7 @@ describe("Registry", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
-	it("生きている pid の台帳だけを持つ", () => {
+	it("only keeps records for a live pid", () => {
 		writeSession(dir, "alive.json", { pid: process.pid, sessionId: "alive-id", status: "idle" });
 		writeSession(dir, "dead.json", { pid: DEAD_PID, sessionId: "dead-id", status: "idle" });
 
@@ -31,7 +31,7 @@ describe("Registry", () => {
 		expect(registry.get("dead-id")).toBeNull();
 	});
 
-	it("bridgeSessionId の有無から rc を出す", () => {
+	it("derives rc from whether bridgeSessionId is present", () => {
 		writeSession(dir, "a.json", { pid: process.pid, sessionId: "a", status: "busy", bridgeSessionId: "b-1" });
 		writeSession(dir, "b.json", { pid: process.pid, sessionId: "b", status: "busy" });
 
@@ -41,7 +41,7 @@ describe("Registry", () => {
 		expect(registry.get("b")?.rc).toBe(false);
 	});
 
-	it("waitingFor を素通しする（T-77。claude 自身が status:'waiting' のときに書く理由）", () => {
+	it("passes waitingFor through unchanged (claude itself writes it when status is 'waiting')", () => {
 		writeSession(dir, "a.json", { pid: process.pid, sessionId: "a", status: "waiting", waitingFor: "input needed" });
 		writeSession(dir, "b.json", { pid: process.pid, sessionId: "b", status: "idle" });
 
@@ -52,7 +52,7 @@ describe("Registry", () => {
 		expect(registry.get("b")?.waitingFor).toBeUndefined();
 	});
 
-	it("waiting は busy/shell とは違うので onIdle／onBusy を発火しない", () => {
+	it("waiting is distinct from busy/shell, so it doesn't fire onIdle/onBusy", () => {
 		writeSession(dir, "a.json", { pid: process.pid, sessionId: "a", status: "busy" });
 		const registry = new Registry(dir);
 
@@ -69,7 +69,7 @@ describe("Registry", () => {
 		expect(registry.get("a")?.status).toBe("waiting");
 	});
 
-	it("壊れた JSON のファイルは無視して他は読む", () => {
+	it("ignores a file with broken JSON and still reads the rest", () => {
 		writeFileSync(join(dir, "broken.json"), "{not json", "utf8");
 		writeSession(dir, "ok.json", { pid: process.pid, sessionId: "ok", status: "idle" });
 
@@ -78,7 +78,7 @@ describe("Registry", () => {
 		expect(registry.get("ok")).not.toBeNull();
 	});
 
-	it("refresh で読み直し、busy/shell → idle を onIdle で通知する", () => {
+	it("re-reads on refresh and reports busy/shell → idle via onIdle", () => {
 		writeSession(dir, "a.json", { pid: process.pid, sessionId: "a", status: "busy" });
 		const registry = new Registry(dir);
 
@@ -92,7 +92,7 @@ describe("Registry", () => {
 		expect(registry.get("a")?.status).toBe("idle");
 	});
 
-	it("refresh で読み直し、idle → busy/shell を onBusy で通知する", () => {
+	it("re-reads on refresh and reports idle → busy/shell via onBusy", () => {
 		writeSession(dir, "a.json", { pid: process.pid, sessionId: "a", status: "idle" });
 		const registry = new Registry(dir);
 
@@ -106,7 +106,7 @@ describe("Registry", () => {
 		expect(registry.get("a")?.status).toBe("busy");
 	});
 
-	it("初めて観測した id が busy/shell なら、その refresh で onBusy を通知する（D-42）", () => {
+	it("reports onBusy on the same refresh when an id observed for the first time is busy/shell", () => {
 		const registry = new Registry(dir);
 		const busied: string[] = [];
 		registry.onBusy((id) => busied.push(id));
@@ -119,14 +119,14 @@ describe("Registry", () => {
 		expect(busied.sort()).toEqual(["a", "c"]);
 	});
 
-	it("waitFor は既にその状態なら即 true", async () => {
+	it("waitFor resolves true immediately if already in that state", async () => {
 		writeSession(dir, "a.json", { pid: process.pid, sessionId: "a", status: "idle" });
 		const registry = new Registry(dir);
 
 		await expect(registry.waitFor("a", "idle", 1000)).resolves.toBe(true);
 	});
 
-	it("waitFor は refresh で状態が変わったら true（初めて観測する id でも）", async () => {
+	it("waitFor resolves true once refresh changes the state (even for an id seen for the first time)", async () => {
 		const registry = new Registry(dir);
 		const waiting = registry.waitFor("a", "idle", 5000);
 
@@ -138,7 +138,7 @@ describe("Registry", () => {
 		await expect(waiting).resolves.toBe(true);
 	});
 
-	it("waitFor の busy は shell も含む", async () => {
+	it("waitFor's busy also matches shell", async () => {
 		const registry = new Registry(dir);
 		const waiting = registry.waitFor("a", "busy", 5000);
 		writeSession(dir, "a.json", { pid: process.pid, sessionId: "a", status: "shell" });
@@ -146,14 +146,14 @@ describe("Registry", () => {
 		await expect(waiting).resolves.toBe(true);
 	});
 
-	it("waitFor は timeoutMs で false を返し、以後の change を聴かない", async () => {
+	it("waitFor returns false on timeoutMs and stops listening for further change events", async () => {
 		const registry = new Registry(dir);
 		const before = registry.listenerCount("change");
 		await expect(registry.waitFor("a", "idle", 20)).resolves.toBe(false);
 		expect(registry.listenerCount("change")).toBe(before);
 	});
 
-	it("refresh のたびに onChange が呼ばれる", () => {
+	it("calls onChange on every refresh", () => {
 		const registry = new Registry(dir);
 		let calls = 0;
 		const unsubscribe = registry.onChange(() => calls++);

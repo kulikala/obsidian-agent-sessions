@@ -1,7 +1,7 @@
-// 実デーモンとの往復。`AGENT_SESSIONS_BIN`（`agent-sessions` 本体へのパス）が
-// 環境変数に無ければ丸ごと skip する。
-// ソケットは `/tmp/as-<pid>/` に置く（Unix ソケットのパスは 104 バイト未満）。
-// 実行時ディレクトリも同じ場所にし、本物の `~/.agents/sessions` に触れない。
+// Round-trip against the real daemon. Skipped entirely if `AGENT_SESSIONS_BIN`
+// (the path to the `agent-sessions` binary) isn't set in the environment.
+// The socket lives under `/tmp/as-<pid>/` (Unix socket paths must stay under 104 bytes).
+// The runtime dir is the same location, so this never touches the real `~/.agents/sessions`.
 
 import { randomBytes } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -30,7 +30,7 @@ function waitForSocket(sockPath: string, timeoutMs = 3000): Promise<void> {
 	return attempt();
 }
 
-describe.skipIf(!BIN)("daemon（実プロセス）", () => {
+describe.skipIf(!BIN)("daemon (real process)", () => {
 	let daemonProc: ChildProcess | undefined;
 	let runtimeDir: string;
 	let sockPath: string;
@@ -39,7 +39,7 @@ describe.skipIf(!BIN)("daemon（実プロセス）", () => {
 		const proc = daemonProc;
 		daemonProc = undefined;
 		if (proc && proc.exitCode === null) {
-			// shutdown 後の後始末（exited.json・ソケットの削除）が済むのを待ってから消す。
+			// Wait for post-shutdown cleanup (removing exited.json and the socket) before deleting.
 			await new Promise<void>((resolve) => {
 				const timer = setTimeout(() => {
 					proc.kill("SIGKILL");
@@ -54,7 +54,7 @@ describe.skipIf(!BIN)("daemon（実プロセス）", () => {
 		rmSync(runtimeDir, { recursive: true, force: true });
 	});
 
-	it("hello → start(cat) → attach → 入出力の往復 → shutdown", async () => {
+	it("hello → start(cat) → attach → round-trip input/output → shutdown", async () => {
 		runtimeDir = `/tmp/as-${process.pid}-${randomBytes(3).toString("hex")}`;
 		mkdirSync(runtimeDir, { recursive: true });
 		sockPath = join(runtimeDir, "d.sock");
