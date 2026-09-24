@@ -85,6 +85,93 @@ def compute_changes(settings: dict) -> List[str]:
     return changes
 
 
+def _remove_hook_event(hooks_obj: dict, event: str) -> List[str]:
+    """`event` の entries から、自分の hook（`_NEW_HOOK_COMMAND`）だけを取り除く（T-83）。
+
+    hooks が空になった entry は消す。entries が空になれば `hooks_obj` からそのキー自体を
+    消す。他のツールが入れた hook・他の matcher の entry はそのまま残す。
+    """
+    changes: List[str] = []
+    entries = hooks_obj.get(event)
+    if not isinstance(entries, list):
+        return changes
+    new_entries: List[dict] = []
+    removed = False
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get('hooks'), list):
+            new_entries.append(entry)
+            continue
+        kept = [h for h in entry['hooks']
+                if not (isinstance(h, dict) and h.get('command') == _NEW_HOOK_COMMAND)]
+        if len(kept) != len(entry['hooks']):
+            removed = True
+        if kept:
+            new_entry = dict(entry)
+            new_entry['hooks'] = kept
+            new_entries.append(new_entry)
+        # kept が空なら entry ごと省く。
+    if removed:
+        changes.append('hooks.%s: %s を取り除いた' % (event, _NEW_HOOK_COMMAND))
+    if new_entries:
+        hooks_obj[event] = new_entries
+    elif event in hooks_obj:
+        del hooks_obj[event]
+    return changes
+
+
+def _remove_status_line(settings: dict) -> Optional[str]:
+    current = settings.get('statusLine')
+    if isinstance(current, dict) and current.get('command') == _NEW_STATUS_LINE['command']:
+        del settings['statusLine']
+        return 'statusLine: %r を取り除いた' % current
+    return None
+
+
+def compute_removal(settings: dict) -> List[str]:
+    """`compute_changes` の逆（T-83）。`settings` をその場で書き換え、自分が入れた
+    hooks・statusLine だけを取り除いた変更点の説明文のリストを返す。他のフック・
+    他の statusLine には触れない。何も入っていなければ変更なし（冪等）。"""
+    changes: List[str] = []
+    hooks_obj = settings.get('hooks')
+    if isinstance(hooks_obj, dict):
+        for event, _matcher in _HOOK_EVENTS:
+            changes.extend(_remove_hook_event(hooks_obj, event))
+        if not hooks_obj and 'hooks' in settings:
+            del settings['hooks']
+    line_change = _remove_status_line(settings)
+    if line_change:
+        changes.append(line_change)
+    return changes
+
+
+def run_remove(settings_path: str = DEFAULT_SETTINGS_PATH, dry_run: bool = False) -> Tuple[List[str], dict]:
+    """`run()` の逆（T-83）。`settings_path` を読み、自分が `run()` で入れた hooks・
+    statusLine だけを取り除く。`settings_path` が無ければ何もしない（`([], {})`）。
+    変更があれば `run()` と同じ形式で backup してから書く。"""
+    if not os.path.exists(settings_path):
+        return [], {}
+    with open(settings_path, 'r', encoding='utf-8') as f:
+        try:
+            loaded = json.load(f)
+        except ValueError:
+            loaded = {}
+    settings = loaded if isinstance(loaded, dict) else {}
+
+    new_settings = copy.deepcopy(settings)
+    changes = compute_removal(new_settings)
+
+    if changes and not dry_run:
+        backup_path = settings_path + '.bak-' + time.strftime('%Y%m%d%H%M%S')
+        with open(backup_path, 'w', encoding='utf-8') as f:
+            json.dump(settings, f, ensure_ascii=False, indent=2)
+            f.write('\n')
+        with open(settings_path, 'w', encoding='utf-8') as f:
+            json.dump(new_settings, f, ensure_ascii=False, indent=2)
+            f.write('\n')
+
+    return changes, new_settings
+
+
 def run(settings_path: str = DEFAULT_SETTINGS_PATH, dry_run: bool = False) -> Tuple[List[str], dict]:
     """`settings_path` を読み、変更点を計算する。`dry_run` でなければ backup を残して書き込む。
 

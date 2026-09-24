@@ -118,7 +118,7 @@ npm test && npm run typecheck && npm run build   # plugin (vitest, tsc, esbuild)
 AGENT_SESSIONS_BIN=$PWD/../bin/agent-sessions npm test   # also run the tests that exercise a real daemon
 
 cd ..
-/usr/bin/python3 -W error -m unittest discover -s tests -t .   # Python (standard library only)
+python3 -W error -m unittest discover -s tests -t .   # Python (standard library only)
 ```
 
 ### Release (maintainers)

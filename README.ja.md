@@ -116,7 +116,7 @@ npm test && npm run typecheck && npm run build   # プラグイン（vitest・ts
 AGENT_SESSIONS_BIN=$PWD/../bin/agent-sessions npm test   # 実デーモンを使うテストも走らせる
 
 cd ..
-/usr/bin/python3 -W error -m unittest discover -s tests -t .   # Python（標準ライブラリのみ）
+python3 -W error -m unittest discover -s tests -t .   # Python（標準ライブラリのみ）
 ```
 
 ### リリース（メンテナ向け）

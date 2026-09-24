@@ -193,5 +193,83 @@ class TestCompactedHooks(SetupTestBase):
         self.assertEqual(new_settings['hooks']['UserPromptSubmit'][0]['matcher'], '.*')
 
 
+class TestRunRemove(SetupTestBase):
+    """T-83：`run()` の逆。自分が入れた hooks・statusLine だけ消す。"""
+
+    def test_removes_everything_run_added(self):
+        setup.run(self.path)
+        changes, new_settings = setup.run_remove(self.path)
+        self.assertTrue(changes)
+        self.assertNotIn('hooks', new_settings)
+        self.assertNotIn('statusLine', new_settings)
+        self.assertEqual(self._read(), new_settings)
+        self.assertEqual(len(self._backups()), 1)  # install は既存ファイルが無いので backup 無し、remove で 1
+
+    def test_leaves_other_hooks_and_status_line_alone(self):
+        self._write({
+            'statusLine': {'type': 'command', 'command': 'other-tool status'},
+            'hooks': {
+                'Stop': [
+                    {'matcher': '.*', 'hooks': [
+                        {'type': 'command', 'command': '"$HOME/bin/agent-sessions" hook'},
+                        {'type': 'command', 'command': 'other-tool hook'},
+                    ]},
+                ],
+                'PreToolUse': [
+                    {'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': 'curl https://x'}]},
+                ],
+            },
+        })
+        changes, new_settings = setup.run_remove(self.path)
+        self.assertTrue(any('Stop' in c for c in changes))
+        self.assertEqual(
+            new_settings['hooks']['Stop'],
+            [{'matcher': '.*', 'hooks': [{'type': 'command', 'command': 'other-tool hook'}]}],
+        )
+        self.assertEqual(
+            new_settings['hooks']['PreToolUse'][0]['hooks'][0]['command'],
+            'curl https://x',
+        )
+        self.assertEqual(new_settings['statusLine']['command'], 'other-tool status')
+
+    def test_drops_hooks_key_entirely_when_nothing_left(self):
+        self._write({
+            'hooks': {'Stop': [{'matcher': '.*', 'hooks': [
+                {'type': 'command', 'command': '"$HOME/bin/agent-sessions" hook'},
+            ]}]},
+        })
+        _, new_settings = setup.run_remove(self.path)
+        self.assertNotIn('hooks', new_settings)
+
+    def test_no_op_when_nothing_to_remove(self):
+        self._write({'hooks': {'PreToolUse': [
+            {'matcher': 'Bash', 'hooks': [{'type': 'command', 'command': 'curl https://x'}]},
+        ]}})
+        changes, new_settings = setup.run_remove(self.path)
+        self.assertEqual(changes, [])
+        self.assertEqual(self._backups(), [])  # 何も変えないので backup も作らない
+
+    def test_missing_settings_file_is_a_no_op(self):
+        changes, new_settings = setup.run_remove(self.path)
+        self.assertEqual(changes, [])
+        self.assertEqual(new_settings, {})
+        self.assertFalse(os.path.exists(self.path))
+
+    def test_idempotent_second_remove_reports_no_changes(self):
+        setup.run(self.path)
+        setup.run_remove(self.path)
+        changes, _ = setup.run_remove(self.path)
+        self.assertEqual(changes, [])
+
+    def test_dry_run_reports_without_writing(self):
+        setup.run(self.path)
+        before = self._read()
+        changes, new_settings = setup.run_remove(self.path, dry_run=True)
+        self.assertTrue(changes)
+        self.assertNotEqual(new_settings, before)
+        self.assertEqual(self._read(), before)
+        self.assertEqual(self._backups(), [])  # install も dry-run の remove も書いていない
+
+
 if __name__ == '__main__':
     unittest.main()
