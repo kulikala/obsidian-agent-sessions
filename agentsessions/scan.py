@@ -16,7 +16,8 @@ RACY_WINDOW = 2.0
 
 UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
 TITLE_PATTERN = '^{"type": *"custom-title"'      # grep (BRE)
-TITLE_PATTERN_RG = r'^\{"type": ?"custom-title"'  # ripgrep
+TITLE_PATTERN_RG = r'^\{"type": ?"custom-title"'  # ripgrep / Python re (also valid BRE)
+_TITLE_RE = re.compile(TITLE_PATTERN_RG)
 HEAD_LIMIT = 2000   # max number of lines to scan for the first user message
 TAIL_CHUNK = 1 << 16   # unit size for reading from the end of the file
 TAIL_LIMIT = 1 << 24   # max bytes to scan backward from the end (fall back to mtime beyond this)
@@ -32,19 +33,51 @@ def list_transcripts(projects_dir: str) -> List[str]:
     return sorted(p for p in paths if UUID_RE.match(session_id_of(p)))
 
 
-def _title_grep_cmd() -> List[str]:
+def _title_grep_cmd() -> Optional[List[str]]:
+    """`rg`/`grep` invocation for `scan_names`, found via PATH — never a hard-coded
+    path, since not every environment has `grep` at `/usr/bin/grep` (or has `grep` at
+    all). `None` if neither is available; the caller falls back to reading the files
+    directly in that case."""
     rg = shutil.which('rg')
     if rg:
         return [rg, '-N', '-H', '--no-heading', '--no-config', TITLE_PATTERN_RG, '--']
-    return ['/usr/bin/grep', '-H', TITLE_PATTERN, '--']
+    grep = shutil.which('grep')
+    if grep:
+        return [grep, '-H', TITLE_PATTERN, '--']
+    return None
+
+
+def _scan_names_python(paths: List[str]) -> Dict[str, str]:
+    """Pure-Python fallback for `scan_names` when neither `rg` nor `grep` is on PATH."""
+    names: Dict[str, str] = {}
+    for p in paths:
+        try:
+            with open(p, encoding='utf-8', errors='replace') as f:
+                for line in f:
+                    if not _TITLE_RE.match(line):
+                        continue
+                    try:
+                        d = json.loads(line)
+                    except ValueError:
+                        continue
+                    if not isinstance(d, dict):
+                        continue
+                    title = d.get('customTitle')
+                    if title:
+                        names[session_id_of(p)] = title
+        except OSError:
+            continue
+    return names
 
 
 def scan_names(paths: List[str]) -> Dict[str, str]:
     """id -> current name. If the same ID has multiple lines, the later one wins."""
     if not paths:
         return {}
-    r = subprocess.run(_title_grep_cmd() + list(paths),
-                       capture_output=True, text=True)
+    cmd = _title_grep_cmd()
+    if cmd is None:
+        return _scan_names_python(paths)
+    r = subprocess.run(cmd + list(paths), capture_output=True, text=True)
     names: Dict[str, str] = {}
     for line in r.stdout.splitlines():
         path, sep, body = line.partition(':{')

@@ -1,4 +1,7 @@
 import json, os, tempfile, unittest
+from unittest import mock
+
+from agentsessions import scan as scan_module
 from agentsessions.scan import list_transcripts, scan_names, read_head, scan
 
 ID1 = '11111111-1111-1111-1111-111111111111'
@@ -111,10 +114,27 @@ class TestScan(unittest.TestCase):
         sessions = scan(list_transcripts(self.tmp.name))
         self.assertFalse(sessions[ID2].child)
 
-    def test_scan_names_grep_fallback(self):
-        from unittest import mock
+    def test_scan_names_pure_python_fallback_when_neither_rg_nor_grep_available(self):
         with mock.patch('agentsessions.scan.shutil.which', return_value=None):
             self.assertEqual(scan_names(list_transcripts(self.tmp.name)), {ID1: 'RIM: new name'})
+
+    def test_title_grep_cmd_prefers_rg(self):
+        with mock.patch('agentsessions.scan.shutil.which',
+                        side_effect=lambda name: '/usr/bin/rg' if name == 'rg' else None):
+            cmd = scan_module._title_grep_cmd()
+        self.assertEqual(cmd[0], '/usr/bin/rg')
+
+    def test_title_grep_cmd_uses_grep_found_via_path_when_rg_missing(self):
+        # `grep` is found via PATH (shutil.which), never hard-coded to /usr/bin/grep —
+        # some minimal environments have it somewhere else, or not at all.
+        with mock.patch('agentsessions.scan.shutil.which',
+                        side_effect=lambda name: '/opt/bin/grep' if name == 'grep' else None):
+            cmd = scan_module._title_grep_cmd()
+        self.assertEqual(cmd[0], '/opt/bin/grep')
+
+    def test_title_grep_cmd_none_when_neither_available(self):
+        with mock.patch('agentsessions.scan.shutil.which', return_value=None):
+            self.assertIsNone(scan_module._title_grep_cmd())
 
 
 class TestLastActivity(unittest.TestCase):
