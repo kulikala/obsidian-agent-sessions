@@ -144,13 +144,31 @@ export function reconcileSubmitKey(chatBindings: Record<string, string> | undefi
  * 非 macOS の Ctrl キーの行き先（§7.1 非macOS対応）。macOS は Cmd が Obsidian の修飾キーなので
  * Ctrl はすべてターミナルへ渡せるが、非 macOS は Obsidian の修飾キーが Ctrl で、claude も
  * Ctrl+C／D／G／R／O／S／L／T 等を使うため、単純に Ctrl を Obsidian へ渡すと壊れる。
- * 既定は `terminal`（claude を優先）。Obsidian 側に回すのは衝突しにくい一部の組合せだけ：
- * Ctrl+Shift+<key>（`copy`／`paste`／フォントサイズを除く）・Ctrl+Tab・Ctrl+,・Ctrl+W。
+ * 既定は `terminal`（claude を優先）。**素の Ctrl+W／Ctrl+P もターミナルへ**——claude の
+ * 入力欄は Ctrl+W を「1 語削除」に、readline 系の履歴操作で Ctrl+P を使いうるため。
+ * 代わりに Ctrl+Shift+W／Ctrl+Shift+P を Obsidian の対応する操作（タブを閉じる・コマンド
+ * パレット）に当てる——Obsidian の既定のホットキーは素の Ctrl+W／Ctrl+P 側に付いているので、
+ * ただキーイベントを渡す（`obsidian`）だけでは発火しない。呼出側（`views/terminal.ts`）が
+ * `app.commands.executeCommandById("workspace:close")`／`("command-palette:open")` を
+ * 明示的に呼ぶ（`close-tab`／`command-palette`）。
+ * それ以外に Obsidian 側へ渡すのは：Ctrl+Shift+<key>（`copy`／`paste`／フォントサイズ／
+ * `close-tab`／`command-palette` を除く）・Ctrl+Tab・Ctrl+,（Obsidian の既定のホットキーが
+ * 素のまま付いているので、キーイベントを渡すだけで発火する）。
  * `ev.metaKey`／`ev.altKey` が立っている、または `ev.ctrlKey` が無ければ `passthrough`
  * （呼出側の既存の分岐に任せる）。IME 変換中の判定は呼出側が Enter 用に持つのでここでは見ない
  * （このキー群は IME の変換候補確定に使われないため）。
  */
-export type CtrlKeyRole = "terminal" | "obsidian" | "copy" | "paste" | "zoom-in" | "zoom-out" | "zoom-reset" | "passthrough";
+export type CtrlKeyRole =
+	| "terminal"
+	| "obsidian"
+	| "copy"
+	| "paste"
+	| "zoom-in"
+	| "zoom-out"
+	| "zoom-reset"
+	| "close-tab"
+	| "command-palette"
+	| "passthrough";
 
 export function classifyCtrlKeyNonMac(ev: KeyLike): CtrlKeyRole {
 	if (!ev.ctrlKey || ev.metaKey || ev.altKey) {
@@ -175,6 +193,13 @@ export function classifyCtrlKeyNonMac(ev: KeyLike): CtrlKeyRole {
 		if (key === "0" || key === ")") {
 			return "zoom-reset";
 		}
+		// Ctrl+Shift+W／P：タブを閉じる・コマンドパレット（素の Ctrl+W／Ctrl+P はターミナルへ）。
+		if (key === "w" || key === "W") {
+			return "close-tab";
+		}
+		if (key === "p" || key === "P") {
+			return "command-palette";
+		}
 		// それ以外の Ctrl+Shift+<key> は Obsidian へ（claude は Ctrl+Shift の組合せを使わない）。
 		return "obsidian";
 	}
@@ -184,8 +209,5 @@ export function classifyCtrlKeyNonMac(ev: KeyLike): CtrlKeyRole {
 	if (key === ",") {
 		return "obsidian"; // 設定。
 	}
-	if (key.toLowerCase() === "w") {
-		return "obsidian"; // タブを閉じる。
-	}
-	return "terminal";
+	return "terminal"; // Ctrl+W／Ctrl+P を含む。claude の入力欄で使われうるため。
 }

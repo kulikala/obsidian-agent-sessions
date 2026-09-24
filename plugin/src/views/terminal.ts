@@ -885,6 +885,12 @@ export class TerminalView extends ItemView {
 						case "zoom-reset":
 							this.zoomFont("reset");
 							break;
+						case "close-tab":
+							this.runObsidianCommand("workspace:close");
+							break;
+						case "command-palette":
+							this.runObsidianCommand("command-palette:open");
+							break;
 					}
 				}
 				return false;
@@ -894,6 +900,17 @@ export class TerminalView extends ItemView {
 			ev.stopPropagation();
 		}
 		return true;
+	}
+
+	/**
+	 * 非 macOS の Ctrl+Shift+W／Ctrl+Shift+P（タブを閉じる・コマンドパレット）。Obsidian の
+	 * 既定のホットキーは素の Ctrl+W／Ctrl+P 側に付いていて（claude の入力欄と衝突するため
+	 * こちらには渡さない）、キーイベントを渡すだけでは発火しないので `app.commands`
+	 * （Commands API。`obsidian` の公開の型には無い内部 API）を直接呼ぶ。
+	 */
+	private runObsidianCommand(id: string): void {
+		const commands = (this.app as unknown as { commands?: { executeCommandById(id: string): boolean } }).commands;
+		commands?.executeCommandById(id);
 	}
 
 	/** フォントサイズの拡大・縮小・既定に戻す（Cmd +／−／0、非 macOS の Ctrl+Shift+=／−／0）。 */

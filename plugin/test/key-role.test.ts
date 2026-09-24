@@ -145,19 +145,24 @@ describe("classifyCtrlKeyNonMac（§7.2.1 非macOS対応）", () => {
 		expect(classifyCtrlKeyNonMac(key({ key: ")", ctrlKey: true, shiftKey: true }))).toBe("zoom-reset");
 	});
 
-	it("それ以外の Ctrl+Shift+<key> は Obsidian へ", () => {
-		expect(classifyCtrlKeyNonMac(key({ key: "p", ctrlKey: true, shiftKey: true }))).toBe("obsidian");
+	it("Ctrl+Shift+W／P はタブを閉じる・コマンドパレット（素の Ctrl+W／P と衝突しないよう別扱い）", () => {
+		expect(classifyCtrlKeyNonMac(key({ key: "w", ctrlKey: true, shiftKey: true }))).toBe("close-tab");
+		expect(classifyCtrlKeyNonMac(key({ key: "W", ctrlKey: true, shiftKey: true }))).toBe("close-tab");
+		expect(classifyCtrlKeyNonMac(key({ key: "p", ctrlKey: true, shiftKey: true }))).toBe("command-palette");
+		expect(classifyCtrlKeyNonMac(key({ key: "P", ctrlKey: true, shiftKey: true }))).toBe("command-palette");
 	});
 
-	it("Ctrl+Tab・Ctrl+,・Ctrl+W は Obsidian へ", () => {
+	it("それ以外の Ctrl+Shift+<key> は Obsidian へ", () => {
+		expect(classifyCtrlKeyNonMac(key({ key: "x", ctrlKey: true, shiftKey: true }))).toBe("obsidian");
+	});
+
+	it("Ctrl+Tab・Ctrl+, は Obsidian へ", () => {
 		expect(classifyCtrlKeyNonMac(key({ key: "Tab", ctrlKey: true }))).toBe("obsidian");
 		expect(classifyCtrlKeyNonMac(key({ key: ",", ctrlKey: true }))).toBe("obsidian");
-		expect(classifyCtrlKeyNonMac(key({ key: "w", ctrlKey: true }))).toBe("obsidian");
-		expect(classifyCtrlKeyNonMac(key({ key: "W", ctrlKey: true }))).toBe("obsidian");
 	});
 
-	it("claude が使う Ctrl+C／D／G／R／O／S／L／T・Ctrl+P はターミナルへ（既定）", () => {
-		for (const k of ["c", "d", "g", "r", "o", "s", "l", "t", "p"]) {
+	it("claude が使う Ctrl+C／D／G／R／O／S／L／T・Ctrl+W／P（素の押下）はターミナルへ（既定）", () => {
+		for (const k of ["c", "d", "g", "r", "o", "s", "l", "t", "w", "p"]) {
 			expect(classifyCtrlKeyNonMac(key({ key: k, ctrlKey: true }))).toBe("terminal");
 		}
 	});
