@@ -22,7 +22,7 @@ Opens and manages Claude Code sessions inside Obsidian. Three pieces make up one
 | Release process | R-REL (design §21) |
 | An IDE bridge (accept/reject diffs, live selection updates) | Undecided. Out of scope |
 
-Agent CLIs other than Claude Code (e.g. Codex) are a future direction. The data model and screens already carry an `agent` field, but only Claude Code runs today.
+Agent CLIs other than Claude Code (e.g. Codex) are a future direction. The data model and screens already carry an `agent` field, but only Claude Code is supported.
 
 ## Requirements
 
@@ -42,7 +42,7 @@ Agent CLIs other than Claude Code (e.g. Codex) are a future direction. The data 
 
 ### R-S Session management (GUI)
 
-- R-S0 Three views: the **side panel** (right sidebar — nav, list, detail, and rate limits; the list/detail split is draggable, and the detail area's height follows its content), the **Session Manager** (a main-area tab — the full session tree and management actions; the default view for a new tab), and the **terminal** (a main-area tab).
+- R-S0 Three views: the **side panel** (right sidebar — nav, list, detail, and rate limits; the list/detail split is draggable, and the detail area keeps the dragged height across restarts), the **Session Manager** (a main-area tab — the full session tree and management actions; the default view for a new tab), and the **terminal** (a main-area tab).
 - R-S1 The manager's tree is ordered "category groups → Other (uncategorized and unnamed sessions, one section) → Archive (only when 'Show archive' is on)". Each section is ordered by last-updated, most recent first. Groups and Other are individually foldable, and folded state persists.
 - R-S2 Last-updated is the time of the last user message or assistant response — not a hook or notification timestamp, and not a file's own mtime.
 - R-S3 A child session (`entrypoint` other than `cli`, an `agent-setting` line present, or `sessionKind: bg`) is excluded from Other unless it has a name.
@@ -67,7 +67,7 @@ Agent CLIs other than Claude Code (e.g. Codex) are a future direction. The data 
 ### R-A State, notifications, and status
 
 - R-A1 A tab's icon differs by state (connecting, working, running a shell command, asking a question — waiting for an answer, e.g. AskUserQuestion or a permission prompt — unread response, editing, just-compacted, waiting, detached, exited, error). Color and motion (spin/blink/pulse) distinguish them further, and motion respects `prefers-reduced-motion`. Side-panel and manager row marks share the same icon, color, and motion as the tab. The manager (`layout-dashboard`) and side panel (`list-tree`) icons differ from the terminal's own.
-- R-A5 A session asking a question or with an unread response is visible even when its tab isn't in front: the side panel's "open tabs" heading shows an "N waiting for input · M unread" badge (omitted at zero; clicking opens the highest-priority target), the manager's group headings show the same priority mark, and list rows highlight asking (strong background, color bar, bold) more strongly than unread (weaker background).
+- R-A5 A session asking a question or with an unread response is visible even when its tab isn't in front: the side panel's "open tabs" heading shows a badge with the number of sessions needing input and the number unread (each omitted at zero; clicking opens the highest-priority target), the manager's group headings show the same priority mark, and list rows highlight asking (strong background, color bar, bold) more strongly than unread (weaker background).
 - R-A2 A background session becoming unread triggers an Obsidian notification (can be turned off); clicking it switches to that tab.
 - R-A3 `statusLine` (below the session, in Claude Code's own UI) shows the submit-key symbol (only when launched from the plugin, first in the line), model, effort, context-usage percentage, and rc. An unavailable model or effort shows "Default".
 - R-A4 State comes from `~/.claude/sessions/<pid>.json` (written by Claude Code) and the JSON `statusLine` receives — never inferred from on-screen text.
