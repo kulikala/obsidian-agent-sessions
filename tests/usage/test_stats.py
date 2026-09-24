@@ -6,7 +6,7 @@ import unittest
 from datetime import datetime, timezone
 from unittest import mock
 
-from agentsessions import pricing, stats
+from agentsessions.usage import pricing, stats
 
 ID1 = '11111111-1111-1111-1111-111111111111'
 PARENT_ID = '22222222-2222-2222-2222-222222222222'

@@ -6,8 +6,8 @@ import time
 import unittest
 from unittest import mock
 
-from agentsessions import cache
-from agentsessions.scan import scan
+from agentsessions.sessions import cache
+from agentsessions.sessions.scan import scan
 
 ID1 = '11111111-1111-1111-1111-111111111111'
 

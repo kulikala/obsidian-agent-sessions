@@ -8,7 +8,8 @@ import time
 import unittest
 from contextlib import redirect_stdout
 
-from agentsessions import cmd_daemon, daemon
+from agentsessions.cli import daemon as cmd_daemon
+from agentsessions.daemon import server as daemon
 
 TIMEOUT = 5.0
 
@@ -72,7 +73,7 @@ class TestWithRunningDaemon(CmdDaemonTestCase):
     def test_running_count_reflects_active_and_exited_sessions(self):
         import socket
 
-        from agentsessions import protocol
+        from agentsessions.daemon import protocol
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         sock.settimeout(TIMEOUT)
         sock.connect(self.harness.sock_path)

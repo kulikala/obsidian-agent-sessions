@@ -1,7 +1,7 @@
 import json, os, tempfile, unittest
 
 from agentsessions import i18n
-from agentsessions.live import Live, live_sessions
+from agentsessions.sessions.live import Live, live_sessions
 
 SID1 = 'aaaaaaaa-1111-1111-1111-111111111111'
 SID2 = 'bbbbbbbb-2222-2222-2222-222222222222'

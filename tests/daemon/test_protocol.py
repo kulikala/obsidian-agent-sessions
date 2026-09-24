@@ -1,6 +1,6 @@
 import unittest
 
-from agentsessions import protocol
+from agentsessions.daemon import protocol
 
 
 class TestEncodeDecode(unittest.TestCase):

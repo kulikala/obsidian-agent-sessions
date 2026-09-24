@@ -5,7 +5,8 @@ import shutil
 import tempfile
 import unittest
 
-from agentsessions import i18n, setup
+from agentsessions import i18n
+from agentsessions.claude import setup
 
 
 class SetupTestBase(unittest.TestCase):
@@ -334,7 +335,7 @@ class TestUnreadableSettings(SetupTestBase):
         import io
         from contextlib import redirect_stderr
 
-        from agentsessions import cmd_setup
+        from agentsessions.cli import setup as cmd_setup
         self._write_text('{not json')
         err = io.StringIO()
         with redirect_stderr(err):

@@ -3,11 +3,11 @@ import unittest
 from unittest import mock
 
 from agentsessions import config, i18n
-from agentsessions import store as store_mod
 from agentsessions.config import OTHER_GROUP
-from agentsessions.model import Session
-from agentsessions.tui import State, list_columns, main, panel_width
-from agentsessions.tui import _group_label
+from agentsessions.sessions import store as store_mod
+from agentsessions.sessions.model import Session
+from agentsessions.tui.app import State, list_columns, main, panel_width
+from agentsessions.tui.app import _group_label
 
 A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
@@ -19,8 +19,9 @@ def sess(sid, name, mtime=1.0):
 
 class TestTuiState(unittest.TestCase):
     """State doesn't depend on curses, so it can be built directly and verified.
-    `store.update` is patched (via `agentsessions.store.update`) so tests never write
-    to a real file; instead the patch applies the given function to the in-memory Store."""
+    `store.update` is patched (via `agentsessions.sessions.store.update`) so tests never
+    write to a real file; instead the patch applies the given function to the in-memory
+    Store."""
 
     def setUp(self):
         self.store = store_mod.Store()
@@ -30,7 +31,7 @@ class TestTuiState(unittest.TestCase):
             fn(self.store)
             return self.store
 
-        patcher = mock.patch('agentsessions.store.update', side_effect=fake_update)
+        patcher = mock.patch('agentsessions.sessions.store.update', side_effect=fake_update)
         self.mock_update = patcher.start()
         self.addCleanup(patcher.stop)
         self.st = State(self.store, self.scanned)

@@ -1,5 +1,5 @@
 import time, unittest
-from agentsessions.model import Session, Row, Doc, split_name, fmt_time, folder_of, row_from
+from agentsessions.sessions.model import Session, Row, Doc, split_name, fmt_time, folder_of, row_from
 
 class TestModel(unittest.TestCase):
     def test_split_name_grouped(self):

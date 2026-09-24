@@ -7,7 +7,10 @@ import threading
 import unittest
 from unittest import mock
 
-from agentsessions import config, i18n, jsonout, live, protocol, store
+from agentsessions import config, i18n
+from agentsessions.cli import json_output as jsonout
+from agentsessions.daemon import protocol
+from agentsessions.sessions import live, store
 
 ID1 = '11111111-1111-1111-1111-111111111111'
 ID2 = '22222222-2222-2222-2222-222222222222'

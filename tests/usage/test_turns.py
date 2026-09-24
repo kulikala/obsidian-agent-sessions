@@ -3,7 +3,8 @@ import os
 import tempfile
 import unittest
 
-from agentsessions import pricing, usage
+from agentsessions.usage import pricing
+from agentsessions.usage import turns as usage
 
 
 def _line(obj) -> str:

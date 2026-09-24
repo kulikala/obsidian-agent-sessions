@@ -5,7 +5,8 @@ import tempfile
 import time
 import unittest
 
-from agentsessions import config, store
+from agentsessions import config
+from agentsessions.sessions import store
 
 
 def _bump(path, tag, n):

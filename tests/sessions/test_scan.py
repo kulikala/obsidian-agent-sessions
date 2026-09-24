@@ -1,8 +1,8 @@
 import json, os, tempfile, unittest
 from unittest import mock
 
-from agentsessions import scan as scan_module
-from agentsessions.scan import list_transcripts, scan_names, read_head, scan
+from agentsessions.sessions import scan as scan_module
+from agentsessions.sessions.scan import list_transcripts, scan_names, read_head, scan
 
 ID1 = '11111111-1111-1111-1111-111111111111'
 ID2 = '22222222-2222-2222-2222-222222222222'
@@ -115,11 +115,11 @@ class TestScan(unittest.TestCase):
         self.assertFalse(sessions[ID2].child)
 
     def test_scan_names_pure_python_fallback_when_neither_rg_nor_grep_available(self):
-        with mock.patch('agentsessions.scan.shutil.which', return_value=None):
+        with mock.patch('agentsessions.sessions.scan.shutil.which', return_value=None):
             self.assertEqual(scan_names(list_transcripts(self.tmp.name)), {ID1: 'RIM: new name'})
 
     def test_title_grep_cmd_prefers_rg(self):
-        with mock.patch('agentsessions.scan.shutil.which',
+        with mock.patch('agentsessions.sessions.scan.shutil.which',
                         side_effect=lambda name: '/usr/bin/rg' if name == 'rg' else None):
             cmd = scan_module._title_grep_cmd()
         self.assertEqual(cmd[0], '/usr/bin/rg')
@@ -127,13 +127,13 @@ class TestScan(unittest.TestCase):
     def test_title_grep_cmd_uses_grep_found_via_path_when_rg_missing(self):
         # `grep` is found via PATH (shutil.which), never hard-coded to /usr/bin/grep —
         # some minimal environments have it somewhere else, or not at all.
-        with mock.patch('agentsessions.scan.shutil.which',
+        with mock.patch('agentsessions.sessions.scan.shutil.which',
                         side_effect=lambda name: '/opt/bin/grep' if name == 'grep' else None):
             cmd = scan_module._title_grep_cmd()
         self.assertEqual(cmd[0], '/opt/bin/grep')
 
     def test_title_grep_cmd_none_when_neither_available(self):
-        with mock.patch('agentsessions.scan.shutil.which', return_value=None):
+        with mock.patch('agentsessions.sessions.scan.shutil.which', return_value=None):
             self.assertIsNone(scan_module._title_grep_cmd())
 
 
@@ -182,7 +182,7 @@ class TestLastActivity(unittest.TestCase):
         self.assertEqual(sessions[ID2].mtime, 2_000_000_000)
 
     def test_tail_read_crosses_chunk_boundary(self):
-        from agentsessions.scan import read_last_activity
+        from agentsessions.sessions.scan import read_last_activity
         big = 'x' * 500
         p = self._write(ID3, [
             {'type': 'assistant', 'timestamp': '2026-09-02T00:00:00Z',

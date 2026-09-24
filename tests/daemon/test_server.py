@@ -8,7 +8,8 @@ import threading
 import time
 import unittest
 
-from agentsessions import daemon, protocol
+from agentsessions.daemon import protocol
+from agentsessions.daemon import server as daemon
 
 TIMEOUT = 5.0
 KIB = 1024

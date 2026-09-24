@@ -1,6 +1,6 @@
 import json, os, tempfile, unittest
 
-from agentsessions.detail import Detail, clean_text, is_human_prompt, read_detail
+from agentsessions.sessions.detail import Detail, clean_text, is_human_prompt, read_detail
 
 
 def write_jsonl(path, records):

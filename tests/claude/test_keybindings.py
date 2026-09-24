@@ -4,7 +4,7 @@ import shutil
 import tempfile
 import unittest
 
-from agentsessions import keybindings
+from agentsessions.claude import keybindings
 
 
 class KeybindingsTestBase(unittest.TestCase):

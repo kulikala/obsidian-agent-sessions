@@ -5,7 +5,9 @@ import tempfile
 import unittest
 from unittest import mock
 
-from agentsessions import config, hooks, i18n, live
+from agentsessions import config, i18n
+from agentsessions.claude import hooks
+from agentsessions.sessions import live
 
 
 def setUpModule():

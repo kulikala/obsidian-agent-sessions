@@ -6,7 +6,8 @@ import threading
 import unittest
 from unittest import mock
 
-from agentsessions import cmd_edit, protocol
+from agentsessions.cli import edit as cmd_edit
+from agentsessions.daemon import protocol
 
 TIMEOUT = 5.0
 

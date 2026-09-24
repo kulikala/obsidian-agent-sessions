@@ -1,6 +1,6 @@
 import unittest
 
-from agentsessions import pricing
+from agentsessions.usage import pricing
 
 
 class PriceOfTest(unittest.TestCase):

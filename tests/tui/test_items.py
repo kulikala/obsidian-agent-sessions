@@ -1,7 +1,7 @@
 import unittest
 from agentsessions.config import OTHER_GROUP
-from agentsessions.items import build_items, dw, fit
-from agentsessions.model import Doc, Row, Session
+from agentsessions.sessions.model import Doc, Row, Session
+from agentsessions.tui.items import build_items, dw, fit
 
 A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
@@ -126,20 +126,20 @@ class TestWrap(unittest.TestCase):
         # Japanese text has no word boundaries, so wrap() breaks it character by
         # character, budgeted by display width (each character here is double-width,
         # so width 6 fits 3 characters per line).
-        from agentsessions.items import dw, wrap
+        from agentsessions.tui.items import dw, wrap
         lines = wrap('あいうえおかきくけこ', 6)
         self.assertEqual(lines, ['あいう', 'えおか', 'きくけ', 'こ'])
         self.assertTrue(all(dw(l) <= 6 for l in lines))
 
     def test_keeps_words_and_newlines(self):
-        from agentsessions.items import wrap
+        from agentsessions.tui.items import wrap
         self.assertEqual(wrap('hello world', 7), ['hello', 'world'])
         self.assertEqual(wrap('a\nb', 5), ['a', 'b'])
 
     def test_breaks_overlong_word(self):
-        from agentsessions.items import wrap
+        from agentsessions.tui.items import wrap
         self.assertEqual(wrap('abcdefgh', 3), ['abc', 'def', 'gh'])
 
     def test_zero_width(self):
-        from agentsessions.items import wrap
+        from agentsessions.tui.items import wrap
         self.assertEqual(wrap('x', 0), [])
