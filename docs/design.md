@@ -63,7 +63,7 @@ agent-sessions/
 │   ├── styles.css
 │   ├── esbuild.config.mjs     → plugin/main.js
 │   └── package.json
-├── bin/agent-sessions          #!/usr/bin/env python3。agentsessions.cli.main を呼ぶ
+├── bin/agent-sessions          #!/usr/bin/python3。agentsessions.cli.main を呼ぶ
 ├── bin/agent-sessions-code     内蔵エディタ用の `$VISUAL`（sh、名前に `code` を含める）
 ├── agentsessions/               Python パッケージ（標準ライブラリのみ）
 │   ├── config.py               パス定数（VAULT, STORE_PATH, RUNTIME_DIR, SOCK_PATH, UI_STATE_PATH, …）。VAULT は既定値を持たず env→vault.json→None（§3.2）
@@ -107,7 +107,7 @@ agent-sessions/
 |---|---|---|
 | `<vault>/.agents/sessions/sessions.json` | 折畳・アーカイブ・カテゴリの色（下記） | プラグイン、`agent-sessions`（TUI の折畳）。§3.1 のロックの中で読み→更新→tmp→rename |
 | `<vault>/.agents/sessions/sessions.json.lock/` | 書込みの排他（§3.1） | 書く者 |
-| `~/.agents/sessions/daemon.sock` | デーモンのソケット（vault 配下だと AF_UNIX のパス長制限に掛かりうる——macOS 104 バイト・Linux 108 バイト）。ディレクトリ 0700・ソケット 0600 | デーモン |
+| `~/.agents/sessions/daemon.sock` | デーモンのソケット（vault 配下は macOS のパス長制限 104 バイトに掛かる）。ディレクトリ 0700・ソケット 0600 | デーモン |
 | `~/.agents/sessions/daemon.pid` / `daemon.log` | デーモンの pid とログ | デーモン |
 | `~/.agents/sessions/exited.json` | 終了済みで未 `forget` のセッション（`id → {code, exitedAt}`）。デーモンが終了時に書き、起動時に読む | デーモン |
 | `~/.agents/sessions/status/<session_id>.json` | `statusLine` が渡す JSON をそのまま | `agent-sessions status` |
@@ -541,7 +541,6 @@ cache 作成は 5 分＝入力×1.25、1 時間＝入力×2（`cache_creation.ep
 - **Python**（unittest、`-W error`。`tests/`）：`protocol`（フレームの分割・結合）、`daemon`（`cat` を子にした start/attach/replay/resize/kill/forget、バッファ上限、複数接続と最小サイズ、切断の後始末、終了済みへの attach、`exited.json` の書き出しと読み込み）、`store` のロック（2 プロセスで同時に書く。`categoryColors` の往復・`path=None`（vault 未設定）で `load` は空、`save`／`update` は `VaultNotConfigured` を含む）、`setup`（settings.json の置換と backup。`SessionStart`（matcher `compact`）・`UserPromptSubmit` の追加を含む）、`cache`、`jsonout`（`waiting_for` を条件付きで持つこと）、`live`（`waiting`／`waiting_for`／ラベル）、`pricing`（各表・1h・未知モデル）、`usage`（cost・tools・duration）、`stats`（窓・バケット・重複排除・`_roll_forward` の 1 期分／複数期分の先送りと境界）、`hooks`（`format_status_line`・送信キー記号・`_update_compacted` の書込と削除）、`config`（`_resolve_vault` の優先順・`require_vault`。T-80）、`model`・`scan`・`detail`（`last_command` を含む）・`items`（TUI の区分け）・`tui_state`（vault 未設定時の `main()` の早期終了を含む）、`edit`（偽ソケットサーバーで `ok:true`→0、`cancel`→1、`no-tab`／`busy`→fallback、接続不可／EOF→fallback）、`attach`。
 - **TypeScript**（vitest、`plugin/test/`）：`tree`・`manager-model`（開いているタブ／起動中／最近・グループ／その他／アーカイブの区分け、`categoryTotals`、`weeklyPace`・`formatWeekdayTime`・`shortModelName`）、`links`・`at-complete`、`marks`、`keys`（`classifyEnter`・`resolveEnterAction`・`sendSequence`・`deriveSubmitKey`・`reconcileSubmitKey`）、`keybindings`（読解・書換・戻し）、`daemon-client`（フレーム）、`daemon-integration`、`statusline`・`limits`（整形・並べ替え・`rollForwardWindow`）、`store`（読み書きとロック、tmp dir）、`category`（パレット番号の割当）、`name`（`tokenizeNameInput`・`filterCategories`・`sessionDisplayName`）、`detail`（`categoryAndLabel`）、`terminal-status`（`terminalStatus` の優先順・`asking`・`compacted`・アイコン対応表）、`attention`（`attentionCounts`・`urgencyByGroupKey`）、`compacted`（`CompactedTracker`）、`autosave`（`SaveDebouncer`）、`ui-state`、`vault-state`（`writeVaultState`。T-80）、`backend`（`envWithVault`。T-80）、`registry`（`waitingFor` の素通し）、`index`（`waitForName`・`row.compacted` の合成を含む）、`edit-server`（フレームの往復とハンドラの分岐）、`i18n`、`settings`、`usage`、`tui-mode`、`side-list`、`key-role`、`dedupe`。`openSession` の多重呼出はモックの workspace で確認する。
 - **手動**：`requirements.md` の「受け入れの確認」。実機での目視は崩れを指摘されたときと、Obsidian CLI で組立てにくい操作（右クリックメニューなど）に限る。
-- **CI**（`.github/workflows/test.yml`）：push・PR のたび、Python のテストを ubuntu-latest・macos-latest の両方で、plugin の `typecheck`・`test` を ubuntu-latest で走らせる。
 
 ## 20. 検証の手段と Obsidian の注意点
 
