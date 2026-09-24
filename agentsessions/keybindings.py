@@ -55,10 +55,10 @@ def remove_enter_keys(path: str = DEFAULT_KEYBINDINGS_PATH,
     removed. `warning` explains that a mismatched key was left in place for the user to
     fix by hand.
 
-    A no-op (`False, None`) if the file doesn't exist. Also returns a `warning` without
-    writing if the JSON is malformed or not shaped as expected. Otherwise, writes the
-    file back (even if there was nothing to remove), filling in `$schema`/`$docs` if
-    missing — the same rule the write side (`applySubmitKey`) follows.
+    A no-op (`False, None`) if the file doesn't exist, or if there's nothing of ours to
+    remove — this never rewrites the file (or touches `$schema`/`$docs`) when it isn't
+    changing anything. Also returns a `warning` without writing if the JSON is
+    malformed or not shaped as expected.
     """
     try:
         with open(path, encoding='utf-8') as f:
@@ -71,11 +71,6 @@ def remove_enter_keys(path: str = DEFAULT_KEYBINDINGS_PATH,
     data = _parse(text)
     if data is None:
         return False, i18n.t('setup.keybindings_broken', path=path)
-
-    if data.get('$schema') is None:
-        data['$schema'] = SCHEMA_URL
-    if data.get('$docs') is None:
-        data['$docs'] = DOCS_URL
 
     chat = _find_chat(data)
     mismatched: List[str] = []
@@ -90,7 +85,11 @@ def remove_enter_keys(path: str = DEFAULT_KEYBINDINGS_PATH,
         if not chat['bindings']:
             data['bindings'] = [b for b in data['bindings'] if b is not chat]
 
-    if not dry_run:
+    if changed and not dry_run:
+        if data.get('$schema') is None:
+            data['$schema'] = SCHEMA_URL
+        if data.get('$docs') is None:
+            data['$docs'] = DOCS_URL
         os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
         with open(path, 'w', encoding='utf-8') as f:
             json.dump(data, f, indent=2, ensure_ascii=False)

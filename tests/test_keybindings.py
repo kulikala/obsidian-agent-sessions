@@ -102,14 +102,27 @@ class TestRemoval(KeybindingsTestBase):
         data = self._read()
         self.assertEqual(data['bindings'][0]['bindings'], {'enter': 'chat:custom-thing'})
 
-    def test_no_chat_block_is_a_no_op_but_still_writes_schema(self):
-        self._write({'bindings': [{'context': 'Global', 'bindings': {'ctrl+q': 'quit'}}]})
+    def test_no_chat_block_is_a_no_op_and_leaves_the_file_untouched(self):
+        original = '{"bindings": [{"context": "Global", "bindings": {"ctrl+q": "quit"}}]}'
+        self._write_text(original)
+        before_mtime = os.stat(self.path).st_mtime_ns
+        changed, warning = keybindings.remove_enter_keys(self.path)
+        self.assertFalse(changed)
+        self.assertIsNone(warning)
+        with open(self.path, encoding='utf-8') as f:
+            self.assertEqual(f.read(), original)  # not rewritten at all
+        self.assertEqual(os.stat(self.path).st_mtime_ns, before_mtime)
+
+    def test_chat_block_with_no_matching_keys_is_a_no_op_and_writes_nothing(self):
+        # A Chat block exists, but neither enter nor meta+enter is set — still nothing
+        # of ours to remove, so this must not add $schema/$docs either.
+        self._write({'bindings': [{'context': 'Chat', 'bindings': {'ctrl+k': 'chat:clear'}}]})
         changed, warning = keybindings.remove_enter_keys(self.path)
         self.assertFalse(changed)
         self.assertIsNone(warning)
         data = self._read()
-        self.assertEqual(data['$schema'], keybindings.SCHEMA_URL)
-        self.assertEqual(data['$docs'], keybindings.DOCS_URL)
+        self.assertNotIn('$schema', data)
+        self.assertNotIn('$docs', data)
 
     def test_existing_schema_and_docs_are_kept(self):
         self._write({
