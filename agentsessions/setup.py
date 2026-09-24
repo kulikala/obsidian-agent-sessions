@@ -10,7 +10,17 @@ from . import i18n
 
 DEFAULT_SETTINGS_PATH = os.path.expanduser('~/.claude/settings.json')
 
+
+class SettingsUnreadable(RuntimeError):
+    """Raised when `settings_path` exists but isn't valid JSON, or isn't a JSON object.
+
+    `run()`/`run_remove()` never silently treat this as an empty settings file — doing
+    so would mean writing a fresh, mostly-empty settings.json over whatever was really
+    there, discarding it. The caller should report this and stop instead of writing
+    anything."""
+
 _OLD_HOOK_MARKERS = ('bin/cs" hook', 'bin/cs hook')
+_OLD_STATUS_LINE_MARKERS = ('bin/cs" status', 'bin/cs status')
 _NEW_HOOK_COMMAND = '"$HOME/bin/agent-sessions" hook'
 _NEW_STATUS_LINE = {'type': 'command', 'command': '"$HOME/bin/agent-sessions" status'}
 # (event, matcher). `SessionStart` is restricted to `compact` (both `/compact` and
@@ -59,12 +69,18 @@ def _update_hook_event(hooks_obj: dict, event: str, matcher: str) -> List[str]:
 
 
 def _is_old_status_line(status_line) -> bool:
+    """True when this statusLine should be replaced by ours: unset, malformed, or the
+    literal old `cs` tool's invocation. Any other tool's statusLine — even one whose
+    command happens to contain "cs" as a substring, like ccstatusline, or one that
+    mentions "docs" — is left alone."""
     if status_line is None:
         return True
     if not isinstance(status_line, dict):
         return True
     command = status_line.get('command')
-    return not isinstance(command, str) or 'cs' in command
+    if not isinstance(command, str):
+        return True
+    return any(m in command for m in _OLD_STATUS_LINE_MARKERS)
 
 
 def _update_status_line(settings: dict) -> Optional[str]:
@@ -151,28 +167,53 @@ def compute_removal(settings: dict) -> List[str]:
     return changes
 
 
+def _read_settings(settings_path: str) -> Tuple[bool, dict, Optional[str]]:
+    """Reads `settings_path`. Returns `(existed, settings, original_text)` —
+    `original_text` is `None` when the file didn't exist, and is otherwise the exact
+    text read (used to write a byte-faithful backup, rather than a re-serialized
+    round-trip of the parsed JSON).
+
+    Raises `SettingsUnreadable` if the file exists but isn't valid JSON, or isn't a
+    JSON object — this never falls back to treating it as `{}`.
+    """
+    if not os.path.exists(settings_path):
+        return False, {}, None
+    with open(settings_path, 'r', encoding='utf-8') as f:
+        original_text = f.read()
+    try:
+        loaded = json.loads(original_text)
+    except ValueError as e:
+        raise SettingsUnreadable(str(e)) from e
+    if not isinstance(loaded, dict):
+        raise SettingsUnreadable('not a JSON object')
+    return True, loaded, original_text
+
+
+def _write_backup(settings_path: str, original_text: str) -> None:
+    backup_path = settings_path + '.bak-' + time.strftime('%Y%m%d%H%M%S')
+    with open(backup_path, 'w', encoding='utf-8') as f:
+        f.write(original_text)
+
+
 def run_remove(settings_path: str = DEFAULT_SETTINGS_PATH, dry_run: bool = False) -> Tuple[List[str], dict]:
     """The inverse of `run()`: reads `settings_path` and removes only the hooks and
     statusLine that `run()` itself added. A no-op (`([], {})`) if `settings_path`
     doesn't exist. Backs up first, the same way `run()` does, if there's anything to
-    change."""
-    if not os.path.exists(settings_path):
+    change.
+
+    Raises `SettingsUnreadable` (writing nothing) if `settings_path` exists but can't
+    be parsed as a JSON object.
+    """
+    existed, settings, original_text = _read_settings(settings_path)
+    if not existed:
         return [], {}
-    with open(settings_path, 'r', encoding='utf-8') as f:
-        try:
-            loaded = json.load(f)
-        except ValueError:
-            loaded = {}
-    settings = loaded if isinstance(loaded, dict) else {}
 
     new_settings = copy.deepcopy(settings)
     changes = compute_removal(new_settings)
 
     if changes and not dry_run:
-        backup_path = settings_path + '.bak-' + time.strftime('%Y%m%d%H%M%S')
-        with open(backup_path, 'w', encoding='utf-8') as f:
-            json.dump(settings, f, ensure_ascii=False, indent=2)
-            f.write('\n')
+        assert original_text is not None
+        _write_backup(settings_path, original_text)
         with open(settings_path, 'w', encoding='utf-8') as f:
             json.dump(new_settings, f, ensure_ascii=False, indent=2)
             f.write('\n')
@@ -185,27 +226,19 @@ def run(settings_path: str = DEFAULT_SETTINGS_PATH, dry_run: bool = False) -> Tu
     original and writes the result.
 
     Returns `(change descriptions, the new settings)`.
+
+    Raises `SettingsUnreadable` (writing nothing) if `settings_path` exists but can't
+    be parsed as a JSON object.
     """
-    existed = os.path.exists(settings_path)
-    settings = {}
-    if existed:
-        with open(settings_path, 'r', encoding='utf-8') as f:
-            try:
-                loaded = json.load(f)
-            except ValueError:
-                loaded = {}
-        if isinstance(loaded, dict):
-            settings = loaded
+    existed, settings, original_text = _read_settings(settings_path)
 
     new_settings = copy.deepcopy(settings)
     changes = compute_changes(new_settings)
 
     if changes and not dry_run:
         if existed:
-            backup_path = settings_path + '.bak-' + time.strftime('%Y%m%d%H%M%S')
-            with open(backup_path, 'w', encoding='utf-8') as f:
-                json.dump(settings, f, ensure_ascii=False, indent=2)
-                f.write('\n')
+            assert original_text is not None
+            _write_backup(settings_path, original_text)
         dirpath = os.path.dirname(settings_path) or '.'
         os.makedirs(dirpath, exist_ok=True)
         with open(settings_path, 'w', encoding='utf-8') as f:

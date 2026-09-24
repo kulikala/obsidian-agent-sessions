@@ -20,9 +20,17 @@ class SetupTestBase(unittest.TestCase):
         with open(self.path, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False)
 
+    def _write_text(self, text):
+        with open(self.path, 'w', encoding='utf-8') as f:
+            f.write(text)
+
     def _read(self):
         with open(self.path, encoding='utf-8') as f:
             return json.load(f)
+
+    def _read_text(self):
+        with open(self.path, encoding='utf-8') as f:
+            return f.read()
 
     def _backups(self):
         return glob.glob(self.path + '.bak-*')
@@ -139,6 +147,22 @@ class TestStatusLine(SetupTestBase):
         changes, new_settings = setup.run(self.path)
         self.assertEqual(new_settings['statusLine'], current)
         self.assertFalse(any(c.startswith('statusLine') for c in changes))
+
+    def test_other_tools_status_line_containing_cs_substring_is_left_alone(self):
+        # Regression: a naive `'cs' in command` check would wrongly treat any of these
+        # as our old `cs` tool and overwrite them (ccstatusline, a "docs"-mentioning
+        # command, etc). Only the literal old `bin/cs status` invocation should match.
+        for command in ('npx ccstatusline@latest', 'node ./scripts/docs-status.js'):
+            with self.subTest(command=command):
+                self.tmp2 = tempfile.mkdtemp()
+                path = os.path.join(self.tmp2, 'settings.json')
+                current = {'type': 'command', 'command': command}
+                with open(path, 'w', encoding='utf-8') as f:
+                    json.dump({'statusLine': current}, f)
+                changes, new_settings = setup.run(path)
+                self.assertEqual(new_settings['statusLine'], current)
+                self.assertFalse(any(c.startswith('statusLine') for c in changes))
+                shutil.rmtree(self.tmp2, ignore_errors=True)
 
 
 class TestDryRun(SetupTestBase):
@@ -273,6 +297,74 @@ class TestRunRemove(SetupTestBase):
         self.assertNotEqual(new_settings, before)
         self.assertEqual(self._read(), before)
         self.assertEqual(self._backups(), [])  # neither install nor the dry-run remove wrote anything
+
+
+class TestUnreadableSettings(SetupTestBase):
+    """A malformed settings.json must never be silently treated as `{}` and overwritten
+    — that would discard whatever was really there. `run()`/`run_remove()` raise
+    instead, writing nothing (see setup.SettingsUnreadable)."""
+
+    def test_run_raises_on_broken_json_and_writes_nothing(self):
+        self._write_text('{not json')
+        with self.assertRaises(setup.SettingsUnreadable):
+            setup.run(self.path)
+        self.assertEqual(self._read_text(), '{not json')
+        self.assertEqual(self._backups(), [])
+
+    def test_run_remove_raises_on_broken_json_and_writes_nothing(self):
+        self._write_text('{not json')
+        with self.assertRaises(setup.SettingsUnreadable):
+            setup.run_remove(self.path)
+        self.assertEqual(self._read_text(), '{not json')
+        self.assertEqual(self._backups(), [])
+
+    def test_run_raises_when_json_is_not_an_object(self):
+        self._write_text('[1, 2, 3]')
+        with self.assertRaises(setup.SettingsUnreadable):
+            setup.run(self.path)
+        self.assertEqual(self._backups(), [])
+
+    def test_run_remove_raises_when_json_is_not_an_object(self):
+        self._write_text('[1, 2, 3]')
+        with self.assertRaises(setup.SettingsUnreadable):
+            setup.run_remove(self.path)
+        self.assertEqual(self._backups(), [])
+
+    def test_cmd_setup_reports_the_error_and_exits_nonzero(self):
+        import io
+        from contextlib import redirect_stderr
+
+        from agentsessions import cmd_setup
+        self._write_text('{not json')
+        err = io.StringIO()
+        with redirect_stderr(err):
+            rc = cmd_setup.main(['--settings', self.path])
+        self.assertNotEqual(rc, 0)
+        self.assertIn(self.path, err.getvalue())
+        self.assertEqual(self._read_text(), '{not json')
+        self.assertEqual(self._backups(), [])
+
+
+class TestBackupPreservesOriginalText(SetupTestBase):
+    """The backup is a byte-faithful copy of what was on disk, not a re-serialization
+    of the parsed JSON (which could reorder keys or change formatting)."""
+
+    def test_run_backup_matches_original_bytes_exactly(self):
+        original = '{\n  "hooks": {"Stop": [{"matcher": ".*", "hooks": [{"type": "command", "command": "\\"$HOME/bin/cs\\" hook"}]}]}\n}\n'
+        self._write_text(original)
+        setup.run(self.path)
+        [backup] = self._backups()
+        with open(backup, encoding='utf-8') as f:
+            self.assertEqual(f.read(), original)
+
+    def test_run_remove_backup_matches_original_bytes_exactly(self):
+        setup.run(self.path)  # creates a well-formed, freshly-installed settings.json
+        original = self._read_text()
+        setup.run_remove(self.path)
+        backups = self._backups()
+        self.assertEqual(len(backups), 1)
+        with open(backups[0], encoding='utf-8') as f:
+            self.assertEqual(f.read(), original)
 
 
 if __name__ == '__main__':

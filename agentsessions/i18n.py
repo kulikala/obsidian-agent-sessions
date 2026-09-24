@@ -34,6 +34,9 @@ _EN = {
     'tui.help': '↑↓/jk move  ⏎ open  ← up/collapse  → expand  '
                 'h toggle archive  / filter  p panel  r rescan  q quit',
     'tui.counts': 'tracked {managed} / archived {archived} / other {other} / running {running}',
+    # Display text for the group whose identifier is `config.OTHER_GROUP` (a persisted
+    # Japanese string, kept as-is on disk — see config.py).
+    'tui.other_group': 'Other',
     'tui.group_count': 'group / {count} item(s)',
     'tui.last_updated': 'last updated  {when}',
     'tui.running_count': 'running   {count}',
@@ -70,6 +73,8 @@ _EN = {
     'cmd.needs_value': '{flag} needs a value',
     'cmd.no_changes': 'no changes',
     'cmd.dry_run_note': '(dry run: nothing was written)',
+    'cmd.settings_unreadable': '{path}: not valid JSON, or not a JSON object ({error}). '
+                                'Nothing was written — fix the file by hand and try again.',
 
     # cmd_daemon.py
     'cmd.already_running': 'already running: {path}',
@@ -111,6 +116,7 @@ _JA = {
     'tui.help': '↑↓/jk 移動  ⏎ 起動  ← 親へ/畳む  → 開く  h アーカイブ表示  '
                 '/ 絞込  p パネル  r 再走査  q 終了',
     'tui.counts': '管理中 {managed} ／ アーカイブ {archived} ／ その他 {other} ／ 起動中 {running}',
+    'tui.other_group': 'その他',
     'tui.group_count': 'グループ ／ {count} 件',
     'tui.last_updated': '最終更新  {when}',
     'tui.running_count': '起動中    {count} 件',
@@ -144,6 +150,8 @@ _JA = {
     'cmd.needs_value': '{flag} には値が要ります',
     'cmd.no_changes': '変更なし',
     'cmd.dry_run_note': '(--dry-run のため書き込んでいない)',
+    'cmd.settings_unreadable': '{path}: JSON として読めないか、オブジェクトの形ではありません'
+                                '（{error}）。何も書いていません——手で直してからもう一度実行してください。',
 
     'cmd.already_running': 'already running: {path}',
     'cmd.cannot_start_daemon': 'cannot start daemon: {error} ({path})',

@@ -25,18 +25,22 @@ def main(args: List[str]) -> int:
         keybindings_path = args[i + 1]
 
     changes: List[str]
-    if remove:
-        # Removes only our own hooks/statusLine from settings.json, and only our own
-        # two submit-key entries from keybindings.json (leaving other tools' entries
-        # alone either way).
-        changes, _ = setup.run_remove(settings_path, dry_run=dry_run)
-        kb_changed, kb_warning = keybindings.remove_enter_keys(keybindings_path, dry_run=dry_run)
-        if kb_changed:
-            changes.append(i18n.t('setup.keybindings_removed'))
-        if kb_warning:
-            changes.append('keybindings.json: %s' % kb_warning)
-    else:
-        changes, _ = setup.run(settings_path, dry_run=dry_run)
+    try:
+        if remove:
+            # Removes only our own hooks/statusLine from settings.json, and only our
+            # own two submit-key entries from keybindings.json (leaving other tools'
+            # entries alone either way).
+            changes, _ = setup.run_remove(settings_path, dry_run=dry_run)
+            kb_changed, kb_warning = keybindings.remove_enter_keys(keybindings_path, dry_run=dry_run)
+            if kb_changed:
+                changes.append(i18n.t('setup.keybindings_removed'))
+            if kb_warning:
+                changes.append(kb_warning)  # already starts with "keybindings.json: "
+        else:
+            changes, _ = setup.run(settings_path, dry_run=dry_run)
+    except setup.SettingsUnreadable as e:
+        sys.stderr.write(i18n.t('cmd.settings_unreadable', path=settings_path, error=e) + '\n')
+        return 1
 
     if changes:
         for c in changes:
