@@ -1,6 +1,7 @@
 // Settings types and defaults. Doesn't depend on `obsidian` (plain data definitions only).
 
 import { allLangs, type Lang, type LanguageSetting } from "./i18n";
+import { MANAGER_STATUS_FILTERS, type ManagerStatusFilter } from "./sessions/terminal-status";
 
 export type Padding = "comfortable" | "compact" | "none";
 
@@ -48,6 +49,8 @@ export interface AgentSessionsSettings {
 	managerAnalysisHeight: number;
 	/** Whether the manager's analytics area is collapsed. */
 	managerAnalysisCollapsed: boolean;
+	/** The manager's status-filter menu selection (next to the name filter). Default `all`. */
+	managerStatusFilter: ManagerStatusFilter;
 }
 
 export const DEFAULT_SETTINGS: AgentSessionsSettings = {
@@ -65,6 +68,7 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	language: "auto",
 	managerAnalysisHeight: 240,
 	managerAnalysisCollapsed: false,
+	managerStatusFilter: "all",
 };
 
 /**
@@ -85,6 +89,9 @@ export function mergeSettings(data: unknown, isMac = true): AgentSessionsSetting
 	delete saved.newlineKey;
 	if (saved.language !== "auto" && !allLangs().includes(saved.language as Lang)) {
 		delete saved.language;
+	}
+	if (!MANAGER_STATUS_FILTERS.includes(saved.managerStatusFilter as ManagerStatusFilter)) {
+		delete saved.managerStatusFilter;
 	}
 	if (!SUBMIT_KEYS.includes(saved.submitKey as SubmitKey)) {
 		delete saved.submitKey;

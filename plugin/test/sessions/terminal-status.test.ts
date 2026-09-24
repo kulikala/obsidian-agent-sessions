@@ -1,15 +1,23 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { setLang } from "../../src/i18n";
 import type { Row } from "../../src/sessions/index";
 import {
 	ALL_TERMINAL_STATUSES,
 	higherPriorityStatus,
+	managerStatusFilterLabelKey,
+	MANAGER_STATUS_FILTERS,
 	resolveRowStatus,
 	rowTerminalStatus,
+	statusGroup,
+	STATUS_GROUP_ICON,
+	statusTooltip,
 	terminalStatus,
 	TERMINAL_STATUS_ICON,
 	type TerminalStatus,
 	type TerminalStatusInput,
 } from "../../src/sessions/terminal-status";
+
+afterEach(() => setLang("en"));
 
 function row(overrides: Partial<Row> & Pick<Row, "id">): Row {
 	return {
@@ -240,10 +248,81 @@ describe("TERMINAL_STATUS_ICON (a row's status mark uses the same icon set as it
 	});
 
 	it("looks up a row's status mark from this same table, matching the tab header", () => {
-		expect(TERMINAL_STATUS_ICON.idle).toBe("square-terminal");
+		// Matches Claude's own app's icon for the same meaning, where a status-filter bucket applies.
+		expect(TERMINAL_STATUS_ICON.idle).toBe("circle-check");
 		expect(TERMINAL_STATUS_ICON.working).toBe("loader-circle");
-		expect(TERMINAL_STATUS_ICON.detached).toBe("square-dashed");
-		expect(TERMINAL_STATUS_ICON.asking).toBe("message-circle-question");
+		expect(TERMINAL_STATUS_ICON.detached).toBe("circle-dashed");
+		expect(TERMINAL_STATUS_ICON.asking).toBe("hand");
+		expect(TERMINAL_STATUS_ICON.waiting).toBe("eye");
 		expect(TERMINAL_STATUS_ICON.compacted).toBe("archive-restore");
+	});
+});
+
+describe("statusGroup", () => {
+	it("classifies each fine status into its group", () => {
+		expect(statusGroup("asking", false)).toBe("needs-input");
+		expect(statusGroup("waiting", false)).toBe("needs-review");
+		expect(statusGroup("compacted", false)).toBe("needs-review");
+		expect(statusGroup("connecting", false)).toBe("running");
+		expect(statusGroup("working", false)).toBe("running");
+		expect(statusGroup("running-shell", false)).toBe("running");
+		expect(statusGroup("idle", false)).toBe("done");
+		expect(statusGroup("editing", false)).toBe("done");
+		expect(statusGroup("detached", false)).toBe("done");
+		expect(statusGroup("exited", false)).toBe("done");
+		expect(statusGroup("error", false)).toBe("error");
+	});
+
+	it("is archived regardless of the underlying status once a session is archived", () => {
+		for (const status of ALL_TERMINAL_STATUSES) {
+			expect(statusGroup(status, true)).toBe("archived");
+		}
+	});
+});
+
+describe("MANAGER_STATUS_FILTERS / STATUS_GROUP_ICON / managerStatusFilterLabelKey", () => {
+	it("lists all and every group except error, in Claude's app's order", () => {
+		expect(MANAGER_STATUS_FILTERS).toEqual(["all", "needs-input", "needs-review", "running", "done", "archived"]);
+	});
+
+	it("gives every filter (other than all) a non-empty icon, matching Claude's app", () => {
+		expect(STATUS_GROUP_ICON["needs-input"]).toBe("hand");
+		expect(STATUS_GROUP_ICON["needs-review"]).toBe("eye");
+		expect(STATUS_GROUP_ICON.running).toBe("loader-circle");
+		expect(STATUS_GROUP_ICON.done).toBe("circle-check");
+		expect(STATUS_GROUP_ICON.archived).toBe("archive");
+	});
+
+	it("gives every filter option a message key", () => {
+		for (const filter of MANAGER_STATUS_FILTERS) {
+			const key = managerStatusFilterLabelKey(filter);
+			expect(key.startsWith("status.group.")).toBe(true);
+		}
+	});
+});
+
+describe("statusTooltip", () => {
+	it("combines the group label and the fine status name", () => {
+		setLang("en");
+		expect(statusTooltip("detached")).toBe("Done — Not connected");
+		expect(statusTooltip("asking")).toBe("Needs input — Waiting for your answer");
+		expect(statusTooltip("compacted")).toBe("Needs review — Compacted (context was reset)");
+	});
+
+	it("falls back to just the fine name for error (no group label of its own)", () => {
+		setLang("en");
+		expect(statusTooltip("error")).toBe("Error");
+	});
+
+	it("shows only the archived label, regardless of the underlying status", () => {
+		setLang("en");
+		expect(statusTooltip("idle", true)).toBe("Archived");
+		expect(statusTooltip("working", true)).toBe("Archived");
+	});
+
+	it("translates through the current language", () => {
+		setLang("ja");
+		expect(statusTooltip("detached")).toBe("完了 — 未接続");
+		setLang("en");
 	});
 });

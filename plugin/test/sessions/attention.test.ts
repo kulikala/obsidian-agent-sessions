@@ -65,6 +65,18 @@ describe("attentionCounts", () => {
 		const counts = attentionCounts(source({ a: "asking", b: "asking" }), rows);
 		expect(counts.jumpToId).toBe("a");
 	});
+
+	it("counts compacted as waiting too (both are the needs-review group)", () => {
+		const rows = [row({ id: "a" }), row({ id: "b" })];
+		const counts = attentionCounts(source({ a: "waiting", b: "compacted" }), rows);
+		expect(counts.waiting).toBe(2);
+	});
+
+	it("never counts an archived row, regardless of its status", () => {
+		const rows = [row({ id: "a", archived: true })];
+		const counts = attentionCounts(source({ a: "asking" }), rows);
+		expect(counts).toEqual({ asking: 0, waiting: 0, jumpToId: null });
+	});
 });
 
 describe("urgencyByGroupKey", () => {
@@ -79,6 +91,12 @@ describe("urgencyByGroupKey", () => {
 		const map = urgencyByGroupKey(source({ a: "waiting", b: "asking", c: "waiting" }), rows, keyOf);
 		expect(map.get("g1")).toBe("asking"); // waiting and asking are mixed → asking wins
 		expect(map.get("g2")).toBe("waiting");
+	});
+
+	it("treats compacted the same as waiting (both are needs-review)", () => {
+		const rows = [row({ id: "a", folder: "g1" })];
+		const map = urgencyByGroupKey(source({ a: "compacted" }), rows, keyOf);
+		expect(map.get("g1")).toBe("waiting");
 	});
 
 	it("does not have a key for a group with no matching rows", () => {

@@ -1,7 +1,7 @@
 // A terminal tab's status, as pure functions. Depends on neither `obsidian` nor `terminal.ts` —
 // the side panel's and manager's row markers share this same status and its CSS classes.
 
-import type { MessageKey } from "../i18n";
+import { t, type MessageKey } from "../i18n";
 import type { Row } from "./index";
 
 export type TerminalStatus =
@@ -83,17 +83,18 @@ export function terminalStatus(input: TerminalStatusInput): TerminalStatus {
 	return "idle";
 }
 
-/** The icon for each status (Lucide). */
+/** The icon for each status (Lucide) — matches the icon Claude's own app uses for the same
+ * meaning, where one of its 5 status-filter buckets applies (see `StatusGroup` below). */
 export const TERMINAL_STATUS_ICON: Record<TerminalStatus, string> = {
 	connecting: "loader",
 	working: "loader-circle",
 	"running-shell": "terminal",
-	asking: "message-circle-question",
-	waiting: "bell-dot",
+	asking: "hand",
+	waiting: "eye",
 	compacted: "archive-restore",
 	editing: "pencil-line",
-	idle: "square-terminal",
-	detached: "square-dashed",
+	idle: "circle-check",
+	detached: "circle-dashed",
 	exited: "circle-stop",
 	error: "triangle-alert",
 };
@@ -131,6 +132,99 @@ export const STATUS_LABEL_KEY: Record<TerminalStatus, MessageKey> = {
 	exited: "status.exited",
 	error: "status.error",
 };
+
+// ---- Status groups ----------------------------------------------------------------
+//
+// A coarser classification layered on top of the 11 `TerminalStatus` values, matching the
+// buckets Claude's own app filters sessions by. The fine status still decides the row mark's
+// icon/color/tooltip detail (above) — `StatusGroup` is only for the side panel's badge and the
+// manager's status-filter menu.
+
+export type StatusGroup = "needs-input" | "needs-review" | "running" | "done" | "error" | "archived";
+
+/** Every group a session can filter/count into, except `archived` (that's a `Row` flag, not
+ * derived from `TerminalStatus`) and `error` (no distinct filter bucket — see `statusGroup`'s comment). */
+const STATUS_GROUP_OF: Record<TerminalStatus, StatusGroup> = {
+	asking: "needs-input",
+	waiting: "needs-review",
+	compacted: "needs-review",
+	connecting: "running",
+	working: "running",
+	"running-shell": "running",
+	idle: "done",
+	editing: "done",
+	detached: "done",
+	exited: "done",
+	error: "error",
+};
+
+/**
+ * `status`'s coarser group, or `archived` regardless of `status` once a session has been
+ * archived (`Row.archived`) — archiving is its own terminal bucket, independent of whatever the
+ * session's last-known running state was.
+ */
+export function statusGroup(status: TerminalStatus, archived: boolean): StatusGroup {
+	return archived ? "archived" : STATUS_GROUP_OF[status];
+}
+
+/** The manager's status-filter menu options: "all" (respects the separate "Show archive"
+ * checkbox — see `views/manager-model.ts`'s `matchesStatusFilter`) plus every group except
+ * `error` (which has no filter bucket of its own; an errored session simply doesn't show under
+ * any specific filter, only under "all"), in the same order Claude's own app lists them. */
+export type ManagerStatusFilter = "all" | Exclude<StatusGroup, "error">;
+
+export const MANAGER_STATUS_FILTERS: readonly ManagerStatusFilter[] = [
+	"all",
+	"needs-input",
+	"needs-review",
+	"running",
+	"done",
+	"archived",
+];
+
+/** The icon for each group in the manager's status-filter menu — the same icon as the fine
+ * status that best represents the group (matches Claude's own app: a hand for "needs input", an
+ * eye for "needs review", a spinning arc for "running", a checkmark for "done", a box for
+ * "archived"). */
+export const STATUS_GROUP_ICON: Record<Exclude<StatusGroup, "error">, string> = {
+	"needs-input": "hand",
+	"needs-review": "eye",
+	running: "loader-circle",
+	done: "circle-check",
+	archived: "archive",
+};
+
+/** The group-level label (`status.group.*`). `error` has no entry — its fine name ("Error")
+ * alone is already clear, and it has no filter bucket of its own. */
+const STATUS_GROUP_LABEL_KEY: Record<Exclude<StatusGroup, "error">, MessageKey> = {
+	"needs-input": "status.group.needsInput",
+	"needs-review": "status.group.needsReview",
+	running: "status.group.running",
+	done: "status.group.done",
+	archived: "status.group.archived",
+};
+
+/** The manager's status-filter menu item label — `status.group.all` for "all", otherwise the group's own label. */
+export function managerStatusFilterLabelKey(filter: ManagerStatusFilter): MessageKey {
+	return filter === "all" ? "status.group.all" : STATUS_GROUP_LABEL_KEY[filter];
+}
+
+/**
+ * The tooltip for a status mark: the group label plus the fine status name (e.g. "Done — Not
+ * connected"), or just the fine name when the group has none of its own (`error`). An archived
+ * row shows only the group label ("Archived") — the icon already changed to the archive box, so
+ * the underlying status no longer matters.
+ */
+export function statusTooltip(status: TerminalStatus, archived = false): string {
+	if (archived) {
+		return t("status.group.archived");
+	}
+	const group = statusGroup(status, false);
+	if (group === "error") {
+		return t(STATUS_LABEL_KEY[status]);
+	}
+	return `${t(STATUS_GROUP_LABEL_KEY[group])} — ${t(STATUS_LABEL_KEY[status])}`;
+}
 
 /** Priority order (same order as `terminalStatus`'s branches, highest first). Used to combine several views/rows. */
 const PRIORITY_ORDER: readonly TerminalStatus[] = [

@@ -18,6 +18,7 @@ describe("DEFAULT_SETTINGS", () => {
 			language: "auto",
 			managerAnalysisHeight: 240,
 			managerAnalysisCollapsed: false,
+			managerStatusFilter: "all",
 		});
 	});
 });
@@ -32,6 +33,14 @@ describe("mergeSettings", () => {
 
 	it("keeps a submitKey value that's in the current type", () => {
 		expect(mergeSettings({ submitKey: "cmd+enter" }).submitKey).toBe("cmd+enter");
+	});
+
+	it("keeps a managerStatusFilter value that's a registered filter", () => {
+		expect(mergeSettings({ managerStatusFilter: "running" }).managerStatusFilter).toBe("running");
+	});
+
+	it("drops an unrecognized managerStatusFilter value, falling back to the default (all)", () => {
+		expect(mergeSettings({ managerStatusFilter: "needs-something" }).managerStatusFilter).toBe("all");
 	});
 
 	it("falls back to defaults when there's no saved data", () => {

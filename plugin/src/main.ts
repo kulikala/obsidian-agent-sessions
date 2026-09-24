@@ -37,7 +37,7 @@ import {
 	ALL_TERMINAL_STATUSES,
 	higherPriorityStatus,
 	rowTerminalStatus,
-	STATUS_LABEL_KEY,
+	statusTooltip,
 	TERMINAL_STATUS_ICON,
 	terminalStatusClass,
 	type TerminalStatus,
@@ -834,7 +834,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			for (const s of ALL_TERMINAL_STATUSES) {
 				iconEl.toggleClass(terminalStatusClass(s), s === status);
 			}
-			setTooltip(iconEl, t(STATUS_LABEL_KEY[status]));
+			setTooltip(iconEl, statusTooltip(status));
 		}
 	}
 

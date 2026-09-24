@@ -10,6 +10,7 @@ import {
 	flattenTree,
 	formatWeekdayTime,
 	isRealCategoryKey,
+	matchesStatusFilter,
 	moveSelection,
 	sessionCost,
 	shortModelName,
@@ -411,5 +412,39 @@ describe("shortModelName", () => {
 
 	it("returns an empty string for null", () => {
 		expect(shortModelName(null)).toBe("");
+	});
+});
+
+describe("matchesStatusFilter", () => {
+	it("archived matches only archived rows, regardless of status", () => {
+		expect(matchesStatusFilter(row({ id: "a", archived: true }), "idle", "archived", false)).toBe(true);
+		expect(matchesStatusFilter(row({ id: "a", archived: false }), "idle", "archived", false)).toBe(false);
+	});
+
+	it("all matches every non-archived row, and archived ones too only when showArchived", () => {
+		expect(matchesStatusFilter(row({ id: "a", archived: false }), "idle", "all", false)).toBe(true);
+		expect(matchesStatusFilter(row({ id: "a", archived: true }), "idle", "all", false)).toBe(false);
+		expect(matchesStatusFilter(row({ id: "a", archived: true }), "idle", "all", true)).toBe(true);
+	});
+
+	it("a specific group filter matches a non-archived row whose statusGroup is that filter", () => {
+		expect(matchesStatusFilter(row({ id: "a" }), "asking", "needs-input", false)).toBe(true);
+		expect(matchesStatusFilter(row({ id: "a" }), "idle", "needs-input", false)).toBe(false);
+		expect(matchesStatusFilter(row({ id: "a" }), "waiting", "needs-review", false)).toBe(true);
+		expect(matchesStatusFilter(row({ id: "a" }), "compacted", "needs-review", false)).toBe(true);
+		expect(matchesStatusFilter(row({ id: "a" }), "working", "running", false)).toBe(true);
+		expect(matchesStatusFilter(row({ id: "a" }), "idle", "done", false)).toBe(true);
+	});
+
+	it("an archived row never matches a specific group filter, even if its last-known status would", () => {
+		expect(matchesStatusFilter(row({ id: "a", archived: true }), "asking", "needs-input", false)).toBe(false);
+	});
+
+	it("an error row matches no specific filter (only all)", () => {
+		expect(matchesStatusFilter(row({ id: "a" }), "error", "needs-input", false)).toBe(false);
+		expect(matchesStatusFilter(row({ id: "a" }), "error", "needs-review", false)).toBe(false);
+		expect(matchesStatusFilter(row({ id: "a" }), "error", "running", false)).toBe(false);
+		expect(matchesStatusFilter(row({ id: "a" }), "error", "done", false)).toBe(false);
+		expect(matchesStatusFilter(row({ id: "a" }), "error", "all", false)).toBe(true);
 	});
 });

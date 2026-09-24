@@ -614,6 +614,11 @@
 	justify-content: center;
 }
 
+/* The manager toolbar's status-filter button, while a specific filter (not "all") is selected. */
+.agent-sessions-nav-btn.is-active {
+	color: var(--text-accent);
+}
+
 .agent-sessions-nav-more {
 	margin-left: auto;
 }
@@ -1218,8 +1223,11 @@
 	animation: agent-sessions-spin 1s linear infinite;
 }
 
+/* Grouped with connecting/working under the "running" status group (`statusGroup`), and colored
+   to match (the accent color) — only its icon (a terminal, not a spinner) and its motion (pulse,
+   not spin) stay distinct, since a shell command isn't itself spinning. */
 .agent-sessions-status-running-shell {
-	color: var(--color-yellow, gold);
+	color: var(--text-accent);
 	animation: agent-sessions-pulse 1.2s ease-in-out infinite;
 }
 
@@ -1237,10 +1245,11 @@
 	display: inline-block;
 }
 
-/* Right after a compact, before the next instruction has been sent. ctx has been reset and could
-   be mistaken for "waiting" (unread), so it's distinguished with a calm teal and no motion. */
+/* Right after a compact, before the next instruction has been sent. Grouped with `waiting` under
+   "needs review" (`statusGroup`) and colored to match — no motion, since ctx having just been
+   reset isn't something actively happening the way "waiting for a reply" is. */
 .agent-sessions-status-compacted {
-	color: var(--color-cyan, #2a9d8f);
+	color: var(--color-orange, darkorange);
 }
 
 .agent-sessions-status-editing {
@@ -1261,6 +1270,12 @@
 
 .agent-sessions-status-error {
 	color: var(--text-error);
+}
+
+/* A row's mark once `Row.archived` is true — replaces whatever the session's status icon/color
+   would otherwise be (`rowStatusMark`). No motion: archived is a settled, terminal state. */
+.agent-sessions-status-archived {
+	color: var(--text-faint);
 }
 
 @media (prefers-reduced-motion: reduce) {

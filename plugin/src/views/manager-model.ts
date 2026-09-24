@@ -4,6 +4,7 @@
 
 import type { Row } from "../sessions/index";
 import { t, type Lang } from "../i18n";
+import { statusGroup, type ManagerStatusFilter, type TerminalStatus } from "../sessions/terminal-status";
 import { OTHER_GROUP, splitName, type ManagerTree } from "../sessions/tree";
 import type { StatsResult, StatsWindow } from "../types";
 
@@ -15,6 +16,31 @@ export type ManagerRow =
 	| { kind: "session"; row: Row; indent: boolean }
 	/** A session with an archive entry that no longer shows up in `json scan` (it no longer exists). */
 	| { kind: "archived-orphan"; id: string; name: string };
+
+/**
+ * Whether `row` (whose resolved status is `status`) should show under the manager's `filter` —
+ * the toolbar's status-filter menu, next to the name filter. `archived` matches only archived
+ * rows, regardless of status. Every other specific filter matches a non-archived row whose
+ * `statusGroup` is that filter (so an archived row never shows under any of them, even if its
+ * last-known status would otherwise match). `all` matches every non-archived row, plus archived
+ * ones too when `showArchived` (the toolbar's separate "Show archive" checkbox) is on — the same
+ * rule `flattenTree`'s `showArchived` parameter already applies to the tree's trailing archive
+ * section.
+ */
+export function matchesStatusFilter(
+	row: Row,
+	status: TerminalStatus,
+	filter: ManagerStatusFilter,
+	showArchived: boolean
+): boolean {
+	if (filter === "archived") {
+		return row.archived;
+	}
+	if (filter === "all") {
+		return showArchived || !row.archived;
+	}
+	return !row.archived && statusGroup(status, false) === filter;
+}
 
 /**
  * Flattens into one list, in order: groups (heading → children if not folded), then other

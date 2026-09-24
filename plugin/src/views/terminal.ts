@@ -31,7 +31,7 @@ import { VIEW_TYPE_TERMINAL } from "../sessions/open-session";
 import type { Padding } from "../settings";
 import {
 	ALL_TERMINAL_STATUSES,
-	STATUS_LABEL_KEY,
+	statusTooltip,
 	TERMINAL_STATUS_ICON,
 	terminalStatus,
 	terminalStatusClass,
@@ -1172,7 +1172,7 @@ export class TerminalView extends ItemView {
 		for (const s of ALL_TERMINAL_STATUSES) {
 			iconEl.toggleClass(terminalStatusClass(s), s === status);
 		}
-		setTooltip(iconEl, t(STATUS_LABEL_KEY[status]));
+		setTooltip(iconEl, statusTooltip(status));
 	}
 
 	private headerIconEl(): HTMLElement | null {

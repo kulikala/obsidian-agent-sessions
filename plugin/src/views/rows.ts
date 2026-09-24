@@ -4,7 +4,13 @@ import { renderCategoryChip } from "../ui/chip";
 import type { Row } from "../sessions/index";
 import { t } from "../i18n";
 import type AgentSessionsPlugin from "../main";
-import { resolveRowStatus, STATUS_LABEL_KEY, terminalStatusClass, TERMINAL_STATUS_ICON } from "../sessions/terminal-status";
+import {
+	resolveRowStatus,
+	STATUS_GROUP_ICON,
+	statusTooltip,
+	terminalStatusClass,
+	TERMINAL_STATUS_ICON,
+} from "../sessions/terminal-status";
 import { splitName } from "../sessions/tree";
 
 export interface RowActions {
@@ -63,7 +69,9 @@ export class RowSelection {
  * Creates and appends a single status marker: the tab's actual status from
  * `plugin.terminalStatuses` if it's open, otherwise whatever can be told from the `Row` alone
  * (`resolveRowStatus`). Uses the same icon (`TERMINAL_STATUS_ICON`), color/motion CSS class, and
- * tooltip as the tab header, so they stay consistent.
+ * tooltip as the tab header, so they stay consistent — except once `row.archived` is true, which
+ * always shows the archive box instead (the icon Claude's own app uses for its "Archived"
+ * bucket), regardless of the session's last-known running state.
  */
 export function rowStatusMark(container: HTMLElement, plugin: AgentSessionsPlugin, row: Row): HTMLElement {
 	// `obsidian`'s `setIcon`/`setTooltip` are required lazily (same reason as `views/detail.ts`'s
@@ -71,9 +79,11 @@ export function rowStatusMark(container: HTMLElement, plugin: AgentSessionsPlugi
 	// resolve `obsidian`).
 	const { setIcon, setTooltip } = require("obsidian") as typeof import("obsidian");
 	const status = resolveRowStatus(plugin, row);
-	const mark = container.createSpan({ cls: `agent-sessions-row-mark ${terminalStatusClass(status)}` });
-	setIcon(mark, TERMINAL_STATUS_ICON[status]);
-	setTooltip(mark, t(STATUS_LABEL_KEY[status]));
+	const cls = row.archived ? "agent-sessions-status-archived" : terminalStatusClass(status);
+	const icon = row.archived ? STATUS_GROUP_ICON.archived : TERMINAL_STATUS_ICON[status];
+	const mark = container.createSpan({ cls: `agent-sessions-row-mark ${cls}` });
+	setIcon(mark, icon);
+	setTooltip(mark, statusTooltip(status, row.archived));
 	return mark;
 }
 

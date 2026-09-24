@@ -9,7 +9,14 @@ import { stats, usage } from "../backend/backend";
 import { paletteHueDeg } from "../sessions/category";
 import { getLang, t } from "../i18n";
 import { NewSessionModal } from "../ui/modals";
-import { resolveRowStatus, TERMINAL_STATUS_ICON } from "../sessions/terminal-status";
+import {
+	managerStatusFilterLabelKey,
+	MANAGER_STATUS_FILTERS,
+	resolveRowStatus,
+	STATUS_GROUP_ICON,
+	TERMINAL_STATUS_ICON,
+	type ManagerStatusFilter,
+} from "../sessions/terminal-status";
 import { VIEW_TYPE_TERMINAL } from "../sessions/open-session";
 import { loadStore } from "../sessions/store";
 import { buildManagerTree } from "../sessions/tree";
@@ -24,6 +31,7 @@ import {
 	flattenTree,
 	formatWeekdayTime,
 	isRealCategoryKey,
+	matchesStatusFilter,
 	moveSelection,
 	sessionCost,
 	shortModelName,
@@ -60,6 +68,7 @@ export class ManagerView extends ItemView {
 	private tableBodyEl!: HTMLTableSectionElement;
 	private detailEl!: HTMLElement;
 	private filterEl!: HTMLInputElement;
+	private statusFilterBtn!: HTMLElement;
 
 	private filterText = "";
 	private showArchived = false;
@@ -586,8 +595,43 @@ export class ManagerView extends ItemView {
 			}
 		});
 
+		this.statusFilterBtn = this.iconButton(toolbarEl, "filter", t("toolbar.filterByStatus"), (evt) =>
+			this.showStatusFilterMenu(evt)
+		);
+		this.applyStatusFilterButtonState();
+
 		const moreBtn = this.iconButton(toolbarEl, "more-horizontal", t("action.more"), (evt) => this.showMoreMenu(evt));
 		moreBtn.addClass("agent-sessions-nav-more");
+	}
+
+	/** The toolbar's status-filter menu (next to the name filter): "all" plus every status group
+	 * except `error` (which has no filter bucket of its own — see `ManagerStatusFilter`), each
+	 * with the same icon Claude's own app uses for that bucket, checked on the current selection.
+	 * The choice persists in settings. */
+	private showStatusFilterMenu(evt: MouseEvent): void {
+		const menu = new Menu();
+		for (const filter of MANAGER_STATUS_FILTERS) {
+			menu.addItem((item) => {
+				item
+					.setTitle(t(managerStatusFilterLabelKey(filter)))
+					.setChecked(this.plugin.settings.managerStatusFilter === filter)
+					.onClick(() => {
+						this.plugin.settings.managerStatusFilter = filter;
+						void this.plugin.saveSettings();
+						this.applyStatusFilterButtonState();
+						this.render();
+					});
+				if (filter !== "all") {
+					item.setIcon(STATUS_GROUP_ICON[filter]);
+				}
+			});
+		}
+		menu.showAtMouseEvent(evt);
+	}
+
+	/** Highlights the status-filter button while a specific filter (anything but "all") is active. */
+	private applyStatusFilterButtonState(): void {
+		this.statusFilterBtn.toggleClass("is-active", this.plugin.settings.managerStatusFilter !== "all");
 	}
 
 	private iconButton(
@@ -630,8 +674,19 @@ export class ManagerView extends ItemView {
 			const needle = this.filterText.trim().toLowerCase();
 			sessionRows = sessionRows.filter((r) => (r.name || r.label || r.id).toLowerCase().includes(needle));
 		}
+		const statusFilter = this.plugin.settings.managerStatusFilter;
+		sessionRows = sessionRows.filter((r) =>
+			matchesStatusFilter(r, resolveRowStatus(this.plugin, r), statusFilter, this.showArchived)
+		);
+		// "archived" narrows sessionRows to archived rows only, so the tree's active/other
+		// sections come out empty and only its (always-shown-when-requested) archive section has
+		// anything in it — flattenTree still needs `showArchived: true` to actually reveal that
+		// section. "all" defers to the toolbar's separate "Show archive" checkbox, same as before
+		// this filter existed. Any other specific filter already excludes archived rows
+		// (`matchesStatusFilter`), so whether the tree's archive section shows is moot for those.
+		const showArchivedSection = statusFilter === "archived" || (statusFilter === "all" && this.showArchived);
 		const tree = buildManagerTree(sessionRows, store);
-		this.rows = sortRows(flattenTree(tree, this.showArchived), this.sortKey, this.statsResult);
+		this.rows = sortRows(flattenTree(tree, showArchivedSection), this.sortKey, this.statsResult);
 		this.cursor = moveSelection(this.rows, this.cursor, 0);
 		this.actions = createRowActions(this.plugin, (id) => this.selectById(id));
 		// Group heading rows' 5h/7d cost totals: only counts rows shown in the table (post-filter)

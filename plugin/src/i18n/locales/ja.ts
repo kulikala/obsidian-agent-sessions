@@ -124,9 +124,11 @@ export const ja: Partial<Record<MessageKey, string>> = {
 
 	// ---- Attention markers (side panel badges, manager section headings) ----
 	"attention.asking": "入力待ち {count}",
-	"attention.waiting": "未読 {count}",
+	// waiting（応答が出てまだ見ていない）と compacted（compact 直後でまだ次の指示が
+	// 無い）の両方を数える——どちらも「レビュー待ち」（statusGroup）。
+	"attention.waiting": "レビュー待ち {count}",
 	"attention.askingInGroup": "入力待ちのセッションがあります",
-	"attention.waitingInGroup": "未読のセッションがあります",
+	"attention.waitingInGroup": "レビュー待ちのセッションがあります",
 
 	// ---- Manager (views/manager.ts, views/manager-model.ts) ----
 	"table.name": "名前",
@@ -158,6 +160,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"stats.pace.tooltip": "経過 {elapsedPct}%・使用 {usedPct}%",
 	"category.other": "その他",
 	"toolbar.filterPlaceholder": "絞込",
+	"toolbar.filterByStatus": "状態で絞り込む",
 	"group.archived": "アーカイブ（{count}）",
 	"group.other": "その他",
 	"manager.analysis.title": "解析",
@@ -196,6 +199,15 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"status.detached": "未接続",
 	"status.exited": "終了",
 	"status.error": "エラー",
+
+	// ---- Status groups (sessions/terminal-status.ts の statusGroup。サイドのバッジと
+	// マネージャーの状態フィルターのメニュー。Claude 本体のアプリの状態区分に合わせた) ----
+	"status.group.all": "すべて",
+	"status.group.needsInput": "入力待ち",
+	"status.group.needsReview": "レビュー待ち",
+	"status.group.running": "実行中",
+	"status.group.done": "完了",
+	"status.group.archived": "アーカイブ済み",
 
 	// ---- Session analytics modal (usage/usage-modal.ts) ----
 	"usage.title": "セッション解析結果：{name}",

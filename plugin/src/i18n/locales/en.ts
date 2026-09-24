@@ -123,9 +123,11 @@ export const en = {
 
 	// ---- Attention markers (side panel badges, manager section headings) ----
 	"attention.asking": "Needs input {count}",
-	"attention.waiting": "Unread {count}",
+	// This counts both `waiting` (turn ended, tab not yet viewed) and `compacted` (just
+	// /compact'd, no next instruction yet) — both are "needs review" now (statusGroup).
+	"attention.waiting": "Needs review {count}",
 	"attention.askingInGroup": "Has a session waiting for input",
-	"attention.waitingInGroup": "Has an unread session",
+	"attention.waitingInGroup": "Has a session that needs review",
 
 	// ---- Manager (views/manager.ts, views/manager-model.ts) ----
 	"table.name": "Name",
@@ -157,6 +159,7 @@ export const en = {
 	"stats.pace.tooltip": "{elapsedPct}% elapsed · {usedPct}% used",
 	"category.other": "Other",
 	"toolbar.filterPlaceholder": "Filter",
+	"toolbar.filterByStatus": "Filter by status",
 	"group.archived": "Archive ({count})",
 	"group.other": "Other",
 	"manager.analysis.title": "Analysis",
@@ -195,6 +198,15 @@ export const en = {
 	"status.detached": "Not connected",
 	"status.exited": "Exited",
 	"status.error": "Error",
+
+	// ---- Status groups (sessions/terminal-status.ts's `statusGroup`; the side panel's badge and
+	// the manager's status-filter menu, matching Claude's own app's status buckets) ----
+	"status.group.all": "All",
+	"status.group.needsInput": "Needs input",
+	"status.group.needsReview": "Needs review",
+	"status.group.running": "Running",
+	"status.group.done": "Done",
+	"status.group.archived": "Archived",
 
 	// ---- Session analytics modal (usage/usage-modal.ts) ----
 	"usage.title": "Session analytics: {name}",
