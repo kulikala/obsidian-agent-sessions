@@ -19,7 +19,7 @@ Run and manage [Claude Code](https://claude.com/claude-code) sessions as termina
 
 ## Requirements
 
-- Tested on macOS. Linux is untested but expected to work, since the plugin only relies on a Unix PTY and a Unix domain socket. Windows is not natively supported.
+- Tested on macOS. Linux (including Linux Obsidian under WSLg) is supported but not yet verified — the terminal keybindings and Python-side code have platform branches for it, but it hasn't been run end-to-end yet. Windows is not natively supported (Obsidian must be the Linux build, e.g. under WSLg).
 - Obsidian desktop, version 1.7.2 or later (`isDesktopOnly`, since the plugin spawns processes and opens Unix sockets).
 - Python 3.9+ using only the standard library, normally at `/usr/bin/python3` (the path is configurable in the plugin settings).
 - The [Claude Code](https://claude.com/claude-code) CLI, installed and either on your `PATH` or pointed to from the plugin settings.
@@ -56,7 +56,7 @@ Once the plugin has started at least once, the `agent-sessions` CLI can be run f
 |---|---|
 | Side panel (right sidebar) | New session, open the Session Manager, settings. A list split into *open tabs*, *running* (attached to the daemon but no tab), and *recent*; each row shows a state icon, a category chip, and the name. A details pane (model, effort, connection status, context usage, total tokens/cost, last prompt/response). A rate-limit view for the 5‑hour/7‑day windows with a countdown to reset. |
 | Session Manager | The default view for a new tab. A session tree (grouped by category, plus an "Other" group and an archive), and a collapsible/resizable analytics panel below it: 5‑hour/7‑day usage cards, a weekly-pace projection, and a per-category cost bar. Opening it never starts a session. |
-| Terminal tab | One Claude Code session per tab. Header actions: insert the current note as `@path`, jump to the previous/next prompt or the last response. `Cmd +`/`Cmd -`/`Cmd 0` change the tab's font size. Paths printed in the output are clickable if they resolve inside the vault. |
+| Terminal tab | One Claude Code session per tab. Header actions: insert the current note as `@path`, jump to the previous/next prompt or the last response. `Cmd +`/`Cmd -`/`Cmd 0` (macOS) or `Ctrl+Shift+=`/`Ctrl+Shift+-`/`Ctrl+Shift+0` (other platforms) change the tab's font size. On non-macOS, `Ctrl+Shift+C`/`Ctrl+Shift+V` copy the selection and paste; plain `Ctrl+<key>` combos (`Ctrl+C`, `Ctrl+G`, …) always reach Claude Code, not Obsidian. Paths printed in the output are clickable if they resolve inside the vault. |
 | Ctrl+G (built-in editor) | Opens a split editing pane under the terminal for the file Claude Code would otherwise hand to `$VISUAL`. Supports `@`-file completion, autosave, and native paste/IME/undo. "Send" submits immediately for prompt edits; Esc returns to the input without sending. |
 | Row menu (⋯ / right-click) | Rename, compress (`/compact`), view session analysis, archive/unarchive, end session, copy ID. |
 | Session analysis | From the row menu: cost, tokens, turn count, and duration cards; input/output/tool-use bars; a turn-by-turn table. Click rows to select a range; copy the result as Markdown. |
@@ -110,6 +110,15 @@ AGENT_SESSIONS_BIN=$PWD/../bin/agent-sessions npm test   # also run the tests th
 cd ..
 /usr/bin/python3 -W error -m unittest discover -s tests -t .   # Python (standard library only)
 ```
+
+### Release (maintainers)
+
+```sh
+cd plugin && npm version patch   # or minor / major; updates plugin/manifest.json, the root manifest.json, and versions.json
+git push && git push --tags
+```
+
+Pushing the tag runs `.github/workflows/release.yml`, which builds the plugin and attaches `main.js`, `manifest.json`, and `styles.css` to a draft GitHub Release. Review the draft, then publish it.
 
 ## License
 

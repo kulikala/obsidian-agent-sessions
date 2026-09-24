@@ -19,7 +19,7 @@
 
 ## 必要なもの
 
-- macOS で動作確認。Linux は未検証（Unix の pty・Unix ソケットを使うので動く見込み）。Windows はネイティブ非対応。
+- macOS で動作確認。Linux（WSLg 上の Linux 版 Obsidian を含む）は対応（検証中）——ターミナルのキー割当と Python 側にプラットフォーム分岐を持つが、通しでの動作確認はまだ済んでいない。Windows はネイティブ非対応（WSLg 等で Linux 版 Obsidian を動かす形になる）。
 - Obsidian desktop、1.7.2 以降（`isDesktopOnly`。プロセスの起動と Unix ソケットを使うため）。
 - 標準ライブラリのみを使う Python 3.9 以降。通常は `/usr/bin/python3`（パスはプラグインの設定で変更できる）。
 - [Claude Code](https://claude.com/claude-code) CLI（インストール済みで `PATH` にあるか、プラグインの設定でパスを指定する）。
@@ -56,7 +56,7 @@ vault のパスは必須——`install.sh` の第 1 引数として渡すか、�
 |---|---|
 | サイドパネル（右サイドバー） | 新規セッション、セッションマネージャーを開く、設定。一覧は「開いているタブ」「起動中（デーモンには居るがタブが無い）」「最近」に分かれ、各行は状態の印・カテゴリのチップ・名前を出す。詳細欄（モデル・エフォート・接続状況、コンテキスト使用率、総トークン・総コスト、直近の指示・応答）。5 時間／7 日枠のレート制限とリセットまでのカウントダウン。 |
 | セッションマネージャー | 新しいタブの既定の画面。セッションの木（カテゴリでグループ化、「その他」区分とアーカイブを含む）と、その下の折畳・リサイズ可能な分析パネル：5 時間／7 日の利用状況カード、7 日枠のペース判定、カテゴリ別のコストの帯。開いてもセッションは始まらない。 |
-| ターミナルタブ | 1 セッション＝1 タブ。ヘッダの操作：現在のノートを `@path` として挿入、前の指示・次の指示・最後の応答へジャンプ。`Cmd +`／`Cmd −`／`Cmd 0` でそのタブのフォントサイズを変える。出力中のパスは vault 内に実在すればクリックできる。 |
+| ターミナルタブ | 1 セッション＝1 タブ。ヘッダの操作：現在のノートを `@path` として挿入、前の指示・次の指示・最後の応答へジャンプ。`Cmd +`／`Cmd −`／`Cmd 0`（macOS）または `Ctrl+Shift+=`／`Ctrl+Shift+-`／`Ctrl+Shift+0`（それ以外）でそのタブのフォントサイズを変える。非 macOS では `Ctrl+Shift+C`／`Ctrl+Shift+V` が選択のコピー・貼り付け、素の `Ctrl+<key>`（`Ctrl+C`・`Ctrl+G` 等）は常に Claude Code へ届き Obsidian には渡らない。出力中のパスは vault 内に実在すればクリックできる。 |
 | Ctrl+G（内蔵エディタ） | Claude Code が本来 `$VISUAL` に渡すファイルを、ターミナルの下の分割された編集領域で編集する。`@` によるファイル補完・自動保存・ネイティブのペースト／IME／Undo に対応。プロンプト編集での「送る」は即座に送信、Esc は送信せず入力欄に戻る。 |
 | 行メニュー（⋯／右クリック） | 名前を変更、圧縮（`/compact`）、セッション解析結果を見る、アーカイブ⇄解除、セッションを終了、ID をコピー。 |
 | セッション解析結果 | 行メニューから開く。コスト・トークン・ターン数・期間のカード、入力／出力／ツール使用のバー、ターン表。行をクリックして区間を選び、結果を Markdown としてコピーできる。 |
@@ -110,6 +110,15 @@ AGENT_SESSIONS_BIN=$PWD/../bin/agent-sessions npm test   # 実デーモンを使
 cd ..
 /usr/bin/python3 -W error -m unittest discover -s tests -t .   # Python（標準ライブラリのみ）
 ```
+
+### リリース（メンテナ向け）
+
+```sh
+cd plugin && npm version patch   # minor / major も可。plugin/manifest.json・直下の manifest.json・versions.json を更新する
+git push && git push --tags
+```
+
+タグを push すると `.github/workflows/release.yml` が走り、プラグインをビルドして `main.js`・`manifest.json`・`styles.css` を GitHub Release の draft に添付する。draft の内容を確認してから公開する。
 
 ## ライセンス
 
