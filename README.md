@@ -17,13 +17,15 @@ Run and manage [Claude Code](https://claude.com/claude-code) sessions as termina
 - **CLI and TUI** — a standalone `agent-sessions` command for scripting or working outside Obsidian: a terminal UI to pick and attach to a session, and `json` subcommands that back the plugin.
 - **Bilingual UI** — English and Japanese, with an "automatic" mode that follows Obsidian's own language setting.
 
-## Requirements
+## Supported environments
 
-- Tested on macOS. Linux (including Linux Obsidian under WSLg) is supported but not yet verified — the terminal keybindings and Python-side code have platform branches for it, but it hasn't been run end-to-end yet. Windows is not natively supported (Obsidian must be the Linux build, e.g. under WSLg).
-- Obsidian desktop, version 1.7.2 or later (`isDesktopOnly`, since the plugin spawns processes and opens Unix sockets).
-- Python 3.9+ using only the standard library, found via `$PATH` (`python3`).
-- The [Claude Code](https://claude.com/claude-code) CLI, installed and either on your `PATH` or pointed to from the plugin settings.
-- Node.js and npm, only if you are building the plugin from source (see [Development](#development)).
+| | |
+|---|---|
+| **OS** | macOS — tested. Linux, including Linux Obsidian running under WSLg on Windows — supported (the terminal keybindings and the Python side both have platform branches for it, exercised in CI and in Linux containers by hand), but not yet verified on a real Obsidian install end to end. Windows (native) — not supported: the daemon depends on `pty`, `fcntl`, and `termios`, Unix-only standard-library modules with no Windows equivalent, and a native Windows build of Obsidian has no PTY to hold open; running the Linux build of Obsidian under WSLg avoids this entirely. |
+| **Obsidian** | Desktop only (`isDesktopOnly`, since the plugin spawns processes and opens Unix sockets — neither is available to a mobile or web build), version 1.7.2 or later (`minAppVersion`). |
+| **Python** | 3.9+, standard library only, found via `$PATH` (`python3`). |
+| **Claude Code** | Installed, either on your `PATH` or pointed to from the plugin settings. The plugin relies on Claude Code's hooks (`Stop`, `SessionEnd`, `SessionStart` with matcher `compact`, `UserPromptSubmit`), its `statusLine`, and — only if you change the submit-key setting away from the default — its `keybindings.json`. |
+| **Node.js / npm** | Only if you are building the plugin from source (see [Development](#development)); CI builds with Node.js 20. |
 
 ## Installation
 

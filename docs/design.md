@@ -1,6 +1,6 @@
 # Agent Sessions design
 
-Requirements are in [`requirements.md`](requirements.md).
+Requirements are in [`requirements.md`](requirements.md). A higher-level tour of the same system, with diagrams, is in [`architecture.md`](architecture.md).
 
 ## 1. Overview and components
 

@@ -17,13 +17,15 @@
 - **CLI と TUI** — Obsidian の外や自動化から使える単体の `agent-sessions` コマンド：セッションを選んで attach する TUI と、プラグインを裏で支える `json` サブコマンド。
 - **日英 2 言語の UI** — 「自動」（Obsidian の言語設定に合わせる）・日本語・English を選べる。
 
-## 必要なもの
+## 対応環境
 
-- macOS で動作確認。Linux（WSLg 上の Linux 版 Obsidian を含む）は対応（検証中）——ターミナルのキー割当と Python 側にプラットフォーム分岐を持つが、通しでの動作確認はまだ済んでいない。Windows はネイティブ非対応（WSLg 等で Linux 版 Obsidian を動かす形になる）。
-- Obsidian desktop、1.7.2 以降（`isDesktopOnly`。プロセスの起動と Unix ソケットを使うため）。
-- 標準ライブラリのみを使う Python 3.9 以降。`$PATH`（`python3`）から見つける。
-- [Claude Code](https://claude.com/claude-code) CLI（インストール済みで `PATH` にあるか、プラグインの設定でパスを指定する）。
-- ソースからプラグインをビルドする場合のみ、Node.js と npm（[開発](#開発)を参照）。
+| | |
+|---|---|
+| **OS** | macOS——動作確認済み。Linux（WSLg 上の Linux 版 Obsidian を含む）——対応（ターミナルのキー割当と Python 側の両方にプラットフォーム分岐を持ち、CI と手動での Linux コンテナ検証を通している）が、実機の Obsidian での通しの動作確認はまだ済んでいない。Windows（ネイティブ）——非対応：デーモンは `pty`・`fcntl`・`termios`（Windows に相当するもののない Unix 専用の標準ライブラリ）に依存しており、Windows ネイティブ版の Obsidian には保持すべき PTY 自体が存在しない。WSLg 等で Linux 版の Obsidian を動かせばこの制約を回避できる。 |
+| **Obsidian** | デスクトップ版のみ（`isDesktopOnly`。プロセスの起動と Unix ソケットを使うため——どちらもモバイル版・Web 版では使えない）、バージョン 1.7.2 以降（`minAppVersion`）。 |
+| **Python** | 3.9 以降、標準ライブラリのみ。`$PATH`（`python3`）から見つける。 |
+| **Claude Code** | インストール済みで、`PATH` にあるか、プラグインの設定でパスを指定する。本プラグインは Claude Code のフック（`Stop`・`SessionEnd`・`SessionStart`（matcher `compact`）・`UserPromptSubmit`）と `statusLine`、そして送信キーの設定を既定から変えた場合のみ `keybindings.json` に依存する。 |
+| **Node.js／npm** | ソースからプラグインをビルドする場合のみ必要（[開発](#開発)を参照）。CI では Node.js 20 でビルドしている。 |
 
 ## インストール
 
