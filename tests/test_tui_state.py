@@ -2,11 +2,12 @@ import io
 import unittest
 from unittest import mock
 
-from agentsessions import config
+from agentsessions import config, i18n
 from agentsessions import store as store_mod
 from agentsessions.config import OTHER_GROUP
 from agentsessions.model import Session
 from agentsessions.tui import State, list_columns, main, panel_width
+from agentsessions.tui import _group_label
 
 A = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa'
 B = 'bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb'
@@ -122,6 +123,18 @@ class TestMainVaultCheck(unittest.TestCase):
             code = main()
         self.assertEqual(code, 1)
         self.assertIn('AGENT_SESSIONS_VAULT', err.getvalue())
+
+
+class TestGroupLabel(unittest.TestCase):
+    """`OTHER_GROUP` is a persisted identifier (kept in Japanese on disk, see
+    config.py) that isn't itself display text — `_group_label` maps it to the current
+    UI language's label instead of showing the raw persisted string."""
+
+    def test_other_group_is_translated(self):
+        self.assertEqual(_group_label(OTHER_GROUP), i18n.t('tui.other_group'))
+
+    def test_ordinary_group_label_is_unchanged(self):
+        self.assertEqual(_group_label('RIM'), 'RIM')
 
 
 if __name__ == '__main__':

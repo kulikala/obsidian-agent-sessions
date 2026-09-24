@@ -153,6 +153,12 @@ def _color(pair: int, fallback: int = curses.A_NORMAL) -> int:
     return fallback
 
 
+def _group_label(label: str) -> str:
+    """The display text for a group's own `label` (a persisted identifier — see
+    `config.OTHER_GROUP` — that isn't itself translated)."""
+    return i18n.t('tui.other_group') if label == config.OTHER_GROUP else label
+
+
 def _mark_of(live: Optional[Live]) -> Tuple[str, int]:
     if live is None:
         return ' ', curses.A_NORMAL
@@ -182,7 +188,7 @@ def _panel_lines(st: State, it: Optional[Item], width: int, height: int) -> List
         return out
 
     if it.kind == 'group':
-        add(it.label, curses.A_BOLD)
+        add(_group_label(it.label), curses.A_BOLD)
         add(i18n.t('tui.group_count', count=it.count), curses.A_DIM)
         kids = [i for i in st.items if i.group == it.label and i.session]
         running = [i for i in kids if st.live_of(i.session)]
@@ -278,7 +284,7 @@ def _draw(stdscr, st: State) -> None:
                 folded = (st.other_folded if it.label == config.OTHER_GROUP
                           else it.label in st.doc.folded) and not st.filt
                 mark = '▸' if folded else '▾'
-                line = fit(' %s %s (%d)' % (mark, it.label, it.count), list_w, pad=True)
+                line = fit(' %s %s (%d)' % (mark, _group_label(it.label), it.count), list_w, pad=True)
                 _put(stdscr, 2 + i, 0, line, attr | curses.A_BOLD)
                 continue
             s = it.session
