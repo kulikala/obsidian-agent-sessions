@@ -21,7 +21,7 @@
 
 - macOS で動作確認。Linux（WSLg 上の Linux 版 Obsidian を含む）は対応（検証中）——ターミナルのキー割当と Python 側にプラットフォーム分岐を持つが、通しでの動作確認はまだ済んでいない。Windows はネイティブ非対応（WSLg 等で Linux 版 Obsidian を動かす形になる）。
 - Obsidian desktop、1.7.2 以降（`isDesktopOnly`。プロセスの起動と Unix ソケットを使うため）。
-- 標準ライブラリのみを使う Python 3.9 以降。`$PATH`（`python3`）から見つける（プラグインの設定でパスを指定すればそちらを使う）。
+- 標準ライブラリのみを使う Python 3.9 以降。`$PATH`（`python3`）から見つける。
 - [Claude Code](https://claude.com/claude-code) CLI（インストール済みで `PATH` にあるか、プラグインの設定でパスを指定する）。
 - ソースからプラグインをビルドする場合のみ、Node.js と npm（[開発](#開発)を参照）。
 
@@ -67,7 +67,7 @@ vault のパスは必須——`install.sh` の第 1 引数として渡すか、�
 
 ## 設定
 
-フォント名とサイズ、余白（ゆったり／小さめ／なし）、送信キー、最近の件数、指示待ちの通知、`claude`／`agent-sessions`／Python のパス、ターミナルのスクロールバック行数、内蔵エディタの高さ、表示言語（自動／日本語／English）、サイドパネルの詳細欄とマネージャーの分析パネルの保存された高さ。
+フォント名とサイズ、余白（ゆったり／小さめ／なし）、送信キー、最近の件数、指示待ちの通知、`claude`／`agent-sessions` のパス、ターミナルのスクロールバック行数、内蔵エディタの高さ、表示言語（自動／日本語／English）、サイドパネルの詳細欄とマネージャーの分析パネルの保存された高さ。
 
 ## CLI
 
@@ -91,14 +91,22 @@ agent-sessions setup [--dry-run]
 
 ## アンインストール
 
-アンインストール用のスクリプトは無い。`install.sh` が行ったことを手で戻す：
+```sh
+"<このリポジトリのパス>/uninstall.sh" "<vault>"
+```
 
-1. Obsidian の「コミュニティプラグイン」で **Agent Sessions** を無効化・削除し、`<vault>/.obsidian/plugins/agent-sessions` の symlink（またはディレクトリ）を消す。
-2. `~/bin/agent-sessions`・`~/bin/agent-sessions-code` の symlink を消す。
-3. `~/.claude/settings.json` から、`agent-sessions hook` を呼ぶ `Stop`／`SessionEnd`／`SessionStart`（matcher `compact`）／`UserPromptSubmit` のフックと、`agent-sessions status` を呼ぶ `statusLine` のエントリを消す（`setup` がインストール前に残した `settings.json.bak-<時刻>` が残っていればそこから戻せる）。
-4. 送信キーを Enter 以外に変えていた場合、`~/.claude/keybindings.json` の `Chat` にプラグインが足した `enter`／`meta+enter` のエントリを消す。
-5. デーモンはセッションも接続も無い状態が 10 分続くと自分で終了する。すぐ止めたければ `SIGTERM` を送る（pid は `~/.agents/sessions/daemon.pid`）。
-6. 保存された状態をすべて消したければ `<vault>/.agents/sessions/` と `~/.agents/sessions/` を削除する。
+これに加えて、Obsidian の「コミュニティプラグイン」で **Agent Sessions** を無効化・削除する。
+
+`uninstall.sh` は、デーモンを止め（動いているセッションが残っていれば確認を求める——飛ばすには
+`--force`）、`~/.claude/settings.json` から自分が足したフックと `statusLine` を取り除き
+（`install.sh` と同じやり方で先に backup を残す）、送信キーを Enter 以外に変えていた場合は
+`~/.claude/keybindings.json` の `Chat` に足した `enter`／`meta+enter` を取り除き、
+`~/bin/agent-sessions`・`~/bin/agent-sessions-code`・`<vault>/.obsidian/plugins/agent-sessions`
+の symlink を外す（symlink でなければ——手で置き換えている等——消さずに案内だけ出す）。他の
+ツールのフック・`statusLine`・キーバインドには触れず、何度実行しても安全（冪等）。
+
+`--purge` を付けると `~/.agents/sessions/`（デーモンの実行時状態）と
+`<vault>/.agents/sessions/`（折畳・アーカイブ・カテゴリの色などのセッション管理情報）も消す。
 
 ## 開発
 

@@ -11,7 +11,6 @@ describe("DEFAULT_SETTINGS", () => {
 			notifyOnIdle: true,
 			claudePath: "",
 			agentSessionsPath: "",
-			pythonPath: "",
 			scrollback: 5000,
 			editorHeight: 40,
 			submitKey: "enter",

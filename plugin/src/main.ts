@@ -991,16 +991,6 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			);
 
 		new Setting(containerEl)
-			.setName(t("settings.pythonPath.name"))
-			.setDesc(t("settings.pythonPath.desc"))
-			.addText((text) =>
-				text.setValue(this.plugin.settings.pythonPath).onChange(async (value) => {
-					this.plugin.settings.pythonPath = value;
-					await this.plugin.saveSettings();
-				})
-			);
-
-		new Setting(containerEl)
 			.setName(t("settings.editorHeight.name"))
 			.setDesc(t("settings.editorHeight.desc"))
 			.addText((text) =>

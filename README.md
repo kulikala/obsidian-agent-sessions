@@ -21,7 +21,7 @@ Run and manage [Claude Code](https://claude.com/claude-code) sessions as termina
 
 - Tested on macOS. Linux (including Linux Obsidian under WSLg) is supported but not yet verified — the terminal keybindings and Python-side code have platform branches for it, but it hasn't been run end-to-end yet. Windows is not natively supported (Obsidian must be the Linux build, e.g. under WSLg).
 - Obsidian desktop, version 1.7.2 or later (`isDesktopOnly`, since the plugin spawns processes and opens Unix sockets).
-- Python 3.9+ using only the standard library, found via `$PATH` (`python3`) unless a path is set in the plugin settings.
+- Python 3.9+ using only the standard library, found via `$PATH` (`python3`).
 - The [Claude Code](https://claude.com/claude-code) CLI, installed and either on your `PATH` or pointed to from the plugin settings.
 - Node.js and npm, only if you are building the plugin from source (see [Development](#development)).
 
@@ -67,7 +67,7 @@ The terminal tab, the side panel rows, and the manager rows all share the same i
 
 ## Settings
 
-Font family and size, padding (comfortable/compact/none), submit key, recent-sessions count, idle notifications, paths to `claude`/`agent-sessions`/Python, terminal scrollback, built-in editor height, display language (auto/Japanese/English), and the saved heights of the side panel's details pane and the manager's analytics panel.
+Font family and size, padding (comfortable/compact/none), submit key, recent-sessions count, idle notifications, paths to `claude`/`agent-sessions`, terminal scrollback, built-in editor height, display language (auto/Japanese/English), and the saved heights of the side panel's details pane and the manager's analytics panel.
 
 ## CLI
 
@@ -91,14 +91,24 @@ See [`docs/design.md`](docs/design.md) for the full design and [`docs/requiremen
 
 ## Uninstall
 
-There is no automated uninstall script; reverse the steps `install.sh` performed:
+```sh
+"<path to this repo>/uninstall.sh" "<vault>"
+```
 
-1. Disable and remove **Agent Sessions** from Obsidian's Community plugins, then delete the `<vault>/.obsidian/plugins/agent-sessions` symlink (or directory).
-2. Remove the `~/bin/agent-sessions` and `~/bin/agent-sessions-code` symlinks.
-3. In `~/.claude/settings.json`, remove the `Stop`/`SessionEnd`/`SessionStart` (matcher `compact`)/`UserPromptSubmit` hook entries that run `agent-sessions hook`, and the `statusLine` entry that runs `agent-sessions status` (a pre-install backup was written as `settings.json.bak-<timestamp>` by `setup`, if you still have it).
-4. If you changed the submit key away from Enter, remove the `enter`/`meta+enter` entries the plugin added under `Chat` in `~/.claude/keybindings.json`.
-5. The daemon exits on its own after 10 minutes with no sessions and no connections; to stop it immediately, send it `SIGTERM` (its pid is in `~/.agents/sessions/daemon.pid`).
-6. Delete `<vault>/.agents/sessions/` and `~/.agents/sessions/` if you want to remove all stored state.
+Also disable and remove **Agent Sessions** from Obsidian's Community plugins.
+
+`uninstall.sh` stops the daemon (asking for confirmation first if any session is still
+running — pass `--force` to skip that), removes the hooks and `statusLine` it added to
+`~/.claude/settings.json` (backing that file up first, the same way `install.sh` does),
+removes the `enter`/`meta+enter` entries it may have added under `Chat` in
+`~/.claude/keybindings.json` (only if you changed the submit key away from Enter), and
+removes the `~/bin/agent-sessions`, `~/bin/agent-sessions-code`, and
+`<vault>/.obsidian/plugins/agent-sessions` symlinks (a path that isn't actually a symlink
+is left in place with a note, in case you replaced it by hand). It leaves other tools'
+hooks, `statusLine`, and keybindings untouched, and is safe to run more than once.
+
+Pass `--purge` to also delete `~/.agents/sessions/` (daemon runtime state) and
+`<vault>/.agents/sessions/` (session bookkeeping: folded groups, archive, category colors).
 
 ## Development
 

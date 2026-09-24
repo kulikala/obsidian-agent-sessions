@@ -35,7 +35,6 @@ export interface AgentSessionsSettings {
 	notifyOnIdle: boolean;
 	claudePath: string;
 	agentSessionsPath: string;
-	pythonPath: string;
 	scrollback: number;
 	/** 編集領域の高さ（本体に対する %）。 */
 	editorHeight: number;
@@ -59,7 +58,6 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	notifyOnIdle: true,
 	claudePath: "",
 	agentSessionsPath: "",
-	pythonPath: "",
 	scrollback: 5000,
 	editorHeight: 40,
 	submitKey: "enter",
