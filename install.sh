@@ -20,6 +20,15 @@ echo "linked: $HOME/bin/agent-sessions"
 ln -fns "$HERE/bin/agent-sessions-code" "$HOME/bin/agent-sessions-code"
 echo "linked: $HOME/bin/agent-sessions-code"
 
+case ":$PATH:" in
+  *":$HOME/bin:"*) ;;
+  *)
+    echo "$HOME/bin が PATH に無い。シェルの起動ファイル（~/.bashrc や ~/.profile 等）に" >&2
+    echo "  export PATH=\"\$HOME/bin:\$PATH\"" >&2
+    echo "を足して開き直すか、新しいシェルで hash -r する。" >&2
+    ;;
+esac
+
 mkdir -p "$VAULT/.obsidian/plugins"
 ln -fns "$HERE/plugin" "$VAULT/.obsidian/plugins/agent-sessions"
 echo "linked: $VAULT/.obsidian/plugins/agent-sessions"

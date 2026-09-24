@@ -2,6 +2,7 @@
 import glob
 import json
 import os
+import shutil
 import subprocess
 from dataclasses import dataclass
 from typing import Dict, Optional
@@ -38,14 +39,24 @@ class Live:
         return self.status in ('busy', 'shell')
 
 
+def _ps_path() -> str:
+    """`ps` の実行ファイル。PATH から探し、見つからなければ 'ps'（呼び出し側が OSError で拾う）。
+
+    macOS・Linux とも `/bin/ps` が普通だが、決め打ちにせず PATH を尊重する
+    （procps 抜きの最小コンテナ等、無い環境もある）。
+    """
+    return shutil.which('ps') or 'ps'
+
+
 def _claude_pids() -> Optional[set]:
     """いま走っている claude プロセスの pid 集合。ps が使えなければ None。
 
     台帳は終了時に消えないことがあるので、pid の生存だけでなく
     「その pid が claude か」まで見て、pid の使い回しを弾く。
+    `-eo pid=,args=` は GNU ps（procps-ng）・BSD ps（macOS）の両方で通る。
     """
     try:
-        out = subprocess.run(['/bin/ps', '-axo', 'pid=,command='],
+        out = subprocess.run([_ps_path(), '-eo', 'pid=,args='],
                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                              timeout=5).stdout.decode('utf-8', 'replace')
     except (OSError, subprocess.SubprocessError):

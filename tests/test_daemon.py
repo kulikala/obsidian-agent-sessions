@@ -178,8 +178,19 @@ class TestBasics(DaemonTestCase):
         st = os.stat(self.h.sock_path)
         self.assertTrue(stat.S_ISSOCK(st.st_mode))
         self.assertEqual(stat.S_IMODE(st.st_mode), 0o600)
-        with open(os.path.join(self.tmpdir, 'daemon.pid')) as f:
-            self.assertEqual(int(f.read().strip()), os.getpid())
+        # pid は bind() ではなく serve_forever()（別スレッド）が書く（--detach では fork
+        # 後の子の pid を書くため、bind() の時点ではまだ確定しない）。スレッドの起動が
+        # 遅い環境（CPU を絞ったコンテナ等）向けに、書かれるまで少し待つ。
+        pid_path = os.path.join(self.tmpdir, 'daemon.pid')
+        deadline = time.monotonic() + TIMEOUT
+        content = ''
+        while time.monotonic() < deadline:
+            with open(pid_path) as f:
+                content = f.read().strip()
+            if content:
+                break
+            time.sleep(0.02)
+        self.assertEqual(int(content), os.getpid())
 
     def test_hello_and_empty_list(self):
         c = self.h.client()

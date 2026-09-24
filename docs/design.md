@@ -32,7 +32,7 @@ agent-sessions/
 │   │   ├── category.ts        カテゴリの固定色（パレット番号の割当）
 │   │   ├── chip.ts            カテゴリのチップ描画（サイド・マネージャー・ダイアログ共通）
 │   │   ├── name.ts            名前の分解・命名ダイアログの入力トークナイズ
-│   │   ├── keys.ts            Enter の分類・送信キーの動作決定・keybindings.json との整合
+│   │   ├── keys.ts            Enter の分類・送信キーの動作決定・keybindings.json との整合・非macOS の Ctrl キー分類
 │   │   ├── terminal-status.ts タブの状態を 1 つに決める純関数（`TerminalStatus`）
 │   │   ├── attention.ts       asking／waiting の集計（サイドのバッジ・マネージャー見出しの印）
 │   │   ├── compacted.ts       ~/.agents/sessions/compacted/ の監視（compact 直後の印）
@@ -63,7 +63,7 @@ agent-sessions/
 │   ├── styles.css
 │   ├── esbuild.config.mjs     → plugin/main.js
 │   └── package.json
-├── bin/agent-sessions          #!/usr/bin/python3。agentsessions.cli.main を呼ぶ
+├── bin/agent-sessions          #!/usr/bin/env python3。agentsessions.cli.main を呼ぶ
 ├── bin/agent-sessions-code     内蔵エディタ用の `$VISUAL`（sh、名前に `code` を含める）
 ├── agentsessions/               Python パッケージ（標準ライブラリのみ）
 │   ├── config.py               パス定数（VAULT, STORE_PATH, RUNTIME_DIR, SOCK_PATH, UI_STATE_PATH, …）。VAULT は既定値を持たず env→vault.json→None（§3.2）
@@ -107,7 +107,7 @@ agent-sessions/
 |---|---|---|
 | `<vault>/.agents/sessions/sessions.json` | 折畳・アーカイブ・カテゴリの色（下記） | プラグイン、`agent-sessions`（TUI の折畳）。§3.1 のロックの中で読み→更新→tmp→rename |
 | `<vault>/.agents/sessions/sessions.json.lock/` | 書込みの排他（§3.1） | 書く者 |
-| `~/.agents/sessions/daemon.sock` | デーモンのソケット（vault 配下は macOS のパス長制限 104 バイトに掛かる）。ディレクトリ 0700・ソケット 0600 | デーモン |
+| `~/.agents/sessions/daemon.sock` | デーモンのソケット（vault 配下だと AF_UNIX のパス長制限に掛かりうる——macOS 104 バイト・Linux 108 バイト）。ディレクトリ 0700・ソケット 0600 | デーモン |
 | `~/.agents/sessions/daemon.pid` / `daemon.log` | デーモンの pid とログ | デーモン |
 | `~/.agents/sessions/exited.json` | 終了済みで未 `forget` のセッション（`id → {code, exitedAt}`）。デーモンが終了時に書き、起動時に読む | デーモン |
 | `~/.agents/sessions/status/<session_id>.json` | `statusLine` が渡す JSON をそのまま | `agent-sessions status` |
@@ -265,7 +265,7 @@ TUI：一覧（グループ→カテゴリの無い名前付きセッション�
 
 ### 7.2 送信キーと Enter
 
-設定は **送信キー** 1 つ（`enter`（既定）／`shift+enter`／`ctrl+enter`／`alt+enter`（Option）／`cmd+enter`）。送信キー以外の Enter の組合せは改行になる。`views/terminal.ts` の `handleKey`（`attachCustomKeyEventHandler`）が Enter の組合せを IME 変換中を除きすべて横取りする（純関数は `keys.ts`）：
+設定は **送信キー** 1 つ（`enter`（既定）／`shift+enter`／`ctrl+enter`／`alt+enter`（Option）／`cmd+enter`。`cmd+enter` は macOS だけ選べる——非macOS対応は下記）。送信キー以外の Enter の組合せは改行になる。`views/terminal.ts` の `handleKey`（`attachCustomKeyEventHandler`）が Enter の組合せを IME 変換中を除きすべて横取りする（純関数は `keys.ts`）：
 
 - `classifyEnter(ev)`：Enter でなければ、または IME 変換中（`isComposing`／`keyCode 229`）なら `passthrough`。修飾は shift・ctrl・alt・cmd（metaKey）・無し（enter）の優先順で 1 つに分類する。
 - `resolveEnterAction(cls, submitKey)`：一致すれば `submit`、しなければ `newline`（Enter 以外・IME 中だけ `passthrough`）。
@@ -275,7 +275,28 @@ Esc は `keyup` の伝播を止める（Obsidian がフォーカスを奪うた�
 
 `submitKey !== 'enter'` のときだけ、`keybindings.json`（`$CLAUDE_CONFIG_DIR` 配下。vault の `.claude/` は読まない）の `Chat` に `enter: chat:newline`・`meta+enter: chat:submit` を書く（他の鍵は触らない。`$schema`・`$docs` が無ければ足す）。Claude Code 全体の設定なので、iTerm など他の端末の claude にも効く（設定画面で伝える）。`submitKey === 'enter'` に戻すときは自分が書いた 2 鍵だけを消す。起動時は `reconcileSubmitKey(chatBindings, current)`：ファイルの状態（Enter が改行になっているか）と今の設定（`enter` か否か）が合っていれば設定を保ち（`shift+enter`／`ctrl+enter`／`alt+enter`／`cmd+enter` はファイルの 2 鍵からは区別できない）、食い違うときだけ `deriveSubmitKey(chatBindings)`（`enter: chat:newline` があり `cmd+enter`／`super+enter` もあれば `cmd+enter`、無ければ `alt+enter`。`enter` が無いか `chat:submit` なら `enter`）で導いた値にする。設定画面は開くたびに `keybindings.json` を読み、食い違いがあれば示して合わせられる。ファイルが無ければ送信、JSON が壊れていれば「読めない」と表示し変更を受け付けない。
 
-送信キーの記号（`⏎`／`⇧⏎`／`⌃⏎`／`⌥⏎`／`⌘⏎`、`keys.ts` の `SUBMIT_KEY_SYMBOLS`）は「送る」ボタンの表記（例「送る（⌘⏎）」）と statusLine（§12）に使う。
+送信キーの記号（`⏎`／`⇧⏎`／`⌃⏎`／`⌥⏎`／`⌘⏎`、`keys.ts` の `SUBMIT_KEY_SYMBOLS`）は macOS の「送る」ボタンの表記（例「送る（⌘⏎）」）と statusLine（§14）に使う。非macOS対応は下記。
+
+#### 7.2.1 非 macOS のキー割当
+
+`Platform.isMacOS`（Obsidian）で分岐する。macOS は上記のまま変えない。
+
+非 macOS では Obsidian のホットキーの修飾キーが Ctrl（Cmd ではない）で、claude 自身も Ctrl+C／D／G／R／O／S／L／T 等の組合せを使う（R-T5）。そのため「Ctrl は素通りで Obsidian へ渡す」とはできず、`keys.ts` の `classifyCtrlKeyNonMac(ev)` が Ctrl 付きキーの行き先を決める（`views/terminal.ts` の `handleKey` から、`!Platform.isMacOS` のときだけ呼ぶ）。既定は **ターミナルへ**（claude を優先）で、以下だけ例外にする：
+
+| キー | 行き先 |
+|---|---|
+| Ctrl+Shift+C | ターミナルの選択をコピー（`terminal.getSelection()` → `navigator.clipboard.writeText`）。選択が無ければ何もしない |
+| Ctrl+Shift+V | クリップボードを PTY へ（`navigator.clipboard.readText()` → `sendInput`）。`terminal.modes.bracketedPasteMode` が立っていれば bracketed paste（`\x1b[200~`…`\x1b[201~`）で囲む（§6 の bracketed paste と同じ理由。`/` の補完を誤って開かせない） |
+| Ctrl+Shift+=／−／0 | フォントサイズ（macOS の Cmd +／−／0 に相当。`TerminalView.zoomFont()`） |
+| Ctrl+Shift+<その他の key> | Obsidian へ（claude は Ctrl+Shift の組合せを使わないため） |
+| Ctrl+Tab／Ctrl+, ／Ctrl+W | Obsidian へ（タブ切替・設定・タブを閉じる） |
+| それ以外の Ctrl+<key>（Ctrl+P を含む） | ターミナルへ |
+
+Obsidian へ渡すときは xterm には渡さず（`false` を返す）が `preventDefault`／`stopPropagation` は呼ばない——macOS の Cmd 付きキーと同じ考え方で、ネイティブの `keydown` をそのまま Obsidian のホットキー処理へ通す。コピー・貼り付け・フォントサイズは自前で処理するので `preventDefault`・`stopPropagation` を呼び、xterm にも Obsidian にも渡さない。
+
+Ctrl+P はコマンドパレットと衝突しうるが（claude の readline 系入力は Ctrl+P を履歴の「1 つ前」に使う可能性がある）、R-T5（claude が使うキーはすべてターミナルに届く）を優先し、既定のターミナル行きのままにした——Obsidian のコマンドパレットは他の手段（リボン・メニュー、または非フォーカス時の Ctrl+P）で開ける。Ctrl+W（タブを閉じる）も readline の「1 語削除」と重なりうるが、タブを閉じる操作の可用性を優先してある。どちらも実機での衝突確認はまだ済んでいない（§21）。
+
+右クリックのコピー・貼り付け（xterm.js 自身の `rightClickHandler`／`copyHandler`／`handlePasteEvent`。`element` の `copy`・`paste`・`contextmenu` DOM イベントを購読）はプラットフォームで分岐しない——ブラウザのネイティブ `copy`／`paste` イベントに乗るだけなので、非 macOS でも同じ経路で動く。
 
 ### 7.3 リンクと `@` とジャンプ
 
@@ -466,7 +487,7 @@ cache 作成は 5 分＝入力×1.25、1 時間＝入力×2（`cache_creation.ep
 - モデルは `model.display_name`、無ければ「デフォルト」。エフォートは `effort.level`（辞書のとき）または `effort` 自身（文字列のとき）、無ければ「デフォルト」。
 - `ctx` は `context_window.used_percentage`（`round`）、無ければ「—」。
 - `rc` は `~/.claude/sessions/*.json` のうち `session_id` の一致する行の `bridgeSessionId` の有無（`live.live_sessions`）。一致が無ければ `○`。台帳が無い・未接続はどちらも `○`、接続中だけ緑の `●`（サイド・マネージャーの詳細ビューの rc バッジと同じ判定）。
-- 送信キーの記号（`⏎`／`⇧⏎`／`⌃⏎`／`⌥⏎`／`⌘⏎`）は、環境変数 `AGENT_SESSIONS_ID` が立っているとき（プラグインのデーモンから起動したセッション）だけ、`~/.agents/sessions/ui.json`（`plugin/src/ui-state.ts` の `writeUiState`。プラグインが `onload` と設定保存のたびに tmp→rename で書く）から読み、**行の先頭**に `· ` 区切りで付ける。`AGENT_SESSIONS_ID` が無い・`ui.json` が無い／壊れている／`submitSymbol` が無いときは何も付けない。
+- 送信キーの記号（macOS は `⏎`／`⇧⏎`／`⌃⏎`／`⌥⏎`／`⌘⏎`、非 macOS は短い文字表記 `⏎`／`S-⏎`／`C-⏎`／`A-⏎`。`keys.ts` の `submitKeyStatuslineSymbol(key, isMac)`）は、環境変数 `AGENT_SESSIONS_ID` が立っているとき（プラグインのデーモンから起動したセッション）だけ、`~/.agents/sessions/ui.json`（`plugin/src/ui-state.ts` の `writeUiState(runtimeDir, submitKey, isMac)`。プラグインが `onload` と設定保存のたびに `Platform.isMacOS` を渡して tmp→rename で書く）から読み、**行の先頭**に `· ` 区切りで付ける。`AGENT_SESSIONS_ID` が無い・`ui.json` が無い／壊れている／`submitSymbol` が無いときは何も付けない。
 
 `agent-sessions status` は同時に、stdin の JSON をそのまま `status/<session_id>.json` に tmp→rename で書く（§3）。
 
@@ -474,17 +495,17 @@ cache 作成は 5 分＝入力×1.25、1 時間＝入力×2（`cache_creation.ep
 
 | 項目 | 既定 |
 |---|---|
-| フォント | `Menlo, "Hiragino Sans", monospace` |
+| フォント | macOS：`Menlo, "Hiragino Sans", monospace`。非 macOS：`"DejaVu Sans Mono", "Noto Sans Mono CJK JP", monospace`（`settings.ts` の `defaultFontFamily(isMac)`。新規インストールだけ分岐——一度でも保存された値は変えない） |
 | フォントサイズ | 13 |
 | 余白 | ゆったり（`comfortable`／`compact`／`none`） |
-| 送信キー | `enter`（§7.2。実体は `keybindings.json`） |
+| 送信キー | `enter`（§7.2。実体は `keybindings.json`。選択肢は macOS が 5 つ、非 macOS は `cmd+enter` を除く 4 つ） |
 | 最近の件数（サイドパネル） | 10 |
 | サイドパネルの詳細欄の高さ | 220px（`sideDetailHeight`、最小 80px） |
 | マネージャーの解析領域の高さ／折畳 | 240px／展開（`managerAnalysisHeight`／`managerAnalysisCollapsed`） |
 | 指示待ちの通知 | オン |
-| `claude` のパス | 空＝ログインシェルで `command -v claude` |
+| `claude` のパス | 空＝ログインシェル（`$SHELL`、無ければ macOS は `/bin/zsh`・非 macOS は `/bin/bash`。`backend.ts` の `defaultLoginShell(isMac)`）で `command -v claude` |
 | `agent-sessions` のパス | 空＝`~/bin/agent-sessions` |
-| Python のパス | 空＝`/usr/bin/python3` |
+| Python のパス | 空＝`/usr/bin/python3`（Linux にもある） |
 | スクロールバック行数 | 5000 |
 | 内蔵エディタの高さ | `editorHeight`、既定 40%（10〜90%。§7.4） |
 | 言語 | 自動（§16） |
@@ -520,6 +541,7 @@ cache 作成は 5 分＝入力×1.25、1 時間＝入力×2（`cache_creation.ep
 - **Python**（unittest、`-W error`。`tests/`）：`protocol`（フレームの分割・結合）、`daemon`（`cat` を子にした start/attach/replay/resize/kill/forget、バッファ上限、複数接続と最小サイズ、切断の後始末、終了済みへの attach、`exited.json` の書き出しと読み込み）、`store` のロック（2 プロセスで同時に書く。`categoryColors` の往復・`path=None`（vault 未設定）で `load` は空、`save`／`update` は `VaultNotConfigured` を含む）、`setup`（settings.json の置換と backup。`SessionStart`（matcher `compact`）・`UserPromptSubmit` の追加を含む）、`cache`、`jsonout`（`waiting_for` を条件付きで持つこと）、`live`（`waiting`／`waiting_for`／ラベル）、`pricing`（各表・1h・未知モデル）、`usage`（cost・tools・duration）、`stats`（窓・バケット・重複排除・`_roll_forward` の 1 期分／複数期分の先送りと境界）、`hooks`（`format_status_line`・送信キー記号・`_update_compacted` の書込と削除）、`config`（`_resolve_vault` の優先順・`require_vault`。T-80）、`model`・`scan`・`detail`（`last_command` を含む）・`items`（TUI の区分け）・`tui_state`（vault 未設定時の `main()` の早期終了を含む）、`edit`（偽ソケットサーバーで `ok:true`→0、`cancel`→1、`no-tab`／`busy`→fallback、接続不可／EOF→fallback）、`attach`。
 - **TypeScript**（vitest、`plugin/test/`）：`tree`・`manager-model`（開いているタブ／起動中／最近・グループ／その他／アーカイブの区分け、`categoryTotals`、`weeklyPace`・`formatWeekdayTime`・`shortModelName`）、`links`・`at-complete`、`marks`、`keys`（`classifyEnter`・`resolveEnterAction`・`sendSequence`・`deriveSubmitKey`・`reconcileSubmitKey`）、`keybindings`（読解・書換・戻し）、`daemon-client`（フレーム）、`daemon-integration`、`statusline`・`limits`（整形・並べ替え・`rollForwardWindow`）、`store`（読み書きとロック、tmp dir）、`category`（パレット番号の割当）、`name`（`tokenizeNameInput`・`filterCategories`・`sessionDisplayName`）、`detail`（`categoryAndLabel`）、`terminal-status`（`terminalStatus` の優先順・`asking`・`compacted`・アイコン対応表）、`attention`（`attentionCounts`・`urgencyByGroupKey`）、`compacted`（`CompactedTracker`）、`autosave`（`SaveDebouncer`）、`ui-state`、`vault-state`（`writeVaultState`。T-80）、`backend`（`envWithVault`。T-80）、`registry`（`waitingFor` の素通し）、`index`（`waitForName`・`row.compacted` の合成を含む）、`edit-server`（フレームの往復とハンドラの分岐）、`i18n`、`settings`、`usage`、`tui-mode`、`side-list`、`key-role`、`dedupe`。`openSession` の多重呼出はモックの workspace で確認する。
 - **手動**：`requirements.md` の「受け入れの確認」。実機での目視は崩れを指摘されたときと、Obsidian CLI で組立てにくい操作（右クリックメニューなど）に限る。
+- **CI**（`.github/workflows/test.yml`）：push・PR のたび、Python のテストを ubuntu-latest・macos-latest の両方で、plugin の `typecheck`・`test` を ubuntu-latest で走らせる。
 
 ## 20. 検証の手段と Obsidian の注意点
 
@@ -537,3 +559,4 @@ cache 作成は 5 分＝入力×1.25、1 時間＝入力×2（`cache_creation.ep
 
 - **Codex（他のエージェント CLI）**：データ・CLI/JSON・画面のいずれも `agent` の軸を持つが、今動くのは Claude Code だけ。対応するときは `agent` フィールド・`argv` の組み立て・走査元（`~/.codex/sessions`）を `agentsessions/agents/<name>.py` に分ける想定。
 - **IDE ブリッジ**（差分の accept/reject、選択範囲の随時通知）：要否未定、対象外。
+- **非 macOS の実機確認**（§7.2.1）：Linux（WSLg を含む）の Obsidian でまだ通しの動作確認をしていない。特に Ctrl+P（コマンドパレットと claude の履歴操作が衝突しうる）・Ctrl+W（タブを閉じると claude の readline の「1 語削除」が衝突しうる）・Ctrl+Shift+C／V（選択コピー・貼り付け）・フォントサイズ・既定フォントの CJK 幅は、実機での見え方と衝突の有無を確かめてから、必要なら §7.2.1 の割当表を見直す。

@@ -2,6 +2,7 @@ import json
 import os
 import shutil
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -65,6 +66,12 @@ class TestScanUsesCache(unittest.TestCase):
         write_jsonl(self.path, [
             {'type': 'user', 'cwd': '/a', 'message': {'role': 'user', 'content': '最初の質問'}},
         ])
+        # mtime を少し過去にずらす：scan() は `RACY_WINDOW` 秒以内の mtime を「同じ tick の
+        # 書換えを mtime だけでは見分けられないかもしれない」として常に読み直す（クロックの
+        # 粒度が粗い環境向け）。直後に scan するこのテストでは、その扱いを外して
+        # キャッシュ命中の経路そのものを確かめる。
+        old = time.time() - 10.0
+        os.utime(self.path, (old, old))
 
     def tearDown(self):
         self.tmp.cleanup()
@@ -91,6 +98,24 @@ class TestScanUsesCache(unittest.TestCase):
         ])
         second = scan([self.path], cache=c)
         self.assertEqual(second[ID1].first_prompt, '書き換え後')
+
+    def test_racy_mtime_forces_reread_even_if_cache_matches(self):
+        """mtime の粒度が粗いクロック（tmpfs・一部のコンテナ等）では、同じ tick に収まる
+        2 度の書換えで mtime も size も変わらないことがある。そのケースを模して、
+        「キャッシュは一致しているが mtime が新しい」状態を直接作り、それでも読み直す
+        ことを確かめる（RACY_WINDOW）。"""
+        # setUp で mtime を過去にずらしているので、ここで「たった今書かれた」ことにし、
+        # その時点の mtime・size をそのままキャッシュに仕立てる（＝キャッシュは一致するが
+        # 新しい）。中身は古いキャッシュの値を仕込み、実ファイルの中身と区別できるようにする。
+        os.utime(self.path, None)
+        st = os.stat(self.path)
+        c = {self.path: {
+            'mtime': st.st_mtime, 'size': st.st_size,
+            'head': {'cwd': '/a', 'prompt': '古いキャッシュの内容', 'child': False},
+            'last_activity': None,
+        }}
+        result = scan([self.path], cache=c)
+        self.assertEqual(result[ID1].first_prompt, '最初の質問')
 
 
 if __name__ == '__main__':
