@@ -1,4 +1,4 @@
-"""起動中セッションの台帳（~/.claude/sessions/<pid>.json）を読む。"""
+"""Reads the ledger of running sessions (~/.claude/sessions/<pid>.json)."""
 import glob
 import json
 import os
@@ -7,15 +7,17 @@ import subprocess
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from . import config
+from . import config, i18n
 
-STATUS_LABEL = {
-    'busy': '実行中',
-    'shell': 'コマンド実行中',
-    'idle': '待機中',
-    # claude 自身がダイアログの返答待ちのときに書く値（AskUserQuestion・許可プロンプト・
-    # elicitation 等。T-77）。`waiting_for` にその理由が入る。
-    'waiting': '回答待ち',
+# Maps a session's raw `status` to the i18n key for its display label.
+STATUS_LABEL_KEY = {
+    'busy': 'status.busy',
+    'shell': 'status.shell',
+    'idle': 'status.idle',
+    # The value claude itself writes while waiting on a dialog to be answered
+    # (AskUserQuestion, a permission prompt, elicitation, etc). `waiting_for` carries the
+    # reason.
+    'waiting': 'status.waiting',
 }
 
 
@@ -24,15 +26,15 @@ class Live:
     session_id: str
     pid: int
     status: str = ''            # 'busy' | 'shell' | 'idle' | 'waiting' | ''
-    updated_at: float = 0.0     # epoch 秒
+    updated_at: float = 0.0     # epoch seconds
     entrypoint: str = ''
     kind: str = ''
-    rc: bool = False            # リモート制御（bridgeSessionId）下にあるか
-    waiting_for: str = ''       # status == 'waiting' のときの理由（T-77）。それ以外は ''
+    rc: bool = False            # under remote control (has a bridgeSessionId)?
+    waiting_for: str = ''       # the reason, when status == 'waiting'; '' otherwise
 
     @property
     def label(self) -> str:
-        return STATUS_LABEL.get(self.status, '起動中')
+        return i18n.t(STATUS_LABEL_KEY.get(self.status, 'status.unknown'))
 
     @property
     def busy(self) -> bool:
@@ -40,20 +42,22 @@ class Live:
 
 
 def _ps_path() -> str:
-    """`ps` の実行ファイル。PATH から探し、見つからなければ 'ps'（呼び出し側が OSError で拾う）。
+    """The `ps` executable: found via PATH, or `'ps'` if that fails (the caller catches
+    the resulting `OSError`).
 
-    macOS・Linux とも `/bin/ps` が普通だが、決め打ちにせず PATH を尊重する
-    （procps 抜きの最小コンテナ等、無い環境もある）。
+    `/bin/ps` is the common path on both macOS and Linux, but this doesn't hard-code it —
+    it respects PATH instead (some minimal containers lack it, e.g. without procps).
     """
     return shutil.which('ps') or 'ps'
 
 
 def _claude_pids() -> Optional[set]:
-    """いま走っている claude プロセスの pid 集合。ps が使えなければ None。
+    """The set of pids currently running a claude process. `None` if `ps` isn't usable.
 
-    台帳は終了時に消えないことがあるので、pid の生存だけでなく
-    「その pid が claude か」まで見て、pid の使い回しを弾く。
-    `-eo pid=,args=` は GNU ps（procps-ng）・BSD ps（macOS）の両方で通る。
+    The ledger can leave a stale entry behind after a session exits, so this checks not
+    just whether a pid is alive but whether it's actually claude, to reject a pid that's
+    since been reused by an unrelated process.
+    `-eo pid=,args=` works on both GNU ps (procps-ng) and BSD ps (macOS).
     """
     try:
         out = subprocess.run([_ps_path(), '-eo', 'pid=,args='],
@@ -83,10 +87,11 @@ def _alive(pid: int) -> bool:
 
 def live_sessions(sessions_dir: Optional[str] = None,
                   claude_pids: Optional[set] = None) -> Dict[str, Live]:
-    """いま起動している claude の {session_id: Live}。
+    """The currently running claude sessions, as `{session_id: Live}`.
 
-    台帳に残った終了済みの pid は、ps の claude プロセス一覧で弾く
-    （ps が使えなければ pid の生存だけで判定する）。
+    A stale, already-exited pid left behind in the ledger is filtered out using `ps`'s
+    list of claude processes (or, if `ps` isn't usable, by checking the pid's liveness
+    alone).
     """
     sessions_dir = sessions_dir if sessions_dir is not None else config.SESSIONS_DIR
     paths = sorted(glob.glob(os.path.join(sessions_dir, '*.json')))

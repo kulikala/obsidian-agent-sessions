@@ -1,16 +1,22 @@
-"""PTY デーモン（D-4 §4.1・D-5 §4.2）。
+"""PTY daemon.
 
-1 スレッドの `select` ループで Unix ソケットの接続と各セッションの PTY master を
-まとめて待つ。ブロッキング I/O は無い（ソケット・master とも非ブロッキング、
-送信は接続ごとのキューを書込み可のときに流す）。
+A single-threaded `select` loop waits on the Unix socket's connections and
+every session's PTY master fd together. There is no blocking I/O (both
+sockets and masters are non-blocking; output is flushed from each
+connection's own queue whenever that connection becomes writable).
 
-- セッション：`pty.fork()` で起動し、出力を `deque` のチャンク列（合計 1 MiB）に
-  貯める。attach した接続へは同じ `D` を配り、入力はどの接続からでも受ける。
-- サイズ：attach 中の全接続の最小 cols・最小 rows。`resize`・`detach`・切断で再計算。
-- 終了：master の EOF／`EIO`、または `SIGCHLD`（self-pipe）→ `waitpid(WNOHANG)`。
-  終了済みは `forget` されるまで保持する。
-- 寿命：動作中 0 かつ接続 0 が `idle_exit` 秒続いたら終了。終了時（アイドル・
-  `shutdown`・`SIGTERM`）は既に終了済みの記録だけを `exited.json` に書く。
+- Session: started with `pty.fork()`; output is buffered as a `deque` of
+  chunks (1 MiB total). The same `D` frame is fanned out to every attached
+  connection, and input is accepted from any of them.
+- Size: the minimum cols and minimum rows across all currently attached
+  connections, recomputed on `resize`, `detach`, and disconnect.
+- Exit: detected via EOF/`EIO` on the master, or via `SIGCHLD` (delivered
+  through a self-pipe) followed by `waitpid(WNOHANG)`. An exited session is
+  kept around until `forget` is called.
+- Lifetime: the daemon exits once there are zero running sessions and zero
+  connections for `idle_exit` seconds. On exit (idle timeout, `shutdown`,
+  or `SIGTERM`), only the records of already-exited sessions are written to
+  `exited.json`.
 """
 
 import errno
@@ -32,22 +38,22 @@ from typing import Any, Callable, Deque, Dict, List, Optional, Set
 from . import config, protocol
 
 VERSION = 1
-BUFFER_LIMIT = 1024 * 1024          # セッション毎の出力バッファ
-SEND_LIMIT = 4 * 1024 * 1024        # 接続毎の送信キュー。超えたら切る
-REPLAY_CHUNK = 64 * 1024            # `R` フレーム 1 つの上限
+BUFFER_LIMIT = 1024 * 1024          # Per-session output buffer
+SEND_LIMIT = 4 * 1024 * 1024        # Per-connection send queue; exceeding it drops the connection
+REPLAY_CHUNK = 64 * 1024            # Max size of a single `R` frame
 READ_SIZE = 64 * 1024
-KILL_GRACE = 10.0                   # `SIGTERM` から `SIGKILL` まで
+KILL_GRACE = 10.0                   # Time from `SIGTERM` to `SIGKILL`
 DEFAULT_IDLE_EXIT = 600
-NUDGE_DELAY = 0.05                  # 再生後に行数を 1 減らしてから戻すまで
-FINISH_REAP_WAIT = 0.5              # 終了時、kill した子を回収するまで待つ上限
+NUDGE_DELAY = 0.05                  # Delay before restoring row count after shrinking it by 1 post-replay
+FINISH_REAP_WAIT = 0.5              # Max time to wait, at shutdown, for killed children to be reaped
 
 
 class AlreadyRunning(Exception):
-    """`daemon.pid` の `flock` が取れない（別のデーモンが動いている）。"""
+    """Raised when the `flock` on `daemon.pid` can't be acquired (another daemon is already running)."""
 
 
 class BadRequest(Exception):
-    """要求の形が違う。応答は `{"ok":false,"error":"bad-request"}`。"""
+    """Raised when a request is malformed. The reply is `{"ok":false,"error":"bad-request"}`."""
 
 
 def _set_winsize(fd: int, cols: int, rows: int) -> None:
@@ -96,12 +102,12 @@ class Session:
         self.clients: Set['Conn'] = set()
         self.chunks: Deque[bytes] = deque()
         self.buffered = 0
-        self.inq = bytearray()            # PTY へ書く前の入力
+        self.inq = bytearray()            # Input queued before it's written to the PTY
         self.exited: Optional[int] = None
         self.exited_at: Optional[float] = None
-        self.eof_at: Optional[float] = None    # master が EOF になったが未回収
-        self.kill_at: Optional[float] = None   # `SIGTERM` 後、`SIGKILL` を送る時刻
-        self.nudge_at: Optional[float] = None  # 行数を戻す時刻
+        self.eof_at: Optional[float] = None    # Master hit EOF but hasn't been reaped yet
+        self.kill_at: Optional[float] = None   # Time to send `SIGKILL`, after `SIGTERM` was sent
+        self.nudge_at: Optional[float] = None  # Time to restore the row count
         self.cols = 0
         self.rows = 0
 
@@ -172,12 +178,13 @@ class Daemon:
             'shutdown': self._op_shutdown,
         }
 
-    # ---- 起動と終了 -------------------------------------------------------
+    # ---- Startup and shutdown ----------------------------------------------
 
     def bind(self) -> None:
-        """実行時ディレクトリ・pid のロック・`exited.json`・ソケットを用意する。
+        """Sets up the runtime directory, the pid lock, `exited.json`, and
+        the socket.
 
-        ロックが取れなければ `AlreadyRunning`。
+        Raises `AlreadyRunning` if the lock can't be acquired.
         """
         os.makedirs(self.runtime_dir, mode=0o700, exist_ok=True)
         os.chmod(self.runtime_dir, 0o700)
@@ -231,8 +238,9 @@ class Daemon:
             pass
 
     def _install_signals(self) -> None:
-        # シグナルハンドラはメインスレッドでしか置けない。スレッドで動かすとき
-        # （テスト）は毎周の `waitpid(WNOHANG)` が終了を拾う。
+        # Signal handlers can only be installed on the main thread. When the
+        # daemon runs on a worker thread instead (as in tests), each tick's
+        # `waitpid(WNOHANG)` call picks up exits.
         if threading.current_thread() is not threading.main_thread():
             return
         signal.signal(signal.SIGCHLD, lambda *_: self._wake(b'C'))
@@ -241,7 +249,7 @@ class Daemon:
         signal.signal(signal.SIGPIPE, signal.SIG_IGN)
 
     def stop(self, reason: str = 'stop') -> None:
-        """別スレッドから終了を頼む。"""
+        """Requests shutdown from another thread."""
         self._stop = reason
         self._wake(b'S')
 
@@ -251,7 +259,7 @@ class Daemon:
         self._write_pid()
         self._install_signals()
         self._log('start pid=%d sock=%s' % (os.getpid(), self.sock_path))
-        self._housekeeping(time.time())   # アイドルの計時を起動時点から始める
+        self._housekeeping(time.time())   # Start the idle timer from the moment the daemon comes up
         try:
             while self._stop is None:
                 self._tick()
@@ -345,7 +353,7 @@ class Daemon:
         except OSError as e:
             self._log('exited.json: %s' % e)
 
-    # ---- ログ -------------------------------------------------------------
+    # ---- Logging ------------------------------------------------------------
 
     def _log(self, msg: str) -> None:
         line = '%s %s\n' % (time.strftime('%Y-%m-%d %H:%M:%S'), msg)
@@ -361,7 +369,7 @@ class Daemon:
             except (OSError, ValueError):
                 pass
 
-    # ---- select ループ ------------------------------------------------------
+    # ---- select loop --------------------------------------------------------
 
     def _next_timeout(self, now: float) -> float:
         timeout = 1.0
@@ -445,7 +453,7 @@ class Daemon:
         elif now - self._idle_since >= self.idle_exit and self._stop is None:
             self._stop = 'idle'
 
-    # ---- 接続 -------------------------------------------------------------
+    # ---- Connections --------------------------------------------------------
 
     def _accept(self) -> None:
         assert self._listener is not None
@@ -511,7 +519,7 @@ class Daemon:
         for conn in list(session.clients):
             self._send(conn, frame)
 
-    # ---- 要求 -------------------------------------------------------------
+    # ---- Requests -------------------------------------------------------------
 
     def _handle_json(self, conn: Conn, payload: bytes) -> None:
         try:
@@ -581,7 +589,7 @@ class Daemon:
                 _set_winsize(0, cols, rows)
                 os.chdir(cwd)
                 os.execvpe(argv[0], argv, env)
-            except BaseException as e:  # noqa: BLE001 — 子は何があっても exec か _exit
+            except BaseException as e:  # noqa: BLE001 — no matter what happens, the child must exec or _exit
                 try:
                     os.write(2, ('agent-sessions daemon: %s\r\n' % e).encode('utf-8', 'replace'))
                 except OSError:
@@ -622,9 +630,11 @@ class Daemon:
         if not s.running:
             self._send_json(conn, {'ev': 'exit', 'id': s.id, 'code': s.exited})
             return
-        # attach でサイズが変わったときだけ、再生の後に行数を 1 減らしてから戻す
-        # （SIGWINCH で画面下部を描き直させる）。同じサイズなら SIGWINCH を出さない
-        # ——Claude Code は SIGWINCH で画面を丸ごと描き直し、再生した直前の画面が消える。
+        # Only when attach changes the size do we shrink the row count by 1
+        # after replay and then restore it — this forces a SIGWINCH so the
+        # bottom of the screen gets redrawn. If the size is unchanged, no
+        # SIGWINCH is emitted: Claude Code redraws the whole screen on
+        # SIGWINCH, which would wipe out the screen we just replayed.
         if size_changed and s.master_fd is not None and s.rows > 1:
             try:
                 _set_winsize(s.master_fd, s.cols, s.rows - 1)
@@ -674,7 +684,7 @@ class Daemon:
         if self._stop is None:
             self._stop = 'shutdown'
 
-    # ---- attach・サイズ ------------------------------------------------------
+    # ---- Attach and sizing ----------------------------------------------------
 
     def _detach(self, conn: Conn) -> None:
         s = conn.attached
@@ -702,7 +712,7 @@ class Daemon:
         except OSError:
             pass
 
-    # ---- PTY --------------------------------------------------------------
+    # ---- PTY ------------------------------------------------------------------
 
     def _input(self, conn: Conn, data: bytes) -> None:
         s = conn.attached
@@ -746,7 +756,8 @@ class Daemon:
         self._broadcast(s, protocol.encode(protocol.FRAME_D, data))
 
     def _drain_master(self, s: Session) -> None:
-        """終了を先に検知したとき、master に残る出力を読み切る。"""
+        """Drains any output still left on the master after an exit has
+        already been detected."""
         while s.master_fd is not None:
             try:
                 data = os.read(s.master_fd, READ_SIZE)
@@ -778,7 +789,8 @@ class Daemon:
             self._log('kill %s: %s' % (s.id, e))
 
     def _reap(self, s: Session, notify: bool = True) -> bool:
-        """`waitpid(WNOHANG)`。回収できたら終了の後始末をして True。"""
+        """Calls `waitpid(WNOHANG)`. If the child can be reaped, performs
+        exit cleanup and returns True."""
         if not s.running or s.pid is None:
             return True
         try:

@@ -45,9 +45,9 @@ class TestDecoderFeed(unittest.TestCase):
     def test_incomplete_frame_carries_over_to_next_feed(self):
         frame = protocol.encode(protocol.FRAME_D, b'payload')
         dec = protocol.Decoder()
-        # ヘッダーの途中で切る
+        # split in the middle of the header
         self.assertEqual(dec.feed(frame[:3]), [])
-        # ペイロードの途中で切る
+        # split in the middle of the payload
         self.assertEqual(dec.feed(frame[3:8]), [])
         self.assertEqual(dec.feed(frame[8:]), [(protocol.FRAME_D, b'payload')])
 

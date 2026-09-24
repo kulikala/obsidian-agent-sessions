@@ -20,43 +20,44 @@ class TestScan(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.proj = os.path.join(self.tmp.name, '-Users-k-vault')
         os.makedirs(os.path.join(self.proj, 'sub'))
-        # 名前付き。custom-title は2回、後の方が現在の名前
+        # Named session. custom-title appears twice; the later one is the current name.
         write_jsonl(os.path.join(self.proj, ID1 + '.jsonl'), [
             {'type': 'system', 'cwd': '/Users/k/vault', 'content': 'x'},
             {'type': 'user', 'isMeta': True, 'message': {'role': 'user', 'content': '<command>'}},
-            {'type': 'user', 'message': {'role': 'user', 'content': '最初の質問です\n二行目'}},
-            {'type': 'custom-title', 'customTitle': '旧名', 'sessionId': ID1},
-            {'type': 'custom-title', 'customTitle': 'RIM: 新名', 'sessionId': ID1},
+            {'type': 'user', 'message': {'role': 'user', 'content': 'first question here\nsecond line'}},
+            {'type': 'custom-title', 'customTitle': 'RIM: old name', 'sessionId': ID1},
+            {'type': 'custom-title', 'customTitle': 'RIM: new name', 'sessionId': ID1},
         ])
-        # 名前なし、発言あり（配列 content）、壊れた行つき
+        # Unnamed, has a message (array content), plus a broken line.
         p2 = os.path.join(self.proj, ID2 + '.jsonl')
         write_jsonl(p2, [
             {'type': 'user', 'cwd': '/Users/k/work', 'message': {'role': 'user', 'content': [
                 {'type': 'tool_result', 'content': 'x'},
-                {'type': 'text', 'text': 'ツール結果の後の本文'}]}},
+                {'type': 'text', 'text': 'body text after the tool result'}]}},
         ])
         with open(p2, 'a') as f:
             f.write('{broken\n')
-        # 名前なし、発言なし → 除外
+        # Unnamed, no message -> excluded.
         write_jsonl(os.path.join(self.proj, ID3 + '.jsonl'), [
             {'type': 'system', 'cwd': '/Users/k/work'},
         ])
-        # サブフォルダは対象外
+        # Subfolders are not scanned.
         write_jsonl(os.path.join(self.proj, 'sub', ID1 + '.jsonl'), [
             {'type': 'custom-title', 'customTitle': 'sub', 'sessionId': ID1},
         ])
-        # UUID でない名前は対象外
+        # Names that aren't UUIDs are excluded.
         write_jsonl(os.path.join(self.proj, 'notes.jsonl'), [{'type': 'user', 'message': {'role': 'user', 'content': 'x'}}])
-        # headless SDK 起動（entrypoint が cli 以外）→ child
+        # Headless SDK launch (entrypoint other than 'cli') -> child.
         write_jsonl(os.path.join(self.proj, ID4 + '.jsonl'), [
             {'type': 'user', 'entrypoint': 'sdk-cli', 'cwd': '/x', 'message': {'role': 'user', 'content': 'child q'}},
         ])
-        # skill agent（agent-setting が先頭）。entrypoint は cli でも child
+        # Skill agent (agent-setting line comes first). Still a child even though entrypoint is 'cli'.
         write_jsonl(os.path.join(self.proj, ID5 + '.jsonl'), [
             {'type': 'agent-setting', 'agentSetting': 'some-skill', 'sessionId': ID5},
             {'type': 'user', 'entrypoint': 'cli', 'cwd': '/y', 'message': {'role': 'user', 'content': 'agent q'}},
         ])
-        # バックグラウンド起動（sessionKind が bg）。entrypoint は cli で agent-setting も無いが child
+        # Background launch (sessionKind is 'bg'). entrypoint is 'cli' and there's no
+        # agent-setting line, but it's still a child.
         write_jsonl(os.path.join(self.proj, ID6 + '.jsonl'), [
             {'type': 'user', 'entrypoint': 'cli', 'sessionKind': 'bg', 'cwd': '/z', 'message': {'role': 'user', 'content': 'bg q'}},
         ])
@@ -71,7 +72,7 @@ class TestScan(unittest.TestCase):
 
     def test_scan_names_last_wins(self):
         names = scan_names(list_transcripts(self.tmp.name))
-        self.assertEqual(names, {ID1: 'RIM: 新名'})
+        self.assertEqual(names, {ID1: 'RIM: new name'})
 
     def test_scan_names_empty(self):
         self.assertEqual(scan_names([]), {})
@@ -79,19 +80,19 @@ class TestScan(unittest.TestCase):
     def test_read_head_string_content_skips_meta(self):
         cwd, prompt = read_head(os.path.join(self.proj, ID1 + '.jsonl'))
         self.assertEqual(cwd, '/Users/k/vault')
-        self.assertEqual(prompt, '最初の質問です')
+        self.assertEqual(prompt, 'first question here')
 
     def test_read_head_array_content_and_broken_line(self):
         cwd, prompt = read_head(os.path.join(self.proj, ID2 + '.jsonl'))
         self.assertEqual(cwd, '/Users/k/work')
-        self.assertEqual(prompt, 'ツール結果の後の本文')
+        self.assertEqual(prompt, 'body text after the tool result')
 
     def test_scan(self):
         sessions = scan(list_transcripts(self.tmp.name))
         self.assertEqual(set(sessions), {ID1, ID2, ID4, ID5, ID6})
-        self.assertEqual(sessions[ID1].name, 'RIM: 新名')
+        self.assertEqual(sessions[ID1].name, 'RIM: new name')
         self.assertIsNone(sessions[ID2].name)
-        self.assertEqual(sessions[ID2].first_prompt, 'ツール結果の後の本文')
+        self.assertEqual(sessions[ID2].first_prompt, 'body text after the tool result')
         self.assertGreater(sessions[ID1].mtime, 0)
 
     def test_scan_child_from_entrypoint(self):
@@ -113,11 +114,12 @@ class TestScan(unittest.TestCase):
     def test_scan_names_grep_fallback(self):
         from unittest import mock
         with mock.patch('agentsessions.scan.shutil.which', return_value=None):
-            self.assertEqual(scan_names(list_transcripts(self.tmp.name)), {ID1: 'RIM: 新名'})
+            self.assertEqual(scan_names(list_transcripts(self.tmp.name)), {ID1: 'RIM: new name'})
 
 
 class TestLastActivity(unittest.TestCase):
-    """最終更新は最後のユーザー発言／assistant 応答の timestamp。更新通知の行や mtime は使わない。"""
+    """Last-activity time is the timestamp of the last user message or assistant
+    response; status/telemetry rows and the file's own mtime aren't used for it."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -130,7 +132,7 @@ class TestLastActivity(unittest.TestCase):
     def _write(self, sid, records):
         p = os.path.join(self.proj, sid + '.jsonl')
         write_jsonl(p, records)
-        os.utime(p, (2_000_000_000, 2_000_000_000))   # mtime は 2033 年。使われれば分かる
+        os.utime(p, (2_000_000_000, 2_000_000_000))   # mtime is set to year 2033, so it's obvious if it's mistakenly used
         return p
 
     def test_uses_last_user_or_assistant_timestamp(self):
@@ -139,7 +141,7 @@ class TestLastActivity(unittest.TestCase):
              'message': {'role': 'user', 'content': 'q'}},
             {'type': 'assistant', 'timestamp': '2026-09-01T00:00:10.500Z',
              'message': {'role': 'assistant', 'content': [{'type': 'text', 'text': 'a'}]}},
-            # 以降は更新通知：数えない
+            # Everything after this point is just a status/telemetry update and shouldn't count
             {'type': 'user', 'isMeta': True, 'timestamp': '2026-09-01T01:00:00.000Z',
              'message': {'role': 'user', 'content': 'meta'}},
             {'type': 'user', 'timestamp': '2026-09-01T02:00:00.000Z',

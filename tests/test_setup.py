@@ -5,7 +5,7 @@ import shutil
 import tempfile
 import unittest
 
-from agentsessions import setup
+from agentsessions import i18n, setup
 
 
 class SetupTestBase(unittest.TestCase):
@@ -45,7 +45,8 @@ class TestReplaceOldHook(SetupTestBase):
             },
         })
         changes, new_settings = setup.run(self.path)
-        # Stop・SessionEnd の移行（2）＋ SessionStart・UserPromptSubmit の新規追加（2、T-77 追補）。
+        # 4 changes total: migrating Stop and SessionEnd (2) plus adding the new
+        # SessionStart and UserPromptSubmit hooks (2).
         self.assertEqual(len(changes), 4)
         self.assertEqual(
             new_settings['hooks']['Stop'][0]['hooks'][0]['command'],
@@ -101,7 +102,9 @@ class TestAddWhenMissing(SetupTestBase):
             new_settings['hooks']['UserPromptSubmit'],
             [{'matcher': '.*', 'hooks': [{'type': 'command', 'command': '"$HOME/bin/agent-sessions" hook'}]}],
         )
-        self.assertTrue(any('追加' in c for c in changes))
+        expected = i18n.t('setup.hook_added', event='Stop', matcher='.*',
+                          command='"$HOME/bin/agent-sessions" hook')
+        self.assertIn(expected, changes)
 
     def test_missing_settings_file_is_treated_as_empty_and_creates_no_backup(self):
         changes, new_settings = setup.run(self.path)
@@ -155,11 +158,11 @@ class TestIdempotent(SetupTestBase):
         setup.run(self.path)
         changes, _ = setup.run(self.path)
         self.assertEqual(changes, [])
-        self.assertEqual(len(self._backups()), 1)  # 2 回目は書き込まないので backup も増えない
+        self.assertEqual(len(self._backups()), 1)  # the second run writes nothing, so no extra backup is made
 
 
 class TestCompactedHooks(SetupTestBase):
-    """T-77 追補：compacted の印に要る SessionStart（matcher=compact）・UserPromptSubmit。"""
+    """SessionStart (matcher=compact) and UserPromptSubmit are the hooks needed to mark a session as compacted."""
 
     def test_session_start_gets_compact_matcher_not_catch_all(self):
         self._write({})
@@ -173,8 +176,9 @@ class TestCompactedHooks(SetupTestBase):
         self.assertEqual(changes, [])
 
     def test_session_start_with_different_matcher_gets_a_second_entry(self):
-        # 既存の SessionStart が別のマッチャー（例えば別ツールが足した startup 用）を
-        # 持っていても、compact 用のエントリを別に足す（既存を壊さない）。
+        # Even when an existing SessionStart entry already has a different matcher
+        # (e.g. a 'startup' one added by another tool), a separate compact entry is
+        # added alongside it (the existing entry is left intact).
         self._write({
             'hooks': {
                 'SessionStart': [
@@ -194,7 +198,7 @@ class TestCompactedHooks(SetupTestBase):
 
 
 class TestRunRemove(SetupTestBase):
-    """T-83：`run()` の逆。自分が入れた hooks・statusLine だけ消す。"""
+    """The inverse of `run()`: removes only the hooks and statusLine entries that this tool added."""
 
     def test_removes_everything_run_added(self):
         setup.run(self.path)
@@ -203,7 +207,7 @@ class TestRunRemove(SetupTestBase):
         self.assertNotIn('hooks', new_settings)
         self.assertNotIn('statusLine', new_settings)
         self.assertEqual(self._read(), new_settings)
-        self.assertEqual(len(self._backups()), 1)  # install は既存ファイルが無いので backup 無し、remove で 1
+        self.assertEqual(len(self._backups()), 1)  # install made no backup (no pre-existing file); remove makes 1
 
     def test_leaves_other_hooks_and_status_line_alone(self):
         self._write({
@@ -247,7 +251,7 @@ class TestRunRemove(SetupTestBase):
         ]}})
         changes, new_settings = setup.run_remove(self.path)
         self.assertEqual(changes, [])
-        self.assertEqual(self._backups(), [])  # 何も変えないので backup も作らない
+        self.assertEqual(self._backups(), [])  # nothing changes, so no backup is made either
 
     def test_missing_settings_file_is_a_no_op(self):
         changes, new_settings = setup.run_remove(self.path)
@@ -268,7 +272,7 @@ class TestRunRemove(SetupTestBase):
         self.assertTrue(changes)
         self.assertNotEqual(new_settings, before)
         self.assertEqual(self._read(), before)
-        self.assertEqual(self._backups(), [])  # install も dry-run の remove も書いていない
+        self.assertEqual(self._backups(), [])  # neither install nor the dry-run remove wrote anything
 
 
 if __name__ == '__main__':

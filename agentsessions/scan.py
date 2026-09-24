@@ -11,15 +11,15 @@ from typing import Dict, List, Optional, Tuple
 
 from .model import Session
 
-# mtime がこれより新しければ、キャッシュの mtime・size 一致を信用しない（下記 scan() 参照）。
+# If mtime is newer than this, don't trust a cached mtime/size match (see scan() below).
 RACY_WINDOW = 2.0
 
 UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
 TITLE_PATTERN = '^{"type": *"custom-title"'      # grep (BRE)
 TITLE_PATTERN_RG = r'^\{"type": ?"custom-title"'  # ripgrep
-HEAD_LIMIT = 2000   # 最初の発言を探す行数の上限
-TAIL_CHUNK = 1 << 16   # 末尾から読む単位
-TAIL_LIMIT = 1 << 24   # 末尾から遡る上限（これを超えたら mtime に戻す）
+HEAD_LIMIT = 2000   # max number of lines to scan for the first user message
+TAIL_CHUNK = 1 << 16   # unit size for reading from the end of the file
+TAIL_LIMIT = 1 << 24   # max bytes to scan backward from the end (fall back to mtime beyond this)
 _TS_RE = re.compile(rb'"timestamp":"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?)Z"')
 
 
@@ -40,7 +40,7 @@ def _title_grep_cmd() -> List[str]:
 
 
 def scan_names(paths: List[str]) -> Dict[str, str]:
-    """id -> 現在の名前。同じ ID に複数行あれば後の行が勝つ。"""
+    """id -> current name. If the same ID has multiple lines, the later one wins."""
     if not paths:
         return {}
     r = subprocess.run(_title_grep_cmd() + list(paths),
@@ -74,15 +74,15 @@ def _text_of(content) -> str:
 class Head:
     cwd: str = ''
     prompt: str = ''
-    child: bool = False      # sub-agent（headless）が開始した transcript か
+    child: bool = False      # whether this transcript was started by a sub-agent (headless)
 
 
 def read_head_info(path: str) -> Head:
-    """先頭を読み、cwd・最初のユーザー発言・child 判定をまとめて返す。
+    """Read the head of the file and return the cwd, first user message, and child status together.
 
-    child は `agent-setting` 行（skill agent）か、最初に現れる `entrypoint` が
-    'cli' 以外（headless SDK 起動）か、`sessionKind` が 'bg'（バックグラウンド起動。
-    entrypoint は cli のまま）のとき True。
+    `child` is True when there's an `agent-setting` line (a skill agent), when the first
+    `entrypoint` seen is anything other than 'cli' (a headless SDK launch), or when
+    `sessionKind` is 'bg' (a background launch, where entrypoint stays 'cli').
     """
     h = Head()
     entrypoint_seen = False
@@ -112,16 +112,16 @@ def read_head_info(path: str) -> Head:
 
 
 def read_head(path: str) -> Tuple[str, str]:
-    """(cwd, 最初のユーザー発言の1行目)。見つからなければ ''。"""
+    """(cwd, first line of the first user message). Empty string if not found."""
     h = read_head_info(path)
     return h.cwd, h.prompt
 
 
 def _activity_ts(line: bytes) -> Optional[float]:
-    """ユーザー発言か assistant 応答の行なら、その timestamp を epoch 秒で返す。
+    """If the line is a user message or an assistant response, return its timestamp as epoch seconds.
 
-    フック・cost-state・last-prompt などの「ただの更新通知」は対象外。
-    ツール結果だけの user 行、isMeta、サイドチェーンも数えない。
+    Excludes "mere status update" lines like hooks, cost-state, or last-prompt.
+    Also excludes user lines that are just tool results, isMeta lines, and sidechains.
     """
     if b'"timestamp"' not in line:
         return None
@@ -152,7 +152,7 @@ def _activity_ts(line: bytes) -> Optional[float]:
 
 
 def iter_tail_lines(path: str, chunk: int = TAIL_CHUNK, limit: int = TAIL_LIMIT):
-    """末尾から 1 行ずつ（bytes、改行なし）遡って返す。limit バイトまで。"""
+    """Yield lines one at a time (bytes, no newline) walking backward from the end, up to `limit` bytes."""
     with open(path, 'rb') as f:
         f.seek(0, os.SEEK_END)
         pos = f.tell()
@@ -172,9 +172,10 @@ def iter_tail_lines(path: str, chunk: int = TAIL_CHUNK, limit: int = TAIL_LIMIT)
 
 
 def read_last_activity(path: str, chunk: int = TAIL_CHUNK, limit: int = TAIL_LIMIT) -> Optional[float]:
-    """末尾から遡り、最後のユーザー発言／assistant 応答の時刻（epoch 秒）を返す。
+    """Walk backward from the end and return the time of the last user message /
+    assistant response (epoch seconds).
 
-    見つからなければ None（呼び出し側が mtime に戻す）。
+    Returns None if not found (the caller then falls back to mtime).
     """
     for line in iter_tail_lines(path, chunk, limit):
         t = _activity_ts(line)
@@ -184,13 +185,15 @@ def read_last_activity(path: str, chunk: int = TAIL_CHUNK, limit: int = TAIL_LIM
 
 
 def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None) -> Dict[str, Session]:
-    """`cache` を渡すと `path → 前回の結果`（mtime・size・head・last_activity）を見て、
-    一致すれば `read_head_info`・`read_last_activity` を呼ばずに使い回す。`cache` は
-    その場で更新される（呼び出し側が `cache.save` するまで書き込まれない）。
+    """If `cache` is passed, look up `path -> previous result` (mtime, size, head,
+    last_activity); if it matches, reuse it instead of calling `read_head_info` /
+    `read_last_activity`. `cache` is updated in place (not written to disk until the
+    caller calls `cache.save`).
 
-    mtime が `RACY_WINDOW` 秒以内に新しいファイルはキャッシュを信用しない：同じ tick に
-    収まる 2 度の書換え（内容が同じ長さなら size も同じ）は、クロックの粒度によっては
-    mtime だけでは見分けられない（tmpfs・一部のコンテナ環境で顕著）。"""
+    Files whose mtime is within `RACY_WINDOW` seconds of now aren't trusted from the
+    cache: two rewrites within the same clock tick (same size if the content length is
+    unchanged) can be indistinguishable by mtime alone, depending on clock granularity
+    (this shows up notably on tmpfs and in some container environments)."""
     names = scan_names(paths)
     now = time.time()
     out: Dict[str, Session] = {}

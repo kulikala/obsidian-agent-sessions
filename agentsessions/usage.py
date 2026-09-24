@@ -1,12 +1,13 @@
-"""transcript のターン別トークン集計（D-30, D-40）。
+"""Per-turn token accounting for a transcript.
 
-`assistant` 行の `message.usage` を `message.id` で重複排除して数える。
-`isSidechain`・`isMeta` の行は読み飛ばす（`detail.read_detail` と同じ）。
-`user` 行のうち `detail.is_human_prompt` が真のものでターンを切る。
-最初の指示より前に出た usage は「（開始前）」の 1 ターンにまとめる。
-`message.model` が `<synthetic>` の行は数えない。
-`cost`（`pricing.cost`）・`tools`（`content` の `tool_use` を `name` で数える）も
-同じ重複排除でターンごとに積む。
+Counts `message.usage` from `assistant` lines, de-duplicated by `message.id`.
+`isSidechain` and `isMeta` lines are skipped (same as `detail.read_detail`).
+Turns are split on `user` lines where `detail.is_human_prompt` is true.
+Any usage that appears before the first instruction is grouped into a single
+"(before first prompt)" turn.
+Lines where `message.model` is `<synthetic>` aren't counted.
+`cost` (via `pricing.cost`) and `tools` (tallying `tool_use` blocks in `content`
+by `name`) are accumulated per turn with the same de-duplication.
 """
 
 import json
@@ -16,7 +17,7 @@ from typing import Dict, List, Optional
 
 from . import detail, pricing
 
-BEFORE_LABEL = '（開始前）'
+BEFORE_LABEL = '(before first prompt)'
 PROMPT_HEAD_LEN = 60
 
 
@@ -34,8 +35,8 @@ class Turn:
     cost: float = 0.0
     tools: Dict[str, int] = field(default_factory=dict)
     estimated: bool = False
-    last_ts: Optional[float] = None     # このターン内で最後に数えた assistant 行の ts
-    context_last: int = 0               # 同じ呼出の input + cache_read + cache_create
+    last_ts: Optional[float] = None     # ts of the last assistant line counted within this turn
+    context_last: int = 0               # input + cache_read + cache_create for that same call
     models: Dict[str, int] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
@@ -63,7 +64,7 @@ def _int(value) -> int:
 
 
 def _parse_ts(value) -> Optional[float]:
-    """transcript の `timestamp`（`…Z` の ISO8601・UTC）を epoch 秒にする。"""
+    """Convert a transcript `timestamp` (ISO 8601 UTC, `...Z` suffix) to epoch seconds."""
     if not isinstance(value, str) or not value.endswith('Z'):
         return None
     raw = value[:-1]
@@ -75,7 +76,7 @@ def _parse_ts(value) -> Optional[float]:
 
 
 def collect(path: str) -> List[dict]:
-    """`path` の transcript を先頭から読み、ターンごとの usage を集める。"""
+    """Read the transcript at `path` from the start and collect per-turn usage."""
     turns: List[Turn] = []
     before: Optional[Turn] = None
     current: Optional[Turn] = None
@@ -162,14 +163,15 @@ def collect(path: str) -> List[dict]:
 
 def summarize(turns: List[dict], from_ts: Optional[float] = None,
               to_ts: Optional[float] = None) -> dict:
-    """`turns`（`collect` の出力）の合計。`from_ts`／`to_ts` はターン開始時刻に
-    当てる（両端含む）。指定が無ければ全ターンを合計する。`ts` が無いターン
-    （「（開始前）」）は範囲指定があるときは合計に入らない。
+    """Sum up `turns` (the output of `collect`). `from_ts`/`to_ts` are matched against
+    each turn's start time (inclusive on both ends). If neither is given, all turns
+    are summed. A turn with no `ts` (the "(before first prompt)" turn) is excluded
+    from the total whenever a range is given.
 
-    `total` は `cost`・`tools`（名前ごとの合計）・`duration`（最初の人の指示の
-    ts から最後の assistant 行の ts までの秒数）・`first_ts`・`last_ts`・
-    `context_last`（区間内で最後に数えた呼出の `input + cache_read + cache_create`）・
-    `estimated`（区間内のいずれかのターンが `estimated` なら真）も持つ。
+    `total` also carries `cost`, `tools` (totals per name), `duration` (seconds from
+    the first human instruction's ts to the last assistant line's ts), `first_ts`,
+    `last_ts`, `context_last` (the last call's `input + cache_read + cache_create`
+    within the range), and `estimated` (true if any turn in the range is `estimated`).
     """
     total = {'calls': 0, 'input': 0, 'cache_create': 0, 'cache_read': 0, 'output': 0, 'thinking': 0}
     cost = 0.0

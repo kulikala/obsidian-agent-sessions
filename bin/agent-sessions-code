@@ -1,10 +1,11 @@
 #!/bin/sh
-# `agent-sessions edit` を basename に "code" を含む名前で呼ぶ（D-20）。
-# Claude Code は外部エディタの実行ファイルの basename に code／cursor／…を
-# 含むかで GUI エディタと判定し、含めば代替スクリーンに切り替えない。
-# symlink 経由（~/bin/agent-sessions-code）で呼ばれても、実体の隣にある
-# agent-sessions を呼ぶ。macOS の古い環境に `readlink -f` は無いので、
-# 1 段だけ readlink で辿ってから `cd … && pwd -P` で絶対パス化する。
+# Calls `agent-sessions edit` under a name whose basename includes "code".
+# Claude Code treats an external editor as a GUI editor when its
+# executable's basename contains code/cursor/…, and in that case does not
+# switch to the alternate screen. Even when invoked through the symlink
+# (~/bin/agent-sessions-code), this calls the real `agent-sessions` next to
+# it. Older macOS lacks `readlink -f`, so this follows one symlink hop by
+# hand and then resolves the absolute path with `cd … && pwd -P`.
 SELF="$0"
 if [ -L "$SELF" ]; then
   LINK="$(readlink "$SELF")"

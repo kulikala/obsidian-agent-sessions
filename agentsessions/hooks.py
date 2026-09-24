@@ -1,19 +1,19 @@
-"""`hook`・`status` の受け口（D-2, D-6 §5, D-40）。"""
+"""The `hook` and `status` entry points."""
 
 import json
 import os
 import tempfile
 import time
 
-from . import config, live
+from . import config, i18n, live
 
 
 def record_hook(raw: bytes) -> None:
-    """stdin から読んだ生バイト列を `EVENTS_LOG` に 1 行追記し、compact 直後の印
-    （T-77 追補）も更新する。
+    """Appends one line to `EVENTS_LOG` from the raw bytes read on stdin, and also
+    updates the just-compacted marker (see `_update_compacted`).
 
-    読めない・書けないなど何が起きても例外を投げない（フックを止めないため）。
-    片方が失敗してももう片方は試す。
+    Never raises, no matter what goes wrong reading or writing (so this never blocks the
+    hook). If one of the two fails, the other is still attempted.
     """
     try:
         data = json.loads(raw.decode('utf-8'))
@@ -37,13 +37,14 @@ def record_hook(raw: bytes) -> None:
 
 
 def _update_compacted(data: dict) -> None:
-    """compact 直後・まだ次の指示を送っていないセッションの印（T-77 追補）。
+    """Marks a session as just-compacted, before the next prompt has been sent.
 
-    入る：`SessionStart`（`source == 'compact'`。`/compact` も自動の文脈圧縮も同じ値。
-    settings.json の matcher は `compact` に絞ってあるが、ここでも念のため見る）。
-    出る：`UserPromptSubmit`（次の指示を送った）・`SessionEnd`（セッションが終わった。
-    印の掃除も兼ねる）。`terminal-status.ts` の `compacted` はこれを読んで、
-    `waiting`（未読の入力待ち）と紛れないようにする。
+    Set: `SessionStart` with `source == 'compact'` (both `/compact` and automatic
+    context compaction use this same value; settings.json's matcher already restricts
+    this hook to `compact`, but this checks again just in case). Cleared:
+    `UserPromptSubmit` (the next prompt was sent) or `SessionEnd` (the session ended,
+    which also doubles as cleanup for the marker). The plugin's `compacted` state reads
+    this so it isn't confused with `waiting` (an unread prompt for input).
     """
     if not isinstance(data, dict):
         return
@@ -74,28 +75,28 @@ def _update_compacted(data: dict) -> None:
 
 
 def format_status_line(data: dict) -> str:
-    """`[<送信キー記号> · ]<model.display_name> · <effort> · ctx NN% · rc ●/○` の 1 行。
+    """One line: `[<submit-key symbol> · ]<model.display_name> · <effort> · ctx NN% · rc ●/○`.
 
-    `effort` は `effort.level`（辞書のとき）、または `effort` 自身（文字列の
-    とき）、無ければ「デフォルト」。`rc` は `~/.claude/sessions/*.json` の
-    うち `session_id` の一致する行の `bridgeSessionId` の有無
-    （`live.live_sessions` を使う。一致が無ければ `○`）。送信キー記号
-    （T-71）は `AGENT_SESSIONS_ID`（プラグインのデーモンから起動したセッション）
-    のときだけ、`config.UI_STATE_PATH` から読めれば先頭に付ける。
+    `effort` is `effort.level` (when it's a dict), or `effort` itself (when it's a
+    string), falling back to the "Default" label when neither is present. `rc` is
+    whether the `~/.claude/sessions/*.json` entry matching `session_id` has a
+    `bridgeSessionId` (via `live.live_sessions`; `○` if there's no matching entry). The
+    submit-key symbol is prefixed only for a session launched by the plugin's daemon
+    (`AGENT_SESSIONS_ID` is set) and only if it can be read from `config.UI_STATE_PATH`.
     """
     model = data.get('model') or {}
-    display_name = model.get('display_name') or 'デフォルト'
+    display_name = model.get('display_name') or i18n.t('default')
     context_window = data.get('context_window') or {}
     used = context_window.get('used_percentage')
     pct = '—' if used is None else '%d' % round(used)
 
     effort = data.get('effort')
     if isinstance(effort, dict):
-        effort_label = effort.get('level') or 'デフォルト'
+        effort_label = effort.get('level') or i18n.t('default')
     elif isinstance(effort, str) and effort:
         effort_label = effort
     else:
-        effort_label = 'デフォルト'
+        effort_label = i18n.t('default')
 
     rc = False
     session_id = data.get('session_id')
@@ -105,17 +106,17 @@ def format_status_line(data: dict) -> str:
             rc = entry.rc
     rc_mark = '●' if rc else '○'
 
-    line = '%s · %s · ctx %s%% · rc %s' % (display_name, effort_label, pct, rc_mark)
+    line = i18n.t('statusline.line', model=display_name, effort=effort_label, pct=pct, rc=rc_mark)
     symbol = _submit_symbol()
     if symbol:
-        line = '%s · %s' % (symbol, line)
+        line = i18n.t('statusline.with_symbol', symbol=symbol, line=line)
     return line
 
 
 def _submit_symbol() -> str:
-    """送信キーの記号（T-71）。プラグインのデーモンから起動したセッション
-    （`AGENT_SESSIONS_ID` が立っている）でだけ、`config.UI_STATE_PATH` から読む。
-    無い・壊れている・その環境変数が無いプロセスでは空文字（付けない）。
+    """The submit-key symbol. Read from `config.UI_STATE_PATH`, but only for a session
+    launched by the plugin's daemon (`AGENT_SESSIONS_ID` is set). Empty string ('' — no
+    prefix) when that file is missing, malformed, or the environment variable isn't set.
     """
     if not os.environ.get('AGENT_SESSIONS_ID'):
         return ''
@@ -131,9 +132,10 @@ def _submit_symbol() -> str:
 
 
 def record_status(raw: bytes) -> str:
-    """stdin の生バイト列を `STATUS_DIR/<session_id>.json` にそのまま書き
-    （tmp→rename）、1 行の表示文字列を返す。`session_id` が無ければ書かない。
-    JSON として読めなければ既定の表示文字列を返す。
+    """Writes the raw bytes from stdin as-is to `STATUS_DIR/<session_id>.json`
+    (tmp -> rename) and returns the one-line display string. Doesn't write anything if
+    there's no `session_id`. Returns the default display string if it doesn't parse as
+    JSON.
     """
     try:
         data = json.loads(raw.decode('utf-8'))

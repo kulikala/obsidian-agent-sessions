@@ -4,42 +4,40 @@ import sys
 import time
 from typing import Dict, List, Optional, Tuple
 
-from . import config, jsonout, store
+from . import config, i18n, jsonout, store
 from .detail import Detail, read_detail
 from .items import Item, build_items, dw, fit, wrap
 from .live import Live, live_sessions
 from .model import Doc, Session, fmt_time, folder_of, row_from, sort_rows
 from .scan import list_transcripts, scan
 
-HELP = ('↑↓/jk 移動  ⏎ 起動  ← 親へ/畳む  → 開く  h アーカイブ表示  '
-        '/ 絞込  p パネル  r 再走査  q 終了')
 DATE_W = 11      # MM-DD HH:MM
 FOLDER_W = 18
-PANEL_MIN_COLS = 60   # これより狭い端末では一覧とパネルを p で切り替える
-LIVE_TTL = 1.0   # 起動中セッションの台帳を読み直す間隔（秒）
+PANEL_MIN_COLS = 60   # below this terminal width, 'p' toggles between the list and the panel
+LIVE_TTL = 1.0   # how often to re-read the running-sessions ledger, in seconds
 MARK_BUSY = '●'
 MARK_IDLE = '○'
 CP_BUSY, CP_IDLE, CP_HEAD = 1, 2, 3
 
 
 def panel_width(cols: int) -> int:
-    """サイドパネルの幅。`cols < PANEL_MIN_COLS` では 0（一覧⇄パネルの切替モード）。"""
+    """The side panel's width. `0` (list<->panel toggle mode) when `cols < PANEL_MIN_COLS`."""
     if cols < PANEL_MIN_COLS:
         return 0
     return max(30, min(60, int(cols * 0.4)))
 
 
 def list_columns(list_w: int) -> Tuple[bool, bool]:
-    """一覧のうち日付・フォルダ列を出すか（`show_date`, `show_folder`）。
-    名前の列は幅がどれだけ狭くても常に残す。"""
+    """Whether the list shows the date/folder columns (`show_date`, `show_folder`).
+    The name column always stays, no matter how narrow."""
     show_folder = list_w >= 56
     show_date = list_w >= 40
     return show_date, show_folder
 
 
 def _doc_from_store(st: store.Store, scanned: Dict[str, Session]) -> Doc:
-    """`items.build_items` が読む形（`Doc`）に、`Store` と走査結果を合わせる。
-    `archived` が非表示、それ以外の名前付きセッションが管理中の行になる。"""
+    """Combines `Store` and the scan results into the shape `items.build_items` reads
+    (`Doc`). `archived` sessions are hidden; every other named session is a tracked row."""
     hidden = {a['id']: a.get('name', '') for a in st.archived}
     rows = [row_from(s) for s in scanned.values() if s.name and s.id not in hidden]
     return Doc(folded=list(st.folded), hidden=hidden, rows=sort_rows(rows))
@@ -50,12 +48,12 @@ class State:
         self.store = store_snapshot
         self.scanned = scanned
         self.doc = _doc_from_store(self.store, self.scanned)
-        self.show_hidden = False   # 'h' でアーカイブを見せる
+        self.show_hidden = False   # 'h' shows the archive
         self.other_folded = True
         self.filt = ''
         self.cursor = 0
         self.top = 0
-        self.panel_only = False    # cols < PANEL_MIN_COLS のときだけ効く（'p' で切替）
+        self.panel_only = False    # only matters when cols < PANEL_MIN_COLS ('p' toggles it)
         self.live: Dict[str, Live] = {}
         self.live_at = 0.0
         self.details: Dict[str, Detail] = {}
@@ -133,7 +131,7 @@ class State:
         other = sum(1 for s in self.scanned.values()
                     if not s.name and not s.child and s.id not in self.doc.hidden)
         running = sum(1 for sid in self.live if sid in self.scanned)
-        return '管理中 %d ／ アーカイブ %d ／ その他 %d ／ 起動中 %d' % (managed, hidden, other, running)
+        return i18n.t('tui.counts', managed=managed, archived=hidden, other=other, running=running)
 
 
 def _put(stdscr, y: int, x: int, s: str, attr: int = curses.A_NORMAL) -> None:
@@ -164,7 +162,7 @@ def _mark_of(live: Optional[Live]) -> Tuple[str, int]:
 
 
 def _panel_lines(st: State, it: Optional[Item], width: int, height: int) -> List[Tuple[str, int]]:
-    """サイドパネルの中身。(文字列, 属性) の並び。"""
+    """The side panel's content, as a list of (text, attr)."""
     out: List[Tuple[str, int]] = []
 
     def add(text: str = '', attr: int = curses.A_NORMAL) -> None:
@@ -173,58 +171,58 @@ def _panel_lines(st: State, it: Optional[Item], width: int, height: int) -> List
     def block(title: str, body: str, limit: int) -> None:
         add()
         add(title, _color(CP_HEAD, curses.A_BOLD) | curses.A_BOLD)
-        lines = wrap(body, width) if body else ['（なし）']
+        lines = wrap(body, width) if body else [i18n.t('tui.empty')]
         for ln in lines[:limit]:
             add(ln, curses.A_DIM if not body else curses.A_NORMAL)
         if len(lines) > limit:
             add('…', curses.A_DIM)
 
     if it is None:
-        add('セッションがありません', curses.A_DIM)
+        add(i18n.t('tui.no_sessions'), curses.A_DIM)
         return out
 
     if it.kind == 'group':
         add(it.label, curses.A_BOLD)
-        add('グループ ／ %d 件' % it.count, curses.A_DIM)
+        add(i18n.t('tui.group_count', count=it.count), curses.A_DIM)
         kids = [i for i in st.items if i.group == it.label and i.session]
         running = [i for i in kids if st.live_of(i.session)]
         if kids:
             newest = max(i.session.mtime for i in kids)
             add()
-            add('最終更新  %s' % fmt_time(newest))
-        add('起動中    %d 件' % len(running))
+            add(i18n.t('tui.last_updated', when=fmt_time(newest)))
+        add(i18n.t('tui.running_count', count=len(running)))
         return out
 
     s = it.session
     if s is None:
         return out
     live = st.live_of(s)
-    compact = height < 18       # 背の低い端末では見出しを削って本文に回す
+    compact = height < 18       # a short terminal drops the headings, giving the space to content
     add(s.name or it.label, curses.A_BOLD)
     mark, attr = _mark_of(live)
     if live:
         add('%s %s  pid %d' % (mark, live.label, live.pid), attr | curses.A_BOLD)
     else:
-        add('  停止中', curses.A_DIM)
+        add(i18n.t('tui.stopped'), curses.A_DIM)
     if not compact:
         add()
-    add('最終更新  %s' % fmt_time(s.mtime))
+    add(i18n.t('tui.last_updated', when=fmt_time(s.mtime)))
     if not compact:
-        add('フォルダ  %s' % fit(folder_of(s.cwd), width - 10))
-        add('ID        %s' % s.id[:18], curses.A_DIM)
+        add(i18n.t('tui.folder', folder=fit(folder_of(s.cwd), width - 10)))
+        add(i18n.t('tui.id', id=s.id[:18]), curses.A_DIM)
     if it.hidden:
-        add('（アーカイブ）', curses.A_DIM)
+        add(i18n.t('tui.archived_note'), curses.A_DIM)
 
     d = st.detail_of(s)
     rest = max(0, height - len(out) - 6)
     user_lines = min(8, max(2, rest // 2))
-    block('直近の指示', d.last_user, user_lines)
+    block(i18n.t('tui.last_prompt'), d.last_user, user_lines)
     if d.tools:
         add()
-        add('直近のツール', _color(CP_HEAD, curses.A_BOLD) | curses.A_BOLD)
-        for ln in wrap('、'.join(d.tools[:6]), width)[:2]:
+        add(i18n.t('tui.last_tools'), _color(CP_HEAD, curses.A_BOLD) | curses.A_BOLD)
+        for ln in wrap(i18n.t('list_separator').join(d.tools[:6]), width)[:2]:
             add(ln, curses.A_DIM)
-    block('直近の応答', d.last_assistant, max(3, height - len(out) - 3))
+    block(i18n.t('tui.last_response'), d.last_assistant, max(3, height - len(out) - 3))
     return out
 
 
@@ -286,7 +284,7 @@ def _draw(stdscr, st: State) -> None:
             s = it.session
             indent = '   ' if it.depth else ' '
             live_mark, live_attr = _mark_of(st.live_of(s))
-            label = it.label + (' (アーカイブ)' if it.hidden else '')
+            label = it.label + (i18n.t('tui.archived_suffix') if it.hidden else '')
             left = fit(indent + label, label_w, pad=True)
             parts = [left]
             if show_date:
@@ -306,7 +304,7 @@ def _draw(stdscr, st: State) -> None:
             _draw_panel(stdscr, st, 0, 2, body_h, border=False)
 
     _put(stdscr, rows - 2, 0, '─' * (cols - 1))
-    foot = ('絞込: %s  (Esc で解除)' % st.filt) if st.filt else HELP
+    foot = i18n.t('tui.filter_prompt', filt=st.filt) if st.filt else i18n.t('tui.help')
     _put(stdscr, rows - 1, 0, fit(' ' + foot, cols - 1))
     stdscr.refresh()
 
@@ -409,9 +407,9 @@ def run(store_snapshot: store.Store, scanned: Dict[str, Session]) -> Optional[Se
 
 
 def _launch(s: Session) -> int:
-    """⏎ で選んだセッションを起動する。デーモンに乗っていれば attach、
-    終了済みなら forget してから、それ以外はそのまま `claude --resume` する。
-    デーモンを起動することはない。"""
+    """Launches the session chosen with Enter: attach if it's on the daemon, `forget`
+    first if it already exited there, otherwise just run `claude --resume` directly.
+    This never starts the daemon."""
     sock_path = jsonout.daemon_sock_path()
     daemon = jsonout.live_output().get('daemon') or {}
     if daemon.get('running'):
@@ -433,8 +431,8 @@ def _launch(s: Session) -> int:
 
 
 def main() -> int:
-    """引数なしの `agent-sessions` の入口。vault が分からなければ、curses を起こす前に
-    分かりやすい英語メッセージで止める（T-80）。"""
+    """The entry point for `agent-sessions` with no arguments. Stops with a clear
+    message before curses starts if the vault isn't known."""
     try:
         config.require_vault()
     except config.VaultNotConfigured as err:

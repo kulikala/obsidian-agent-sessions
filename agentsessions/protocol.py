@@ -1,4 +1,4 @@
-"""デーモンのソケットのフレーム（D-4 §4.1）。
+"""Wire frame format for the daemon socket.
 
 +------+----------------+---------+
 | type | length (u32 BE)| payload |
@@ -10,11 +10,11 @@ import json
 import struct
 from typing import Any, List, Tuple
 
-FRAME_J = b'J'   # JSON（UTF-8）。要求と応答・イベント
-FRAME_D = b'D'   # 生バイト（PTY の入出力）
-FRAME_R = b'R'   # attach 直後に再生するバッファ
+FRAME_J = b'J'   # JSON (UTF-8). Requests, responses, and events
+FRAME_D = b'D'   # Raw bytes (PTY input/output)
+FRAME_R = b'R'   # Buffer replayed right after attach
 
-_HEADER_LEN = 5   # 1 B（type） + 4 B（length, u32 BE）
+_HEADER_LEN = 5   # 1 B (type) + 4 B (length, u32 BE)
 
 
 def encode(kind: bytes, payload: bytes) -> bytes:
@@ -32,9 +32,10 @@ def decode_json(payload: bytes) -> dict:
 
 
 class Decoder:
-    """受信バイト列から完全なフレームだけを切り出す。
+    """Extracts only complete frames from the incoming byte stream.
 
-    途中で切れたフレームは内部のバッファに持ち越し、次の `feed` で続きを待つ。
+    A frame that arrives truncated is carried over in the internal buffer,
+    and the rest is picked up on the next `feed` call.
     """
 
     def __init__(self) -> None:

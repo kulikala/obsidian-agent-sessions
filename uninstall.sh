@@ -1,10 +1,13 @@
 #!/bin/sh
-# agent-sessions を手元から外す：デーモンを止め、~/.claude/settings.json・keybindings.json
-# から自分の分だけ取り除き（agent-sessions setup --remove）、~/bin と vault の plugins の
-# symlink を外す。vault は引数か env AGENT_SESSIONS_VAULT で必須（install.sh と同じ約束）。
+# Removes agent-sessions from this machine: stops the daemon, removes only its own
+# entries from ~/.claude/settings.json and keybindings.json (agent-sessions
+# setup --remove), and removes the ~/bin and vault-plugins symlinks. The vault is
+# required, either as an argument or via the env var AGENT_SESSIONS_VAULT (same
+# convention as install.sh).
 #
-# --force  動いているセッションがあっても確認せずに止める
-# --purge  ランタイム（~/.agents/sessions/）と台帳（<vault>/.agents/sessions/）も消す
+# --force  stop even if sessions are running, without asking for confirmation
+# --purge  also delete the runtime dir (~/.agents/sessions/) and the ledger
+#          (<vault>/.agents/sessions/)
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 AS="$HERE/bin/agent-sessions"
@@ -28,32 +31,34 @@ if [ -z "$VAULT" ]; then
   exit 1
 fi
 
-# 1. デーモンを止める。動いているセッションがあれば --force が無い限り確認を求める。
+# 1. Stop the daemon. Ask for confirmation first if any session is still running,
+#    unless --force was given.
 n="$("$AS" daemon --running-count 2>/dev/null)" || n=0
 case "$n" in ''|*[!0-9]*) n=0 ;; esac
 if [ "$n" -gt 0 ]; then
   if [ "$FORCE" -ne 1 ]; then
-    printf '動いているセッションが %s 件あります。それでも止めますか？ [y/N] ' "$n" >&2
+    printf '%s session(s) are still running. Stop anyway? [y/N] ' "$n" >&2
     read -r ans
     case "$ans" in
       y|Y|yes|YES) ;;
-      *) echo "中止した（--force で確認を飛ばせる）" >&2; exit 1 ;;
+      *) echo "Aborted (pass --force to skip this confirmation)." >&2; exit 1 ;;
     esac
   fi
 fi
 "$AS" daemon --stop
-echo "daemon: 止めた（動いていなければ何もしていない）"
+echo "daemon: stopped (a no-op if it wasn't running)"
 
-# 2. settings.json・keybindings.json から自分の分だけ取り除く。
+# 2. Remove only our own entries from settings.json and keybindings.json.
 "$AS" setup --remove
 
-# 3. symlink を外す。symlink でなければ（手で置き換えられている等）消さずに案内する。
+# 3. Remove the symlinks. Leave a path in place (with a note) if it isn't actually a
+#    symlink (e.g. someone replaced it by hand).
 for f in "$HOME/bin/agent-sessions" "$HOME/bin/agent-sessions-code"; do
   if [ -L "$f" ]; then
     rm "$f"
     echo "unlinked: $f"
   elif [ -e "$f" ]; then
-    echo "$f は symlink ではないので残した（中身を確かめて手で消す）" >&2
+    echo "$f is not a symlink, so it was left in place (check it and remove it by hand)." >&2
   fi
 done
 
@@ -62,10 +67,10 @@ if [ -L "$plugin_link" ]; then
   rm "$plugin_link"
   echo "unlinked: $plugin_link"
 elif [ -e "$plugin_link" ]; then
-  echo "$plugin_link は symlink ではないので残した（中身を確かめて手で消す）" >&2
+  echo "$plugin_link is not a symlink, so it was left in place (check it and remove it by hand)." >&2
 fi
 
-# 4. --purge のときだけ、ランタイムと台帳を消す。
+# 4. Only with --purge, delete the runtime dir and the ledger.
 if [ "$PURGE" -eq 1 ]; then
   runtime_dir="${AGENT_SESSIONS_RUNTIME_DIR:-$HOME/.agents/sessions}"
   rm -rf "$runtime_dir"

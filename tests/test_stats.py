@@ -29,7 +29,7 @@ def _assistant(ts, msg_id, model, tokens, **flags) -> dict:
     return rec
 
 
-def _user(ts, text='質問です') -> dict:
+def _user(ts, text='a question') -> dict:
     return {'type': 'user', 'timestamp': _iso(ts), 'message': {'role': 'user', 'content': text}}
 
 
@@ -100,7 +100,7 @@ class WindowsFromStatusTest(StatsTestBase):
             'five_hour': {'resets_at': 1_700_030_000, 'used_percentage': 9},
             'seven_day': {'resets_at': 1_700_040_000, 'used_percentage': 8},
         }, mtime=now - 10)
-        # rate_limits を持たない、さらに新しいファイル（無視される）
+        # an even newer file that has no rate_limits (should be ignored)
         newest_no_rl = os.path.join(self.status_dir, 'newest.json')
         with open(newest_no_rl, 'w', encoding='utf-8') as f:
             json.dump({'session_id': 'x'}, f)
@@ -134,10 +134,11 @@ class WindowsFromStatusTest(StatsTestBase):
         self.assertIsNone(win['five_hour']['used_percentage'])
 
     def test_resets_at_just_past_rolls_forward_one_period(self):
-        """T-74 追補：リセットを過ぎた直後（まだ新しい rate_limits が届く前）は、古い窓の
-        まま（`end` が過去）にしない——1 期分だけ先へ送り、使用率は不明にする。"""
+        """Right after a reset has passed, but before a fresh rate_limits payload arrives,
+        the window must not stay stuck in the past (with `end` still before now) — it
+        should roll forward by exactly one period, with usage marked unknown."""
         now = 1_700_000_000.0
-        resets_at = now - 60  # 1 分前にリセットを過ぎている
+        resets_at = now - 60  # the reset happened 1 minute ago
         self._status('s.json', {
             'five_hour': {'resets_at': resets_at, 'used_percentage': 42},
             'seven_day': {'resets_at': resets_at, 'used_percentage': 77},
@@ -155,7 +156,7 @@ class WindowsFromStatusTest(StatsTestBase):
             'five_hour': {'resets_at': resets_at, 'used_percentage': 50},
         }, mtime=now)
         win = stats.windows_from_status(self.status_dir, now)
-        # 2 期分＋端数 100 秒 → 3 期分先へ送る。
+        # 2 full periods plus a 100-second remainder → roll forward 3 periods.
         self.assertEqual(win['five_hour']['end'], resets_at + 3 * stats.FIVE_HOUR_SECONDS)
         self.assertGreaterEqual(win['five_hour']['end'], now)
         self.assertIsNone(win['five_hour']['used_percentage'])
@@ -171,8 +172,8 @@ class WindowsFromStatusTest(StatsTestBase):
 
 
 class WindowBucketingTest(StatsTestBase):
-    """窓内外の振り分け・重複排除・<synthetic> 除外・サイドチェーンの計上を
-    まとめて確かめる。"""
+    """Covers bucketing records inside/outside the window, de-duplication, excluding
+    <synthetic>, and counting sidechain calls, all together."""
 
     def setUp(self):
         super().setUp()
@@ -185,22 +186,23 @@ class WindowBucketingTest(StatsTestBase):
         self.five_start = self.five_end - stats.FIVE_HOUR_SECONDS
         self.seven_start = self.seven_end - stats.SEVEN_DAY_SECONDS
 
-        # A: 両方の窓の内側。重複行あり（2 回目は数えない）。
+        # A: inside both windows. Has a duplicate line (the second one isn't counted).
         self.ts_a = self.five_end - 100
-        # B: 5h の外・7d の内側。
+        # B: outside the 5h window, inside the 7d window.
         self.ts_b = self.five_start - 100
-        # C: 両方の窓の外側。
+        # C: outside both windows.
         self.ts_c = self.seven_start - 100
-        # D: 5h の窓の終端以降（含まない）・7d の内側。バケットの粒度（10 分）を
-        # またぐよう、5h の終端から 1 バケット分以上離す。
+        # D: at or after the end of the 5h window (exclusive), inside the 7d window.
+        # Placed more than one bucket (10 min) past the 5h end so it crosses the
+        # bucket granularity boundary.
         self.ts_d = self.five_end + 700
-        # F: サイドチェーンの行。5h の窓の内側。数える対象。
+        # F: a sidechain line. Inside the 5h window. Should be counted.
         self.ts_f = self.five_end - 60
 
         self.model = 'claude-sonnet-5'
         records = [
             _assistant(self.ts_a, 'm-a', self.model, {'input': 100, 'output': 50}),
-            _assistant(self.ts_a, 'm-a', self.model, {'input': 100, 'output': 50}),  # 重複
+            _assistant(self.ts_a, 'm-a', self.model, {'input': 100, 'output': 50}),  # duplicate
             _assistant(self.ts_b, 'm-b', self.model, {'input': 200, 'output': 80}),
             _assistant(self.ts_c, 'm-c', self.model, {'input': 999, 'output': 999}),
             _assistant(self.ts_d, 'm-d', self.model, {'input': 10, 'output': 10}),
@@ -217,7 +219,7 @@ class WindowBucketingTest(StatsTestBase):
         self.assertEqual(five['start'], self.five_start)
         self.assertEqual(five['end'], self.five_end)
         self.assertEqual(five['used_percentage'], 42)
-        self.assertEqual(five['total']['calls'], 2)   # A（重複排除済み）・F
+        self.assertEqual(five['total']['calls'], 2)   # A (de-duplicated) and F
         self.assertEqual(five['total']['input'], 105)
         self.assertEqual(five['total']['output'], 55)
         expected_cost = _cost(self.model, {'input': 100, 'output': 50}) + \
@@ -232,7 +234,7 @@ class WindowBucketingTest(StatsTestBase):
         self.assertEqual(seven['start'], self.seven_start)
         self.assertEqual(seven['end'], self.seven_end)
         self.assertEqual(seven['used_percentage'], 7)
-        # A（重複排除）・B・D・F。C は窓の外。
+        # A (de-duplicated), B, D, F. C is outside the window.
         self.assertEqual(seven['total']['calls'], 4)
         self.assertEqual(seven['total']['input'], 100 + 200 + 10 + 5)
         self.assertEqual(seven['total']['output'], 50 + 80 + 10 + 5)
@@ -255,18 +257,19 @@ class WindowBucketingTest(StatsTestBase):
 
 
 class ResetRolloverComputeTest(StatsTestBase):
-    """T-74 追補：リセットを過ぎた直後（新しい rate_limits がまだ来ていない）でも、
-    集計は「今の窓」（start=旧 end）だけを見る——旧窓のコストを引きずらない。"""
+    """Even right after a reset has passed (before new rate_limits data arrives),
+    aggregation only looks at the "current window" (start = the old end) — it must
+    not carry over cost from the old window."""
 
     def test_cost_only_counts_activity_after_rolled_start(self):
         old_end = 1_700_000_000.0
-        now = old_end + 60  # リセットの 1 分後、まだ新しい rate_limits が届いていない
+        now = old_end + 60  # 1 minute after the reset; new rate_limits haven't arrived yet
         self._status('s.json', {
             'five_hour': {'resets_at': old_end, 'used_percentage': 88},
         }, mtime=old_end)
 
         model = 'claude-sonnet-5'
-        # 旧窓（リセット前）の使用：新しい窓には含まれないはず。
+        # Usage from the old window (before the reset): must not be included in the new window.
         old_ts = old_end - 100
         _write(os.path.join(self.proj, ID1 + '.jsonl'),
                [_assistant(old_ts, 'm-old', model, {'input': 1000, 'output': 1000})])
@@ -293,7 +296,7 @@ class SubagentAggregationTest(StatsTestBase):
         parent_path = os.path.join(self.proj, PARENT_ID + '.jsonl')
         _write(parent_path, [_assistant(ts, 'p-1', model, {'input': 100, 'output': 40})])
 
-        # 深さを問わず <project>/<parent_id>/ 配下の .jsonl は親に合算される
+        # .jsonl files under <project>/<parent_id>/, at any depth, are aggregated into the parent
         sub_path = os.path.join(self.proj, PARENT_ID, 'subagents', 'agent-xyz.jsonl')
         _write(sub_path, [_assistant(ts, 's-1', model, {'input': 30, 'output': 10})])
 
@@ -310,7 +313,7 @@ class SubagentAggregationTest(StatsTestBase):
 class IncrementalCacheTest(StatsTestBase):
     def setUp(self):
         super().setUp()
-        # 窓は今回のテストでは使わない（now は適当でよい）。
+        # The window isn't used in this test (any value for `now` is fine).
         self.now = 1_700_000_000.0
         self.model = 'claude-sonnet-5'
         self.path = os.path.join(self.proj, ID1 + '.jsonl')
@@ -336,12 +339,13 @@ class IncrementalCacheTest(StatsTestBase):
         bucket_key_1 = stats._bucket_key(self.ts1)
         self.assertEqual(cache[self.path]['buckets'][str(bucket_key_1)]['calls'], 1)
 
-        # 既存バケットを改ざんする：もし次回に先頭から読み直せば元の値（calls=1）に
-        # 戻ってしまう。改ざん値が残ることで「offset から続きだけ読んだ」と分かる。
+        # Tamper with the existing bucket: if the next run re-read from the start,
+        # it would revert to the original value (calls=1). The tampered value
+        # surviving proves that only the appended part was read, from the saved offset.
         cache[self.path]['buckets'][str(bucket_key_1)]['calls'] = 999
         stats.save_cache(cache, self.cache_path)
 
-        # 別のバケット（10 分以上離れた時刻）に新しい行を追記する。
+        # Append a new line at a timestamp that falls in a different bucket (more than 10 minutes away).
         ts2 = self.ts1 + 700
         _append(self.path, [_assistant(ts2, 'm2', self.model, {'input': 20, 'output': 8})])
 
@@ -350,13 +354,13 @@ class IncrementalCacheTest(StatsTestBase):
         buckets = cache2[self.path]['buckets']
         bucket_key_2 = stats._bucket_key(ts2)
         self.assertNotEqual(bucket_key_1, bucket_key_2)
-        self.assertEqual(buckets[str(bucket_key_1)]['calls'], 999)   # 改ざん値のまま＝再読していない
-        self.assertEqual(buckets[str(bucket_key_2)]['calls'], 1)     # 追記分だけ新しく足された
+        self.assertEqual(buckets[str(bucket_key_1)]['calls'], 999)   # tampered value survives == not re-read
+        self.assertEqual(buckets[str(bucket_key_2)]['calls'], 1)     # only the appended line was newly added
         self.assertEqual(cache2[self.path]['offset'], os.path.getsize(self.path))
 
     def test_truncated_file_is_reread_from_scratch(self):
         self.compute(now=self.now)
-        # 縮む（実際には起きない想定だが、壊れ方として扱う）→ offset 0 から読み直す。
+        # File shrinks (not expected in practice, but treated as a corruption case) → re-read from offset 0.
         _write(self.path, [])
         out = self.compute(now=self.now)
         cache = stats.load_cache(self.cache_path)
@@ -367,7 +371,7 @@ class IncrementalCacheTest(StatsTestBase):
         with open(self.cache_path, 'w', encoding='utf-8') as f:
             f.write('not json at all')
         out = self.compute(now=self.now)
-        # 壊れていても例外にならず、通常どおり集計される。
+        # Even though it's corrupted, no exception is raised and aggregation proceeds normally.
         cache = stats.load_cache(self.cache_path)
         self.assertIn(self.path, cache)
         self.assertEqual(cache[self.path]['offset'], os.path.getsize(self.path))

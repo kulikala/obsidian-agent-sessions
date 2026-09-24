@@ -34,32 +34,33 @@ def _user(ts, text, **flags):
 
 
 FIXTURE = [
-    # 最初の指示より前の usage（「（開始前）」のターンに入る）
+    # usage before the first instruction (goes into the "(before first prompt)" turn)
     _assistant('2024-01-01T00:00:00.000Z', 'pre1', 'claude-3-x', {'input': 10, 'output': 5}),
-    # isSidechain：数えない
+    # isSidechain: not counted
     _assistant('2024-01-01T00:00:01.000Z', 'side1', 'claude-3-x', {'input': 999, 'output': 999},
                 isSidechain=True),
-    # isMeta：ターンの開始にもならない
-    _user('2024-01-01T00:00:01.500Z', 'メタの差し込み', isMeta=True),
+    # isMeta: doesn't even start a turn
+    _user('2024-01-01T00:00:01.500Z', 'injected meta line', isMeta=True),
 
-    # ターン 1
-    _user('2024-01-01T00:00:02.000Z', '最初の指示です'),
+    # turn 1
+    _user('2024-01-01T00:00:02.000Z', 'first instruction'),
     _assistant('2024-01-01T00:00:03.000Z', 'syn1', '<synthetic>', {'input': 50, 'output': 50}),
     _assistant('2024-01-01T00:00:03.500Z', 'm1', 'claude-3-opus',
                {'input': 100, 'cache_create': 20, 'cache_read': 5, 'output': 40},
                tools=['Read', 'Read', 'Edit']),
-    # 同じ message.id の重複行：2 回目は数えない（ツールも重ねて数えない）
+    # duplicate line with the same message.id: the second one isn't counted
+    # (tools aren't double-counted either)
     _assistant('2024-01-01T00:00:03.600Z', 'm1', 'claude-3-opus',
                {'input': 100, 'cache_create': 20, 'cache_read': 5, 'output': 40},
                tools=['Read', 'Read', 'Edit']),
 
-    # ターン 2
-    _user('2024-01-01T00:00:05.000Z', '2件目の指示'),
+    # turn 2
+    _user('2024-01-01T00:00:05.000Z', 'second instruction'),
     _assistant('2024-01-01T00:00:06.000Z', 'm2', 'claude-3-sonnet', {'input': 200, 'output': 80},
                thinking=15),
 
-    # ターン 3（既知のモデル：claude-3-haiku。estimated は立たない）
-    _user('2024-01-01T00:00:07.000Z', '3件目の指示'),
+    # turn 3 (a known model: claude-3-haiku. `estimated` is not set)
+    _user('2024-01-01T00:00:07.000Z', 'third instruction'),
     _assistant('2024-01-01T00:00:08.000Z', 'm3', 'claude-3-haiku', {'input': 30, 'output': 10}),
 ]
 
@@ -87,9 +88,9 @@ class UsageTest(unittest.TestCase):
         self.assertEqual(len(turns), 4)
         self.assertEqual(turns[0]['prompt'], usage.BEFORE_LABEL)
         self.assertIsNone(turns[0]['ts'])
-        self.assertEqual(turns[1]['prompt'], '最初の指示です')
-        self.assertEqual(turns[2]['prompt'], '2件目の指示')
-        self.assertEqual(turns[3]['prompt'], '3件目の指示')
+        self.assertEqual(turns[1]['prompt'], 'first instruction')
+        self.assertEqual(turns[2]['prompt'], 'second instruction')
+        self.assertEqual(turns[3]['prompt'], 'third instruction')
         self.assertEqual([t['index'] for t in turns], [0, 1, 2, 3])
 
     def test_before_turn_collects_pre_prompt_usage_only(self):
@@ -103,9 +104,9 @@ class UsageTest(unittest.TestCase):
     def test_sidechain_and_meta_are_skipped(self):
         turns = usage.collect(self.path)
         total_calls = sum(t['calls'] for t in turns)
-        # side1（isSidechain）は before にも turn 1 にも入らない
+        # side1 (isSidechain) is not included in either the before turn or turn 1
         self.assertNotIn('claude-3-x', turns[1].get('models', {}))
-        self.assertEqual(total_calls, 4)   # pre1・m1・m2・m3 のみ
+        self.assertEqual(total_calls, 4)   # only pre1, m1, m2, m3
 
     def test_duplicate_message_id_counted_once(self):
         turns = usage.collect(self.path)
@@ -120,14 +121,14 @@ class UsageTest(unittest.TestCase):
         turns = usage.collect(self.path)
         turn1 = turns[1]
         self.assertNotIn('<synthetic>', turn1['models'])
-        self.assertEqual(turn1['calls'], 1)   # syn1 を数えていれば 2 になる
+        self.assertEqual(turn1['calls'], 1)   # would be 2 if syn1 were counted
 
     def test_thinking_tokens(self):
         turns = usage.collect(self.path)
         self.assertEqual(turns[2]['thinking'], 15)
         self.assertEqual(turns[1]['thinking'], 0)
 
-    # --- D-40：cost・tools・estimated（ターン単位） ---
+    # --- per-turn cost, tools, and estimated ---
 
     def test_cost_per_turn_matches_pricing_cost(self):
         turns = usage.collect(self.path)
@@ -139,17 +140,18 @@ class UsageTest(unittest.TestCase):
 
     def test_unknown_model_marks_turn_estimated(self):
         turns = usage.collect(self.path)
-        # claude-3-x・claude-3-opus・claude-3-sonnet は表に無く、未知として estimated
+        # claude-3-x, claude-3-opus, claude-3-sonnet aren't in the pricing table,
+        # so they're treated as unknown and marked estimated
         self.assertTrue(turns[0]['estimated'])
         self.assertTrue(turns[1]['estimated'])
         self.assertTrue(turns[2]['estimated'])
-        # claude-3-haiku は表にある既知のモデル
+        # claude-3-haiku is a known model in the pricing table
         self.assertFalse(turns[3]['estimated'])
 
     def test_tool_use_counted_by_name_and_deduplicated_with_the_message(self):
         turns = usage.collect(self.path)
         turn1 = turns[1]
-        # 重複行（同じ message.id）のツールは重ねて数えない
+        # tools from a duplicate line (same message.id) aren't double-counted
         self.assertEqual(turn1['tools'], {'Read': 2, 'Edit': 1})
         self.assertEqual(turns[2]['tools'], {})
 
@@ -164,7 +166,7 @@ class UsageTest(unittest.TestCase):
         self.assertEqual(turns[1]['last_ts'], usage._parse_ts('2024-01-01T00:00:03.500Z'))
         self.assertEqual(turns[3]['last_ts'], usage._parse_ts('2024-01-01T00:00:08.000Z'))
 
-    # --- D-40：summarize の total（cost・tools・duration・first_ts・last_ts・context_last・estimated） ---
+    # --- summarize's total: cost, tools, duration, first_ts, last_ts, context_last, estimated ---
 
     def test_summarize_totals_everything_by_default(self):
         turns = usage.collect(self.path)
@@ -181,11 +183,11 @@ class UsageTest(unittest.TestCase):
         self.assertEqual(total['thinking'], 15)
         self.assertAlmostEqual(total['cost'], sum(t['cost'] for t in turns))
         self.assertEqual(total['tools'], {'Read': 2, 'Edit': 1})
-        self.assertTrue(total['estimated'])   # 未知モデルのターンがある
+        self.assertTrue(total['estimated'])   # there's a turn with an unknown model
         self.assertEqual(total['first_ts'], usage._parse_ts('2024-01-01T00:00:02.000Z'))
         self.assertEqual(total['last_ts'], usage._parse_ts('2024-01-01T00:00:08.000Z'))
         self.assertAlmostEqual(total['duration'], 6.0)
-        self.assertEqual(total['context_last'], 30)   # 最後に数えた呼出＝m3
+        self.assertEqual(total['context_last'], 30)   # the last counted call == m3
 
     def test_summarize_range_excludes_before_turn(self):
         turns = usage.collect(self.path)
@@ -205,7 +207,7 @@ class UsageTest(unittest.TestCase):
     def test_summarize_range_is_inclusive_of_both_ends(self):
         turns = usage.collect(self.path)
         result = usage.summarize(turns, from_ts=turns[1]['ts'], to_ts=turns[3]['ts'])
-        self.assertEqual(result['total']['calls'], 3)   # ターン 1〜3。開始前は入らない
+        self.assertEqual(result['total']['calls'], 3)   # turns 1-3; the before-turn isn't included
 
     def test_summarize_range_includes_cost_and_tools_for_partial_range(self):
         turns = usage.collect(self.path)

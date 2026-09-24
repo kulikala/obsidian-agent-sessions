@@ -1,5 +1,5 @@
-"""`json scan`・`json live`・`json detail`・`json usage`・`json stats` の出力を
-組み立てる（D-6 §5・D-30・D-55）。"""
+"""Builds the output for `json scan`, `json live`, `json detail`, `json usage`, and
+`json stats`."""
 
 import glob
 import os
@@ -40,8 +40,8 @@ def _session_dict(s: Session) -> dict:
 
 
 def _store_dict() -> dict:
-    # `config.STORE_PATH` はここで読む（`store.load` の既定引数は import 時に
-    # 束縛されるため、実行時に差し替えたパスを拾わない）。
+    # Read `config.STORE_PATH` here, at call time — `store.load`'s default argument is
+    # bound at import time, so it wouldn't pick up a path swapped in later (e.g. in tests).
     st = store.load(path=config.STORE_PATH)
     return {
         'folded': st.folded,
@@ -59,13 +59,13 @@ def _find_transcripts(session_ids: List[str]) -> List[str]:
 
 
 def scan_output(only: Optional[List[str]] = None) -> dict:
-    # cache.load/save も同じ理由で config.CACHE_PATH を都度渡す。
+    # Same reason as `_store_dict`: pass `config.CACHE_PATH` at call time.
     cache_path = config.CACHE_PATH
     c = cache.load(path=cache_path)
     if only:
         paths = _find_transcripts(only)
         for p in paths:
-            c.pop(p, None)   # --only は再読が目的なので、既存のキャッシュ一致は無視する
+            c.pop(p, None)   # `--only` exists to force a re-read, so ignore any cache hit
         scanned = scan(paths, cache=c)
         cache.save(c, path=cache_path)
         wanted = set(only)
@@ -73,7 +73,7 @@ def scan_output(only: Optional[List[str]] = None) -> dict:
     else:
         paths = list_transcripts(config.PROJECTS_DIR)
         scanned = scan(paths, cache=c)
-        # 走査から消えた transcript のキャッシュは持ち越さない
+        # Drop cache entries for transcripts that no longer show up in the scan.
         for p in list(c):
             if p not in paths:
                 del c[p]
@@ -102,9 +102,9 @@ def daemon_sock_path() -> str:
 
 def send_daemon_op(op: str, client: str = 'json', sock_path: Optional[str] = None,
                     **kw) -> Optional[dict]:
-    """デーモンへ `hello` → `op` を送り、応答を返す。繋がらなければ `None`
-    （デーモンは起動しない）。`json live` の `daemon` 判定とデーモン向けの
-    単発の要求（`tui.py` の `forget` など）で使う。"""
+    """Sends `hello` then `op` to the daemon and returns the response, or `None` if it
+    can't connect (this never starts the daemon). Used both for `json live`'s `daemon`
+    check and for one-off requests to the daemon (e.g. `tui.py`'s `forget`)."""
     if sock_path is None:
         sock_path = daemon_sock_path()
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -133,7 +133,7 @@ def send_daemon_op(op: str, client: str = 'json', sock_path: Optional[str] = Non
 
 
 def _daemon_list() -> dict:
-    """デーモンの `list` を引く。動いていなければ（起動はせず）`running:false`。"""
+    """Fetches the daemon's `list`. `running: false` if it isn't up (this never starts it)."""
     resp = send_daemon_op('list')
     if resp is None or not resp.get('ok'):
         return {'running': False, 'sessions': []}
@@ -144,11 +144,14 @@ def live_output() -> dict:
     live_map = live_sessions()
     live = {
         sid: {
-            'status': l.label,
+            # The raw value claude itself writes ('busy' | 'shell' | 'idle' | 'waiting' | '').
+            'status': l.status,
+            # The display label for `status`, in the current UI language (see `i18n.py`).
+            'status_label': l.label,
             'pid': l.pid,
             'rc': l.rc,
             'updated_at': l.updated_at,
-            # claude 自身が status == 'waiting' のときに書く理由（T-77）。それ以外は書かない。
+            # The reason, only present when status == 'waiting' (claude writes this).
             **({'waiting_for': l.waiting_for} if l.waiting_for else {}),
         }
         for sid, l in live_map.items()
@@ -171,6 +174,6 @@ def usage_output(session_id: str, from_ts: Optional[float] = None,
 
 
 def stats_output() -> dict:
-    # stats.compute も同じ理由（jsonout.py 冒頭のコメント）で config を都度渡す。
+    # Same reason as `_store_dict`: pass the config paths at call time.
     return stats.compute(now=time.time(), projects_dir=config.PROJECTS_DIR,
                           status_dir=config.STATUS_DIR, cache_path=config.STATS_CACHE_PATH)

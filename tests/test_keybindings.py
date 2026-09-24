@@ -97,7 +97,7 @@ class TestRemoval(KeybindingsTestBase):
             ],
         })
         changed, warning = keybindings.remove_enter_keys(self.path)
-        self.assertTrue(changed)  # meta+enter は消える
+        self.assertTrue(changed)  # meta+enter is removed
         self.assertIsNotNone(warning)
         data = self._read()
         self.assertEqual(data['bindings'][0]['bindings'], {'enter': 'chat:custom-thing'})

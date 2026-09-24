@@ -17,9 +17,9 @@ def sess(sid, name, mtime=1.0):
 
 
 class TestTuiState(unittest.TestCase):
-    """State は curses に依存しないので、直接組み立てて検証できる。
-    `store.update` は `agentsessions.store.update` をパッチし、実ファイルへ書かせない
-    代わりに、渡された関数をその場の Store へ適用する。"""
+    """State doesn't depend on curses, so it can be built directly and verified.
+    `store.update` is patched (via `agentsessions.store.update`) so tests never write
+    to a real file; instead the patch applies the given function to the in-memory Store."""
 
     def setUp(self):
         self.store = store_mod.Store()
@@ -33,7 +33,7 @@ class TestTuiState(unittest.TestCase):
         self.mock_update = patcher.start()
         self.addCleanup(patcher.stop)
         self.st = State(self.store, self.scanned)
-        # items: group RIM(0), session a(1), session swimlane(0), group その他(0)
+        # items: group RIM(0), session a(1), session swimlane(0), group Other(0)
 
     def test_jump_to_group_from_child_lands_on_header(self):
         self.st.cursor = 1
@@ -49,7 +49,7 @@ class TestTuiState(unittest.TestCase):
         self.assertIn('RIM', self.st.doc.folded)
         self.assertIn('RIM', self.store.folded)
         self.mock_update.assert_called()
-        # 折り畳んだので子は items から消える
+        # Once folded, the child item disappears from items
         self.assertNotIn(('session', 'a'), [(i.kind, i.label) for i in self.st.items])
 
     def test_set_fold_other_group_flips_flag_without_touching_store(self):
@@ -61,8 +61,8 @@ class TestTuiState(unittest.TestCase):
 
 
 class TestArchivedVisibility(unittest.TestCase):
-    """h（アーカイブ表示）は Store.archived を Doc.hidden として反映するだけで、
-    tui.py に個別セッションを非表示にする操作はもう無い。"""
+    """The 'h' (show archived) toggle simply mirrors Store.archived into Doc.hidden;
+    tui.py no longer has a separate operation for hiding an individual session."""
 
     def test_archived_session_hidden_until_show_hidden(self):
         store_snapshot = store_mod.Store(archived=[{'id': A, 'name': 'RIM: a', 'agent': 'claude'}])
@@ -93,14 +93,15 @@ class TestPanelWidth(unittest.TestCase):
 
 
 class TestListColumns(unittest.TestCase):
-    """名前の列は常に残す。日付・フォルダ列は幅が足りなければ落とす。"""
+    """The name column is always kept. The date and folder columns are dropped when there isn't enough width."""
 
     def test_narrow_drops_both_date_and_folder(self):
         self.assertEqual(list_columns(39), (False, False))
 
     def test_cols_60_with_panel_leaves_list_too_narrow_for_either_column(self):
-        # cols=60 のとき panel_width(60)=30 で list_w は 28。
-        # 名前の列が 0 桁になっていた回帰（受け入れ不合格）の再現。
+        # At cols=60, panel_width(60)=30, so list_w works out to 28.
+        # Reproduces a regression, caught during acceptance testing, where the name
+        # column had ended up 0 characters wide.
         list_w = 60 - (panel_width(60) + 2)
         self.assertEqual(list_w, 28)
         self.assertEqual(list_columns(list_w), (False, False))
@@ -114,7 +115,7 @@ class TestListColumns(unittest.TestCase):
 
 
 class TestMainVaultCheck(unittest.TestCase):
-    """T-80: vault が分からなければ、curses を起こす前に止まる。"""
+    """When the vault can't be determined, execution stops before curses is ever started."""
 
     def test_returns_1_and_prints_message_when_vault_not_configured(self):
         with mock.patch.object(config, 'VAULT', None), mock.patch('sys.stderr', io.StringIO()) as err:

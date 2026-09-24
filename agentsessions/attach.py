@@ -1,11 +1,12 @@
-"""端末からの attach（D-6 §5）。
+"""Attaching to a session from a terminal.
 
-`hello` → `attach`（現在の端末サイズ）でデーモンへつなぎ、`tty.setraw` した端末と
-ソケットを `select` で多重化する。stdin → `D`（PTY への入力）。`D`・`R` はそのまま
-stdout へ生で書く（`replayed` は無視）。`SIGWINCH` で `resize` を送る。`Ctrl+\\`
-（0x1c）が stdin に来たら PTY へは流さず `detach` を送って端末を戻し 0 で戻る。
-`exit` イベントが来たら端末を戻し、終了コードを出して戻る（`forget` は送らない
-——TUI 側の仕事）。
+Connects to the daemon with `hello` then `attach` (sending the current terminal size),
+and multiplexes the raw-mode terminal (`tty.setraw`) with the socket via `select`.
+stdin goes out as `D` (input to the PTY). `D` and `R` are written straight to stdout as
+raw bytes (`replayed` is otherwise ignored). `SIGWINCH` sends a `resize`. `Ctrl+\\`
+(0x1c) on stdin isn't forwarded to the PTY — it sends `detach`, restores the terminal,
+and returns 0. An `exit` event restores the terminal and returns with that exit code
+(this never sends `forget` — that's the TUI's job).
 """
 
 import os
@@ -17,7 +18,7 @@ import termios
 import tty
 from typing import Optional
 
-from . import protocol
+from . import i18n, protocol
 
 DETACH_BYTE = 0x1c   # Ctrl+\
 CONNECT_TIMEOUT = 5.0
@@ -25,10 +26,10 @@ READ_SIZE = 65536
 
 
 def handle_frame(kind: bytes, payload: bytes, out_fd: int) -> Optional[int]:
-    """ソケットから届いた 1 フレームを処理する。
+    """Handles one frame received from the socket.
 
-    `D`・`R` は `out_fd` へ生で書く。`replayed` を含むそれ以外の `J` は無視する。
-    `exit` イベントだけ、その終了コードを返す（それ以外は `None`）。
+    `D` and `R` are written raw to `out_fd`. Any other `J` frame, including `replayed`,
+    is ignored. Returns the exit code only for an `exit` event (`None` otherwise).
     """
     if kind in (protocol.FRAME_D, protocol.FRAME_R):
         if payload:
@@ -53,13 +54,14 @@ def _terminal_size():
 
 
 class _Client:
-    """attach 中の 1 接続。`request` は応答が来るまで他のフレームを溜めて待つ。"""
+    """One connection while attached. `request` stashes other frames until its own
+    response arrives."""
 
     def __init__(self, sock: socket.socket) -> None:
         self.sock = sock
         self.decoder = protocol.Decoder()
         self._seq = 0
-        self.pending = []   # request 待ちの間に届いた (kind, payload)
+        self.pending = []   # (kind, payload) that arrived while waiting on a request
 
     def request(self, op: str, **extra) -> dict:
         self._seq += 1
@@ -71,9 +73,9 @@ class _Client:
             data = self.sock.recv(READ_SIZE)
             if not data:
                 raise ConnectionError('daemon closed the connection')
-            # 応答が見つかっても即座に返さない：同じ recv／feed に含まれる
-            # 後続のフレーム（`R`・`replayed` など）を捨てないよう、この feed
-            # 分は最後まで見てから返す。
+            # Don't return the moment the response is found: keep working through the
+            # rest of this feed() batch first, so a later frame in the same recv (`R`,
+            # `replayed`, etc) isn't dropped.
             result = None
             for kind, payload in self.decoder.feed(data):
                 if result is None and kind == protocol.FRAME_J:
@@ -103,16 +105,16 @@ def run(sid: str, sock_path: str) -> int:
         client = _Client(sock)
         hello = client.request('hello', client='tui')
         if not hello.get('ok'):
-            sys.stderr.write('agent-sessions attach: hello に失敗しました\n')
+            sys.stderr.write(i18n.t('attach.hello_failed') + '\n')
             return 1
         cols, rows = _terminal_size()
         resp = client.request('attach', id=sid, cols=cols, rows=rows)
     except (OSError, ConnectionError, ValueError) as e:
-        sys.stderr.write('agent-sessions attach: %s\n' % e)
+        sys.stderr.write(i18n.t('attach.failed', error=e) + '\n')
         sock.close()
         return 1
     if not resp.get('ok'):
-        sys.stderr.write('agent-sessions attach: %s\n' % resp.get('error', 'failed'))
+        sys.stderr.write(i18n.t('attach.failed', error=resp.get('error', 'failed')) + '\n')
         sock.close()
         return 1
 
@@ -138,13 +140,14 @@ def run(sid: str, sock_path: str) -> int:
 
     old_handler = signal.signal(signal.SIGWINCH, _on_winch)
 
-    exit_code = None    # `exit` イベントの終了コード（届いたら戻る）
-    error = None        # 異常切断など。届いたらエラーとして戻る
+    exit_code = None    # the `exit` event's exit code (returns once it arrives)
+    error = None        # an abnormal disconnect etc (returns as an error once set)
     try:
         if old_attrs is not None:
             tty.setraw(stdin_fd)
 
-        # `attach` の応答を待つ間に届いていたフレーム（`R`・`replayed` など）を先に処理する。
+        # Handle any frames (`R`, `replayed`, etc) that arrived while waiting for
+        # `attach`'s response, before entering the main loop.
         pending, client.pending = client.pending, []
         for kind, payload in pending:
             code = handle_frame(kind, payload, out_fd)
@@ -167,7 +170,7 @@ def run(sid: str, sock_path: str) -> int:
                 except (BlockingIOError, InterruptedError):
                     chunk = None
                 if chunk == b'':
-                    error = 'デーモンとの接続が切れました'
+                    error = i18n.t('attach.connection_lost')
                 elif chunk:
                     for kind, payload in decoder.feed(chunk):
                         code = handle_frame(kind, payload, out_fd)
@@ -196,9 +199,9 @@ def run(sid: str, sock_path: str) -> int:
         sock.close()
 
     if error is not None:
-        sys.stderr.write('agent-sessions attach: %s\n' % error)
+        sys.stderr.write(i18n.t('attach.failed', error=error) + '\n')
         return 1
     if exit_code is not None:
-        sys.stdout.write('セッションは終了しました（code %s）\n' % exit_code)
+        sys.stdout.write(i18n.t('attach.session_ended', code=exit_code) + '\n')
         return exit_code
     return 0

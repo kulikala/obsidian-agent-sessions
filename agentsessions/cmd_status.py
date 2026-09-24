@@ -5,7 +5,7 @@ from . import hooks
 
 
 def main(args: List[str]) -> int:
-    """stdin の JSON を status/<session_id>.json に書き、1 行を stdout に出す。"""
+    """Writes stdin's JSON to status/<session_id>.json and prints one line to stdout."""
     raw = sys.stdin.buffer.read()
     line = hooks.record_status(raw)
     sys.stdout.write(line + '\n')

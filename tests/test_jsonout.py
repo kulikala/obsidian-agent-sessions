@@ -7,7 +7,7 @@ import threading
 import unittest
 from unittest import mock
 
-from agentsessions import config, jsonout, live, protocol, store
+from agentsessions import config, i18n, jsonout, live, protocol, store
 
 ID1 = '11111111-1111-1111-1111-111111111111'
 ID2 = '22222222-2222-2222-2222-222222222222'
@@ -16,8 +16,8 @@ ID2 = '22222222-2222-2222-2222-222222222222'
 def write_jsonl(path, records):
     with open(path, 'w') as f:
         for r in records:
-            # 詳細読み取りは行の生テキストを "type":"user" のように空白なしで
-            # 照合するので、json.dumps は詰めた区切りで書く。
+            # Detail parsing matches the raw line text against patterns like "type":"user"
+            # with no spaces, so write with compact (no-space) separators via json.dumps.
             f.write(json.dumps(r, ensure_ascii=False, separators=(',', ':')) + '\n')
 
 
@@ -51,11 +51,11 @@ class TestScanOutput(JsonoutTestBase):
         super().setUp()
         write_jsonl(os.path.join(self.proj, ID1 + '.jsonl'), [
             {'type': 'system', 'cwd': '/Users/k/vault', 'content': 'x'},
-            {'type': 'user', 'message': {'role': 'user', 'content': '最初の質問'}},
-            {'type': 'custom-title', 'customTitle': 'RIM: 議事メモ作成', 'sessionId': ID1},
+            {'type': 'user', 'message': {'role': 'user', 'content': 'initial question'}},
+            {'type': 'custom-title', 'customTitle': 'RIM: Meeting Notes', 'sessionId': ID1},
         ])
         write_jsonl(os.path.join(self.proj, ID2 + '.jsonl'), [
-            {'type': 'user', 'cwd': '/Users/k/other', 'message': {'role': 'user', 'content': '名前なしの質問'}},
+            {'type': 'user', 'cwd': '/Users/k/other', 'message': {'role': 'user', 'content': 'unnamed question'}},
         ])
         store.save(store.Store(folded=['RIM']), path=self.store_path)
 
@@ -67,9 +67,9 @@ class TestScanOutput(JsonoutTestBase):
 
         s1 = by_id[ID1]
         self.assertEqual(s1['agent'], 'claude')
-        self.assertEqual(s1['name'], 'RIM: 議事メモ作成')
+        self.assertEqual(s1['name'], 'RIM: Meeting Notes')
         self.assertEqual(s1['group'], 'RIM')
-        self.assertEqual(s1['label'], '議事メモ作成')
+        self.assertEqual(s1['label'], 'Meeting Notes')
         self.assertEqual(s1['cwd'], '/Users/k/vault')
         self.assertEqual(s1['folder'], 'vault')
         self.assertFalse(s1['child'])
@@ -79,7 +79,7 @@ class TestScanOutput(JsonoutTestBase):
         s2 = by_id[ID2]
         self.assertIsNone(s2['name'])
         self.assertIsNone(s2['group'])
-        self.assertEqual(s2['label'], '名前なしの質問')
+        self.assertEqual(s2['label'], 'unnamed question')
 
         self.assertEqual(out['store']['folded'], ['RIM'])
         self.assertEqual(out['store']['archived'], [])
@@ -104,13 +104,13 @@ class TestDetailOutput(JsonoutTestBase):
     def test_returns_last_user_and_assistant(self):
         write_jsonl(os.path.join(self.proj, ID1 + '.jsonl'), [
             {'type': 'user', 'timestamp': '2026-09-01T00:00:00Z',
-             'message': {'role': 'user', 'content': 'こんにちは'}},
+             'message': {'role': 'user', 'content': 'hello'}},
             {'type': 'assistant', 'timestamp': '2026-09-01T00:00:01Z',
-             'message': {'role': 'assistant', 'content': [{'type': 'text', 'text': 'はい'}]}},
+             'message': {'role': 'assistant', 'content': [{'type': 'text', 'text': 'yes'}]}},
         ])
         out = jsonout.detail_output(ID1)
-        self.assertEqual(out['last_user'], 'こんにちは')
-        self.assertEqual(out['last_assistant'], 'はい')
+        self.assertEqual(out['last_user'], 'hello')
+        self.assertEqual(out['last_assistant'], 'yes')
         self.assertEqual(out['tools'], [])
         self.assertIsNone(out['last_command'])
 
@@ -201,9 +201,10 @@ class TestLiveOutput(JsonoutTestBase):
         self.assertEqual(out['daemon'], {'running': False, 'sessions': []})
 
     def test_waiting_session_includes_waiting_for(self):
-        # claude 自身が AskUserQuestion・許可プロンプト等で書く status/waitingFor（T-77）。
-        # ps の cmdline に "claude" が無い（このテストプロセス自身の pid の）ので、
-        # `_claude_pids` を None にして `_alive` だけの判定に落とす。
+        # Claude itself writes status/waitingFor when it's blocked on something like
+        # AskUserQuestion or a permission prompt. This test uses its own process's pid,
+        # so `ps` won't show "claude" in its cmdline; patch `_claude_pids` to return
+        # None so the check falls back to `_alive` alone.
         with open(os.path.join(self.sessions_dir, '1.json'), 'w') as f:
             json.dump({'pid': os.getpid(), 'sessionId': ID1, 'status': 'waiting',
                        'waitingFor': 'input needed', 'statusUpdatedAt': 1000}, f)
@@ -211,7 +212,8 @@ class TestLiveOutput(JsonoutTestBase):
         with mock.patch.object(config, 'SOCK_PATH', sock_path), \
                 mock.patch.object(live, '_claude_pids', return_value=None):
             out = jsonout.live_output()
-        self.assertEqual(out['live'][ID1]['status'], '回答待ち')
+        self.assertEqual(out['live'][ID1]['status'], 'waiting')
+        self.assertEqual(out['live'][ID1]['status_label'], i18n.t('status.waiting'))
         self.assertEqual(out['live'][ID1]['waiting_for'], 'input needed')
 
     def test_idle_session_omits_waiting_for(self):
@@ -223,6 +225,8 @@ class TestLiveOutput(JsonoutTestBase):
                 mock.patch.object(live, '_claude_pids', return_value=None):
             out = jsonout.live_output()
         self.assertNotIn('waiting_for', out['live'][ID1])
+        self.assertEqual(out['live'][ID1]['status'], 'idle')
+        self.assertEqual(out['live'][ID1]['status_label'], i18n.t('status.idle'))
 
 
 if __name__ == '__main__':

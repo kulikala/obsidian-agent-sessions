@@ -17,7 +17,7 @@ class Item:
     session: Optional[Session]
     hidden: bool = False
     depth: int = 0
-    count: int = 0                   # group のとき子の数
+    count: int = 0                   # number of children, when kind is 'group'
 
 
 def dw(s: str) -> int:
@@ -42,7 +42,7 @@ _TOKEN_RE = re.compile(r'[A-Za-z0-9_@#/\\.\-:]+|.', re.S)
 
 
 def wrap(text: str, width: int) -> List[str]:
-    """表示幅で折り返す。欧文は語で、和文は字で割る。"""
+    """Wrap by display width. Latin text wraps by word; Japanese text wraps by character."""
     if width <= 0:
         return []
     lines: List[str] = []
@@ -57,7 +57,7 @@ def wrap(text: str, width: int) -> List[str]:
             if cur:
                 lines.append(cur.rstrip())
                 cur = ''
-            while dw(tok) > width:      # 1 語が幅を超えるときは割る
+            while dw(tok) > width:      # break up a single word/token that's wider than the width
                 cut = ''
                 for ch in tok:
                     if dw(cut + ch) > width:
@@ -79,7 +79,7 @@ def _match(filt: str, *texts: str) -> bool:
 
 def build_items(doc: Doc, scanned: Dict[str, Session], show_hidden: bool,
                 other_folded: bool, filt: str) -> List[Item]:
-    # (グループ or None, 個別名, Session, hidden)
+    # (group or None, individual name, Session, hidden)
     entries: List[Tuple[Optional[str], str, Session, bool]] = []
     for r in doc.rows:
         s = scanned.get(r.id)
@@ -108,7 +108,7 @@ def build_items(doc: Doc, scanned: Dict[str, Session], show_hidden: bool,
 
     def group_key(name: str) -> Tuple[float, str]:
         managed = [c for c in groups[name] if not c[2]]
-        src = managed or groups[name]   # 管理中が無ければ非表示（show_hidden のときだけ起こる）
+        src = managed or groups[name]   # fall back to hidden entries if there are no managed ones (only happens when show_hidden is set)
         newest = max((c[1].mtime for c in src), default=0.0)
         return (-newest, name)
 

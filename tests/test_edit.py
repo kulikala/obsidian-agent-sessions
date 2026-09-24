@@ -12,9 +12,10 @@ TIMEOUT = 5.0
 
 
 class FakeServer:
-    """1 接続だけ受けて `respond(req) -> Optional[dict]` の結果を返す偽サーバー。
+    """A fake server that accepts exactly one connection and returns whatever
+    `respond(req) -> Optional[dict]` returns.
 
-    `respond` が `None` を返すと、応答を送らずに接続を閉じる（EOF）。
+    If `respond` returns `None`, the connection is closed without sending a response (EOF).
     """
 
     def __init__(self, respond):
@@ -113,7 +114,7 @@ class EditTest(unittest.TestCase):
         execvp.assert_called_once_with('vi', ['vi', self.file])
 
     def test_eof_falls_back_to_editor(self):
-        server = FakeServer(lambda req: None)   # 応答を送らず閉じる
+        server = FakeServer(lambda req: None)   # closes without sending a response
         self.addCleanup(server.close)
         with mock.patch('os.execvp') as execvp:
             code = self._run(server.sock_path)

@@ -1,14 +1,17 @@
-"""`keybindings.json` から、自分が入れた送信キーの 2 鍵を取り除く（T-83）。
+"""Removes the two submit-key entries this tool adds to `keybindings.json`.
 
-書く側（`enter: chat:newline`・`meta+enter: chat:submit` を足す側）はプラグインの
-`plugin/src/keybindings.ts`（`applySubmitKey`）にしかない——アンインストールだけ
-Python 側から行うので、その取り除きの規則だけをここに移す：値が自分の書いた
-ものと一致する鍵だけを消し、一致しない値の鍵は残して警告を返す。空になった
-`Chat` ブロックは消す。ファイルが無ければ何もしない。
+The write side (adding `enter: chat:newline` / `meta+enter: chat:submit`) only exists
+in the plugin (`plugin/src/keybindings.ts`'s `applySubmitKey`) — uninstalling is the
+only thing the Python side does with this file, so only that removal rule lives here:
+remove a key only if its value still matches what we'd have written, leave a mismatched
+value in place with a warning, and drop an emptied `Chat` block. A no-op if the file
+doesn't exist.
 """
 import json
 import os
 from typing import List, Optional, Tuple
+
+from . import i18n
 
 ENTER_KEYS = {
     'enter': 'chat:newline',
@@ -46,14 +49,16 @@ def _find_chat(data: dict) -> Optional[dict]:
 
 def remove_enter_keys(path: str = DEFAULT_KEYBINDINGS_PATH,
                        dry_run: bool = False) -> Tuple[bool, Optional[str]]:
-    """`ENTER_KEYS` のうち、値が一致するものだけを `Chat` から取り除く。
+    """Removes each of `ENTER_KEYS` from `Chat`, but only where the value still matches.
 
-    戻り値は `(changed, warning)`。`changed` は 1 つでも実際に消したら `True`。
-    `warning` は一致しない値の鍵を残したときの案内（手で直してもらう）。
+    Returns `(changed, warning)`. `changed` is `True` if at least one key was actually
+    removed. `warning` explains that a mismatched key was left in place for the user to
+    fix by hand.
 
-    ファイルが無ければ何もしない（`False, None`）。JSON が壊れている・形が
-    想定と違うときも書かずに `warning` を返す。それ以外は（消す鍵が無くても）
-    `$schema`・`$docs` を補いつつ書き戻す——足す側（`applySubmitKey`）と同じ規則。
+    A no-op (`False, None`) if the file doesn't exist. Also returns a `warning` without
+    writing if the JSON is malformed or not shaped as expected. Otherwise, writes the
+    file back (even if there was nothing to remove), filling in `$schema`/`$docs` if
+    missing — the same rule the write side (`applySubmitKey`) follows.
     """
     try:
         with open(path, encoding='utf-8') as f:
@@ -61,11 +66,11 @@ def remove_enter_keys(path: str = DEFAULT_KEYBINDINGS_PATH,
     except FileNotFoundError:
         return False, None
     except OSError as e:
-        return False, 'keybindings.json を読めない: %s' % e
+        return False, i18n.t('setup.keybindings_unreadable', error=e)
 
     data = _parse(text)
     if data is None:
-        return False, 'keybindings.json が壊れている（手で直す）: %s' % path
+        return False, i18n.t('setup.keybindings_broken', path=path)
 
     if data.get('$schema') is None:
         data['$schema'] = SCHEMA_URL
@@ -92,6 +97,6 @@ def remove_enter_keys(path: str = DEFAULT_KEYBINDINGS_PATH,
 
     warning = None
     if mismatched:
-        warning = ('keybindings.json の Chat に別の値の %s があるので残した（手で直す）'
-                   % '・'.join(mismatched))
+        warning = i18n.t('setup.keybindings_mismatch',
+                         keys=i18n.t('list_separator').join(mismatched))
     return changed, warning

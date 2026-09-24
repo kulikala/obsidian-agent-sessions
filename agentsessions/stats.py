@@ -1,18 +1,21 @@
-"""`agent-sessions json stats`（D-55）。
+"""Backing implementation for `agent-sessions json stats`.
 
-`~/.claude/projects/*/*.jsonl`（サイドチェーンの行も含める）を 10 分バケットで
-集計し、5 時間・7 日のリセット窓ごとの合計を返す。サブエージェントの transcript が
-`<project>/<id>/` 配下（`subagents/` などの下、深さは問わない）にあれば、親セッション
-の id に合算する。
+Aggregates `~/.claude/projects/*/*.jsonl` (including sidechain lines) into 10-minute
+buckets and returns totals for the 5-hour and 7-day reset windows. Sub-agent
+transcripts found under `<project>/<id>/` (anywhere below it, e.g. under
+`subagents/`, at any depth) are rolled up into the parent session's id.
 
-窓は `~/.agents/sessions/status/*.json`（`hooks.record_status` が書く）のうち
-`rate_limits` を持つ最新 mtime のファイルから読む：`end` は `resets_at`（無ければ
-現在時刻）、`start` は `end − 5h／7d`、`used_percentage` は無ければ `None`。
+Windows are read from whichever file under `~/.agents/sessions/status/*.json`
+(written by `hooks.record_status`) has `rate_limits` and the newest mtime: `end`
+comes from `resets_at` (or now, if missing), `start` is `end - 5h/7d`, and
+`used_percentage` is `None` if missing.
 
-ファイルごとに読んだ位置（`offset`）・10 分バケット・直近の `message.id`（重複排除用、
-最大 200 件）を `~/.agents/sessions/stats-cache.json` に持ち越す。transcript は
-追記のみなので、サイズが増えていれば `offset` から続きだけ読む。縮んでいたら
-読み直す。壊れたキャッシュ（ファイル全体・エントリ単位のどちらも）は捨てて読み直す。
+For each file, the read position (`offset`), 10-minute buckets, and the most recent
+`message.id`s (up to 200, for de-duplication) are carried over in
+`~/.agents/sessions/stats-cache.json`. Transcripts are append-only, so if a file has
+grown, only the part after `offset` is read; if it has shrunk, it's read from
+scratch. A corrupted cache (whether the whole file or a single entry) is discarded
+and rebuilt from scratch.
 """
 
 import glob
@@ -26,7 +29,7 @@ from typing import Dict, List, Optional, Tuple
 from . import pricing
 from .scan import UUID_RE
 
-BUCKET_SECONDS = 600          # 10 分
+BUCKET_SECONDS = 600          # 10 minutes
 RECENT_IDS_LIMIT = 200
 FIVE_HOUR_SECONDS = 5 * 3600
 SEVEN_DAY_SECONDS = 7 * 24 * 3600
@@ -47,7 +50,7 @@ def _num(value) -> Optional[float]:
 
 
 def _parse_ts(value) -> Optional[float]:
-    """transcript の `timestamp`（`…Z` の ISO8601・UTC）を epoch 秒にする。"""
+    """Convert a transcript `timestamp` (ISO 8601 UTC, `...Z` suffix) to epoch seconds."""
     if not isinstance(value, str) or not value.endswith('Z'):
         return None
     raw = value[:-1]
@@ -66,14 +69,17 @@ def _empty_totals() -> dict:
     return {'calls': 0, 'input': 0, 'output': 0, 'cache_read': 0, 'cache_create': 0, 'cost': 0.0}
 
 
-# ---- 窓（rate_limits） -----------------------------------------------------
+# ---- Windows (rate_limits) -------------------------------------------------
 
 def _roll_forward(end: float, used_percentage: Optional[float], duration: float, now: float) -> Tuple[float, Optional[float]]:
-    """`end`（`resets_at`）が `now` より過去なら、`duration` ずつ先へ送って「今の窓」の
-    `end` にする（T-74 追補：リセットを過ぎた直後、まだ新しい `rate_limits` が来ていない
-    間は古い窓のまま——「リセットまで 0:00:00」でコストも旧窓のままになっていた）。
-    送ったら `used_percentage` は不明（`None`）にする——新しい `rate_limits` が来るまで
-    分からないため。`end >= now` ならそのまま返す。
+    """If `end` (`resets_at`) is in the past relative to `now`, advance it by whole
+    `duration` steps until it becomes the "current window"'s `end`. Without this,
+    right after a reset -- before a fresh `rate_limits` payload has arrived -- the
+    window would stay stuck on the old one, showing "0:00:00 until reset" while
+    costs kept accumulating against the stale window.
+    Once rolled forward, `used_percentage` is reported as unknown (`None`), since
+    there's no way to know it until a new `rate_limits` payload arrives. If
+    `end >= now`, both values are returned unchanged.
     """
     if end >= now:
         return end, used_percentage
@@ -82,12 +88,13 @@ def _roll_forward(end: float, used_percentage: Optional[float], duration: float,
 
 
 def windows_from_status(status_dir: str, now: float) -> Dict[str, dict]:
-    """`{'five_hour': {'end', 'used_percentage'}, 'seven_day': {...}}`。
+    """Returns `{'five_hour': {'end', 'used_percentage'}, 'seven_day': {...}}`.
 
-    `status_dir` の `*.json` のうち `rate_limits` を持つ最新 mtime のファイルを選ぶ。
-    無い・個別のキーが無ければ `end=now`・`used_percentage=None`。`resets_at` が過去
-    （まだ新しい `rate_limits` が届く前にリセットを過ぎた）なら `_roll_forward` で
-    「今の窓」まで先へ送る。
+    Picks whichever `*.json` file in `status_dir` has `rate_limits` and the newest
+    mtime. If there's no such file, or a specific key is missing, defaults to
+    `end=now`, `used_percentage=None`. If `resets_at` is in the past (the reset
+    happened before a fresh `rate_limits` payload arrived), `_roll_forward` advances
+    it to the current window.
     """
     best_path = None
     best_mtime = -1.0
@@ -132,14 +139,14 @@ def windows_from_status(status_dir: str, now: float) -> Dict[str, dict]:
     return result
 
 
-# ---- transcript の列挙（サブエージェントの合算） ---------------------------
+# ---- Enumerating transcripts (rolling up sub-agents) -----------------------
 
 def list_transcripts_for_stats(projects_dir: str, min_mtime: float) -> List[Tuple[str, str, float]]:
-    """`(path, session_id, mtime)` の一覧。`mtime` が `min_mtime` 未満のものは除く。
+    """A list of `(path, session_id, mtime)`, excluding anything with `mtime` below `min_mtime`.
 
-    トップレベルの `<project>/<uuid>.jsonl` は自分自身の id。`<project>/<uuid>/`
-    配下に（深さを問わず）ある `.jsonl` はすべて親の `<uuid>` に属する
-    （サブエージェントの transcript）。
+    A top-level `<project>/<uuid>.jsonl` uses its own id. Any `.jsonl` found under
+    `<project>/<uuid>/` (at any depth) belongs to the parent `<uuid>` (these are
+    sub-agent transcripts).
     """
     out: List[Tuple[str, str, float]] = []
     for project_dir in glob.glob(os.path.join(projects_dir, '*')):
@@ -177,10 +184,11 @@ def list_transcripts_for_stats(projects_dir: str, min_mtime: float) -> List[Tupl
     return out
 
 
-# ---- 増分キャッシュ ---------------------------------------------------------
+# ---- Incremental cache -------------------------------------------------------
 
 def load_cache(path: str) -> Dict[str, dict]:
-    """無ければ空。壊れていれば無視して空（次の `save_cache` で作り直す）。"""
+    """Empty if the file doesn't exist. If it's corrupted, ignore it and return
+    empty (rebuilt on the next `save_cache`)."""
     if not os.path.exists(path):
         return {}
     try:
@@ -209,7 +217,8 @@ def save_cache(cache: Dict[str, dict], path: str) -> None:
 
 
 def _load_entry(raw_entry) -> Optional[dict]:
-    """壊れた形（型が合わない）なら `None`（呼び出し側は読み直しにする）。"""
+    """Returns `None` if the shape is malformed (wrong types), so the caller re-reads
+    from scratch."""
     if not isinstance(raw_entry, dict):
         return None
     offset = raw_entry.get('offset')
@@ -248,9 +257,10 @@ def _load_entry(raw_entry) -> Optional[dict]:
 
 
 def _update_file_buckets(path: str, raw_entry) -> dict:
-    """`path` を読み、`raw_entry`（前回のキャッシュ。壊れていれば無視）を元に
-    バケット・offset・直近の `message.id` を更新して返す。ファイルは追記のみと
-    みなす：サイズが縮んでいれば読み直し、増えていれば `offset` から続きだけ読む。
+    """Read `path` and, based on `raw_entry` (the previous cache entry; ignored if
+    corrupted), return updated buckets, offset, and recent `message.id`s. The file
+    is assumed to be append-only: if the size has shrunk, it's re-read from scratch;
+    if it has grown, only the part after `offset` is read.
     """
     try:
         st = os.stat(path)
@@ -264,7 +274,7 @@ def _update_file_buckets(path: str, raw_entry) -> dict:
         buckets: Dict[int, dict] = {}
         recent_ids: List[str] = []
     elif loaded['size'] == size and loaded['mtime'] == mtime:
-        # 変化なし：open しない
+        # unchanged: skip opening the file
         return {'mtime': mtime, 'size': size, 'offset': loaded['offset'],
                 'recent_ids': loaded['recent_ids'], 'buckets': loaded['buckets']}
     else:
@@ -279,7 +289,7 @@ def _update_file_buckets(path: str, raw_entry) -> dict:
             f.seek(offset)
             for raw_line in f:
                 if not raw_line.endswith(b'\n'):
-                    break   # 追記の途中かもしれない最終行は次回に回す
+                    break   # the last line might be a partial write in progress; leave it for next time
                 new_offset += len(raw_line)
                 line = raw_line.decode('utf-8', errors='replace').strip()
                 if not line:
@@ -323,7 +333,7 @@ def _update_file_buckets(path: str, raw_entry) -> dict:
             'recent_ids': recent_ids, 'buckets': buckets}
 
 
-# ---- 窓の合計 ---------------------------------------------------------------
+# ---- Window totals -----------------------------------------------------------
 
 def _window_totals(files: List[Tuple[str, str, Dict[int, dict]]],
                     start: float, end: float) -> Tuple[dict, Dict[str, dict]]:
@@ -344,7 +354,7 @@ def _window_totals(files: List[Tuple[str, str, Dict[int, dict]]],
     return total, sessions
 
 
-# ---- 本体 -------------------------------------------------------------------
+# ---- Main entry point ----------------------------------------------------------
 
 def compute(now: float, projects_dir: str, status_dir: str, cache_path: str) -> dict:
     win = windows_from_status(status_dir, now)

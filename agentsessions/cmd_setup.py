@@ -1,7 +1,7 @@
 import sys
 from typing import List
 
-from . import keybindings, setup
+from . import i18n, keybindings, setup
 
 
 def main(args: List[str]) -> int:
@@ -12,7 +12,7 @@ def main(args: List[str]) -> int:
     if '--settings' in args:
         i = args.index('--settings')
         if i + 1 >= len(args):
-            sys.stderr.write('--settings には値が要ります\n')
+            sys.stderr.write(i18n.t('cmd.needs_value', flag='--settings') + '\n')
             return 1
         settings_path = args[i + 1]
 
@@ -20,18 +20,19 @@ def main(args: List[str]) -> int:
     if '--keybindings' in args:
         i = args.index('--keybindings')
         if i + 1 >= len(args):
-            sys.stderr.write('--keybindings には値が要ります\n')
+            sys.stderr.write(i18n.t('cmd.needs_value', flag='--keybindings') + '\n')
             return 1
         keybindings_path = args[i + 1]
 
     changes: List[str]
     if remove:
-        # T-83：settings.json から自分の hooks・statusLine を、keybindings.json から
-        # 自分の送信キー 2 鍵を取り除く（それぞれ他のツールの分はそのまま）。
+        # Removes only our own hooks/statusLine from settings.json, and only our own
+        # two submit-key entries from keybindings.json (leaving other tools' entries
+        # alone either way).
         changes, _ = setup.run_remove(settings_path, dry_run=dry_run)
         kb_changed, kb_warning = keybindings.remove_enter_keys(keybindings_path, dry_run=dry_run)
         if kb_changed:
-            changes.append('keybindings.json: enter・meta+enter を取り除いた')
+            changes.append(i18n.t('setup.keybindings_removed'))
         if kb_warning:
             changes.append('keybindings.json: %s' % kb_warning)
     else:
@@ -41,7 +42,7 @@ def main(args: List[str]) -> int:
         for c in changes:
             sys.stdout.write(c + '\n')
         if dry_run:
-            sys.stdout.write('(--dry-run のため書き込んでいない)\n')
+            sys.stdout.write(i18n.t('cmd.dry_run_note') + '\n')
     else:
-        sys.stdout.write('変更なし\n')
+        sys.stdout.write(i18n.t('cmd.no_changes') + '\n')
     return 0

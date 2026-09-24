@@ -35,13 +35,13 @@ class PriceOfTest(unittest.TestCase):
                 self.assertFalse(p['estimated'])
 
     def test_ids_match_by_forward_prefix_with_suffix(self):
-        # 実際のモデル ID は日付などが後ろに付くことがある
+        # Real model IDs sometimes have a date suffix appended
         p = pricing.price_of('claude-sonnet-5-20260101')
         self.assertEqual(p['input'], 2)
         self.assertEqual(p['output'], 10)
 
     def test_longer_prefix_wins_over_shorter_one(self):
-        # claude-opus-4-1 は claude-opus-4 より長く、両方が前方一致しうる
+        # claude-opus-4-1 is longer than claude-opus-4, and both could match as a prefix
         p = pricing.price_of('claude-opus-4-1-20260101')
         self.assertEqual(p['input'], 15)
         self.assertEqual(p['output'], 75)
@@ -51,7 +51,7 @@ class PriceOfTest(unittest.TestCase):
         self.assertEqual(p2['input'], 15)
         self.assertEqual(p2['cache_read'], 1.5)
 
-        # claude-fable-5-1 は claude-fable-5 より長い接頭辞を持つ
+        # claude-fable-5-1 has a longer prefix than claude-fable-5
         p3 = pricing.price_of('claude-fable-5-1-20260101')
         self.assertEqual(p3['cache_read'], 0.25)
 
@@ -84,7 +84,7 @@ class CostTest(unittest.TestCase):
             'cache_read_input_tokens': 1_000_000,
         }
         c = pricing.cost(usage, 'claude-sonnet-5')
-        # 2 + 10 + 0.2 = 12.2 ドル
+        # 2 + 10 + 0.2 = $12.2
         self.assertAlmostEqual(c, 12.2)
 
     def test_cache_creation_without_1h_is_priced_at_5m(self):

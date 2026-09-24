@@ -9,7 +9,7 @@ from agentsessions import config
 
 
 class TestResolveVault(unittest.TestCase):
-    """T-80: env AGENT_SESSIONS_VAULT → ~/.agents/sessions/vault.json → None。"""
+    """Resolution order: env AGENT_SESSIONS_VAULT -> ~/.agents/sessions/vault.json -> None."""
 
     def setUp(self):
         self.tmp = tempfile.mkdtemp()

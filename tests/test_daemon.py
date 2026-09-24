@@ -16,7 +16,7 @@ MIB = 1024 * KIB
 
 
 class Client:
-    """テスト用の同期クライアント。応答以外のフレームは `events` に貯める。"""
+    """Synchronous test client. Frames other than the one being waited for are queued in `events`."""
 
     def __init__(self, sock_path):
         self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -39,7 +39,7 @@ class Client:
         self.send_raw(protocol.encode(protocol.FRAME_D, data))
 
     def frame(self):
-        """次のフレームを 1 つ返す（`events` に貯まっていればそれから）。"""
+        """Return the next single frame (from `events` first, if any are already queued)."""
         while not self.events:
             data = self.sock.recv(65536)
             if not data:
@@ -74,7 +74,7 @@ class Client:
         raise TimeoutError('no event %s' % ev)
 
     def read_output(self, until, kinds=(protocol.FRAME_D,)):
-        """`D`（既定）を `until(bytes)` が真になるまで集める。"""
+        """Collect `D` frames (the default `kinds`) until `until(bytes)` returns true."""
         got = bytearray()
         deadline = time.monotonic() + TIMEOUT
         while time.monotonic() < deadline:
@@ -86,7 +86,7 @@ class Client:
         raise TimeoutError('output: %r' % bytes(got[:200]))
 
     def collect(self, seconds):
-        """`seconds` のあいだに届いた `D` を集める（届かなくても例外にしない）。"""
+        """Collect whatever `D` frames arrive within `seconds` (doesn't raise if none arrive)."""
         got = bytearray()
         deadline = time.monotonic() + seconds
         self.sock.settimeout(0.05)
@@ -103,7 +103,7 @@ class Client:
         return bytes(got)
 
     def replay(self):
-        """attach の直後の `R`… → `replayed` を集めて再生バイト列を返す。"""
+        """Collect the `R` frames right after attach, up through the `replayed` event, and return the replayed bytes."""
         got = bytearray()
         deadline = time.monotonic() + TIMEOUT
         while time.monotonic() < deadline:
@@ -178,9 +178,10 @@ class TestBasics(DaemonTestCase):
         st = os.stat(self.h.sock_path)
         self.assertTrue(stat.S_ISSOCK(st.st_mode))
         self.assertEqual(stat.S_IMODE(st.st_mode), 0o600)
-        # pid は bind() ではなく serve_forever()（別スレッド）が書く（--detach では fork
-        # 後の子の pid を書くため、bind() の時点ではまだ確定しない）。スレッドの起動が
-        # 遅い環境（CPU を絞ったコンテナ等）向けに、書かれるまで少し待つ。
+        # The pid file is written by serve_forever() (on its own thread), not by bind()
+        # -- with --detach it needs to record the forked child's pid, which isn't known
+        # yet at bind() time. Wait a little for it to be written, to tolerate
+        # environments where thread startup is slow (e.g. CPU-throttled containers).
         pid_path = os.path.join(self.tmpdir, 'daemon.pid')
         deadline = time.monotonic() + TIMEOUT
         content = ''
@@ -234,7 +235,7 @@ class TestSessions(DaemonTestCase):
         self.assertEqual(res, {'ok': True, 'seq': 2, 'exited': None})
         self.assertEqual(c.replay(), b'')
         c.write(b'hello\n')
-        out = c.read_output(lambda b: b.count(b'hello') >= 2)   # tty のエコー + cat
+        out = c.read_output(lambda b: b.count(b'hello') >= 2)   # tty echo + cat's own output
         self.assertIn(b'hello', out)
         rows = c.request('list')['sessions']
         self.assertEqual(len(rows), 1)
@@ -280,12 +281,12 @@ class TestSessions(DaemonTestCase):
         a.replay()
         b.request('attach', id='sz', cols=70, rows=45)
         b.replay()
-        time.sleep(0.2)   # 再生後の「1 行減らして戻す」が終わるのを待つ
+        time.sleep(0.2)   # wait for the post-replay "shrink one row then restore" resize to finish
         a.write(b'\n')
         out = a.read_output(lambda o: b'70' in o)
         self.assertIn(b'30 70', out)
         self.assertEqual(a.request('list')['sessions'][0]['clients'], 2)
-        # b が外れると a のサイズに戻る（resize でも同じ経路）
+        # When b detaches, it reverts to a's size (goes through the same path as an explicit resize)
         b.request('detach')
         self.assertEqual(a.request('list')['sessions'][0]['clients'], 1)
         self.assertEqual(self.h.daemon.sessions['sz'].cols, 100)
@@ -300,16 +301,16 @@ class TestSessions(DaemonTestCase):
                         argv=['/bin/sh', '-c', 'trap "echo WINCH" WINCH; while :; do sleep 0.1; done'],
                         env={'PATH': '/usr/bin:/bin'}, cols=80, rows=24)
         self.assertTrue(res['ok'])
-        time.sleep(0.2)   # trap が置かれるのを待つ
+        time.sleep(0.2)   # wait for the trap to be installed
         a.request('attach', id='w', cols=80, rows=24)
         a.replay()
         self.assertNotIn(b'WINCH', a.collect(0.4))
         a.request('detach')
-        a.request('attach', id='w', cols=80, rows=24)   # 同じサイズで再 attach
+        a.request('attach', id='w', cols=80, rows=24)   # re-attach at the same size
         a.replay()
         self.assertNotIn(b'WINCH', a.collect(0.4))
         b = self.h.client()
-        b.request('attach', id='w', cols=80, rows=20)   # サイズが変わる attach では再描画する
+        b.request('attach', id='w', cols=80, rows=20)   # an attach at a different size triggers a redraw
         b.replay()
         self.assertIn(b'WINCH', a.collect(0.6))
         self.assertEqual((self.h.daemon.sessions['w'].cols, self.h.daemon.sessions['w'].rows), (80, 20))
@@ -341,7 +342,7 @@ class TestSessions(DaemonTestCase):
         row = c.request('list')['sessions'][0]
         self.assertEqual(row['exited'], ev['code'])
         self.assertIsInstance(row['exitedAt'], float)
-        # 終了済みへの attach：再生 → replayed → exit
+        # Attaching to an already-exited session: replay -> replayed -> exit
         res = c.request('attach', id='s1', cols=80, rows=24)
         self.assertEqual(res['exited'], ev['code'])
         c.replay()
@@ -425,7 +426,7 @@ class TestExitedFile(unittest.TestCase):
             h.stop()
         with open(self.path, encoding='utf-8') as f:
             saved = json.load(f)
-        self.assertEqual(list(saved), ['gone'])      # 終了に伴って kill した alive は書かない
+        self.assertEqual(list(saved), ['gone'])      # 'alive', killed as part of shutdown, isn't recorded
         self.assertEqual(saved['gone']['code'], 7)
         self.assertIsInstance(saved['gone']['exitedAt'], float)
 
@@ -436,7 +437,7 @@ class TestExitedFile(unittest.TestCase):
             self.assertEqual([(r['id'], r['exited']) for r in rows], [('gone', 7)])
             res = c.request('attach', id='gone', cols=80, rows=24)
             self.assertEqual(res['exited'], 7)
-            self.assertEqual(c.replay(), b'')          # バッファは持ち越さない
+            self.assertEqual(c.replay(), b'')          # the output buffer isn't carried across a daemon restart
             self.assertEqual(c.wait_event('exit')['code'], 7)
             self.assertTrue(c.request('forget', id='gone')['ok'])
             h2.shutdown_via_op()

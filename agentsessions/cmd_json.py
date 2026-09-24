@@ -3,7 +3,7 @@ import sys
 from datetime import datetime, timezone
 from typing import List
 
-from . import jsonout
+from . import i18n, jsonout
 
 
 def _print(obj) -> None:
@@ -11,7 +11,7 @@ def _print(obj) -> None:
 
 
 def _parse_iso(value: str) -> float:
-    """ISO8601 を epoch 秒にする。タイムゾーンが無ければ UTC とみなす。"""
+    """Converts ISO8601 to epoch seconds. Assumes UTC when there's no timezone."""
     v = value.strip()
     if v.endswith('Z'):
         v = v[:-1] + '+00:00'
@@ -23,7 +23,7 @@ def _parse_iso(value: str) -> float:
 
 def main(args: List[str]) -> int:
     if not args:
-        sys.stderr.write('usage: agent-sessions json scan|live|detail|usage|stats ...\n')
+        sys.stderr.write(i18n.t('cmd.json_usage') + '\n')
         return 2
     sub, rest = args[0], args[1:]
 
@@ -33,7 +33,7 @@ def main(args: List[str]) -> int:
             i = rest.index('--only')
             only = rest[i + 1:]
             if not only:
-                sys.stderr.write('--only には ID が要ります\n')
+                sys.stderr.write(i18n.t('cmd.json_id_needs_value') + '\n')
                 return 2
         _print(jsonout.scan_output(only=only))
         return 0
@@ -44,14 +44,14 @@ def main(args: List[str]) -> int:
 
     if sub == 'detail':
         if not rest:
-            sys.stderr.write('usage: agent-sessions json detail ID\n')
+            sys.stderr.write(i18n.t('cmd.json_detail_usage') + '\n')
             return 2
         _print(jsonout.detail_output(rest[0]))
         return 0
 
     if sub == 'usage':
         if not rest:
-            sys.stderr.write('usage: agent-sessions json usage ID [--from ISO] [--to ISO]\n')
+            sys.stderr.write(i18n.t('cmd.json_usage_usage') + '\n')
             return 2
         session_id, opts = rest[0], rest[1:]
         from_ts = None
@@ -63,7 +63,7 @@ def main(args: List[str]) -> int:
                 try:
                     value = _parse_iso(opts[i + 1])
                 except ValueError:
-                    sys.stderr.write('bad ISO8601: %s\n' % opts[i + 1])
+                    sys.stderr.write(i18n.t('cmd.json_bad_iso', value=opts[i + 1]) + '\n')
                     return 2
                 if opt == '--from':
                     from_ts = value
@@ -71,7 +71,7 @@ def main(args: List[str]) -> int:
                     to_ts = value
                 i += 2
             else:
-                sys.stderr.write('unknown option: %s\n' % opt)
+                sys.stderr.write(i18n.t('cmd.json_unknown_option', option=opt) + '\n')
                 return 2
         _print(jsonout.usage_output(session_id, from_ts=from_ts, to_ts=to_ts))
         return 0
@@ -80,5 +80,5 @@ def main(args: List[str]) -> int:
         _print(jsonout.stats_output())
         return 0
 
-    sys.stderr.write('unknown json subcommand: %s\n' % sub)
+    sys.stderr.write(i18n.t('cmd.json_unknown_subcommand', sub=sub) + '\n')
     return 2

@@ -1,4 +1,4 @@
-"""`~/.claude/settings.json` の hooks・statusLine を整える（D-2, D-6 §5）。"""
+"""Sets up (and tears down) the hooks and statusLine in `~/.claude/settings.json`."""
 
 import copy
 import json
@@ -6,15 +6,18 @@ import os
 import time
 from typing import List, Optional, Tuple
 
+from . import i18n
+
 DEFAULT_SETTINGS_PATH = os.path.expanduser('~/.claude/settings.json')
 
 _OLD_HOOK_MARKERS = ('bin/cs" hook', 'bin/cs hook')
 _NEW_HOOK_COMMAND = '"$HOME/bin/agent-sessions" hook'
 _NEW_STATUS_LINE = {'type': 'command', 'command': '"$HOME/bin/agent-sessions" status'}
-# (event, matcher)。`SessionStart` は `compact`（`/compact`・自動の文脈圧縮の両方が
-# この値。T-77 追補：compacted の印の「入る」）に絞る——`Stop`・`SessionEnd` は元々
-# 個別のマッチャーを持たない催しなので `.*`。`UserPromptSubmit`（同追補：印の「出る」）も
-# マッチャー非対応なので `.*`。
+# (event, matcher). `SessionStart` is restricted to `compact` (both `/compact` and
+# automatic context compaction use this value; this is how the "just compacted" marker
+# gets set) — `Stop`/`SessionEnd` don't have per-event matchers of their own, so `.*`.
+# `UserPromptSubmit` (which clears that same marker) doesn't support a matcher either,
+# so also `.*`.
 _HOOK_EVENTS = (
     ('Stop', '.*'),
     ('SessionEnd', '.*'),
@@ -42,14 +45,16 @@ def _update_hook_event(hooks_obj: dict, event: str, matcher: str) -> List[str]:
                 continue
             command = h.get('command')
             if _is_old_hook_command(command):
-                changes.append('hooks.%s: %r → %r' % (event, command, _NEW_HOOK_COMMAND))
+                changes.append(i18n.t('setup.hook_migrated', event=event, old=command,
+                                       new=_NEW_HOOK_COMMAND))
                 h['command'] = _NEW_HOOK_COMMAND
                 already_current = True
             elif command == _NEW_HOOK_COMMAND and entry.get('matcher') == matcher:
                 already_current = True
     if not already_current:
         entries.append({'matcher': matcher, 'hooks': [{'type': 'command', 'command': _NEW_HOOK_COMMAND}]})
-        changes.append('hooks.%s: 追加 matcher=%s %s' % (event, matcher, _NEW_HOOK_COMMAND))
+        changes.append(i18n.t('setup.hook_added', event=event, matcher=matcher,
+                               command=_NEW_HOOK_COMMAND))
     return changes
 
 
@@ -67,11 +72,11 @@ def _update_status_line(settings: dict) -> Optional[str]:
     if not _is_old_status_line(current):
         return None
     settings['statusLine'] = dict(_NEW_STATUS_LINE)
-    return 'statusLine: %r → %r' % (current, _NEW_STATUS_LINE)
+    return i18n.t('setup.status_line_set', old=current, new=_NEW_STATUS_LINE)
 
 
 def compute_changes(settings: dict) -> List[str]:
-    """`settings` をその場で書き換え、変更点の説明文のリストを返す。"""
+    """Rewrites `settings` in place, returning the list of change descriptions."""
     hooks_obj = settings.get('hooks')
     if not isinstance(hooks_obj, dict):
         hooks_obj = {}
@@ -86,10 +91,11 @@ def compute_changes(settings: dict) -> List[str]:
 
 
 def _remove_hook_event(hooks_obj: dict, event: str) -> List[str]:
-    """`event` の entries から、自分の hook（`_NEW_HOOK_COMMAND`）だけを取り除く（T-83）。
+    """Removes only our own hook (`_NEW_HOOK_COMMAND`) from `event`'s entries.
 
-    hooks が空になった entry は消す。entries が空になれば `hooks_obj` からそのキー自体を
-    消す。他のツールが入れた hook・他の matcher の entry はそのまま残す。
+    An entry left with no hooks is dropped; if that empties `event`'s entries, the key
+    itself is removed from `hooks_obj`. A hook some other tool added, or an entry for a
+    different matcher, is left alone.
     """
     changes: List[str] = []
     entries = hooks_obj.get(event)
@@ -109,9 +115,9 @@ def _remove_hook_event(hooks_obj: dict, event: str) -> List[str]:
             new_entry = dict(entry)
             new_entry['hooks'] = kept
             new_entries.append(new_entry)
-        # kept が空なら entry ごと省く。
+        # An entry left with no `kept` hooks is simply not re-added.
     if removed:
-        changes.append('hooks.%s: %s を取り除いた' % (event, _NEW_HOOK_COMMAND))
+        changes.append(i18n.t('setup.hook_removed', event=event, command=_NEW_HOOK_COMMAND))
     if new_entries:
         hooks_obj[event] = new_entries
     elif event in hooks_obj:
@@ -123,14 +129,15 @@ def _remove_status_line(settings: dict) -> Optional[str]:
     current = settings.get('statusLine')
     if isinstance(current, dict) and current.get('command') == _NEW_STATUS_LINE['command']:
         del settings['statusLine']
-        return 'statusLine: %r を取り除いた' % current
+        return i18n.t('setup.status_line_removed', old=current)
     return None
 
 
 def compute_removal(settings: dict) -> List[str]:
-    """`compute_changes` の逆（T-83）。`settings` をその場で書き換え、自分が入れた
-    hooks・statusLine だけを取り除いた変更点の説明文のリストを返す。他のフック・
-    他の statusLine には触れない。何も入っていなければ変更なし（冪等）。"""
+    """The inverse of `compute_changes`: rewrites `settings` in place, returning change
+    descriptions for only the hooks and statusLine this tool itself added. Leaves other
+    hooks and any other statusLine alone. A no-op (empty result) when there's nothing of
+    ours to remove — this makes `run_remove` idempotent."""
     changes: List[str] = []
     hooks_obj = settings.get('hooks')
     if isinstance(hooks_obj, dict):
@@ -145,9 +152,10 @@ def compute_removal(settings: dict) -> List[str]:
 
 
 def run_remove(settings_path: str = DEFAULT_SETTINGS_PATH, dry_run: bool = False) -> Tuple[List[str], dict]:
-    """`run()` の逆（T-83）。`settings_path` を読み、自分が `run()` で入れた hooks・
-    statusLine だけを取り除く。`settings_path` が無ければ何もしない（`([], {})`）。
-    変更があれば `run()` と同じ形式で backup してから書く。"""
+    """The inverse of `run()`: reads `settings_path` and removes only the hooks and
+    statusLine that `run()` itself added. A no-op (`([], {})`) if `settings_path`
+    doesn't exist. Backs up first, the same way `run()` does, if there's anything to
+    change."""
     if not os.path.exists(settings_path):
         return [], {}
     with open(settings_path, 'r', encoding='utf-8') as f:
@@ -173,9 +181,10 @@ def run_remove(settings_path: str = DEFAULT_SETTINGS_PATH, dry_run: bool = False
 
 
 def run(settings_path: str = DEFAULT_SETTINGS_PATH, dry_run: bool = False) -> Tuple[List[str], dict]:
-    """`settings_path` を読み、変更点を計算する。`dry_run` でなければ backup を残して書き込む。
+    """Reads `settings_path` and computes the changes. Unless `dry_run`, backs up the
+    original and writes the result.
 
-    戻り値は (変更点の説明文のリスト, 新しい settings)。
+    Returns `(change descriptions, the new settings)`.
     """
     existed = os.path.exists(settings_path)
     settings = {}

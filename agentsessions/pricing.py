@@ -1,16 +1,18 @@
-"""モデルごとの単価表とコスト計算（D-40）。
+"""Per-model pricing table and cost calculation.
 
-単価は $/MTok（100 万トークンあたりのドル）。モデル ID の前方一致で引き、
-複数の候補が一致したときは一致した接頭辞が長い方を選ぶ。cache 作成は
-5 分単位＝入力単価×1.25、1 時間単位＝入力単価×2 が基本だが、cache 読出は
-表の値をそのまま使う（`claude-fable-5-1`・`claude-mythos-5-1`・
-`claude-3-haiku` は入力単価×0.1 の原則から外れる例外）。
-未知のモデルは `claude-opus-5` の単価を使い、`estimated: True` を返す。
+Prices are in $/MTok (dollars per million tokens). Looked up by prefix match against
+the model ID; when multiple prefixes match, the longest one wins. Cache-creation
+tokens are generally priced at the input price x 1.25 for the 5-minute tier and
+input price x 2 for the 1-hour tier, but cache-read tokens use the table value
+directly (`claude-fable-5-1`, `claude-mythos-5-1`, and `claude-3-haiku` are
+exceptions to the "input price x 0.1" rule of thumb for cache reads).
+Unknown models fall back to `claude-opus-5` pricing and are reported as
+`estimated: True`.
 """
 
 from typing import Dict, Optional, Sequence, Tuple
 
-# (前方一致の接頭辞たち, 入力, 出力, cache 読出)。すべて $/MTok。
+# (prefixes to match, input, output, cache read). All in $/MTok.
 PRICES: Tuple[Tuple[Sequence[str], float, float, float], ...] = (
     (('claude-fable-5-1', 'claude-mythos-5-1'), 10, 50, 0.25),
     (('claude-fable-5', 'claude-mythos-5'), 10, 50, 1.0),
@@ -25,16 +27,16 @@ PRICES: Tuple[Tuple[Sequence[str], float, float, float], ...] = (
     (('claude-3-haiku',), 0.25, 1.25, 0.03),
 )
 
-# 未知のモデルはこれ（`claude-opus-5` の単価）で見積もる。
+# Unknown models are estimated using these (claude-opus-5's prices).
 _UNKNOWN_INPUT, _UNKNOWN_OUTPUT, _UNKNOWN_CACHE_READ = 5, 25, 0.5
 
 MTOK = 1_000_000
 
 
 def price_of(model: Optional[str]) -> Dict[str, float]:
-    """`model` の単価を返す：`{input, output, cache_5m, cache_1h, cache_read,
-    estimated}`（$/MTok）。前方一致した接頭辞が最長のものを選ぶ。一致が
-    無ければ `claude-opus-5` の単価で `estimated: True`。"""
+    """Return `model`'s prices: `{input, output, cache_5m, cache_1h, cache_read,
+    estimated}` (all in $/MTok). Picks the longest matching prefix. If nothing
+    matches, falls back to `claude-opus-5` pricing with `estimated: True`."""
     best_len = -1
     best = None
     if isinstance(model, str) and model:
@@ -70,10 +72,11 @@ def _num(value) -> float:
 
 
 def cost(usage: dict, model: Optional[str]) -> float:
-    """`usage`（transcript の `message.usage`）と `model` から $ のコストを返す。
+    """Return the cost in dollars given `usage` (a transcript's `message.usage`) and `model`.
 
-    `cache_creation.ephemeral_1h_input_tokens` があればその分は 1 時間単価、
-    残りの `cache_creation_input_tokens` は 5 分単価で計算する。
+    If `cache_creation.ephemeral_1h_input_tokens` is present, that portion is priced
+    at the 1-hour rate; the rest of `cache_creation_input_tokens` is priced at the
+    5-minute rate.
     """
     if not isinstance(usage, dict):
         return 0.0

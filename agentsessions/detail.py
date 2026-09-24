@@ -1,4 +1,4 @@
-"""transcript の末尾から、直近のやり取り（ユーザーの指示・Claude の応答）を読む。"""
+"""Read the most recent exchange (user instruction / Claude's response) from the end of a transcript."""
 import json
 import re
 from dataclasses import dataclass
@@ -6,15 +6,15 @@ from typing import List, Optional
 
 from .scan import TAIL_CHUNK, iter_tail_lines
 
-DETAIL_LIMIT = 1 << 25          # 末尾から遡る上限（32 MiB。長い transcript でも直近の指示に届く）
-MAX_CHARS = 1200                # パネルに渡す 1 本あたりの上限
-# 中身ごと落とすブロック（機械が差し込む注意書き・コマンド出力）
+DETAIL_LIMIT = 1 << 25          # max bytes to scan backward from the end (32 MiB, enough to reach the most recent instruction even in a long transcript)
+MAX_CHARS = 1200                # max characters passed to the panel per entry
+# Blocks to drop entirely (machine-inserted notices, command output)
 _TAG_RE = re.compile(r'[ \t]*<(system-reminder|local-command-stdout|local-command-caveat)>'
                      r'.*?</\1>[ \t]*\n?', re.S)
 _BOLD_RE = re.compile(r'\*\*(.+?)\*\*', re.S)
 _LONE_TAG_RE = re.compile(r'</?[a-z][a-z0-9-]*(?:\s[^>]*)?>')
 _COMMAND_NAME_RE = re.compile(r'<command-name>\s*(/\S+)\s*</command-name>')
-# origin の無い古い transcript 向け。人間が打っていない user 行の出だし
+# For old transcripts without an `origin` field. Prefixes of user lines that weren't typed by a human
 NOT_HUMAN_PREFIXES = (
     'Another Claude session sent a message:',
     'This session is being continued from a previous conversation',
@@ -27,10 +27,10 @@ NOT_HUMAN_PREFIXES = (
 
 @dataclass
 class Detail:
-    last_user: str = ''         # 直近のユーザーの指示
-    last_assistant: str = ''    # 直近の Claude の応答（テキストのあるもの）
-    tools: List[str] = None     # 直近の応答で呼んだツール名
-    last_command: Optional[str] = None   # 直近のスラッシュコマンド名（引数は含めない）
+    last_user: str = ''         # most recent user instruction
+    last_assistant: str = ''    # most recent Claude response (one that has text)
+    tools: List[str] = None     # names of tools called in the most recent response
+    last_command: Optional[str] = None   # most recent slash command name (no arguments)
 
     def __post_init__(self):
         if self.tools is None:
@@ -38,10 +38,10 @@ class Detail:
 
 
 def clean_text(s: str) -> str:
-    """<system-reminder> などの機械的な差し込みを落として読める形にする。"""
+    """Strip machine-inserted content like <system-reminder> to make the text readable."""
     s = _TAG_RE.sub('', s)
     s = _LONE_TAG_RE.sub('', s)
-    s = _BOLD_RE.sub(r'\1', s)      # パネルでは強調記号を落とす
+    s = _BOLD_RE.sub(r'\1', s)      # drop emphasis markers for the panel
     lines = [ln.rstrip() for ln in s.splitlines()]
     out: List[str] = []
     for ln in lines:
@@ -53,7 +53,8 @@ def clean_text(s: str) -> str:
 
 
 def is_human_prompt(rec: dict, raw: str) -> bool:
-    """人間が打った指示か。新しい transcript は origin、古いものは出だしで見る。"""
+    """Whether this is an instruction a human typed. Newer transcripts use `origin`;
+    older ones are judged by their opening text."""
     origin = rec.get('origin')
     if isinstance(origin, dict) and origin.get('kind'):
         return origin['kind'] == 'human'
@@ -64,7 +65,7 @@ def is_human_prompt(rec: dict, raw: str) -> bool:
 
 
 def _texts_and_tools(content):
-    """(テキスト, ツール名リスト)。thinking・tool_result は捨てる。"""
+    """(text, list of tool names). Discards thinking and tool_result blocks."""
     if isinstance(content, str):
         return content, []
     texts, tools = [], []
@@ -80,10 +81,10 @@ def _texts_and_tools(content):
 
 
 def _extract_command(raw_text: str) -> Optional[str]:
-    """`raw_text`（`clean_text` を通す前の本文）からスラッシュコマンド名だけを
-    取り出す（引数は含めない）。`<command-name>/xxx</command-name>` があれば
-    それを、無ければ `clean_text` した本文が `/` で始まるときの先頭の語を使う。
-    どちらも無ければ None。"""
+    """Extract just the slash command name (no arguments) from `raw_text` (the body
+    before it's run through `clean_text`). Uses `<command-name>/xxx</command-name>` if
+    present; otherwise, if the `clean_text`-ed body starts with `/`, uses its first
+    word. Returns None if neither applies."""
     m = _COMMAND_NAME_RE.search(raw_text)
     if m:
         return m.group(1)
@@ -94,10 +95,10 @@ def _extract_command(raw_text: str) -> Optional[str]:
 
 
 def read_detail(path: str, chunk: int = TAIL_CHUNK, limit: int = DETAIL_LIMIT) -> Detail:
-    """末尾から遡って直近のユーザー発言と Claude の応答を 1 本ずつ、直近の
-    スラッシュコマンド名（`last_command`）を 1 つ拾う。`last_user`・
-    `last_assistant` が両方見つかった後も、`last_command` がまだなら
-    `limit` まで遡り続ける。"""
+    """Walk backward from the end and collect the most recent user message and Claude
+    response (one each), plus one most recent slash command name (`last_command`).
+    Even after both `last_user` and `last_assistant` are found, keeps scanning back up
+    to `limit` if `last_command` is still missing."""
     d = Detail()
     tools: List[str] = []
     seen: set = set()
@@ -121,7 +122,7 @@ def read_detail(path: str, chunk: int = TAIL_CHUNK, limit: int = DETAIL_LIMIT) -
                 continue
             if text.strip():
                 d.last_assistant = clean_text(text)
-                d.tools = tools          # 応答より後に呼んだツール＝いま動いている手
+                d.tools = tools          # tools called after the response = what's currently running
             else:
                 fresh = [t for t in used if t not in seen]
                 seen.update(fresh)

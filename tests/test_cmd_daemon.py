@@ -1,4 +1,4 @@
-"""`agent-sessions daemon --running-count` / `--stop`（T-83。`uninstall.sh` が使う）。"""
+"""Tests for `agent-sessions daemon --running-count` / `--stop`, used by `uninstall.sh`."""
 import io
 import os
 import shutil
@@ -44,7 +44,7 @@ class CmdDaemonTestCase(unittest.TestCase):
 
 class TestNoDaemonRunning(CmdDaemonTestCase):
     def test_running_count_is_zero_when_nothing_is_listening(self):
-        sock_path = os.path.join(self.tmpdir, 'daemon.sock')  # 何も bind していない
+        sock_path = os.path.join(self.tmpdir, 'daemon.sock')  # nothing is bound to it
         rc, out = self._run(['--running-count', '--sock', sock_path])
         self.assertEqual(rc, 0)
         self.assertEqual(out, '0\n')
@@ -108,7 +108,7 @@ class TestWithRunningDaemon(CmdDaemonTestCase):
 
         rc, out = self._run(['--running-count', '--sock', self.harness.sock_path])
         self.assertEqual(rc, 0)
-        self.assertEqual(out, '0\n')  # 終了済みは数えない
+        self.assertEqual(out, '0\n')  # exited sessions aren't counted
         sock.close()
 
     def test_stop_shuts_the_daemon_down(self):

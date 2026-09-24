@@ -1,7 +1,8 @@
-"""`scan()` の走査キャッシュ（`CACHE_PATH`。§5「キャッシュ」）。
+"""Scan cache used by `scan()` (`CACHE_PATH`).
 
-`path → {mtime, size, head, last_activity}`。`scan()` は読む前にこれと照合し、
-`mtime`・`size` が一致すれば `read_head_info`・`read_last_activity` を呼ばない。
+Maps `path → {mtime, size, head, last_activity}`. Before reading a file,
+`scan()` checks it against this cache, and skips calling `read_head_info`
+and `read_last_activity` when `mtime` and `size` both match.
 """
 
 import json
@@ -13,7 +14,8 @@ from . import config
 
 
 def load(path: str = config.CACHE_PATH) -> Dict[str, dict]:
-    """無ければ空。壊れていれば無視して空（次の `save` で作り直す）。"""
+    """Returns empty if the file doesn't exist. If it's corrupt, ignores it
+    and returns empty too (the next `save` call rebuilds it)."""
     if not os.path.exists(path):
         return {}
     try:

@@ -1,4 +1,4 @@
-"""`sessions.json` の読み書きとロック（D-3, §3.1）。"""
+"""Reading, writing, and locking for `sessions.json`."""
 
 import json
 import os
@@ -17,9 +17,10 @@ class Store:
     archived: List[dict] = field(default_factory=list)
     pendingRenames: Dict[str, str] = field(default_factory=dict)
     sessions: Dict[str, dict] = field(default_factory=dict)
-    # カテゴリ名 → パレット番号（0〜11）。一度決めたら変えない（プラグイン側
-    # `category.ts` の `assignCategoryColor`。T-70）。ここでは素通りさせるだけで、
-    # 割当のロジックは持たない。
+    # Maps category name → palette index (0-11). Once assigned, an entry
+    # never changes (the assignment logic itself lives in the plugin, in
+    # `category.ts`'s `assignCategoryColor`). This module just passes the
+    # mapping through and holds no assignment logic of its own.
     categoryColors: Dict[str, int] = field(default_factory=dict)
     migratedFrom: Optional[dict] = None
 
@@ -51,10 +52,12 @@ def _from_dict(data: dict) -> Store:
 
 
 def load(path: Optional[str] = config.STORE_PATH) -> Store:
-    """無ければ（`path` が `None`＝vault 未設定のときも）空の Store。壊れていれば
-    `path+'.broken-<YYYYmmddHHMMSS>'` に退避して空の Store を返す（T-80：vault が
-    無くても読み取り側は落ちない——`json scan` はプラグインから必ず env が来る前提
-    だが、来なくても空を返すだけにする）。"""
+    """Returns an empty Store if the file doesn't exist (including when
+    `path` is `None`, meaning no vault is configured). If the file is
+    corrupt, moves it aside to `path+'.broken-<YYYYmmddHHMMSS>'` and returns
+    an empty Store. A reader must never crash just because no vault is
+    configured — `json scan` normally gets its env from the plugin, but if
+    it doesn't, it should simply return empty rather than fail."""
     if not path or not os.path.exists(path):
         return Store()
     try:
@@ -73,8 +76,10 @@ def load(path: Optional[str] = config.STORE_PATH) -> Store:
 
 
 def save(store: Store, path: Optional[str] = config.STORE_PATH) -> None:
-    """tmp に書いて rename。呼び出し側が `Lock` の中で呼ぶ前提（`update` 参照）。
-    `path` が `None`（vault 未設定）なら書く先が無いので `VaultNotConfigured`（T-80）。"""
+    """Writes to a temp file and renames it into place. Assumes the caller
+    invokes this from inside a `Lock` (see `update`). If `path` is `None`
+    (no vault configured), there's nowhere to write, so raises
+    `VaultNotConfigured`."""
     if not path:
         raise config.VaultNotConfigured(config.VAULT_NOT_CONFIGURED_MESSAGE)
     dirpath = os.path.dirname(path) or '.'
@@ -94,11 +99,13 @@ def save(store: Store, path: Optional[str] = config.STORE_PATH) -> None:
 
 
 class Lock:
-    """`sessions.json.lock/` を `mkdir` で取る排他。作れた者がロックを持つ。
+    """Mutual exclusion via `mkdir` on `sessions.json.lock/`: whoever creates
+    the directory holds the lock.
 
-    `EEXIST` なら `retry_interval` 秒待って再試行し、`timeout` 秒で諦めて
-    `TimeoutError`。ロックの mtime が `stale_after` 秒より古ければ壊れたもの
-    として `rmdir` して取り直す。
+    On `EEXIST`, waits `retry_interval` seconds and retries, giving up with
+    a `TimeoutError` after `timeout` seconds. If the lock's mtime is older
+    than `stale_after` seconds, treats it as abandoned, removes it with
+    `rmdir`, and retries.
     """
 
     def __init__(self, path: Optional[str] = config.LOCK_DIR, timeout: float = 2.0,
@@ -140,8 +147,9 @@ class Lock:
 
 def update(fn: Callable[[Store], None], path: Optional[str] = config.STORE_PATH,
            lock_path: Optional[str] = None) -> Store:
-    """ロックの中で読み→`fn(store)` で書き換え→保存。書き換えた Store を返す。
-    `path` が `None`（vault 未設定）なら `VaultNotConfigured`（T-80）。"""
+    """Reads inside the lock, applies the mutation via `fn(store)`, then
+    saves. Returns the mutated Store. If `path` is `None` (no vault
+    configured), raises `VaultNotConfigured`."""
     if not path:
         raise config.VaultNotConfigured(config.VAULT_NOT_CONFIGURED_MESSAGE)
     if lock_path is None:

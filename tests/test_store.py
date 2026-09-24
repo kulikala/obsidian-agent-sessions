@@ -9,7 +9,7 @@ from agentsessions import config, store
 
 
 def _bump(path, tag, n):
-    """複数プロセスから `store.update` を叩く側。folded に n 件足す。"""
+    """The side that hammers `store.update` from multiple processes. Appends n entries to folded."""
     for i in range(n):
         def _apply(st, tag=tag, i=i):
             st.folded.append('%s-%d' % (tag, i))
@@ -36,10 +36,10 @@ class TestStoreRoundTrip(unittest.TestCase):
         self.assertEqual(store.load(path=self.path), st)
 
     def test_category_colors_round_trip(self):
-        """T-70: categoryColors を落とさない（TS 側が書いた割当を Python がそのまま通す）。"""
-        st = store.Store(categoryColors={'RIM': 3, 'スキル開発': 0})
+        """categoryColors must not be dropped: whatever assignment the TS side wrote is passed through by Python unchanged."""
+        st = store.Store(categoryColors={'RIM': 3, 'Skill Development': 0})
         store.save(st, path=self.path)
-        self.assertEqual(store.load(path=self.path).categoryColors, {'RIM': 3, 'スキル開発': 0})
+        self.assertEqual(store.load(path=self.path).categoryColors, {'RIM': 3, 'Skill Development': 0})
 
     def test_category_colors_defaults_to_empty_dict(self):
         self.assertEqual(store.Store().categoryColors, {})
@@ -85,7 +85,7 @@ class TestArchiveAndFold(unittest.TestCase):
         st = store.Store()
         store.set_folded(st, 'RIM', True)
         self.assertEqual(st.folded, ['RIM'])
-        store.set_folded(st, 'RIM', True)  # 既に畳んであれば足さない
+        store.set_folded(st, 'RIM', True)  # already folded, so it isn't added again
         self.assertEqual(st.folded, ['RIM'])
         store.set_folded(st, 'RIM', False)
         self.assertEqual(st.folded, [])
@@ -142,7 +142,7 @@ class TestUpdateConcurrency(unittest.TestCase):
 
 
 class TestNoVault(unittest.TestCase):
-    """T-80: vault が分からない（`path` が `None`）ときの振る舞い。読みは空、書きは止める。"""
+    """Behavior when the vault can't be determined (`path` is `None`): reads return empty, writes are blocked."""
 
     def test_load_with_none_path_returns_empty_store(self):
         self.assertEqual(store.load(path=None), store.Store())

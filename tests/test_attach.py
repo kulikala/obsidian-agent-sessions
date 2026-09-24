@@ -66,7 +66,7 @@ class HandleFrameTest(unittest.TestCase):
 
 
 class _FakeSocket:
-    """`_Client.request` 用の偽ソケット。`recv` は与えたチャンクを順に返す。"""
+    """A fake socket for `_Client.request`. `recv` returns the given chunks in order."""
 
     def __init__(self, chunks):
         self._chunks = list(chunks)
@@ -83,13 +83,13 @@ class _FakeSocket:
 
 class ClientRequestTest(unittest.TestCase):
     def test_keeps_frames_after_response_in_same_recv(self):
-        """デーモンは `attach` の応答の直後に `R`・`replayed` を続けて送る
-        （§4.1）。同じ recv／feed に含まれていても、応答だけを取り出して
-        残りは `pending` に積まれる必要がある。"""
+        """The daemon sends `R` and `replayed` frames right after the `attach` response.
+        Even when they arrive bundled into the same recv/feed call, only the response
+        should be extracted and the remaining frames must be queued in `pending`."""
         response = protocol.encode_json({'ok': True, 'seq': 1, 'exited': None})
         replay = protocol.encode(protocol.FRAME_R, b'hello')
         replayed_ev = protocol.encode_json({'ev': 'replayed'})
-        packet = response + replay + replayed_ev   # 1 回の recv にまとまって届く
+        packet = response + replay + replayed_ev   # arrives bundled in a single recv
 
         client = attach._Client(_FakeSocket([packet]))
         result = client.request('attach', id='x', cols=80, rows=24)

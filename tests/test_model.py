@@ -3,7 +3,7 @@ from agentsessions.model import Session, Row, Doc, split_name, fmt_time, folder_
 
 class TestModel(unittest.TestCase):
     def test_split_name_grouped(self):
-        self.assertEqual(split_name('RIM: Fit&Gap進め方'), ('RIM', 'Fit&Gap進め方'))
+        self.assertEqual(split_name('RIM: Fit&Gap approach'), ('RIM', 'Fit&Gap approach'))
 
     def test_split_name_single(self):
         self.assertEqual(split_name('swimlane-app'), (None, 'swimlane-app'))

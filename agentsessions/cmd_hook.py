@@ -5,7 +5,7 @@ from . import hooks
 
 
 def main(args: List[str]) -> int:
-    """stdin の JSON を events.log に追記する。フックを止めないため常に 0 を返す。"""
+    """Appends stdin's JSON to events.log. Always returns 0, so this never blocks the hook."""
     try:
         raw = sys.stdin.buffer.read()
     except Exception:

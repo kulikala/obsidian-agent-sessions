@@ -1,6 +1,6 @@
-"""`agent-sessions attach ID [--sock PATH]`。
+"""`agent-sessions attach ID [--sock PATH]`.
 
-引数解析だけを担う。本体は `attach.py`。
+This only parses arguments; the real work happens in `attach.py`.
 """
 
 import argparse
@@ -15,11 +15,12 @@ SOCK_ENV = 'AGENT_SESSIONS_SOCK'
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        prog='agent-sessions attach', description='端末を raw mode にしてデーモンの PTY へ接続する')
-    parser.add_argument('id', help='セッション ID')
+        prog='agent-sessions attach',
+        description='Puts the terminal into raw mode and connects to the daemon\'s PTY')
+    parser.add_argument('id', help='session ID')
     parser.add_argument('--sock', default=None,
-                        help='ソケットのパス（既定 %s。環境変数 %s があればそちら）'
-                        % (config.SOCK_PATH, SOCK_ENV))
+                        help='socket path (default %s; the %s environment variable '
+                        'takes priority if set)' % (config.SOCK_PATH, SOCK_ENV))
     return parser.parse_args(argv)
 
 

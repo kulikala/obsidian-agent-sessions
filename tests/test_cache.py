@@ -55,8 +55,9 @@ class TestCacheRoundTrip(unittest.TestCase):
 
 
 class TestScanUsesCache(unittest.TestCase):
-    """scan() に cache dict を渡すと、2 回目は read_head_info・read_last_activity を
-    呼ばない（= 該当 transcript を open しない）ことを確認する。"""
+    """Verifies that when scan() is given a cache dict, a second call doesn't invoke
+    read_head_info / read_last_activity again for an unchanged file (i.e. it never
+    opens the transcript)."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -64,12 +65,14 @@ class TestScanUsesCache(unittest.TestCase):
         os.makedirs(self.proj)
         self.path = os.path.join(self.proj, ID1 + '.jsonl')
         write_jsonl(self.path, [
-            {'type': 'user', 'cwd': '/a', 'message': {'role': 'user', 'content': '最初の質問'}},
+            {'type': 'user', 'cwd': '/a', 'message': {'role': 'user', 'content': 'initial question'}},
         ])
-        # mtime を少し過去にずらす：scan() は `RACY_WINDOW` 秒以内の mtime を「同じ tick の
-        # 書換えを mtime だけでは見分けられないかもしれない」として常に読み直す（クロックの
-        # 粒度が粗い環境向け）。直後に scan するこのテストでは、その扱いを外して
-        # キャッシュ命中の経路そのものを確かめる。
+        # Back-date the mtime a bit: scan() always re-reads a file whose mtime is within
+        # `RACY_WINDOW` seconds of now, since two rewrites in the same clock tick might
+        # be indistinguishable by mtime alone (this guards against coarse-grained clocks
+        # on some filesystems). This test calls scan() immediately after writing, so
+        # back-dating the mtime sidesteps that guard and lets us exercise the cache-hit
+        # path itself.
         old = time.time() - 10.0
         os.utime(self.path, (old, old))
 
@@ -94,28 +97,31 @@ class TestScanUsesCache(unittest.TestCase):
         c = {}
         scan([self.path], cache=c)
         write_jsonl(self.path, [
-            {'type': 'user', 'cwd': '/a', 'message': {'role': 'user', 'content': '書き換え後'}},
+            {'type': 'user', 'cwd': '/a', 'message': {'role': 'user', 'content': 'updated content'}},
         ])
         second = scan([self.path], cache=c)
-        self.assertEqual(second[ID1].first_prompt, '書き換え後')
+        self.assertEqual(second[ID1].first_prompt, 'updated content')
 
     def test_racy_mtime_forces_reread_even_if_cache_matches(self):
-        """mtime の粒度が粗いクロック（tmpfs・一部のコンテナ等）では、同じ tick に収まる
-        2 度の書換えで mtime も size も変わらないことがある。そのケースを模して、
-        「キャッシュは一致しているが mtime が新しい」状態を直接作り、それでも読み直す
-        ことを確かめる（RACY_WINDOW）。"""
-        # setUp で mtime を過去にずらしているので、ここで「たった今書かれた」ことにし、
-        # その時点の mtime・size をそのままキャッシュに仕立てる（＝キャッシュは一致するが
-        # 新しい）。中身は古いキャッシュの値を仕込み、実ファイルの中身と区別できるようにする。
+        """On filesystems with coarse mtime granularity (tmpfs, some containers), two
+        rewrites that land within the same clock tick can leave both mtime and size
+        unchanged. Simulate that here by building a cache entry whose mtime/size match
+        the file's current stat exactly ("the cache agrees, but the mtime is recent"),
+        and confirm that scan() still re-reads the file instead of trusting it
+        (this is what RACY_WINDOW guards against)."""
+        # setUp backdated the mtime, so here we make it look like the file was just
+        # written, and build a cache entry from that same mtime/size (so the cache
+        # matches, but is recent). We seed the cached head with stale content so it's
+        # distinguishable from what's actually in the file.
         os.utime(self.path, None)
         st = os.stat(self.path)
         c = {self.path: {
             'mtime': st.st_mtime, 'size': st.st_size,
-            'head': {'cwd': '/a', 'prompt': '古いキャッシュの内容', 'child': False},
+            'head': {'cwd': '/a', 'prompt': 'stale cached content', 'child': False},
             'last_activity': None,
         }}
         result = scan([self.path], cache=c)
-        self.assertEqual(result[ID1].first_prompt, '最初の質問')
+        self.assertEqual(result[ID1].first_prompt, 'initial question')
 
 
 if __name__ == '__main__':

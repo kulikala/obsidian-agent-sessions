@@ -1,12 +1,12 @@
-"""`agent-sessions edit FILE`（D-20）。
+"""`agent-sessions edit FILE`.
 
-プラグインの `~/.agents/sessions/plugin.sock` へ `edit` を発注する。
-`{"ok":true}` で 0。`{"ok":false,"error":"cancel"}` は **1 で終わる**（`vi` は
-開かない。Claude Code は元の内容を使う）。`error` が `no-tab`／`busy`、接続で
-きない、応答を待つ間に相手が消えた（EOF・`ECONNRESET`）ときは、従来の
-エディタへ倒す（`$AGENT_SESSIONS_FALLBACK_EDITOR`、無ければ `vi` を
-`execvp`）。応答はタイムアウト無しで待つ。`SIGINT`／`SIGTERM` は `cancel` を
-送って 1 で終わる。
+Sends an `edit` request to the plugin's `~/.agents/sessions/plugin.sock`. Returns 0 for
+`{"ok":true}`. `{"ok":false,"error":"cancel"}` **returns 1** (doesn't open `vi`; Claude
+Code keeps using the original content). Falls back to the ordinary editor
+(`$AGENT_SESSIONS_FALLBACK_EDITOR`, or `vi` via `execvp` if unset) when `error` is
+`no-tab`/`busy`, the socket can't be reached, or the other end disappears while waiting
+for a response (EOF, `ECONNRESET`). Waits for the response with no timeout. `SIGINT`/
+`SIGTERM` send `cancel` and return 1.
 """
 
 import os
@@ -15,7 +15,7 @@ import socket
 import sys
 from typing import List
 
-from . import config, protocol
+from . import config, i18n, protocol
 
 READ_SIZE = 65536
 SOCK_ENV = 'AGENT_SESSIONS_PLUGIN_SOCK'
@@ -28,7 +28,7 @@ def _fallback(file: str) -> None:
 
 def main(args: List[str]) -> int:
     if not args:
-        sys.stderr.write('usage: agent-sessions edit FILE\n')
+        sys.stderr.write(i18n.t('cmd.edit_usage') + '\n')
         return 2
     file = os.path.abspath(args[0])
     sock_path = os.environ.get(SOCK_ENV) or config.PLUGIN_SOCK_PATH
@@ -37,10 +37,11 @@ def main(args: List[str]) -> int:
     try:
         sock.connect(sock_path)
     except OSError:
-        # プラグインが動いていない・ソケットが無い。従来のエディタへ倒す。
+        # The plugin isn't running, or the socket doesn't exist. Fall back to the
+        # ordinary editor.
         sock.close()
         _fallback(file)
-        return 1   # 本来 execvp から戻らない。モックした場合の保険。
+        return 1   # execvp doesn't normally return; this is a safety net for when it's mocked.
 
     def _cancel(signum, frame):
         try:
@@ -66,7 +67,8 @@ def main(args: List[str]) -> int:
         while resp is None:
             data = sock.recv(READ_SIZE)
             if not data:
-                # 接続が確立した後に相手が消えた（Obsidian のクラッシュ等）。
+                # The other end disappeared after the connection was established
+                # (e.g. Obsidian crashed).
                 sock.close()
                 _fallback(file)
                 return 1
@@ -87,6 +89,6 @@ def main(args: List[str]) -> int:
         return 0
     if resp.get('error') == 'cancel':
         return 1
-    # `no-tab`／`busy`、その他未知のエラー：従来のエディタへ倒す。
+    # `no-tab`/`busy`, or anything else unrecognized: fall back to the ordinary editor.
     _fallback(file)
     return 1

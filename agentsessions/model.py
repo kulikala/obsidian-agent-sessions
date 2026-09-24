@@ -7,12 +7,12 @@ from typing import Dict, List, Optional, Tuple
 @dataclass
 class Session:
     id: str
-    name: Optional[str]      # None = /rename されていない
+    name: Optional[str]      # None = has not been /rename'd
     cwd: str
-    mtime: float             # 最終活動時刻（最後のユーザー発言／assistant 応答。無ければ transcript の mtime）
+    mtime: float             # last activity time (last user message / assistant response; falls back to the transcript's mtime)
     path: str
     first_prompt: str = ''
-    child: bool = False      # サブエージェント（headless）が開始したセッション
+    child: bool = False      # session started by a sub-agent (headless)
 
 
 @dataclass
@@ -26,9 +26,9 @@ class Row:
 @dataclass
 class Doc:
     folded: List[str] = field(default_factory=list)
-    hidden: Dict[str, str] = field(default_factory=dict)   # id -> 非表示時の名前
+    hidden: Dict[str, str] = field(default_factory=dict)   # id -> name at the time it was hidden
     rows: List[Row] = field(default_factory=list)
-    extra_front: List[str] = field(default_factory=list)   # folded/hidden 以外の frontmatter 行
+    extra_front: List[str] = field(default_factory=list)   # frontmatter lines other than folded/hidden
 
 
 SEP = ': '
@@ -58,7 +58,7 @@ def row_from(s: Session) -> Row:
 
 
 def sort_rows(rows: List[Row]) -> List[Row]:
-    """最終更新の新しい順。同着は名前昇順。"""
+    """Sort by most recently updated first; ties break by name ascending."""
     out = sorted(rows, key=lambda r: r.name)
     out.sort(key=lambda r: r.updated, reverse=True)
     return out
