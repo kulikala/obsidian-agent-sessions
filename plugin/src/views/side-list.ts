@@ -1,8 +1,8 @@
 // Builds the side panel's list (pure functions). No dependency on `obsidian`.
 // `side.ts` calls `buildSideList` through here (kept separate for testing).
 
-import type { Row } from "../index";
-import { buildSideList, type SideList } from "../tree";
+import type { Row } from "../sessions/index";
+import { buildSideList, type SideList } from "../sessions/tree";
 
 export interface TerminalLeafLike {
 	getViewState(): { state?: { id?: unknown } };

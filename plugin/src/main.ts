@@ -13,17 +13,17 @@ import {
 } from "obsidian";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { detail, live, loginEnv, resolveAgentSessionsPath, resolveClaude, scan } from "./backend";
-import { DaemonClient, defaultSockPath, ensureDaemon } from "./daemon-client";
-import { EditServer, editReplyFor, submitsAfterEdit, type EditReply, type EditRequest } from "./edit-server";
-import { SessionIndex } from "./index";
+import { detail, live, loginEnv, resolveAgentSessionsPath, resolveClaude, scan } from "./backend/backend";
+import { DaemonClient, defaultSockPath, ensureDaemon } from "./backend/daemon-client";
+import { EditServer, editReplyFor, submitsAfterEdit, type EditReply, type EditRequest } from "./backend/edit-server";
+import { SessionIndex } from "./sessions/index";
 import { getLang, readObsidianLang, resolveLang, setLang, t } from "./i18n";
-import { applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./keybindings";
-import { reconcileSubmitKey, sendSequence } from "./keys";
-import { buildAtToken, selectionLineRange } from "./links";
-import { ConfirmModal, NewSessionModal, RenameSessionModal } from "./modals";
-import { sessionDisplayName } from "./name";
-import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./open-session";
+import { applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./terminal/keybindings";
+import { reconcileSubmitKey, sendSequence } from "./terminal/keys";
+import { buildAtToken, selectionLineRange } from "./terminal/links";
+import { ConfirmModal, NewSessionModal, RenameSessionModal } from "./ui/modals";
+import { sessionDisplayName } from "./sessions/name";
+import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./sessions/open-session";
 import {
 	AgentSessionsSettings,
 	DEFAULT_SETTINGS,
@@ -32,7 +32,7 @@ import {
 	SUBMIT_KEYS_NON_MAC,
 	type SubmitKey,
 } from "./settings";
-import { migrateFromMarkdown, StoreLockError, updateStore } from "./store";
+import { migrateFromMarkdown, StoreLockError, updateStore } from "./sessions/store";
 import {
 	ALL_TERMINAL_STATUSES,
 	higherPriorityStatus,
@@ -41,12 +41,12 @@ import {
 	TERMINAL_STATUS_ICON,
 	terminalStatusClass,
 	type TerminalStatus,
-} from "./terminal-status";
-import { claudeSettingsPath, readFullscreenTui } from "./tui-mode";
+} from "./sessions/terminal-status";
+import { claudeSettingsPath, readFullscreenTui } from "./terminal/tui-mode";
 import type { ArchivedSession, DaemonSession } from "./types";
-import { writeUiState } from "./ui-state";
-import { UsageModal } from "./usage-modal";
-import { writeVaultState } from "./vault-state";
+import { writeUiState } from "./backend/ui-state";
+import { UsageModal } from "./usage/usage-modal";
+import { writeVaultState } from "./backend/vault-state";
 import { ManagerView, VIEW_TYPE_MANAGER } from "./views/manager";
 import { SideView, VIEW_TYPE_SIDE } from "./views/side";
 import { TerminalView } from "./views/terminal";

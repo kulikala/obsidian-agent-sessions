@@ -17,17 +17,17 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { BackendError, loginEnv, resolveClaude } from "../backend";
-import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../daemon-client";
+import { BackendError, loginEnv, resolveClaude } from "../backend/backend";
+import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../backend/daemon-client";
 import { t } from "../i18n";
-import { classifyCtrlKeyNonMac, classifyEnter, resolveEnterAction, sendSequence } from "../keys";
-import { buildAtToken, selectionLineRange, VaultLinkProvider } from "../links";
+import { classifyCtrlKeyNonMac, classifyEnter, resolveEnterAction, sendSequence } from "../terminal/keys";
+import { buildAtToken, selectionLineRange, VaultLinkProvider } from "../terminal/links";
 import { submitSequence } from "../main";
 import type AgentSessionsPlugin from "../main";
-import { MarkTracker, type MarkerHandle, type MarkerSource } from "../marks";
-import { RenameSessionModal } from "../modals";
-import { sessionDisplayName } from "../name";
-import { VIEW_TYPE_TERMINAL } from "../open-session";
+import { MarkTracker, type MarkerHandle, type MarkerSource } from "../terminal/marks";
+import { RenameSessionModal } from "../ui/modals";
+import { sessionDisplayName } from "../sessions/name";
+import { VIEW_TYPE_TERMINAL } from "../sessions/open-session";
 import type { Padding } from "../settings";
 import {
 	ALL_TERMINAL_STATUSES,
@@ -36,8 +36,8 @@ import {
 	terminalStatus,
 	terminalStatusClass,
 	type TerminalStatus,
-} from "../terminal-status";
-import { readObsidianTheme } from "../theme";
+} from "../sessions/terminal-status";
+import { readObsidianTheme } from "../terminal/theme";
 import type { DaemonSession } from "../types";
 import { EditorPane, type EditResult } from "./editor-pane";
 

@@ -1,11 +1,11 @@
 // Row rendering, selection, and the row menu — shared by the side panel and the manager. The detail pane is views/detail.ts.
 
-import { renderCategoryChip } from "../chip";
-import type { Row } from "../index";
+import { renderCategoryChip } from "../ui/chip";
+import type { Row } from "../sessions/index";
 import { t } from "../i18n";
 import type AgentSessionsPlugin from "../main";
-import { resolveRowStatus, STATUS_LABEL_KEY, terminalStatusClass, TERMINAL_STATUS_ICON } from "../terminal-status";
-import { splitName } from "../tree";
+import { resolveRowStatus, STATUS_LABEL_KEY, terminalStatusClass, TERMINAL_STATUS_ICON } from "../sessions/terminal-status";
+import { splitName } from "../sessions/tree";
 
 export interface RowActions {
 	openSession(id: string): void;
@@ -300,10 +300,10 @@ export function createRowActions(
 			void plugin.openSession(id, { agent: row?.agent ?? "claude", cwd: row?.cwd ?? "" });
 		},
 		rename: (id, currentName) => {
-			// `../modals` itself has a top-level `obsidian` import, so it's required lazily here
+			// `../ui/modals` itself has a top-level `obsidian` import, so it's required lazily here
 			// too (same reason as `rowStatusMark`'s comment) — otherwise importing this file's
 			// pure functions in tests would drag in `obsidian` transitively through this closure.
-			const { RenameSessionModal } = require("../modals") as typeof import("../modals");
+			const { RenameSessionModal } = require("../ui/modals") as typeof import("../ui/modals");
 			new RenameSessionModal(plugin, currentName, (name) => void plugin.renameSession(id, name)).open();
 		},
 		compact: (id) => void plugin.compactSession(id),

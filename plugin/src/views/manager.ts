@@ -4,17 +4,17 @@
 
 import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
 import type AgentSessionsPlugin from "../main";
-import { urgencyByGroupKey, type GroupUrgency } from "../attention";
-import { stats, usage } from "../backend";
-import { paletteHueDeg } from "../category";
+import { urgencyByGroupKey, type GroupUrgency } from "../sessions/attention";
+import { stats, usage } from "../backend/backend";
+import { paletteHueDeg } from "../sessions/category";
 import { getLang, t } from "../i18n";
-import { NewSessionModal } from "../modals";
-import { resolveRowStatus, TERMINAL_STATUS_ICON } from "../terminal-status";
-import { VIEW_TYPE_TERMINAL } from "../open-session";
-import { loadStore } from "../store";
-import { buildManagerTree } from "../tree";
+import { NewSessionModal } from "../ui/modals";
+import { resolveRowStatus, TERMINAL_STATUS_ICON } from "../sessions/terminal-status";
+import { VIEW_TYPE_TERMINAL } from "../sessions/open-session";
+import { loadStore } from "../sessions/store";
+import { buildManagerTree } from "../sessions/tree";
 import type { StatsResult, StatsWindow } from "../types";
-import { formatK } from "../usage";
+import { formatK } from "../usage/usage";
 import { formatCost, renderDetail, type DetailContext } from "./detail";
 import { formatCountdown } from "./limits";
 import {

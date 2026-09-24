@@ -9,10 +9,10 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { prepareFuzzySearch, type App, type TFile } from "obsidian";
-import { applyCompletion, findAtQuery, relPathFor, type AtQuery } from "../at-complete";
-import { SaveDebouncer } from "../autosave";
+import { applyCompletion, findAtQuery, relPathFor, type AtQuery } from "../terminal/at-complete";
+import { SaveDebouncer } from "../terminal/autosave";
 import { t } from "../i18n";
-import { classifyEnter, submitKeyButtonLabel } from "../keys";
+import { classifyEnter, submitKeyButtonLabel } from "../terminal/keys";
 import type { SubmitKey } from "../settings";
 
 export type EditResult = "send" | "return" | "cancel";

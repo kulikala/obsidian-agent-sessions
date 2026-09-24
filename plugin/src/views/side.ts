@@ -3,13 +3,13 @@
 
 import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
 import type AgentSessionsPlugin from "../main";
-import { attentionCounts, type AttentionCounts } from "../attention";
-import { usage } from "../backend";
+import { attentionCounts, type AttentionCounts } from "../sessions/attention";
+import { usage } from "../backend/backend";
 import { t } from "../i18n";
-import { VIEW_TYPE_TERMINAL } from "../open-session";
-import { NewSessionModal } from "../modals";
-import type { Row } from "../index";
-import type { SideList } from "../tree";
+import { VIEW_TYPE_TERMINAL } from "../sessions/open-session";
+import { NewSessionModal } from "../ui/modals";
+import type { Row } from "../sessions/index";
+import type { SideList } from "../sessions/tree";
 import { createRowActions, formatRelativeTime, renderRow, RowSelection, type RowActions } from "./rows";
 import { computeSideList, leafIdsOf } from "./side-list";
 import { renderDetail, type DetailContext } from "./detail";

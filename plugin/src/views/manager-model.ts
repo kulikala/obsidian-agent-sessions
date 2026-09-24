@@ -2,9 +2,9 @@
 // single list of rows that ↑/↓ can walk through. No dependency on `obsidian`
 // (tests: test/manager-model.test.ts).
 
-import type { Row } from "../index";
+import type { Row } from "../sessions/index";
 import { t, type Lang } from "../i18n";
-import { OTHER_GROUP, splitName, type ManagerTree } from "../tree";
+import { OTHER_GROUP, splitName, type ManagerTree } from "../sessions/tree";
 import type { StatsResult, StatsWindow } from "../types";
 
 /** A special group key that's never foldable (the archive heading). */

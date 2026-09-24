@@ -16,48 +16,55 @@ Scanning, status detection, and aggregation live only in Python (`agentsessions/
 ```
 agent-sessions/
 ├── plugin/                    Obsidian plugin (TypeScript, esbuild, vitest)
-│   ├── src/
+│   ├── src/                   Organized by responsibility, the same shape as agentsessions/ below
 │   │   ├── main.ts            Plugin entry point: view registration, commands, settings, openSession, sendCommand
 │   │   ├── settings.ts        Settings types, defaults, settings tab
-│   │   ├── store.ts           Reads/writes/locks <vault>/.agents/sessions/sessions.json
-│   │   ├── backend.ts         Invokes `agent-sessions json …` and types its output
-│   │   ├── daemon-client.ts   Unix socket client (frames, attach, resize)
-│   │   ├── edit-server.ts     Listens on ~/.agents/sessions/plugin.sock (built-in editor's receiving end)
-│   │   ├── registry.ts        Watches ~/.claude/sessions/*.json (status, pid, rc)
-│   │   ├── statusline.ts      Watches ~/.agents/sessions/status/<id>.json
-│   │   ├── ui-state.ts        Writes ~/.agents/sessions/ui.json (submit-key symbol, resolved display language)
-│   │   ├── vault-state.ts     Writes ~/.agents/sessions/vault.json (the vault's location, for the CLI/TUI)
-│   │   ├── tree.ts            JSON → group tree and the side panel's three sections (pure functions: splitName, OTHER_GROUP, buildManagerTree, buildSideList)
-│   │   ├── category.ts        Fixed category colors (palette-index assignment)
-│   │   ├── chip.ts            Category chip rendering, shared by the side panel, manager, and dialogs
-│   │   ├── name.ts            Name parsing and the naming dialog's input tokenizer
-│   │   ├── keys.ts            Enter classification, submit-key behavior, keybindings.json reconciliation, non-macOS Ctrl-key classification
-│   │   ├── terminal-status.ts A pure function that decides a tab's single `TerminalStatus`
-│   │   ├── attention.ts       Aggregates "asking"/"waiting" counts (side-panel badge, manager group marks)
-│   │   ├── compacted.ts       Watches ~/.agents/sessions/compacted/ (the just-compacted marker)
-│   │   ├── autosave.ts        The built-in editor's autosave debouncer (`SaveDebouncer`)
-│   │   ├── links.ts           Path detection in terminal output and vault-relative resolution (pure functions)
-│   │   ├── at-complete.ts     `@`-completion: search-term extraction and replacement (pure functions)
-│   │   ├── marks.ts           Prompt/response marker tracking (pure functions plus a thin xterm-dependent layer)
-│   │   ├── index.ts           SessionIndex: merges scan results, running sessions, and tabs; subscriptions; waitForName
-│   │   ├── open-session.ts    openSession and de-duplication of concurrent calls (a thin, mostly-pure layer)
-│   │   ├── keybindings.ts     Reads and rewrites ~/.claude/keybindings.json
-│   │   ├── tui-mode.ts        Whether ~/.claude/settings.json's `tui` is `fullscreen`
 │   │   ├── types.ts           Types for `json` output
-│   │   ├── usage.ts / usage-modal.ts   Session-analysis results (totals, formatting, the modal)
 │   │   ├── i18n.ts            The Japanese/English dictionary and `t()`
-│   │   ├── theme.ts           Obsidian CSS variables → xterm theme
-│   │   ├── views/side.ts      Side panel (skeleton, list rendering, badges)
-│   │   ├── views/side-list.ts Builds the side panel's three sections (pure function, calls buildSideList)
-│   │   ├── views/manager.ts   Session Manager (skeleton, rendering)
-│   │   ├── views/manager-model.ts  Pure functions that flatten the manager's table
-│   │   ├── views/detail.ts    Detail pane (shared by the side panel and the manager)
-│   │   ├── views/limits.ts    5h/7d bars and countdowns
-│   │   ├── views/terminal.ts  The terminal view
-│   │   ├── views/editor-pane.ts  The built-in editor's edit area
-│   │   ├── views/rows.ts      Row rendering and the row menu (shared component)
-│   │   └── modals.ts          New-session and rename dialogs
-│   ├── test/                  vitest (pure functions, daemon-client framing, a thin DOM layer)
+│   │   ├── backend/           Calling the CLI/daemon and persisting the plugin's own small state files
+│   │   │   ├── backend.ts       Invokes `agent-sessions json …` and types its output
+│   │   │   ├── daemon-client.ts Unix socket client (frames, attach, resize)
+│   │   │   ├── edit-server.ts   Listens on ~/.agents/sessions/plugin.sock (built-in editor's receiving end)
+│   │   │   ├── ui-state.ts      Writes ~/.agents/sessions/ui.json (submit-key symbol, resolved display language)
+│   │   │   └── vault-state.ts   Writes ~/.agents/sessions/vault.json (the vault's location, for the CLI/TUI)
+│   │   ├── sessions/          Discovering, naming, and tracking the state of sessions
+│   │   │   ├── index.ts         SessionIndex: merges scan results, running sessions, and tabs; subscriptions; waitForName
+│   │   │   ├── registry.ts      Watches ~/.claude/sessions/*.json (status, pid, rc)
+│   │   │   ├── store.ts         Reads/writes/locks <vault>/.agents/sessions/sessions.json
+│   │   │   ├── compacted.ts     Watches ~/.agents/sessions/compacted/ (the just-compacted marker)
+│   │   │   ├── statusline.ts    Watches ~/.agents/sessions/status/<id>.json
+│   │   │   ├── tree.ts          JSON → group tree and the side panel's three sections (pure functions: splitName, OTHER_GROUP, buildManagerTree, buildSideList)
+│   │   │   ├── name.ts          Name parsing and the naming dialog's input tokenizer
+│   │   │   ├── category.ts      Fixed category colors (palette-index assignment)
+│   │   │   ├── open-session.ts  openSession and de-duplication of concurrent calls (a thin, mostly-pure layer)
+│   │   │   ├── terminal-status.ts A pure function that decides a tab's single `TerminalStatus`
+│   │   │   └── attention.ts     Aggregates "asking"/"waiting" counts (side-panel badge, manager group marks)
+│   │   ├── terminal/          Terminal input/output behavior, independent of the `TerminalView` that hosts it
+│   │   │   ├── keys.ts          Enter classification, submit-key behavior, non-macOS Ctrl-key classification
+│   │   │   ├── keybindings.ts   Reads and rewrites ~/.claude/keybindings.json
+│   │   │   ├── links.ts         Path detection in terminal output and vault-relative resolution (pure functions)
+│   │   │   ├── marks.ts         Prompt/response marker tracking (pure functions plus a thin xterm-dependent layer)
+│   │   │   ├── at-complete.ts   `@`-completion: search-term extraction and replacement (pure functions)
+│   │   │   ├── autosave.ts      The built-in editor's autosave debouncer (`SaveDebouncer`)
+│   │   │   ├── tui-mode.ts      Whether ~/.claude/settings.json's `tui` is `fullscreen`
+│   │   │   └── theme.ts         Obsidian CSS variables → xterm theme
+│   │   ├── usage/              Session-analysis results (totals, formatting, the modal)
+│   │   │   ├── usage.ts
+│   │   │   └── usage-modal.ts
+│   │   ├── ui/                 Small DOM-building pieces shared across views
+│   │   │   ├── modals.ts        New-session and rename dialogs
+│   │   │   └── chip.ts          Category chip rendering, shared by the side panel, manager, and dialogs
+│   │   └── views/               `ItemView` subclasses and their DOM-composition helpers
+│   │       ├── side.ts          Side panel (skeleton, list rendering, badges)
+│   │       ├── side-list.ts     Builds the side panel's three sections (pure function, calls buildSideList)
+│   │       ├── manager.ts       Session Manager (skeleton, rendering)
+│   │       ├── manager-model.ts Pure functions that flatten the manager's table
+│   │       ├── detail.ts        Detail pane (shared by the side panel and the manager)
+│   │       ├── limits.ts        5h/7d bars and countdowns
+│   │       ├── terminal.ts      The terminal view
+│   │       ├── editor-pane.ts   The built-in editor's edit area
+│   │       └── rows.ts          Row rendering and the row menu (shared component)
+│   ├── test/                  vitest, mirroring src/'s subfolders (pure functions, daemon-client framing, a thin DOM layer)
 │   ├── manifest.json          id: agent-sessions / name: Agent Sessions / isDesktopOnly: true
 │   ├── styles.css
 │   ├── esbuild.config.mjs     → plugin/main.js
@@ -477,7 +484,7 @@ An `assistant` line's `message.usage` (`input_tokens`, `cache_creation_input_tok
 
 `agentsessions/usage/turns.py` reads a transcript from the start and cuts it into turns at each human prompt (`detail.is_human_prompt`); the `assistant` lines that follow accumulate into that turn's usage, de-duplicated by `message.id`. Usage before the first prompt goes into a synthetic pseudo-turn (`index -1`, `before_first: True`, `prompt: ''` — display text for that case is the caller's job; see `usage.beforeFirstPrompt` on the plugin side). Each turn carries `cost` ($, from `usage/pricing.py`), `tools: {name: count}` (`tool_use` blocks in `content`, counted by name, de-duplicated by `message.id`), and `models`. The `total` carries `cost`, `tools`, `duration` (seconds from the first prompt to the last assistant line), `first_ts`, `last_ts`, and `context_last` (the most recent call's `input + cache_read + cache_create`). If any turn has `estimated: true`, so does `total`. `--from`/`--to` filter by a turn's start time (inclusive on both ends). Output: `{"turns":[…],"total":{…},"from","to"}`; each turn is `{index, ts, prompt, calls, input, cache_create, cache_read, output, thinking, cost, tools, estimated, last_ts, context_last, models, before_first}`. `turns` is always the complete list; only `total` reflects the filtered range.
 
-The row menu's "Session analysis" opens a modal (`src/usage-modal.ts`, `width: 90vw; max-width: 1100px`) with a fixed header (title, copy, close), four summary cards (cost; tokens — total input, output below it; turn count; duration), an input bar (cache-read / cache-create / uncached shares, with counts in the legend), an output bar, a tool-use bar (top 12), and a turn table (# · time · prompt (truncated, full text on hover) · input · output · cost). Clicking a row starts a range, another click ends it (highlighting the range), a third click clears it. The cards and bars reflect the selected range, with a "#a–#b" subtitle. Numbers use k/M notation (`usage.ts`'s `formatK`). Range summing and the copyable Markdown rendering are pure functions in `usage.ts` (`sumRange`, `toMarkdown`).
+The row menu's "Session analysis" opens a modal (`src/usage/usage-modal.ts`, `width: 90vw; max-width: 1100px`) with a fixed header (title, copy, close), four summary cards (cost; tokens — total input, output below it; turn count; duration), an input bar (cache-read / cache-create / uncached shares, with counts in the legend), an output bar, a tool-use bar (top 12), and a turn table (# · time · prompt (truncated, full text on hover) · input · output · cost). Clicking a row starts a range, another click ends it (highlighting the range), a third click clears it. The cards and bars reflect the selected range, with a "#a–#b" subtitle. Numbers use k/M notation (`usage.ts`'s `formatK`). Range summing and the copyable Markdown rendering are pure functions in `usage.ts` (`sumRange`, `toMarkdown`).
 
 ### 13.2 `agent-sessions json stats`
 
@@ -516,7 +523,7 @@ Cache-write cost is input × 1.25 for a 5-minute TTL, input × 2 for a 1-hour TT
 - Model is `model.display_name`, or "Default" if unavailable. Effort is `effort.level` (if it's a dict) or `effort` itself (if a string), or "Default" if unavailable.
 - `ctx` is `context_window.used_percentage` (rounded), or "—" if unavailable.
 - `rc` reflects whether the matching `session_id` in `~/.claude/sessions/*.json` has a `bridgeSessionId` (`live.live_sessions`) — no match, no ledger entry, or not connected all show `○`; only a connected session shows the green `●` (the same rule as the rc badge in the side/manager detail view).
-- The submit-key symbol (macOS: `⏎`/`⇧⏎`/`⌃⏎`/`⌥⏎`/`⌘⏎`; other platforms: the shorter `⏎`/`S-⏎`/`C-⏎`/`A-⏎`; `keys.ts`'s `submitKeyStatuslineSymbol(key, isMac)`) is prepended, with a `· ` separator, only when `AGENT_SESSIONS_ID` is set (a session the plugin's daemon started) and `~/.agents/sessions/ui.json` has a `submitSymbol` (written by `plugin/src/ui-state.ts`'s `writeUiState(runtimeDir, submitKey, language, isMac)` on every `onload` and settings save, passing `Platform.isMacOS`). It's omitted whenever `AGENT_SESSIONS_ID` is unset, `ui.json` is missing or unreadable, or `submitSymbol` is absent.
+- The submit-key symbol (macOS: `⏎`/`⇧⏎`/`⌃⏎`/`⌥⏎`/`⌘⏎`; other platforms: the shorter `⏎`/`S-⏎`/`C-⏎`/`A-⏎`; `keys.ts`'s `submitKeyStatuslineSymbol(key, isMac)`) is prepended, with a `· ` separator, only when `AGENT_SESSIONS_ID` is set (a session the plugin's daemon started) and `~/.agents/sessions/ui.json` has a `submitSymbol` (written by `plugin/src/backend/ui-state.ts`'s `writeUiState(runtimeDir, submitKey, language, isMac)` on every `onload` and settings save, passing `Platform.isMacOS`). It's omitted whenever `AGENT_SESSIONS_ID` is unset, `ui.json` is missing or unreadable, or `submitSymbol` is absent.
 
 `agent-sessions status` also writes the JSON on stdin, verbatim, to `status/<session_id>.json` (temp file + rename; §3).
 
@@ -561,7 +568,7 @@ English is the default. The language is chosen in this order:
 
 A CLI invocation with no session context (outside a plugin-launched terminal — an interactive `agent-sessions` in a plain shell, for instance) falls straight to step 2, i.e. the shell's own locale. So does `agent-sessions json …` spawned by the plugin (it runs with Obsidian's own environment), which is why `json live` carries both the raw `status` and the display `status_label`.
 
-One Japanese string is deliberately not translated: `OTHER_GROUP`, the literal `"その他のセッション"`, shared by `config.py` and `plugin/src/tree.ts`. It's persisted as a key in `sessions.json`'s `folded`, so translating it per language would un-fold the group whenever the language changes. Both the TUI (`tui/app.py`'s `_group_label`, mapping `OTHER_GROUP` to `t("tui.other_group")`) and the plugin (`t("group.other")`, §10.1) show a language-appropriate heading rather than this literal — only the persisted identifier itself stays untranslated.
+One Japanese string is deliberately not translated: `OTHER_GROUP`, the literal `"その他のセッション"`, shared by `config.py` and `plugin/src/sessions/tree.ts`. It's persisted as a key in `sessions.json`'s `folded`, so translating it per language would un-fold the group whenever the language changes. Both the TUI (`tui/app.py`'s `_group_label`, mapping `OTHER_GROUP` to `t("tui.other_group")`) and the plugin (`t("group.other")`, §10.1) show a language-appropriate heading rather than this literal — only the persisted identifier itself stays untranslated.
 
 ## 18. Error handling
 
@@ -616,7 +623,7 @@ Pushing the resulting tag runs `.github/workflows/release.yml` (on any tag): it 
 ## 22. Testing and CI
 
 - **Python** (`unittest`, run with `-W error`, under `tests/`, mirroring `agentsessions/`'s subpackages): `daemon/protocol` (frame splitting/joining), `daemon/server` (`cat` as a stand-in child process for start/attach/replay/resize/kill/forget, the buffer cap, multiple connections and minimum-size negotiation, disconnect cleanup, attaching to an exited session, `exited.json` round-tripping), `daemon/client` (the terminal-attach client), `sessions/store`'s locking (two processes writing concurrently; `categoryColors` round-tripping; `path=None` — no vault configured — making `load` return empty while `save`/`update` raise `VaultNotConfigured`), `claude/setup` (both directions: the settings.json rewrite/backup, `SettingsUnreadable`, and `run_remove`'s selective removal), `claude/keybindings` (the removal side only — see §17.2/§7.2), `cli/daemon` (`--running-count`/`--stop` against a real daemon), `sessions/cache`, `cli/json_output` (the `status`/`status_label` split, `waiting_for` only when applicable), `sessions/live` (`waiting`/`waiting_for`/labels), `usage/pricing` (each price tier, the 1-hour cache rate, unknown models), `usage/turns` (cost, tools, duration, `before_first`), `usage/stats` (windows, buckets, de-duplication, `_roll_forward`'s single- and multi-window-stale cases and their boundaries), `claude/hooks` (`format_status_line`, the submit-key symbol, `_update_compacted`'s write/remove), `config` (`_resolve_vault`'s priority order, `require_vault`), `sessions/model`, `sessions/scan` (including the racy-mtime re-read rule and the `rg`/`grep`/pure-Python fallback chain), `sessions/detail` (including `last_command`), `tui/items` (the TUI's grouping, wrapping, display width), `tui/app` (the early exit with no vault configured, the persisted `OTHER_GROUP` heading's translated label), `cli/edit` (a fake socket server: `ok:true`→0, `cancel`→1, `no-tab`/`busy`→fallback, unreachable/EOF→fallback).
-- **TypeScript** (`vitest`, under `plugin/test/`): `tree`, `manager-model` (`flattenTree`, selection movement, sorting, `categoryTotals`, `weeklyPace`, `formatWeekdayTime`, `shortModelName`), `side-list` (open-tabs/running/recent sectioning), `links`, `at-complete`, `marks`, `key-role` (`classifyEnter`, `resolveEnterAction` × `sendSequence`, `SUBMIT_KEY_SYMBOLS`, the non-macOS submit-key labels, `classifyCtrlKeyNonMac`), `keybindings` (`readEnterMode`, `readChatBindings`, `applySubmitKey`, `deriveSubmitKey`, `reconcileSubmitKey`, `defaultKeybindingsPath`), `daemon-client` (framing), `daemon-integration` (a real daemon — skipped unless `AGENT_SESSIONS_BIN` points at a built binary), `statusline`, `limits` (formatting, sorting, `rollForwardWindow`), `store` (read/write, locking, the temp-file path), `category` (palette-index assignment), `name` (`tokenizeNameInput`, `filterCategories`, `sessionDisplayName`), `detail` (`categoryAndLabel`), `terminal-status` (priority order, `asking`, `compacted`, the icon table), `attention` (`attentionCounts`, `urgencyByGroupKey`), `compacted` (`CompactedTracker`), `autosave` (`SaveDebouncer`), `ui-state`, `vault-state` (`writeVaultState`), `backend` (`envWithVault`, `defaultLoginShell`), `registry` (`waitingFor` passthrough), `index` (`waitForName`, `row.compacted` composition), `edit-server` (frame round-trips and handler branches), `i18n`, `settings`, `usage`, `tui-mode`, `dedupe` (`openSession`'s de-duplication, against a mocked workspace).
+- **TypeScript** (`vitest`, under `plugin/test/`, mirroring `src/`'s subfolders — `test/backend/`, `test/sessions/`, `test/terminal/`, `test/usage/`, `test/views/`; `i18n` and `settings` stay at the top level, matching `i18n.ts`/`settings.ts`): `tree`, `manager-model` (`flattenTree`, selection movement, sorting, `categoryTotals`, `weeklyPace`, `formatWeekdayTime`, `shortModelName`), `side-list` (open-tabs/running/recent sectioning), `links`, `at-complete`, `marks`, `key-role` (`classifyEnter`, `resolveEnterAction` × `sendSequence`, `SUBMIT_KEY_SYMBOLS`, the non-macOS submit-key labels, `classifyCtrlKeyNonMac`), `keybindings` (`readEnterMode`, `readChatBindings`, `applySubmitKey`, `deriveSubmitKey`, `reconcileSubmitKey`, `defaultKeybindingsPath`), `daemon-client` (framing), `daemon-integration` (a real daemon — skipped unless `AGENT_SESSIONS_BIN` points at a built binary), `statusline`, `limits` (formatting, sorting, `rollForwardWindow`), `store` (read/write, locking, the temp-file path), `category` (palette-index assignment), `name` (`tokenizeNameInput`, `filterCategories`, `sessionDisplayName`), `detail` (`categoryAndLabel`), `terminal-status` (priority order, `asking`, `compacted`, the icon table), `attention` (`attentionCounts`, `urgencyByGroupKey`), `compacted` (`CompactedTracker`), `autosave` (`SaveDebouncer`), `ui-state`, `vault-state` (`writeVaultState`), `backend` (`envWithVault`, `defaultLoginShell`), `registry` (`waitingFor` passthrough), `index` (`waitForName`, `row.compacted` composition), `edit-server` (frame round-trips and handler branches), `i18n`, `settings`, `usage`, `tui-mode`, `dedupe` (`openSession`'s de-duplication, against a mocked workspace).
 - **Manual**: `requirements.md`'s acceptance checks. Hands-on verification in a real Obsidian instance is reserved for reported visual glitches and for interactions the automation described in §23 can't drive (a right-click context menu, for instance).
 - **CI** (`.github/workflows/test.yml`, on every push and pull request): the Python suite (`python3 -W error -m unittest discover -s tests -t .`, Python 3.11) runs on `ubuntu-latest` and `macos-latest`. The plugin's `npm ci`, `npm run typecheck`, and `npm test` run on `ubuntu-latest` (Node 20).
 

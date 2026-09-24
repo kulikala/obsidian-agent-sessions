@@ -2,13 +2,13 @@
 // badges (model/effort/rc), a context-usage donut, total tokens/cost, the last instruction and
 // response (click to expand), tools, folder, and ID.
 
-import { renderCategoryChip } from "../chip";
-import type { Row } from "../index";
+import { renderCategoryChip } from "../ui/chip";
+import type { Row } from "../sessions/index";
 import { t } from "../i18n";
-import type { StatusInfo } from "../statusline";
-import { splitName } from "../tree";
+import type { StatusInfo } from "../sessions/statusline";
+import { splitName } from "../sessions/tree";
 import type { Detail, UsageResult, UsageTotal } from "../types";
-import { formatK } from "../usage";
+import { formatK } from "../usage/usage";
 
 export interface DetailContext {
 	row: Row;
