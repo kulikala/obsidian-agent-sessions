@@ -5,7 +5,7 @@ import { AGENT_ICON_ID } from "../ui/icons";
 import type { Row } from "../sessions/index";
 import { t, type MessageKey } from "../i18n";
 import type AgentSessionsPlugin from "../main";
-import { categorizableLabel } from "../sessions/name";
+import { categorizableLabel, sessionDisplayName } from "../sessions/name";
 import {
 	resolveRowStatus,
 	STATUS_GROUP_ICON,
@@ -119,7 +119,7 @@ export function renderAgentMark(container: HTMLElement, agent: string): void {
 }
 
 export function displayName(row: Row): string {
-	return row.name || row.label || t("common.untitled", { id: row.id.slice(0, 8) });
+	return sessionDisplayName(row);
 }
 
 /** `row`'s category (the part of the name before `': '`, same split as `tree.ts`'s `splitName`). `null` if there isn't one. */
@@ -418,7 +418,7 @@ export function createRowActions(
 			if (row.archived) {
 				plugin.unarchive(row.id);
 			} else {
-				plugin.archive(row.id, row.name || row.label || row.id, row.agent);
+				plugin.archive(row.id, sessionDisplayName(row), row.agent);
 			}
 		},
 		endSession: (id) => plugin.endSession(id),

@@ -15,7 +15,7 @@ export type ManagerRow =
 	| { kind: "group"; key: string; label: string; count: number; folded: boolean }
 	| { kind: "session"; row: Row; indent: boolean }
 	/** A session with an archive entry that no longer shows up in `json scan` (it no longer exists). */
-	| { kind: "archived-orphan"; id: string; name: string };
+	| { kind: "archived-orphan"; id: string; name: string; agent: string };
 
 /**
  * Whether `row` (whose resolved status is `status`) should show under the manager's `filter` —
@@ -91,7 +91,7 @@ export function flattenTree(tree: ManagerTree, showArchived: boolean): ManagerRo
 			if (entry.row) {
 				out.push({ kind: "session", row: entry.row, indent: true });
 			} else {
-				out.push({ kind: "archived-orphan", id: entry.id, name: entry.name });
+				out.push({ kind: "archived-orphan", id: entry.id, name: entry.name, agent: entry.agent });
 			}
 		}
 	}

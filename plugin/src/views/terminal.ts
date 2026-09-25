@@ -128,7 +128,14 @@ export class TerminalView extends ItemView {
 	private earlyOutput = "";
 
 	private waiting = false;
+	/** The session's own real name (`Row.name`), never the fallback chain — used as-is for
+	 * pre-filling "Rename" (T-106). `getDisplayText()` runs it (and `label`) through
+	 * `sessionDisplayName` for the actual tab title. */
 	private displayName = "";
+	/** The session's auto-derived label (`Row.label`, usually the first prompt, truncated) —
+	 * `sessionDisplayName`'s fallback once there's no real name yet (T-106). Kept in sync with
+	 * `displayName` by `refreshName()`. */
+	private label = "";
 
 	/** Jump: remembers where instructions and responses start. xterm's markers are wrapped by `markerSource()`. */
 	private marks: MarkTracker;
@@ -178,7 +185,7 @@ export class TerminalView extends ItemView {
 	}
 
 	getDisplayText(): string {
-		return sessionDisplayName(this.displayName, this.id);
+		return sessionDisplayName({ name: this.displayName, label: this.label, agent: this.agent, id: this.id });
 	}
 
 	getIcon(): string {
@@ -870,7 +877,11 @@ export class TerminalView extends ItemView {
 				.setTitle(t("action.rename"))
 				.setIcon("pencil")
 				.onClick(() => {
-					new RenameSessionModal(this.plugin, this.getDisplayText(), (name) => void this.plugin.renameSession(id, name)).open();
+					// The dialog pre-fills from the session's own real name only (`this.displayName`,
+					// same as `rows.ts`'s row-menu rename) — never `getDisplayText()`'s fallback
+					// chain (T-106), which would otherwise pre-fill something like "New Codex
+					// session" as if it were the actual stored name.
+					new RenameSessionModal(this.plugin, this.displayName, (name) => void this.plugin.renameSession(id, name)).open();
 				})
 		);
 		menu.addItem((item) =>
@@ -1164,9 +1175,11 @@ export class TerminalView extends ItemView {
 
 	private refreshName(): void {
 		const row = this.plugin.index.sessions.get(this.id);
-		const next = row?.name || "";
-		if (next !== this.displayName) {
-			this.displayName = next;
+		const nextName = row?.name || "";
+		const nextLabel = row?.label || "";
+		if (nextName !== this.displayName || nextLabel !== this.label) {
+			this.displayName = nextName;
+			this.label = nextLabel;
 			this.updateHeader();
 		}
 	}

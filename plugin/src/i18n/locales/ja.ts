@@ -49,7 +49,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"common.none": "（無し）",
 	"common.unknown": "不明",
 	"common.listSep": "、",
-	"common.untitled": "無題 {id}",
+	"common.newSession.claude": "新規 Claude Code セッション",
+	"common.newSession.codex": "新規 Codex セッション",
 
 	// ---- Notices and errors (main.ts, terminal.ts) ----
 	"notice.noActiveNote": "開いているノートがありません",

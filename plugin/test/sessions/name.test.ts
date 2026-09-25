@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { setLang } from "../../src/i18n";
 import {
 	categorizableLabel,
@@ -153,31 +153,47 @@ describe("categorizableLabel", () => {
 	});
 });
 
-describe("sessionDisplayName", () => {
+describe("sessionDisplayName (T-106: name → label → agent-name fallback, never the id)", () => {
+	afterEach(() => setLang("en"));
+
 	it("returns the name as-is when present", () => {
 		// Japanese fixture: category/name text as it actually appears in the product.
-		expect(sessionDisplayName("スキル開発: セッション管理", "01234567-89ab-cdef-0123-456789abcdef")).toBe(
+		expect(sessionDisplayName({ name: "スキル開発: セッション管理", label: "ignored", agent: "claude", id: "x" })).toBe(
 			"スキル開発: セッション管理"
 		);
 	});
 
-	it("falls back to '無題 <id8>' (Japanese) when the name is an empty string", () => {
-		setLang("ja");
-		expect(sessionDisplayName("", "01234567-89ab-cdef-0123-456789abcdef")).toBe("無題 01234567");
+	it("falls back to the label when there's no name", () => {
+		expect(sessionDisplayName({ name: null, label: "現在利用可能なツールを教えて。", agent: "codex", id: "x" })).toBe(
+			"現在利用可能なツールを教えて。"
+		);
+		expect(sessionDisplayName({ name: "", label: "First prompt", agent: "claude", id: "x" })).toBe("First prompt");
 	});
 
-	it("falls back to '無題 <id8>' when the name is null", () => {
-		setLang("ja");
-		expect(sessionDisplayName(null, "01234567-89ab-cdef-0123-456789abcdef")).toBe("無題 01234567");
+	it("falls back to the agent's 'New ... session' text when there's neither a name nor a label", () => {
+		expect(sessionDisplayName({ name: null, label: null, agent: "claude", id: "x" })).toBe("New Claude Code session");
+		expect(sessionDisplayName({ name: null, label: undefined, agent: "codex", id: "x" })).toBe("New Codex session");
 	});
 
-	it("falls back to '無題 <id8>' when the name is undefined", () => {
+	it("in Japanese, the agent fallback is localized", () => {
 		setLang("ja");
-		expect(sessionDisplayName(undefined, "01234567-89ab-cdef-0123-456789abcdef")).toBe("無題 01234567");
+		expect(sessionDisplayName({ name: null, label: null, agent: "claude", id: "x" })).toBe("新規 Claude Code セッション");
+		expect(sessionDisplayName({ name: null, label: null, agent: "codex", id: "x" })).toBe("新規 Codex セッション");
 	});
 
-	it("falls back to 'Untitled <id8>' in English", () => {
-		setLang("en");
-		expect(sessionDisplayName(null, "01234567-89ab-cdef-0123-456789abcdef")).toBe("Untitled 01234567");
+	it("an unrecognized agent id falls back to Claude's text (asAgentId's own default)", () => {
+		expect(sessionDisplayName({ name: null, label: null, agent: "something-else", id: "x" })).toBe("New Claude Code session");
+	});
+
+	it("treats a label equal to the id as absent (Python couldn't extract anything real) — never shows the id itself", () => {
+		const id = "01234567-89ab-cdef-0123-456789abcdef";
+		expect(sessionDisplayName({ name: null, label: id, agent: "codex", id })).toBe("New Codex session");
+	});
+
+	it("a real label that merely starts with the id-like text is still used as-is", () => {
+		const id = "01234567-89ab-cdef-0123-456789abcdef";
+		expect(sessionDisplayName({ name: null, label: `${id} was mentioned`, agent: "claude", id })).toBe(
+			`${id} was mentioned`
+		);
 	});
 });

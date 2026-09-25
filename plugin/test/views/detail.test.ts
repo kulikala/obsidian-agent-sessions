@@ -63,16 +63,16 @@ describe("categoryAndLabel (splits the detail panel's name into category and lab
 		});
 	});
 
-	it("with no name, category is null and label falls back to the display name (label, then Untitled)", () => {
+	it("with no name, category is null and label falls back to the display name (label, then the agent's 'New ... session' text)", () => {
 		expect(categoryAndLabel(row({ id: "1", name: null, label: "Heading" }))).toEqual({
 			category: null,
 			label: "Heading",
 		});
-		// The Untitled fallback goes through t(), so pin the language for this assertion.
+		// The agent-name fallback goes through t(), so pin the language for this assertion.
 		setLang("ja");
-		expect(categoryAndLabel(row({ id: "12345678", name: null, label: null }))).toEqual({
+		expect(categoryAndLabel(row({ id: "12345678", name: null, label: null, agent: "claude" }))).toEqual({
 			category: null,
-			label: "無題 12345678",
+			label: "新規 Claude Code セッション",
 		});
 	});
 });

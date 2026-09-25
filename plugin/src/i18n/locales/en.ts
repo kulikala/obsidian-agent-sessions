@@ -48,7 +48,8 @@ export const en = {
 	"common.none": "(none)",
 	"common.unknown": "Unknown",
 	"common.listSep": ", ",
-	"common.untitled": "Untitled {id}",
+	"common.newSession.claude": "New Claude Code session",
+	"common.newSession.codex": "New Codex session",
 
 	// ---- Notices and errors (main.ts, terminal.ts) ----
 	"notice.noActiveNote": "No note is open",

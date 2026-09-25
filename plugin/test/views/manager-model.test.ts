@@ -121,7 +121,7 @@ describe("flattenTree", () => {
 		expect(rows).toEqual<ManagerRow[]>([
 			{ kind: "group", key: ARCHIVED_GROUP, label: "アーカイブ（2）", count: 2, folded: false },
 			{ kind: "session", row: withRow, indent: true },
-			{ kind: "archived-orphan", id: "2", name: "Gone now" },
+			{ kind: "archived-orphan", id: "2", name: "Gone now", agent: "claude" },
 		]);
 	});
 
@@ -280,7 +280,7 @@ describe("sortRows", () => {
 			{ kind: "session", row: g1, indent: true },
 			{ kind: "session", row: g2, indent: true },
 			{ kind: "session", row: single, indent: false },
-			{ kind: "archived-orphan", id: "9", name: "Old" },
+			{ kind: "archived-orphan", id: "9", name: "Old", agent: "claude" },
 		];
 		const stats: StatsResult = {
 			windows: {

@@ -54,7 +54,7 @@ describe("dictionary (ja and en have matching key sets today)", () => {
 	it("resolves the same MessageKey in both languages", () => {
 		const sampleKeys: MessageKey[] = [
 			"action.newSession",
-			"common.untitled",
+			"common.newSession.claude",
 			"error.agentMissing",
 			"usage.md.title",
 			"settings.language.name",

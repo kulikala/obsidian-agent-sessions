@@ -23,6 +23,7 @@ import {
 } from "../sessions/terminal-status";
 import { VIEW_TYPE_TERMINAL } from "../sessions/open-session";
 import { loadStore } from "../sessions/store";
+import { sessionDisplayName } from "../sessions/name";
 import { buildManagerTree } from "../sessions/tree";
 import type { StatsResult, StatsWindow } from "../types";
 import { formatK } from "../usage/usage";
@@ -834,7 +835,10 @@ export class ManagerView extends ItemView {
 		if (mrow.kind === "archived-orphan") {
 			const tr = this.tableBodyEl.createEl("tr", { cls: "agent-sessions-manager-row is-indented is-archived" });
 			tr.createEl("td", { cls: "agent-sessions-manager-col-mark" });
-			tr.createEl("td", { cls: "agent-sessions-manager-col-name", text: mrow.name || t("common.untitled", { id: mrow.id.slice(0, 8) }) });
+			tr.createEl("td", {
+				cls: "agent-sessions-manager-col-name",
+				text: mrow.name || sessionDisplayName({ name: null, label: null, agent: mrow.agent, id: mrow.id }),
+			});
 			tr.createEl("td", { cls: "agent-sessions-manager-col-time" });
 			tr.createEl("td", { cls: "agent-sessions-manager-col-model" });
 			tr.createEl("td", { cls: "agent-sessions-manager-col-effort" });

@@ -5,6 +5,7 @@
 import { renderCategoryChip } from "../ui/chip";
 import type { Row } from "../sessions/index";
 import { t } from "../i18n";
+import { sessionDisplayName } from "../sessions/name";
 import type { StatusInfo } from "../sessions/statusline";
 import { splitName } from "../sessions/tree";
 import type { Detail, UsageResult, UsageTotal } from "../types";
@@ -39,17 +40,13 @@ export function formatCost(cost: number): string {
 	return `$${cost.toFixed(2)}`;
 }
 
-function displayName(row: Row): string {
-	return row.name || row.label || t("common.untitled", { id: row.id.slice(0, 8) });
-}
-
 /** The (category if any, name with category stripped) pair shown in the name field. */
 export function categoryAndLabel(row: Row): { category: string | null; label: string } {
 	if (row.name) {
 		const [category, rest] = splitName(row.name);
 		return { category, label: rest };
 	}
-	return { category: null, label: displayName(row) };
+	return { category: null, label: sessionDisplayName(row) };
 }
 
 /** `obsidian`'s `setIcon`/`setTooltip` are required lazily (same reason as `rows.ts`'s

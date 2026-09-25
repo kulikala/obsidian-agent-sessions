@@ -931,7 +931,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	/** Opens the session analytics modal. */
 	showUsage(id: string): void {
 		const row = this.index.sessions.get(id);
-		const name = row?.name || row?.label || t("common.untitled", { id: id.slice(0, 8) });
+		const name = sessionDisplayName({ name: row?.name, label: row?.label, agent: row?.agent ?? "claude", id });
 		new UsageModal(this.app, this.agentSessionsPath(), this.vaultPath(), id, name).open();
 	}
 
@@ -1015,7 +1015,9 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * brought to front looks like). There's no `TerminalView` yet, so `updateIcon()`/
 	 * `refreshName()` aren't available; instead this works from what's knowable via the `Row` in
 	 * `plugin.index.sessions` (status from `rowTerminalStatus`, or `detached` without even a
-	 * ledger entry; name from `Row.name`, or `sessionDisplayName`'s "Untitled <id8>" without one).
+	 * ledger entry; name/label from the `Row` if there is one, agent from the `Row` or else the
+	 * leaf's own persisted state — `sessionDisplayName`'s "New Claude Code session"/"New Codex
+	 * session" fallback if neither has a name or label yet, T-106).
 	 *
 	 * Two things get fixed:
 	 * 1. `leaf.view.icon`/`leaf.view.title` — `DeferredView` is still an instance of `View` (the
@@ -1034,12 +1036,13 @@ export default class AgentSessionsPlugin extends Plugin {
 			if (!leaf.isDeferred) {
 				continue;
 			}
-			const state = leaf.getViewState().state as { id?: string } | undefined;
+			const state = leaf.getViewState().state as { id?: string; agent?: string } | undefined;
 			const id = typeof state?.id === "string" ? state.id : "";
 			const row = id ? this.index.sessions.get(id) : undefined;
 			const status: TerminalStatus = row ? rowTerminalStatus(row) : "detached";
 			const iconName = TERMINAL_STATUS_ICON[status];
-			const name = sessionDisplayName(row?.name, id);
+			const agent = row?.agent ?? state?.agent ?? "claude";
+			const name = sessionDisplayName({ name: row?.name, label: row?.label, agent, id });
 
 			leaf.view.icon = iconName;
 			(leaf.view as unknown as { title?: string }).title = name;
@@ -1072,7 +1075,8 @@ export default class AgentSessionsPlugin extends Plugin {
 		if (front?.sessionId === id && document.hasFocus()) {
 			return;
 		}
-		const name = this.index.sessions.get(id)?.name ?? t("common.untitled", { id: id.slice(0, 8) });
+		const row = this.index.sessions.get(id);
+		const name = sessionDisplayName({ name: row?.name, label: row?.label, agent: row?.agent ?? "claude", id });
 		const notice = new Notice(t("notice.waitingForInput", { name }), 8000);
 		notice.noticeEl.addEventListener("click", () => void this.openSession(id));
 	}
