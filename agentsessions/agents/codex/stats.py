@@ -1,23 +1,31 @@
-"""Codex's contribution to `json stats` (T-103): `{"windows": {"five_hour": W,
-"seven_day": W}}`, the same `W` shape Claude Code's `usage.stats.compute`
-already produces (`{start, end, used_percentage, total, sessions}`), so the
-plugin's analysis views (5h/7d cards, pace, category bars, the side panel's
-rate-limit bars) can render either agent through the same code.
+"""Codex's contribution to `json stats` (T-103, extended T-103-followup):
+`{"windows": {"five_hour": W, "seven_day": W, ...}}`, the same `W` shape
+Claude Code's `usage.stats.compute` already produces (`{start, end,
+used_percentage, total, sessions}`, now also carrying `key`/`minutes` -- see
+that module), so the plugin's analysis views (5h/7d cards, pace, category
+bars, the side panel's rate-limit bars) can render either agent through the
+same code.
 
-Two things Codex needs that Claude Code doesn't:
+Three things Codex needs that Claude Code doesn't:
 
 - **Window identification.** Claude Code's `status/*.json` always labels its
   two windows `five_hour`/`seven_day` explicitly. Codex's `rate_limits` instead
   has two positional slots, `primary`/`secondary`, whose *meaning* is only
   knowable from each slot's own `window_minutes` -- checked against real local
   data (2026-09-25), the same account reported `primary` as a ~5-hour window in
-  one rollout, a ~7-day window in another, and a ~30-day window (no 7d/5h
-  equivalent at all -- this account's current, real state) in the most recent
-  one, with `secondary` similarly not fixed to one meaning. `_classify` reads
-  `window_minutes` itself rather than trusting position. A window kind with no
-  matching reading anywhere reports `used_percentage: None` -- Codex genuinely
-  isn't tracking it for this account right now, same as Claude's "no
-  status/*.json yet" case.
+  one rollout and a ~7-day window in another, with `secondary` similarly not
+  fixed to one meaning. `_classify` reads `window_minutes` itself rather than
+  trusting position.
+- **A window that's neither 5h nor 7d isn't discarded.** This account's actual
+  current state (free plan) is a single ~30-day/43200-minute quota -- no 5h or
+  7d window at all. `five_hour`/`seven_day` are still always present in the
+  output (with `used_percentage: null` if this account isn't tracking that
+  length right now, same convention as Claude's "no status/*.json yet"), but
+  any *other* window Codex reports is also included, keyed by
+  `window_<minutes>m` and carrying a best-effort `label_key` (`window.30d` for
+  a day-aligned length, `window.5h`-style for an hour-aligned one, or
+  `window.<n>m` as a last resort) for the plugin to look up display text for a
+  length it may not have a hardcoded string for.
 - **No incremental cache.** `usage.stats`'s per-file offset/bucket cache exists
   because `message.usage` in a Claude Code transcript is already a per-call
   delta; a Codex rollout's `token_count` is a *running total*, so recovering a
@@ -26,6 +34,13 @@ Two things Codex needs that Claude Code doesn't:
   every rollout in range from the start -- for a personal-use dataset (tens,
   not thousands, of Codex sessions) this is fast enough to skip the added
   complexity of also caching each file's running total.
+
+All windows come from a single `rate_limits` snapshot -- the most recent
+`token_count` event found across all rollouts -- rather than hunting each
+window kind independently across different files/times: `primary` and
+`secondary` are only ever reported together, so mixing one slot's *current*
+reading with another slot's reading from an older, possibly stale snapshot
+would show two windows that don't actually describe the same moment.
 """
 import os
 from typing import Dict, List, Optional, Tuple
@@ -37,15 +52,18 @@ from ...usage.stats import (
 from . import rollout
 
 # Real `window_minutes` values wobble by a minute or two (299 vs. 300); classify
-# by nearest, not exact match. A window far from both known kinds (e.g. Codex's
-# own ~30-day/43200-minute quota, seen on the free plan) matches neither and is
-# ignored -- it doesn't fit this project's five_hour/seven_day shape.
+# by nearest, not exact match.
 _FIVE_HOUR_MINUTES = FIVE_HOUR_SECONDS / 60
 _SEVEN_DAY_MINUTES = SEVEN_DAY_SECONDS / 60
 _CLASSIFY_TOLERANCE_MINUTES = 30
 
+_MINUTES_PER_HOUR = 60
+_MINUTES_PER_DAY = 1440
+
 
 def _classify(window_minutes) -> Optional[str]:
+    """`'five_hour'`/`'seven_day'`/`None` (a window of some other length --
+    still surfaced, just not one of the two fixed keys)."""
     if not isinstance(window_minutes, (int, float)) or isinstance(window_minutes, bool):
         return None
     if abs(window_minutes - _FIVE_HOUR_MINUTES) <= _CLASSIFY_TOLERANCE_MINUTES:
@@ -55,6 +73,19 @@ def _classify(window_minutes) -> Optional[str]:
     return None
 
 
+def _label_key(minutes: float) -> str:
+    """A best-effort i18n key for a window length the plugin may not have a
+    hardcoded string for (`window.<n>d`/`window.<n>h`/`window.<n>m`, whichever
+    divides evenly) -- `minutes` itself (carried on the window alongside this)
+    is the authoritative value; this is just a display hint."""
+    n = int(round(minutes))
+    if n % _MINUTES_PER_DAY == 0:
+        return 'window.%dd' % (n // _MINUTES_PER_DAY)
+    if n % _MINUTES_PER_HOUR == 0:
+        return 'window.%dh' % (n // _MINUTES_PER_HOUR)
+    return 'window.%dm' % n
+
+
 def _mtime(path: str) -> float:
     try:
         return os.stat(path).st_mtime
@@ -62,29 +93,62 @@ def _mtime(path: str) -> float:
         return -1.0
 
 
-def _find_reading(paths: List[str], kind: str) -> Optional[dict]:
-    """The most recent `{used_percent, resets_at}` reading of `kind`
-    (`'five_hour'`/`'seven_day'`), searching rollouts newest-mtime-first and,
-    within each, its tail. `None` if no rollout has ever reported this kind."""
+def _latest_rate_limits(paths: List[str]) -> Optional[dict]:
+    """The single most recent `rate_limits` payload across all rollouts
+    (newest-mtime file first, then that file's own tail) -- see module
+    docstring for why `primary`/`secondary` are read together from one
+    snapshot rather than hunted independently."""
     for path in sorted(paths, key=_mtime, reverse=True):
         for line_rl in rollout.iter_rate_limits_tail(path):
-            for slot in ('primary', 'secondary'):
-                w = line_rl.get(slot)
-                if isinstance(w, dict) and _classify(w.get('window_minutes')) == kind:
-                    return w
+            return line_rl
     return None
 
 
-def _window_bounds(paths: List[str], kind: str, duration: float, now: float) -> Tuple[float, Optional[float]]:
-    reading = _find_reading(paths, kind)
-    if reading is None:
-        return now, None
+def _bounds_from_reading(reading: dict, duration: float, now: float) -> Tuple[float, Optional[float]]:
     resets_at = reading.get('resets_at')
     if not isinstance(resets_at, (int, float)) or isinstance(resets_at, bool):
         return now, None
     used_raw = reading.get('used_percent')
     used = float(used_raw) if isinstance(used_raw, (int, float)) and not isinstance(used_raw, bool) else None
     return _roll_forward(float(resets_at), used, duration, now)
+
+
+def _window_defs(paths: List[str], now: float) -> List[dict]:
+    """Every window to report: always `five_hour`/`seven_day` (first, in that
+    order, even if this account isn't tracking one of them right now -- so a
+    consumer can keep relying on those two keys always existing), then any
+    other window found in the latest snapshot, in the order that snapshot
+    lists its slots. Each: `{key, minutes, label_key, start, end,
+    used_percentage}`."""
+    rl = _latest_rate_limits(paths)
+    slots: Dict[str, dict] = {}   # classified key or generated key -> raw slot
+    if rl:
+        for slot_name in ('primary', 'secondary'):
+            w = rl.get(slot_name)
+            if not isinstance(w, dict):
+                continue
+            wm = w.get('window_minutes')
+            if not isinstance(wm, (int, float)) or isinstance(wm, bool):
+                continue
+            kind = _classify(wm)
+            key = kind or ('window_%dm' % int(round(wm)))
+            slots.setdefault(key, w)   # first (more recent, per read order) wins if duplicated
+
+    defs: List[dict] = []
+    for kind, duration in (('five_hour', FIVE_HOUR_SECONDS), ('seven_day', SEVEN_DAY_SECONDS)):
+        w = slots.pop(kind, None)
+        minutes = duration / 60
+        end, used = _bounds_from_reading(w, duration, now) if w is not None else (now, None)
+        defs.append({'key': kind, 'minutes': minutes, 'label_key': _label_key(minutes),
+                     'start': end - duration, 'end': end, 'used_percentage': used})
+
+    for key, w in slots.items():
+        minutes = float(w['window_minutes'])
+        duration = minutes * 60
+        end, used = _bounds_from_reading(w, duration, now)
+        defs.append({'key': key, 'minutes': minutes, 'label_key': _label_key(minutes),
+                     'start': end - duration, 'end': end, 'used_percentage': used})
+    return defs
 
 
 # ---- Token/cost aggregation --------------------------------------------------
@@ -95,7 +159,7 @@ def _bucket_rollout(path: str) -> Dict[int, dict]:
     module docstring). Mirrors `agents.codex.usage.collect`'s delta-from-running-total
     logic, but bucketed by each `token_count` event's own timestamp rather than
     grouped into turns -- `json stats` needs to place usage precisely against
-    the 5h/7d window boundaries, which a turn (spanning from one `task_started`
+    each window's boundaries, which a turn (spanning from one `task_started`
     to the next) can straddle."""
     buckets: Dict[int, dict] = {}
     current_model: Optional[str] = None
@@ -176,27 +240,29 @@ def compute(now: float, home: Optional[str] = None) -> dict:
     home = home if home is not None else rollout.codex_home()
     paths = rollout.list_transcripts(home)
 
-    five_end, five_used = _window_bounds(paths, 'five_hour', FIVE_HOUR_SECONDS, now)
-    seven_end, seven_used = _window_bounds(paths, 'seven_day', SEVEN_DAY_SECONDS, now)
-    five_start = five_end - FIVE_HOUR_SECONDS
-    seven_start = seven_end - SEVEN_DAY_SECONDS
-    min_start = min(five_start, seven_start)
+    defs = _window_defs(paths, now)
+    min_start = min(d['start'] for d in defs)
 
     per_file: List[Tuple[str, Dict[int, dict]]] = []
     for p in paths:
         if _mtime(p) < min_start:
-            continue   # untouched within either window -- can't contribute a bucket in range
+            continue   # untouched within any window -- can't contribute a bucket in range
         sid = rollout.session_id_of(p)
         if not sid:
             continue
         per_file.append((sid, _bucket_rollout(p)))
 
     windows = {}
-    for key, start, end, used in (
-        ('five_hour', five_start, five_end, five_used),
-        ('seven_day', seven_start, seven_end, seven_used),
-    ):
-        total, sessions = _window_totals(per_file, start, end)
-        windows[key] = {'start': start, 'end': end, 'used_percentage': used,
-                         'total': total, 'sessions': sessions}
+    for d in defs:
+        total, sessions = _window_totals(per_file, d['start'], d['end'])
+        windows[d['key']] = {
+            'key': d['key'],
+            'minutes': d['minutes'],
+            'label_key': d['label_key'],
+            'start': d['start'],
+            'end': d['end'],
+            'used_percentage': d['used_percentage'],
+            'total': total,
+            'sessions': sessions,
+        }
     return {'windows': windows}

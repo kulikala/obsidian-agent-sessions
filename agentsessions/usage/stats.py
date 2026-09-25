@@ -405,9 +405,18 @@ def compute(now: float, projects_dir: str, status_dir: str, cache_path: str) -> 
     save_cache(cache, cache_path)
 
     windows = {}
-    for key, start, end in (('five_hour', five_start, five_end), ('seven_day', seven_start, seven_end)):
+    for key, minutes, start, end in (('five_hour', FIVE_HOUR_SECONDS / 60, five_start, five_end),
+                                      ('seven_day', SEVEN_DAY_SECONDS / 60, seven_start, seven_end)):
         total, sessions = _window_totals(per_file, start, end)
         windows[key] = {
+            'key': key,
+            # T-103 (agents.<name>.windows): every window, any agent, carries its
+            # own length in minutes, so a pace-calculation formula that only cares
+            # about window length (not which agent or which of the fixed
+            # five_hour/seven_day slots) can run against any of them uniformly --
+            # including a Codex window that isn't 5h or 7d at all (see
+            # agents.codex.stats, which needed this for exactly that reason).
+            'minutes': minutes,
             'start': start,
             'end': end,
             'used_percentage': win[key]['used_percentage'],

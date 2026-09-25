@@ -35,16 +35,21 @@ class TestClassify(unittest.TestCase):
         self.assertIsNone(stats._classify('not a number'))
 
 
-class TestWindowReading(unittest.TestCase):
+class TestWindowDefs(unittest.TestCase):
     """The bug this guards against: Codex's rate_limits has two positional
     slots (primary/secondary) whose *meaning* isn't fixed -- real data shows
     the same account reporting a 5-hour window as `primary` in one rollout and
-    a 7-day window as `primary` in another. Position must never be trusted."""
+    a 7-day window as `primary` in another. Position must never be trusted.
+    A window that isn't 5h or 7d (e.g. a monthly quota) must not be discarded
+    either -- it's this account's actual current, real state."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = self.tmp.name
         self.now = 1_700_100_000.0
+
+    def _defs_by_key(self, paths):
+        return {d['key']: d for d in stats._window_defs(paths, self.now)}
 
     def test_five_hour_found_even_when_it_is_the_secondary_slot(self):
         p = rollout_path(self.home, ID1)
@@ -57,13 +62,15 @@ class TestWindowReading(unittest.TestCase):
                                      'secondary': {'used_percent': 12.0, 'window_minutes': 300,
                                                    'resets_at': self.now + FIVE_HOUR_SECONDS}}),
         ])
-        paths = [p]
-        five_end, five_used = stats._window_bounds(paths, 'five_hour', FIVE_HOUR_SECONDS, self.now)
-        self.assertEqual(five_used, 12.0)
-        seven_end, seven_used = stats._window_bounds(paths, 'seven_day', SEVEN_DAY_SECONDS, self.now)
-        self.assertEqual(seven_used, 50.0)
+        defs = self._defs_by_key([p])
+        self.assertEqual(defs['five_hour']['used_percentage'], 12.0)
+        self.assertEqual(defs['five_hour']['minutes'], 300.0)
+        self.assertEqual(defs['seven_day']['used_percentage'], 50.0)
+        self.assertEqual(defs['seven_day']['minutes'], 10080.0)
+        # only the two known kinds present -- nothing extra when both slots classify
+        self.assertEqual(set(defs.keys()), {'five_hour', 'seven_day'})
 
-    def test_only_a_monthly_window_present_reports_both_as_unavailable(self):
+    def test_monthly_window_is_surfaced_not_discarded(self):
         p = rollout_path(self.home, ID1)
         write_rollout(p, [
             session_meta(ID1, '/work/one'),
@@ -72,18 +79,50 @@ class TestWindowReading(unittest.TestCase):
                         rate_limits={'primary': {'used_percent': 8.0, 'window_minutes': 43200,
                                                   'resets_at': self.now + 1000}, 'secondary': None}),
         ])
-        paths = [p]
-        _, five_used = stats._window_bounds(paths, 'five_hour', FIVE_HOUR_SECONDS, self.now)
-        _, seven_used = stats._window_bounds(paths, 'seven_day', SEVEN_DAY_SECONDS, self.now)
-        self.assertIsNone(five_used)
-        self.assertIsNone(seven_used)
+        defs = self._defs_by_key([p])
+        # five_hour/seven_day still always present, unavailable since this
+        # account isn't tracking either right now
+        self.assertIsNone(defs['five_hour']['used_percentage'])
+        self.assertIsNone(defs['seven_day']['used_percentage'])
+        # ...but the real 30-day window is surfaced, not dropped
+        self.assertIn('window_43200m', defs)
+        thirty_day = defs['window_43200m']
+        self.assertEqual(thirty_day['used_percentage'], 8.0)
+        self.assertEqual(thirty_day['minutes'], 43200.0)
+        self.assertEqual(thirty_day['label_key'], 'window.30d')
+
+    def test_non_day_aligned_window_gets_a_minutes_label_key(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            token_count({'input_tokens': 1, 'cached_input_tokens': 0, 'cache_write_input_tokens': 0,
+                        'output_tokens': 1}, '2026-09-24T01:30:31Z',
+                        rate_limits={'primary': {'used_percent': 3.0, 'window_minutes': 90,
+                                                  'resets_at': self.now + 1000}, 'secondary': None}),
+        ])
+        defs = self._defs_by_key([p])
+        self.assertIn('window_90m', defs)
+        self.assertEqual(defs['window_90m']['label_key'], 'window.90m')
+
+    def test_hour_aligned_window_gets_an_hours_label_key(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            token_count({'input_tokens': 1, 'cached_input_tokens': 0, 'cache_write_input_tokens': 0,
+                        'output_tokens': 1}, '2026-09-24T01:30:31Z',
+                        rate_limits={'primary': {'used_percent': 3.0, 'window_minutes': 120,
+                                                  'resets_at': self.now + 1000}, 'secondary': None}),
+        ])
+        defs = self._defs_by_key([p])
+        self.assertEqual(defs['window_120m']['label_key'], 'window.2h')
 
     def test_no_rate_limits_anywhere_reports_unavailable_not_an_error(self):
         p = rollout_path(self.home, ID1)
         write_rollout(p, [session_meta(ID1, '/work/one')])
-        end, used = stats._window_bounds([p], 'five_hour', FIVE_HOUR_SECONDS, self.now)
-        self.assertEqual(end, self.now)
-        self.assertIsNone(used)
+        defs = self._defs_by_key([p])
+        self.assertEqual(defs['five_hour']['end'], self.now)
+        self.assertIsNone(defs['five_hour']['used_percentage'])
+        self.assertEqual(set(defs.keys()), {'five_hour', 'seven_day'})
 
     def test_stale_resets_at_rolls_forward_and_used_percentage_becomes_unknown(self):
         p = rollout_path(self.home, ID1)
@@ -94,9 +133,37 @@ class TestWindowReading(unittest.TestCase):
                         rate_limits={'primary': {'used_percent': 90.0, 'window_minutes': 300,
                                                   'resets_at': self.now - 10}, 'secondary': None}),
         ])
-        end, used = stats._window_bounds([p], 'five_hour', FIVE_HOUR_SECONDS, self.now)
-        self.assertGreaterEqual(end, self.now)
-        self.assertIsNone(used)
+        defs = self._defs_by_key([p])
+        self.assertGreaterEqual(defs['five_hour']['end'], self.now)
+        self.assertIsNone(defs['five_hour']['used_percentage'])
+
+    def test_primary_and_secondary_from_an_older_snapshot_are_not_mixed_with_a_newer_one(self):
+        # Two rollouts, different mtimes -- only the newest file's snapshot
+        # should be used, never a merge across the two.
+        import os
+        old = rollout_path(self.home, ID1, ts='2026-01-01T00-00-00')
+        write_rollout(old, [
+            session_meta(ID1, '/work/one'),
+            token_count({'input_tokens': 1, 'cached_input_tokens': 0, 'cache_write_input_tokens': 0,
+                        'output_tokens': 1}, '2026-01-01T00:00:01Z',
+                        rate_limits={'primary': {'used_percent': 99.0, 'window_minutes': 300,
+                                                  'resets_at': self.now + 1000}, 'secondary': None}),
+        ])
+        new = rollout_path(self.home, ID2, ts='2026-09-24T01-30-30')
+        write_rollout(new, [
+            session_meta(ID2, '/work/two'),
+            token_count({'input_tokens': 1, 'cached_input_tokens': 0, 'cache_write_input_tokens': 0,
+                        'output_tokens': 1}, '2026-09-24T01:30:31Z',
+                        rate_limits={'primary': {'used_percent': 1.0, 'window_minutes': 43200,
+                                                  'resets_at': self.now + 1000}, 'secondary': None}),
+        ])
+        very_old = self.now - 10_000_000
+        os.utime(old, (very_old, very_old))
+        defs = self._defs_by_key([old, new])
+        # the newest snapshot (43200m/1.0%) wins outright -- the older
+        # five-hour reading (300m/99.0%) is not carried over
+        self.assertIsNone(defs['five_hour']['used_percentage'])
+        self.assertEqual(defs['window_43200m']['used_percentage'], 1.0)
 
 
 class TestTokenAggregation(unittest.TestCase):
@@ -157,6 +224,29 @@ class TestTokenAggregation(unittest.TestCase):
         out = stats.compute(now=now, home=self.home)
         self.assertNotIn(ID2, out['windows']['seven_day']['sessions'])
         self.assertEqual(out['windows']['seven_day']['total']['calls'], 0)
+
+    def test_compute_includes_a_non_5h_7d_window_with_its_own_totals(self):
+        now = 1_700_100_000.0
+        p = rollout_path(self.home, ID1, ts='2026-09-24T01-30-30')
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            turn_context(model='gpt-5.6-terra'),
+            token_count({'input_tokens': 1000, 'cached_input_tokens': 0, 'cache_write_input_tokens': 0,
+                        'output_tokens': 100}, _iso(now - 1000),
+                        rate_limits={'primary': {'used_percent': 8.0, 'window_minutes': 43200,
+                                                  'resets_at': now}, 'secondary': None}),
+        ])
+        out = stats.compute(now=now, home=self.home)
+        self.assertIn('window_43200m', out['windows'])
+        thirty_day = out['windows']['window_43200m']
+        self.assertEqual(thirty_day['key'], 'window_43200m')
+        self.assertEqual(thirty_day['minutes'], 43200.0)
+        self.assertEqual(thirty_day['label_key'], 'window.30d')
+        self.assertEqual(thirty_day['total']['input'], 1000)
+        self.assertIn(ID1, thirty_day['sessions'])
+        # five_hour/seven_day still both present, just unavailable
+        self.assertIsNone(out['windows']['five_hour']['used_percentage'])
+        self.assertIsNone(out['windows']['seven_day']['used_percentage'])
 
 
 if __name__ == '__main__':
