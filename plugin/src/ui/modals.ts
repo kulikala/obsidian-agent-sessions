@@ -8,6 +8,7 @@ import { t, type MessageKey } from "../i18n";
 import { composeName, filterCategories, tokenizeNameInput } from "../sessions/name";
 import { AGENT_IDS, type AgentId } from "../settings";
 import { splitName } from "../sessions/tree";
+import { computeSuggestPosition } from "./suggest-position";
 
 const AGENT_NAME_KEY: Record<AgentId, MessageKey> = {
 	claude: "settings.agents.claude.name",
@@ -32,14 +33,19 @@ interface CategorySuggest {
 	moveHighlight(delta: number): void;
 	/** Confirms the highlighted item (calls `onConfirm`), if any. Returns whether it did. */
 	confirmHighlighted(): boolean;
+	/** Removes the dropdown element from `<body>` — required because it's portaled there rather
+	 * than living under `anchorEl` (T-104(e)), so it isn't cleaned up automatically when the
+	 * modal's own `contentEl` is emptied on close. Every caller's `onClose` must call this. */
+	destroy(): void;
 }
 
 /**
- * The category-suggestion dropdown: renders under `anchorEl` (which must be `position: relative`)
- * as chip + label rows from `filterCategories`, arrow-key/mouse highlighting, and click-or-Enter
- * confirmation via `onConfirm`. Shared by the composed name field (`buildComposedNameField`) and
- * `MoveToCategoryModal` — the two callers differ only in what `onConfirm` does with the result
- * (the former turns it into a chip; the latter just fills the input).
+ * The category-suggestion dropdown: positioned against `anchorEl`'s on-screen location (T-104(e)
+ * — see `styles.css`'s `.agent-sessions-name-suggest` comment for why it's portaled to `<body>`
+ * rather than rendered as a normal descendant) as chip + label rows from `filterCategories`,
+ * arrow-key/mouse highlighting, and click-or-Enter confirmation via `onConfirm`. Shared by the
+ * composed name field (`buildComposedNameField`) and `MoveToCategoryModal` — the two callers
+ * differ only in what `onConfirm` does with the result (both now turn it into a chip).
  */
 function buildCategorySuggest(
 	anchorEl: HTMLElement,
@@ -47,7 +53,7 @@ function buildCategorySuggest(
 	colorIndexFor: (category: string) => number,
 	onConfirm: (category: string) => void
 ): CategorySuggest {
-	const suggestEl = anchorEl.createDiv({ cls: "agent-sessions-name-suggest" });
+	const suggestEl = document.body.createDiv({ cls: "agent-sessions-name-suggest" });
 	suggestEl.style.display = "none";
 	let items: string[] = [];
 	let itemEls: HTMLElement[] = [];
@@ -55,6 +61,16 @@ function buildCategorySuggest(
 
 	function applyHighlight(): void {
 		itemEls.forEach((el, i) => el.toggleClass("is-active", i === highlighted));
+	}
+
+	function position(): void {
+		const anchorRect = anchorEl.getBoundingClientRect();
+		const maxHeight = parseFloat(getComputedStyle(suggestEl).maxHeight) || 0;
+		const pos = computeSuggestPosition(anchorRect, window.innerHeight, maxHeight);
+		suggestEl.style.left = `${pos.left}px`;
+		suggestEl.style.width = `${pos.width}px`;
+		suggestEl.style.top = pos.top != null ? `${pos.top}px` : "";
+		suggestEl.style.bottom = pos.bottom != null ? `${pos.bottom}px` : "";
 	}
 
 	return {
@@ -67,6 +83,7 @@ function buildCategorySuggest(
 				highlighted = -1;
 				return;
 			}
+			position();
 			suggestEl.style.display = "";
 			for (const cat of items) {
 				const itemEl = suggestEl.createDiv({ cls: "agent-sessions-name-suggest-item" });
@@ -109,12 +126,28 @@ function buildCategorySuggest(
 			onConfirm(items[highlighted]);
 			return true;
 		},
+		destroy() {
+			suggestEl.remove();
+		},
 	};
+}
+
+/** A small "×" appended to a category chip (T-104(e)) — shared by the composed name field's chip
+ * and `MoveToCategoryModal`'s, so both dialogs remove a chip the same way. Its own click handler
+ * stops propagation so it doesn't also trigger the chip's own click-to-revert-to-text. */
+function appendChipRemove(chip: HTMLElement, onRemove: () => void): void {
+	const removeEl = chip.createSpan({ cls: "agent-sessions-name-chip-remove", text: "×" });
+	removeEl.addEventListener("click", (evt) => {
+		evt.stopPropagation();
+		onRemove();
+	});
 }
 
 interface ComposedNameField {
 	getValue(): { category: string; name: string };
 	focus(): void;
+	/** Removes the (portaled — T-104(e)) suggestion dropdown. The caller's `onClose` must call this. */
+	destroy(): void;
 }
 
 /**
@@ -148,6 +181,7 @@ function buildComposedNameField(
 			chipEl = renderCategoryChip(boxEl, category, colorIndexFor(category));
 			boxEl.insertBefore(chipEl, inputEl);
 			chipEl.addEventListener("click", () => revertChip());
+			appendChipRemove(chipEl, () => clearCategory());
 		}
 	}
 
@@ -163,6 +197,14 @@ function buildComposedNameField(
 		inputEl.focus();
 		inputEl.setSelectionRange(restored.length, restored.length);
 		suggest.openFor(restored);
+	}
+
+	/** The chip's "×" (T-104(e)): clears the category outright, leaving the input empty — unlike
+	 * `revertChip`, which puts the category's text back for editing. */
+	function clearCategory(): void {
+		category = "";
+		renderChip();
+		inputEl.focus();
 	}
 
 	/** Confirming a suggestion (click, Enter, or Tab): clears the input field right when it's
@@ -247,6 +289,7 @@ function buildComposedNameField(
 	return {
 		getValue: () => ({ category, name: inputEl.value }),
 		focus: () => inputEl.focus(),
+		destroy: () => suggest.destroy(),
 	};
 }
 
@@ -317,6 +360,7 @@ export class NewSessionModal extends Modal {
 	}
 
 	onClose(): void {
+		this.field.destroy();
 		this.contentEl.empty();
 	}
 }
@@ -369,6 +413,7 @@ export class RenameSessionModal extends Modal {
 	}
 
 	onClose(): void {
+		this.field.destroy();
 		this.contentEl.empty();
 	}
 }
@@ -386,6 +431,14 @@ export class RenameSessionModal extends Modal {
  */
 export class MoveToCategoryModal extends Modal {
 	private inputEl!: HTMLInputElement;
+	private suggest!: CategorySuggest;
+	/** The confirmed category, shown as a chip (T-104(e) — same pattern as the composed name
+	 * field's, including the removable "×"). Starts already chipped from `currentCategory` if
+	 * there is one, since an existing category is itself already "confirmed". While this is set,
+	 * the input holds nothing meaningful (mirrors `buildComposedNameField`'s chip/text split). */
+	private category: string;
+	private chipEl: HTMLElement | null = null;
+	private boxEl!: HTMLElement;
 
 	constructor(
 		private plugin: AgentSessionsPlugin,
@@ -394,23 +447,22 @@ export class MoveToCategoryModal extends Modal {
 		private onSubmit: (name: string) => void
 	) {
 		super(plugin.app);
+		this.category = currentCategory.trim();
 	}
 
 	onOpen(): void {
 		this.setTitle(t("modal.moveToCategory.title"));
 		const setting = makeWide(new Setting(this.contentEl).setName(t("modal.moveToCategory.categoryField")));
 		const boxEl = setting.controlEl.createDiv({ cls: "agent-sessions-name-input" });
+		this.boxEl = boxEl;
 		const inputEl = boxEl.createEl("input", { type: "text", cls: "agent-sessions-name-input-field" });
 		this.inputEl = inputEl;
-		inputEl.value = this.currentCategory;
 
 		const categories = this.plugin.index.categories();
 		const colorIndexFor = (c: string) => this.plugin.index.categoryColorIndex(c);
-		const suggest = buildCategorySuggest(boxEl, categories, colorIndexFor, (cat) => {
-			inputEl.value = cat;
-			suggest.close();
-			inputEl.focus();
-		});
+		const suggest = buildCategorySuggest(boxEl, categories, colorIndexFor, (cat) => this.confirmCategory(cat));
+		this.suggest = suggest;
+		this.renderChip();
 
 		inputEl.addEventListener("focus", () => suggest.openFor(inputEl.value));
 		inputEl.addEventListener("click", () => suggest.openFor(inputEl.value));
@@ -432,6 +484,17 @@ export class MoveToCategoryModal extends Modal {
 					suggest.close();
 					return;
 				}
+			}
+			if (
+				evt.key === "Backspace" &&
+				this.category &&
+				inputEl.value === "" &&
+				inputEl.selectionStart === 0 &&
+				inputEl.selectionEnd === 0
+			) {
+				evt.preventDefault();
+				this.revertChip();
+				return;
 			}
 			if (evt.key === "Enter") {
 				evt.preventDefault();
@@ -456,8 +519,58 @@ export class MoveToCategoryModal extends Modal {
 		window.setTimeout(() => inputEl.focus(), 0);
 	}
 
+	private renderChip(): void {
+		this.chipEl?.remove();
+		this.chipEl = null;
+		if (this.category) {
+			const chip = renderCategoryChip(this.boxEl, this.category, this.plugin.index.categoryColorIndex(this.category));
+			this.boxEl.insertBefore(chip, this.inputEl);
+			chip.addEventListener("click", () => this.revertChip());
+			appendChipRemove(chip, () => this.clearCategory());
+			this.chipEl = chip;
+		}
+	}
+
+	/** Turns the chip back into text so it can be edited again (shared by Backspace and click). */
+	private revertChip(): void {
+		if (!this.category) {
+			return;
+		}
+		const restored = this.category;
+		this.category = "";
+		this.inputEl.value = restored;
+		this.renderChip();
+		this.inputEl.focus();
+		this.inputEl.setSelectionRange(restored.length, restored.length);
+		this.suggest.openFor(restored);
+	}
+
+	/** The chip's "×": clears the category outright rather than restoring it for editing. */
+	private clearCategory(): void {
+		this.category = "";
+		this.renderChip();
+		this.inputEl.focus();
+	}
+
+	private confirmCategory(cat: string): void {
+		this.category = cat;
+		this.inputEl.value = "";
+		this.suggest.close();
+		this.renderChip();
+		this.inputEl.focus();
+	}
+
+	/** The category to submit: whatever's currently typed, if anything (freehand text the user
+	 * hasn't turned into a chip yet — including new text typed after a chip already exists, so
+	 * typing over an existing category and hitting "Move" directly still works) — otherwise the
+	 * confirmed chip. */
+	private resolvedCategory(): string {
+		const typed = this.inputEl.value.trim();
+		return typed || this.category;
+	}
+
 	private submit(): void {
-		const value = composeName(this.inputEl.value, this.label);
+		const value = composeName(this.resolvedCategory(), this.label);
 		if (value) {
 			this.onSubmit(value);
 		}
@@ -465,6 +578,7 @@ export class MoveToCategoryModal extends Modal {
 	}
 
 	onClose(): void {
+		this.suggest.destroy();
 		this.contentEl.empty();
 	}
 }

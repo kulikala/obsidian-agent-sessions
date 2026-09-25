@@ -1526,6 +1526,19 @@
 	cursor: pointer;
 }
 
+/* A small "×" on the chip itself (T-104(e)) — clicking it clears the category outright (its own
+   click handler stops propagation, so it doesn't also trigger the chip's own click-to-edit).
+   Clicking the rest of the chip still reverts it to editable text, same as before. */
+.agent-sessions-name-chip-remove {
+	margin-left: var(--size-2-1);
+	opacity: 0.6;
+	cursor: pointer;
+}
+
+.agent-sessions-name-chip-remove:hover {
+	opacity: 1;
+}
+
 .agent-sessions-name-input-field {
 	flex: 1 1 auto;
 	min-width: 4em;
@@ -1538,13 +1551,18 @@
 	margin: 0;
 }
 
-/* Category suggestions (candidates from existing categories, shown with a chip; only shown before a category is confirmed). */
+/* Category suggestions (candidates from existing categories, shown with a chip; only shown before
+   a category is confirmed). `position: fixed`, appended to <body> rather than the input it
+   belongs to (T-104(e)) — these dialogs are Obsidian `Modal`s, whose own chrome (`.modal`) clips
+   an overflowing descendant to its rounded corners; a short dialog with many categories to
+   suggest could cut the list off well before its own `max-height`. Escaping the modal's DOM
+   subtree avoids that. `left`/`width`/`top`-or-`bottom` are all set per-instance in JS
+   (`computeSuggestPosition`), computed from the input's own on-screen position each time it
+   opens — `--layer-tooltip` keeps it above the modal itself (and everything else short of an
+   actual tooltip), matching how Obsidian's own floating UI stays on top of a modal. */
 .agent-sessions-name-suggest {
-	position: absolute;
-	left: 0;
-	right: 0;
-	top: calc(100% + var(--size-2-2));
-	z-index: 50;
+	position: fixed;
+	z-index: var(--layer-tooltip, 100);
 	max-height: 14em;
 	overflow-y: auto;
 	padding: var(--size-2-1);
