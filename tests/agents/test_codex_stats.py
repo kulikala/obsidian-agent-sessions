@@ -70,6 +70,36 @@ class TestWindowDefs(unittest.TestCase):
         # only the two known kinds present -- nothing extra when both slots classify
         self.assertEqual(set(defs.keys()), {'five_hour', 'seven_day'})
 
+    def test_resets_in_seconds_is_resolved_relative_to_the_event_timestamp(self):
+        # An older Codex CLI version's format (real local data, 2025-10):
+        # resets_in_seconds instead of resets_at -- relative to the event's
+        # own timestamp, not "now" at compute() time.
+        event_ts = self.now - 500.0   # the reading itself is a bit stale
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            token_count({'input_tokens': 1, 'cached_input_tokens': 0, 'cache_write_input_tokens': 0,
+                        'output_tokens': 1}, _iso(event_ts),
+                        rate_limits={'primary': {'used_percent': 3.0, 'window_minutes': 300,
+                                                  'resets_in_seconds': 900}, 'secondary': None}),
+        ])
+        defs = self._defs_by_key([p])
+        self.assertEqual(defs['five_hour']['used_percentage'], 3.0)
+        self.assertEqual(defs['five_hour']['end'], event_ts + 900)
+
+    def test_neither_resets_at_nor_resets_in_seconds_is_unavailable(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            token_count({'input_tokens': 1, 'cached_input_tokens': 0, 'cache_write_input_tokens': 0,
+                        'output_tokens': 1}, '2026-09-24T01:30:31Z',
+                        rate_limits={'primary': {'used_percent': 3.0, 'window_minutes': 300},
+                                     'secondary': None}),
+        ])
+        defs = self._defs_by_key([p])
+        self.assertIsNone(defs['five_hour']['used_percentage'])
+        self.assertEqual(defs['five_hour']['end'], self.now)
+
     def test_monthly_window_is_surfaced_not_discarded(self):
         p = rollout_path(self.home, ID1)
         write_rollout(p, [

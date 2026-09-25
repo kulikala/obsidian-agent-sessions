@@ -38,7 +38,7 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterator, List, Optional
+from typing import Iterator, List, Optional, Tuple
 
 from ...sessions.scan import RACY_WINDOW, TAIL_CHUNK, TAIL_LIMIT, iter_tail_lines  # noqa: F401  (re-exported for callers)
 
@@ -235,11 +235,16 @@ def read_last_activity(path: str) -> Optional[float]:
     return None
 
 
-def iter_rate_limits_tail(path: str) -> Iterator[dict]:
-    """Yields each `event_msg.token_count`'s `rate_limits` payload found while
-    walking `path`'s tail, most recent first. Used by `agents.codex.stats` to
-    find the newest reading of a given rate-limit window kind (`primary`/
-    `secondary` -- see that module for why position alone doesn't say which)."""
+def iter_rate_limits_tail(path: str) -> Iterator[Tuple[dict, Optional[float]]]:
+    """Yields `(rate_limits, event_ts)` for each `event_msg.token_count` found
+    while walking `path`'s tail, most recent first. Used by `agents.codex.stats`
+    to find the newest reading of a given rate-limit window kind (`primary`/
+    `secondary` -- see that module for why position alone doesn't say which).
+    `event_ts` (the line's own `timestamp`, epoch seconds) is needed because an
+    older Codex CLI version's `primary`/`secondary` slot carries
+    `resets_in_seconds` (relative to *this event*) instead of `resets_at`
+    (absolute) -- resolving the former to an absolute time needs to know when
+    the event happened."""
     for line in iter_tail_lines(path, TAIL_CHUNK, TAIL_LIMIT):
         if b'"rate_limits"' not in line or b'"token_count"' not in line:
             continue
@@ -254,4 +259,4 @@ def iter_rate_limits_tail(path: str) -> Iterator[dict]:
             continue
         rl = payload.get('rate_limits')
         if isinstance(rl, dict):
-            yield rl
+            yield rl, parse_ts(d.get('timestamp'))

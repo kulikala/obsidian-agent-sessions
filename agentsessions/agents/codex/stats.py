@@ -93,21 +93,35 @@ def _mtime(path: str) -> float:
         return -1.0
 
 
-def _latest_rate_limits(paths: List[str]) -> Optional[dict]:
-    """The single most recent `rate_limits` payload across all rollouts
-    (newest-mtime file first, then that file's own tail) -- see module
-    docstring for why `primary`/`secondary` are read together from one
-    snapshot rather than hunted independently."""
+def _latest_rate_limits(paths: List[str]) -> Tuple[Optional[dict], Optional[float]]:
+    """`(rate_limits, event_ts)` for the single most recent snapshot across
+    all rollouts (newest-mtime file first, then that file's own tail) -- see
+    module docstring for why `primary`/`secondary` are read together from one
+    snapshot rather than hunted independently. `event_ts` is threaded through
+    to `_bounds_from_reading`, since an older Codex CLI version's slot gives a
+    reset time relative to this event (`resets_in_seconds`) rather than
+    absolute (`resets_at`)."""
     for path in sorted(paths, key=_mtime, reverse=True):
-        for line_rl in rollout.iter_rate_limits_tail(path):
-            return line_rl
-    return None
+        for rl, event_ts in rollout.iter_rate_limits_tail(path):
+            return rl, event_ts
+    return None, None
 
 
-def _bounds_from_reading(reading: dict, duration: float, now: float) -> Tuple[float, Optional[float]]:
+def _bounds_from_reading(reading: dict, event_ts: Optional[float], duration: float,
+                          now: float) -> Tuple[float, Optional[float]]:
+    """`resets_at` (absolute epoch) is preferred; an older CLI version's
+    `resets_in_seconds` (relative to `event_ts`, this reading's own event
+    timestamp -- checked against real local data spanning both formats,
+    2025-10 vs. 2026-09) is resolved to the same absolute form when
+    `resets_at` isn't present. Neither present, or `event_ts` unknown when
+    only `resets_in_seconds` is: unavailable, same as no reading at all."""
     resets_at = reading.get('resets_at')
     if not isinstance(resets_at, (int, float)) or isinstance(resets_at, bool):
-        return now, None
+        resets_in = reading.get('resets_in_seconds')
+        if isinstance(resets_in, (int, float)) and not isinstance(resets_in, bool) and event_ts is not None:
+            resets_at = event_ts + resets_in
+        else:
+            return now, None
     used_raw = reading.get('used_percent')
     used = float(used_raw) if isinstance(used_raw, (int, float)) and not isinstance(used_raw, bool) else None
     return _roll_forward(float(resets_at), used, duration, now)
@@ -120,7 +134,7 @@ def _window_defs(paths: List[str], now: float) -> List[dict]:
     other window found in the latest snapshot, in the order that snapshot
     lists its slots. Each: `{key, minutes, label_key, start, end,
     used_percentage}`."""
-    rl = _latest_rate_limits(paths)
+    rl, event_ts = _latest_rate_limits(paths)
     slots: Dict[str, dict] = {}   # classified key or generated key -> raw slot
     if rl:
         for slot_name in ('primary', 'secondary'):
@@ -138,14 +152,14 @@ def _window_defs(paths: List[str], now: float) -> List[dict]:
     for kind, duration in (('five_hour', FIVE_HOUR_SECONDS), ('seven_day', SEVEN_DAY_SECONDS)):
         w = slots.pop(kind, None)
         minutes = duration / 60
-        end, used = _bounds_from_reading(w, duration, now) if w is not None else (now, None)
+        end, used = _bounds_from_reading(w, event_ts, duration, now) if w is not None else (now, None)
         defs.append({'key': kind, 'minutes': minutes, 'label_key': _label_key(minutes),
                      'start': end - duration, 'end': end, 'used_percentage': used})
 
     for key, w in slots.items():
         minutes = float(w['window_minutes'])
         duration = minutes * 60
-        end, used = _bounds_from_reading(w, duration, now)
+        end, used = _bounds_from_reading(w, event_ts, duration, now)
         defs.append({'key': key, 'minutes': minutes, 'label_key': _label_key(minutes),
                      'start': end - duration, 'end': end, 'used_percentage': used})
     return defs
