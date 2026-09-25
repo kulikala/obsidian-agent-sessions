@@ -291,12 +291,25 @@ def resolve_output(agent: str, pid: int, since: float, cwd: str) -> dict:
 
 
 def stats_output() -> dict:
+    """`{"windows": W2, "agents": {"claude": {"windows": W2}, "codex": {"windows": W2}}}`
+    (T-103) -- `W2 = {"five_hour": W, "seven_day": W}`, `W = {start, end,
+    used_percentage, total, sessions}`, the same shape for both agents so the
+    plugin's analysis views can render either through the same code. Only an
+    enabled agent gets an `agents.<name>` entry. The top-level `windows` key
+    (always Claude's, unconditionally -- pre-dating `agents` entirely) is kept
+    exactly as before for backward compatibility with a plugin build that reads
+    only that key; T-96/T-103 coordinated a migration to `agents.claude.windows`
+    instead, after which this top-level key can be dropped."""
     # Same reason as `_store_dict`: pass the config paths at call time.
-    result = stats.compute(now=time.time(), projects_dir=config.PROJECTS_DIR,
-                            status_dir=config.STATUS_DIR, cache_path=config.STATS_CACHE_PATH)
-    if 'codex' in agents.enabled_agents():
-        # Additive: a Claude-only deployment (or a plugin build that predates this
-        # key) never sees `agents` at all, so this can't regress anything reading
-        # the existing `windows` key.
-        result['agents'] = {'codex': {'windows': codex_agent.stats.windows()}}
+    claude_windows = stats.compute(now=time.time(), projects_dir=config.PROJECTS_DIR,
+                                    status_dir=config.STATUS_DIR, cache_path=config.STATS_CACHE_PATH)
+    result = dict(claude_windows)
+    enabled = agents.enabled_agents()
+    agents_out = {}
+    if 'claude' in enabled:
+        agents_out['claude'] = claude_windows
+    if 'codex' in enabled:
+        agents_out['codex'] = codex_agent.stats.compute(now=time.time())
+    if agents_out:
+        result['agents'] = agents_out
     return result

@@ -19,7 +19,7 @@ from . import live as _live
 from . import resolve  # noqa: F401  (re-exported: agentsessions.agents.codex.resolve.resolve())
 from . import rollout
 from . import scan as _scan
-from . import stats  # noqa: F401  (re-exported: agentsessions.agents.codex.stats.windows())
+from . import stats  # noqa: F401  (re-exported: agentsessions.agents.codex.stats.compute())
 from . import usage as _usage
 
 NAME = 'codex'

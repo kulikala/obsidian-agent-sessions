@@ -233,3 +233,25 @@ def read_last_activity(path: str) -> Optional[float]:
         if t is not None:
             return t
     return None
+
+
+def iter_rate_limits_tail(path: str) -> Iterator[dict]:
+    """Yields each `event_msg.token_count`'s `rate_limits` payload found while
+    walking `path`'s tail, most recent first. Used by `agents.codex.stats` to
+    find the newest reading of a given rate-limit window kind (`primary`/
+    `secondary` -- see that module for why position alone doesn't say which)."""
+    for line in iter_tail_lines(path, TAIL_CHUNK, TAIL_LIMIT):
+        if b'"rate_limits"' not in line or b'"token_count"' not in line:
+            continue
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(d, dict) or d.get('type') != 'event_msg':
+            continue
+        payload = d.get('payload') or {}
+        if payload.get('type') != 'token_count':
+            continue
+        rl = payload.get('rate_limits')
+        if isinstance(rl, dict):
+            yield rl
