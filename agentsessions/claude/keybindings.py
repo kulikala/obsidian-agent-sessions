@@ -1,10 +1,15 @@
-"""Removes the two submit-key entries this tool adds to `keybindings.json`.
+"""Removes this tool's submit-key entries from `keybindings.json`.
 
-The write side (adding `enter: chat:newline` / `meta+enter: chat:submit`) only exists
-in the plugin (`plugin/src/keybindings.ts`'s `applySubmitKey`) — uninstalling is the
-only thing the Python side does with this file, so only that removal rule lives here:
-remove a key only if its value still matches what we'd have written, leave a mismatched
-value in place with a warning, and drop an emptied `Chat` block. A no-op if the file
+The write side (`plugin/src/terminal/keybindings.ts`'s `applySubmitKey`, writing
+`enter: chat:newline` / `meta+enter: chat:submit`) only exists in the plugin --
+uninstalling is the only thing the Python side does with this file, so only the
+removal rule lives here, kept in sync with the plugin's `OWNED_KEYS`/
+`ownedCanonicalValue` (see that module's docstring for why there are six, not
+two: `enter`/`meta+enter` are the only pair written today, but `cmd+enter`/
+`ctrl+enter`/`shift+enter`/`alt+enter` are also "ours" to clean up, since an
+earlier version or a hand-edited file could hold one of them). Remove a key
+only if its value still matches its canonical one, leave a mismatched value in
+place with a warning, and drop an emptied `Chat` block. A no-op if the file
 doesn't exist.
 """
 import json
@@ -13,9 +18,15 @@ from typing import List, Optional, Tuple
 
 from .. import i18n
 
-ENTER_KEYS = {
+# `enter`'s canonical (ours) value is `chat:newline`; every other owned key's
+# is `chat:submit` -- mirrors `ownedCanonicalValue` in keybindings.ts.
+OWNED_KEYS = {
     'enter': 'chat:newline',
     'meta+enter': 'chat:submit',
+    'cmd+enter': 'chat:submit',
+    'ctrl+enter': 'chat:submit',
+    'shift+enter': 'chat:submit',
+    'alt+enter': 'chat:submit',
 }
 
 SCHEMA_URL = 'https://www.schemastore.org/claude-code-keybindings.json'
@@ -49,7 +60,7 @@ def _find_chat(data: dict) -> Optional[dict]:
 
 def remove_enter_keys(path: str = DEFAULT_KEYBINDINGS_PATH,
                        dry_run: bool = False) -> Tuple[bool, Optional[str]]:
-    """Removes each of `ENTER_KEYS` from `Chat`, but only where the value still matches.
+    """Removes each of `OWNED_KEYS` from `Chat`, but only where the value still matches.
 
     Returns `(changed, warning)`. `changed` is `True` if at least one key was actually
     removed. `warning` explains that a mismatched key was left in place for the user to
@@ -76,7 +87,7 @@ def remove_enter_keys(path: str = DEFAULT_KEYBINDINGS_PATH,
     mismatched: List[str] = []
     changed = False
     if chat is not None and isinstance(chat.get('bindings'), dict):
-        for key, value in ENTER_KEYS.items():
+        for key, value in OWNED_KEYS.items():
             if chat['bindings'].get(key) == value:
                 del chat['bindings'][key]
                 changed = True

@@ -65,6 +65,55 @@ class TestRemoval(KeybindingsTestBase):
         data = self._read()
         self.assertEqual(data['bindings'], [])
 
+    def test_removes_all_six_owned_keys_when_present_with_canonical_values(self):
+        # Mirrors the plugin's OWNED_KEYS (keybindings.ts): enter/meta+enter are the
+        # only pair the plugin writes today, but cmd+enter/ctrl+enter/shift+enter/
+        # alt+enter are also "ours" to clean up (an earlier version, or a
+        # hand-edited file, could hold one of them as an alternate submit key).
+        self._write({
+            'bindings': [
+                {'context': 'Chat', 'bindings': {
+                    'enter': 'chat:newline', 'meta+enter': 'chat:submit',
+                    'cmd+enter': 'chat:submit', 'ctrl+enter': 'chat:submit',
+                    'shift+enter': 'chat:submit', 'alt+enter': 'chat:submit',
+                }},
+            ],
+        })
+        changed, warning = keybindings.remove_enter_keys(self.path)
+        self.assertTrue(changed)
+        self.assertIsNone(warning)
+        data = self._read()
+        self.assertEqual(data['bindings'], [])
+
+    def test_a_leftover_shift_enter_from_an_earlier_version_is_removed(self):
+        # D-41's predecessor wrote shift+enter directly; a file from that era
+        # still has it lying around even though nothing writes it anymore.
+        self._write({
+            'bindings': [
+                {'context': 'Chat', 'bindings': {'enter': 'chat:newline', 'shift+enter': 'chat:submit'}},
+            ],
+        })
+        changed, warning = keybindings.remove_enter_keys(self.path)
+        self.assertTrue(changed)
+        self.assertIsNone(warning)
+        data = self._read()
+        self.assertEqual(data['bindings'], [])
+
+    def test_one_of_the_newly_owned_keys_with_a_mismatched_value_is_left_and_warned(self):
+        self._write({
+            'bindings': [
+                {'context': 'Chat', 'bindings': {
+                    'enter': 'chat:newline', 'meta+enter': 'chat:submit',
+                    'ctrl+enter': 'chat:externalEditor',
+                }},
+            ],
+        })
+        changed, warning = keybindings.remove_enter_keys(self.path)
+        self.assertTrue(changed)   # enter/meta+enter still removed
+        self.assertIn('ctrl+enter', warning)
+        data = self._read()
+        self.assertEqual(data['bindings'][0]['bindings'], {'ctrl+enter': 'chat:externalEditor'})
+
     def test_leaves_other_keys_in_chat_block(self):
         self._write({
             'bindings': [
