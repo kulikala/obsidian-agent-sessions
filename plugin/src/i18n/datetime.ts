@@ -95,3 +95,10 @@ export function formatWeekdayTimeShort(epochSeconds: number, lang: Lang): string
 	const d = new Date(epochSeconds * 1000);
 	return `${WEEKDAY_ONLY[lang].format(d)} ${TIME_SHORT[lang].format(d)}`;
 }
+
+/** Time only, locale hour cycle (ja 24h, en 12h + AM/PM) — ja "21:11", en "9:11 PM". Used on its
+ * own by `views/manager-model.ts`'s pace-judgment "exhausts today" case (T-116), where showing a
+ * weekday would be redundant. */
+export function formatTimeShort(epochSeconds: number, lang: Lang): string {
+	return TIME_SHORT[lang].format(new Date(epochSeconds * 1000));
+}

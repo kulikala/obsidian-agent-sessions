@@ -3,8 +3,8 @@
 // (tests: test/manager-model.test.ts).
 
 import type { Row } from "../sessions/index";
-import { t, type Lang } from "../i18n";
-import { formatWeekdayTimeShort } from "../i18n/datetime";
+import { getLang, t, type Lang } from "../i18n";
+import { formatTimeShort, formatWeekdayTimeShort } from "../i18n/datetime";
 import { statusGroup, type ManagerStatusFilter, type TerminalStatus } from "../sessions/terminal-status";
 import { OTHER_GROUP, splitName, type ManagerTree } from "../sessions/tree";
 import type { StatsResult, StatsWindow, StatsWindows } from "../types";
@@ -350,13 +350,19 @@ export type WeeklyPace =
 			kind: "over-pace";
 			/** The projected time (epoch seconds) usage reaches 100% at this pace. */
 			exhaustAt: number;
-			/** Time remaining from `exhaustAt` to reset (`end`). */
-			daysBeforeReset: number;
-			hoursBeforeReset: number;
-			/** The per-remaining-day cap (%/day) needed to avoid running out. */
-			maxDailyPct: number;
-			/** The same cap converted to an approximate cost ($/day). `null` if it can't be computed (`usedPct` is 0). */
-			maxDailyCost: number | null;
+			/** Seconds remaining from `exhaustAt` to reset (`end`). Kept as raw seconds rather than
+			 * pre-floored days/hours (T-116) — `formatBeforeReset` needs the full precision to switch
+			 * granularity (days+hours / hours+minutes / minutes / "just before reset") and omit a zero
+			 * unit at whichever granularity applies. */
+			secondsBeforeReset: number;
+			/** Which unit the remaining-budget guidance below is expressed in — "hour" for a window
+			 * whose own length is a day or less (e.g. the 5-hour window, where "per remaining day" isn't
+			 * a meaningful budget), otherwise "day" (T-116). */
+			guideUnit: "hour" | "day";
+			/** The per-remaining-unit cap (%/guideUnit) needed to avoid running out. */
+			maxPerUnitPct: number;
+			/** The same cap converted to an approximate cost ($/guideUnit). `null` if it can't be computed (`usedPct` is 0). */
+			maxPerUnitCost: number | null;
 			elapsedPct: number;
 			usedPct: number;
 	  };
@@ -367,9 +373,12 @@ export type WeeklyPace =
  * `e = (now - start) / (end - start)` is under `MIN_PACE_ELAPSED_FRACTION`, or the window's
  * length (`end - start`) is 0 or less — the pace hasn't stabilized enough to judge yet.
  * Otherwise, the projection `usedPct / e` being at most 100 means `on-track` (won't run out at
- * this pace); over 100 means `over-pace` (returns the projected exhaustion time and the daily
- * cap needed to avoid running out). `windowCost` (the window's total cost) feeds `over-pace`'s
- * `maxDailyCost` (a $ estimate).
+ * this pace); over 100 means `over-pace` (returns the projected exhaustion time and the
+ * per-remaining-unit cap needed to avoid running out). `windowCost` (the window's total cost)
+ * feeds `over-pace`'s `maxPerUnitCost` (a $ estimate). T-116: the guidance's unit (`guideUnit`)
+ * switches to "hour" when the window's own length (`duration`) is a day or less — a 5-hour
+ * window's "stay under Z% per remaining day" was nonsensical (the window itself never has a full
+ * day left in it); "per remaining hour" is the equivalent budget for a window that short.
  */
 export function weeklyPace(usedPct: number | null, start: number, end: number, now: number, windowCost: number): WeeklyPace {
 	const duration = end - start;
@@ -390,12 +399,11 @@ export function weeklyPace(usedPct: number | null, start: number, end: number, n
 	const secondsToExhaust = elapsed * (100 / usedPct);
 	const exhaustAt = start + secondsToExhaust;
 	const secondsBeforeReset = Math.max(0, end - exhaustAt);
-	const daysBeforeReset = Math.floor(secondsBeforeReset / 86400);
-	const hoursBeforeReset = Math.floor((secondsBeforeReset % 86400) / 3600);
-	const remainingDays = Math.max(0, (end - now) / 86400);
-	const maxDailyPct = remainingDays > 0 ? (100 - usedPct) / remainingDays : 0;
-	const maxDailyCost = usedPct > 0 && remainingDays > 0 ? (windowCost * (100 - usedPct)) / usedPct / remainingDays : null;
-	return { kind: "over-pace", exhaustAt, daysBeforeReset, hoursBeforeReset, maxDailyPct, maxDailyCost, elapsedPct, usedPct };
+	const guideUnit: "hour" | "day" = duration <= 86400 ? "hour" : "day";
+	const remainingUnits = Math.max(0, guideUnit === "hour" ? (end - now) / 3600 : (end - now) / 86400);
+	const maxPerUnitPct = remainingUnits > 0 ? (100 - usedPct) / remainingUnits : 0;
+	const maxPerUnitCost = usedPct > 0 && remainingUnits > 0 ? (windowCost * (100 - usedPct)) / usedPct / remainingUnits : null;
+	return { kind: "over-pace", exhaustAt, secondsBeforeReset, guideUnit, maxPerUnitPct, maxPerUnitCost, elapsedPct, usedPct };
 }
 
 /** "<weekday> <time>" (e.g. ja "土 21:11", en "Sat 9:11 PM") — the pace-judgment display.
@@ -403,6 +411,58 @@ export function weeklyPace(usedPct: number | null, start: number, end: number, n
  * goes through the same cached `Intl.DateTimeFormat` instances. */
 export function formatWeekdayTime(epochSeconds: number, lang: Lang): string {
 	return formatWeekdayTimeShort(epochSeconds, lang);
+}
+
+function localMidnight(epochSeconds: number): number {
+	const d = new Date(epochSeconds * 1000);
+	return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+}
+
+/**
+ * The pace-judgment's exhaustion time (T-116): just the time when `epochSeconds` falls on the
+ * same calendar day as `now` ("3:46" — a weekday would be redundant, it's today's own), "tomorrow
+ * <time>" when it's the next calendar day (ja "明日 3:46", en "tomorrow 3:46 AM"), and
+ * "<weekday> <time>" (`formatWeekdayTime`) for anything further out, where naming the day is what
+ * actually orients the reader. Reads the display language from `getLang()` (like
+ * `formatBeforeReset`/`formatRelativeTime`) rather than taking it as a parameter — it mixes an
+ * `Intl`-formatted time with `t()`-translated text ("tomorrow"), and `t()` itself always reads
+ * the current global language, so a separate `lang` argument here could silently disagree with it.
+ */
+export function formatExhaustTime(epochSeconds: number, now: number): string {
+	const lang = getLang();
+	const dayDiff = Math.round((localMidnight(epochSeconds) - localMidnight(now)) / 86400000);
+	if (dayDiff <= 0) {
+		return formatTimeShort(epochSeconds, lang);
+	}
+	if (dayDiff === 1) {
+		return t("stats.pace.tomorrow", { time: formatTimeShort(epochSeconds, lang) });
+	}
+	return formatWeekdayTimeShort(epochSeconds, lang);
+}
+
+/**
+ * "N日 N時間前" / "Nd Nh before reset" style text (T-116) for the pace-judgment's parenthetical —
+ * switches granularity by magnitude (days+hours at a day or more, hours+minutes under a day,
+ * minutes alone under an hour, a fixed "just before reset" text under a minute) and omits a zero
+ * unit at whichever granularity applies, rather than always showing two numbers (a 5-hour
+ * window's exhaustion, for instance, is never "0d Nh before reset").
+ */
+export function formatBeforeReset(secondsBeforeReset: number): string {
+	const s = Math.max(0, Math.round(secondsBeforeReset));
+	if (s < 60) {
+		return t("stats.pace.beforeReset.now");
+	}
+	if (s < 3600) {
+		return t("stats.pace.beforeReset.minutes", { m: Math.floor(s / 60) });
+	}
+	if (s < 86400) {
+		const h = Math.floor(s / 3600);
+		const m = Math.floor((s % 3600) / 60);
+		return m > 0 ? t("stats.pace.beforeReset.hoursMinutes", { h, m }) : t("stats.pace.beforeReset.hours", { h });
+	}
+	const d = Math.floor(s / 86400);
+	const h = Math.floor((s % 86400) / 3600);
+	return h > 0 ? t("stats.pace.beforeReset.daysHours", { d, h }) : t("stats.pace.beforeReset.days", { d });
 }
 
 // ---- Model and effort columns ----------------------------------------------------------

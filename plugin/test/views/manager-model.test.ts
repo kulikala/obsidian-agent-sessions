@@ -10,6 +10,8 @@ import {
 	categoryTotalsForWindow,
 	codexShortModelName,
 	flattenTree,
+	formatBeforeReset,
+	formatExhaustTime,
 	formatWeekdayTime,
 	isRealCategoryKey,
 	matchesStatusFilter,
@@ -467,30 +469,30 @@ describe("weeklyPace", () => {
 		expect(result).toEqual({ kind: "on-track", projectedPct: 80, elapsedPct: 50, usedPct: 40 });
 	});
 
-	it("is over-pace when the projection exceeds 100 (gives an exhaustion time and a daily cap)", () => {
+	it("is over-pace when the projection exceeds 100 (gives an exhaustion time and a per-day cap)", () => {
 		// 50% elapsed (3.5 days) at 70% used -> 140% projected. At this pace the budget runs
-		// out at day 5, leaving 2 days 0 hours before the 7-day reset. That leaves 30% of
-		// headroom over the remaining 3.5 days.
+		// out at day 5, leaving 2 days before the 7-day reset. That leaves 30% of headroom over
+		// the remaining 3.5 days.
 		const result = weeklyPace(70, 0, WEEK, WEEK / 2, 140);
 		expect(result.kind).toBe("over-pace");
 		if (result.kind === "over-pace") {
 			expect(result.exhaustAt).toBe(5 * DAY);
-			expect(result.daysBeforeReset).toBe(2);
-			expect(result.hoursBeforeReset).toBe(0);
-			expect(result.maxDailyPct).toBeCloseTo(30 / 3.5, 5);
-			expect(result.maxDailyCost).toBeCloseTo((140 * 30) / 70 / 3.5, 5);
+			expect(result.secondsBeforeReset).toBe(2 * DAY);
+			expect(result.guideUnit).toBe("day");
+			expect(result.maxPerUnitPct).toBeCloseTo(30 / 3.5, 5);
+			expect(result.maxPerUnitCost).toBeCloseTo((140 * 30) / 70 / 3.5, 5);
 			expect(result.elapsedPct).toBe(50);
 			expect(result.usedPct).toBe(70);
 		}
 	});
 
-	it("daysBeforeReset is 0 when exhaustion lands just before the reset (no full day left)", () => {
+	it("secondsBeforeReset is under a day when exhaustion lands just before the reset (no full day left)", () => {
 		// 50% elapsed (3.5 days) at 90% used -> 180% projected. Exhaustion is at elapsed *
 		// 100/90 ≈ 3.888… days.
 		const result = weeklyPace(90, 0, WEEK, WEEK / 2, 90);
 		expect(result.kind).toBe("over-pace");
 		if (result.kind === "over-pace") {
-			expect(result.daysBeforeReset).toBeGreaterThanOrEqual(3);
+			expect(result.secondsBeforeReset).toBeGreaterThanOrEqual(3 * DAY);
 		}
 	});
 
@@ -503,6 +505,86 @@ describe("weeklyPace", () => {
 		// Just inside the same ~3.57% ratio is still "too early".
 		const early = weeklyPace(10, 0, FIVE_HOURS, FIVE_HOURS * 0.01, 5);
 		expect(early.kind).toBe("too-early");
+	});
+
+	it("guideUnit is 'hour' for a window whose own length is a day or less (T-116 — 'per remaining day' isn't meaningful for a 5-hour window)", () => {
+		const FIVE_HOURS = 5 * 60 * 60;
+		// 50% elapsed (2.5h) at 70% used -> 140% projected, same shape as the 7-day case above.
+		const result = weeklyPace(70, 0, FIVE_HOURS, FIVE_HOURS / 2, 14);
+		expect(result.kind).toBe("over-pace");
+		if (result.kind === "over-pace") {
+			expect(result.guideUnit).toBe("hour");
+			// 2.5h remain until reset; 30% headroom over 2.5h.
+			expect(result.maxPerUnitPct).toBeCloseTo(30 / 2.5, 5);
+		}
+	});
+
+	it("guideUnit is 'day' right at the day-or-less boundary's far side (a window longer than a day)", () => {
+		const result = weeklyPace(70, 0, WEEK, WEEK / 2, 140);
+		expect(result.kind).toBe("over-pace");
+		if (result.kind === "over-pace") {
+			expect(result.guideUnit).toBe("day");
+		}
+	});
+});
+
+describe("formatBeforeReset (T-116)", () => {
+	afterEach(() => setLang("en"));
+
+	it("shows 'just before reset' under a minute", () => {
+		expect(formatBeforeReset(59)).toBe("just before reset");
+		expect(formatBeforeReset(0)).toBe("just before reset");
+	});
+
+	it("shows minutes alone under an hour", () => {
+		expect(formatBeforeReset(22 * 60)).toBe("22m before reset");
+		expect(formatBeforeReset(60)).toBe("1m before reset");
+	});
+
+	it("shows hours + minutes under a day, omitting minutes when they're 0", () => {
+		expect(formatBeforeReset(3600 + 5 * 60)).toBe("1h 5m before reset");
+		expect(formatBeforeReset(3600)).toBe("1h before reset");
+	});
+
+	it("shows days + hours at a day or more, omitting hours when they're 0", () => {
+		expect(formatBeforeReset(2 * 86400 + 3 * 3600)).toBe("2d 3h before reset");
+		expect(formatBeforeReset(2 * 86400)).toBe("2d before reset");
+	});
+
+	it("renders in Japanese, with the same zero-omitting rules", () => {
+		setLang("ja");
+		expect(formatBeforeReset(30)).toBe("リセットの直前");
+		expect(formatBeforeReset(22 * 60)).toBe("リセットの 22 分前");
+		expect(formatBeforeReset(3600 + 5 * 60)).toBe("リセットの 1 時間 5 分前");
+		expect(formatBeforeReset(2 * 86400 + 3 * 3600)).toBe("リセットの 2 日 3 時間前");
+	});
+});
+
+describe("formatExhaustTime (T-116)", () => {
+	afterEach(() => setLang("en"));
+
+	it("shows just the time when it falls on the same calendar day as `now`", () => {
+		const now = new Date(2026, 8, 25, 8, 0, 0).getTime() / 1000;
+		const exhaustAt = new Date(2026, 8, 25, 21, 11, 0).getTime() / 1000;
+		expect(formatExhaustTime(exhaustAt, now)).toBe("9:11 PM");
+		setLang("ja");
+		expect(formatExhaustTime(exhaustAt, now)).toBe("21:11");
+	});
+
+	it("shows 'tomorrow <time>' when it falls on the next calendar day", () => {
+		const now = new Date(2026, 8, 25, 23, 0, 0).getTime() / 1000;
+		const exhaustAt = new Date(2026, 8, 26, 3, 46, 0).getTime() / 1000;
+		expect(formatExhaustTime(exhaustAt, now)).toBe("tomorrow 3:46 AM");
+		setLang("ja");
+		expect(formatExhaustTime(exhaustAt, now)).toBe("明日 3:46");
+	});
+
+	it("shows '<weekday> <time>' two or more calendar days out", () => {
+		const now = new Date(2026, 8, 25, 8, 0, 0).getTime() / 1000; // Friday
+		const exhaustAt = new Date(2026, 8, 27, 14, 0, 0).getTime() / 1000; // Sunday
+		expect(formatExhaustTime(exhaustAt, now)).toBe("Sun 2:00 PM");
+		setLang("ja");
+		expect(formatExhaustTime(exhaustAt, now)).toBe("日 14:00");
 	});
 });
 

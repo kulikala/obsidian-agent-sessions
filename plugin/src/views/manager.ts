@@ -9,7 +9,7 @@ import { urgencyByGroupKey, type GroupUrgency } from "../sessions/attention";
 import type { Row } from "../sessions/index";
 import { stats, usage } from "../backend/backend";
 import { paletteHueDeg } from "../sessions/category";
-import { getLang, t } from "../i18n";
+import { t } from "../i18n";
 import { NewSessionModal } from "../ui/modals";
 import { AGENT_ICON_ID } from "../ui/icons";
 import { AGENT_IDS, type AgentId } from "../settings";
@@ -35,7 +35,8 @@ import {
 	categoryTotals,
 	categoryTotalsForWindow,
 	flattenTree,
-	formatWeekdayTime,
+	formatBeforeReset,
+	formatExhaustTime,
 	isRealCategoryKey,
 	matchesStatusFilter,
 	moveSelection,
@@ -630,23 +631,22 @@ export class ManagerView extends ItemView {
 			return;
 		}
 		lineEl.addClass("is-warn");
-		const when = formatWeekdayTime(pace.exhaustAt, getLang());
+		const when = formatExhaustTime(pace.exhaustAt, now);
+		const beforeReset = formatBeforeReset(pace.secondsBeforeReset);
 		lineEl.createDiv({
 			cls: "agent-sessions-manager-stats-pace-main",
-			text: t("stats.pace.overPace", {
-				when,
-				days: String(pace.daysBeforeReset),
-				hours: String(pace.hoursBeforeReset),
-			}),
+			text: t("stats.pace.overPace", { when, beforeReset }),
 		});
-		const pctText = `${pace.maxDailyPct.toFixed(1)}%`;
-		lineEl.createDiv({
-			cls: "agent-sessions-manager-stats-pace-guide",
-			text:
-				pace.maxDailyCost != null
-					? t("stats.pace.overPaceGuide", { pct: pctText, cost: formatCost(pace.maxDailyCost) })
-					: t("stats.pace.overPaceGuideNoCost", { pct: pctText }),
-		});
+		const pctText = `${pace.maxPerUnitPct.toFixed(1)}%`;
+		const guideText =
+			pace.guideUnit === "hour"
+				? pace.maxPerUnitCost != null
+					? t("stats.pace.overPaceGuideHour", { pct: pctText, cost: formatCost(pace.maxPerUnitCost) })
+					: t("stats.pace.overPaceGuideHourNoCost", { pct: pctText })
+				: pace.maxPerUnitCost != null
+					? t("stats.pace.overPaceGuide", { pct: pctText, cost: formatCost(pace.maxPerUnitCost) })
+					: t("stats.pace.overPaceGuideNoCost", { pct: pctText });
+		lineEl.createDiv({ cls: "agent-sessions-manager-stats-pace-guide", text: guideText });
 		setTooltip(lineEl, tooltipText(pace.elapsedPct, pace.usedPct));
 	}
 
