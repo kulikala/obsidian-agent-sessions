@@ -32,29 +32,21 @@
    the whole grid together when it's taller than the fixed analysis-area height. Side by side
    (`align-items: stretch`, the grid default) means two same-row panels still match heights when
    both fit without scrolling. */
+/* T-114: always one column — stacked regardless of width (unlike the per-category bars inside
+   each panel, or their own bars again below that, which still go side by side when there's room;
+   only the top-level agent panels themselves don't). */
 .agent-sessions-manager-analysis-panels {
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-	/* Lets the divider below tell side-by-side (2+ columns) from stacked (1) apart, based on this
-	   area's own rendered width rather than the viewport's. */
-	container-type: inline-size;
+	grid-template-columns: 1fr;
 }
 
 .agent-sessions-manager-analysis-panel {
 	min-width: 0;
 }
 
-/* Stacked (narrow): a horizontal divider between panels. */
+/* A horizontal divider between panels. */
 .agent-sessions-manager-analysis-panel + .agent-sessions-manager-analysis-panel {
 	border-top: 1px solid var(--background-modifier-border);
-}
-
-/* Side by side (wide enough for a real second column): a vertical divider instead. */
-@container (min-width: 552px) {
-	.agent-sessions-manager-analysis-panel + .agent-sessions-manager-analysis-panel {
-		border-top: none;
-		border-left: 1px solid var(--background-modifier-border);
-	}
 }
 
 /* Clickable — folds/unfolds just this panel (T-104 additional feature, still true of a panel now
