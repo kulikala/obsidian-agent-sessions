@@ -122,6 +122,21 @@ export function displayName(row: Row): string {
 	return sessionDisplayName(row);
 }
 
+/**
+ * Names a set of agents for a sentence like "Start {agents} with the button below" (T-106
+ * addendum's `empty.desc`, and the settings-fallback messages next to it): "Claude Code",
+ * "Codex", or "Claude Code or Codex" (`common.agentsEither`) depending on how many are given.
+ * Only handles the pair known today (`ids.length <= 2` in practice, via `AGENT_IDS`) — a third
+ * agent would need `common.agentsEither` generalized to a real list join, not attempted here.
+ */
+export function enabledAgentsText(ids: readonly string[]): string {
+	const names = ids.map((id) => t(AGENT_NAME_KEY[id] ?? AGENT_NAME_KEY.claude));
+	if (names.length <= 1) {
+		return names[0] ?? "";
+	}
+	return t("common.agentsEither", { a: names[0], b: names[1] });
+}
+
 /** `row`'s category (the part of the name before `': '`, same split as `tree.ts`'s `splitName`). `null` if there isn't one. */
 export function categoryOf(row: Row): string | null {
 	if (!row.name) {

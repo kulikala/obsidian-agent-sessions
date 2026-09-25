@@ -11,7 +11,7 @@ import { NewSessionModal } from "../ui/modals";
 import type { Row } from "../sessions/index";
 import { AGENT_IDS } from "../settings";
 import type { SideList } from "../sessions/tree";
-import { createRowActions, RelativeTimeTicker, renderRow, RowSelection, type RowActions } from "./rows";
+import { createRowActions, enabledAgentsText, RelativeTimeTicker, renderRow, RowSelection, type RowActions } from "./rows";
 import { computeSideList, leafIdsOf } from "./side-list";
 import { renderDetail, type DetailContext } from "./detail";
 import { LimitsView } from "./limits";
@@ -275,11 +275,15 @@ export class SideView extends ItemView {
 	private renderEmptyState(container: HTMLElement): void {
 		const box = container.createDiv({ cls: "agent-sessions-empty" });
 		box.createDiv({ cls: "agent-sessions-empty-wordmark", text: "Agent Sessions" });
-		box.createDiv({ cls: "agent-sessions-empty-desc", text: t("empty.desc") });
-		const actionEl = box.createDiv({ cls: "agent-sessions-empty-action" });
 		const enabledAgents = AGENT_IDS.filter((id) => this.plugin.settings.agents[id].enabled);
+		// The description names whichever agents the button below will actually launch. With
+		// none enabled yet, it names both instead (of `AGENT_IDS`) so the sentence still reads as
+		// a description of what the panel does, rather than being left with an empty "{agents}".
+		const descAgents = enabledAgentsText(enabledAgents.length > 0 ? enabledAgents : AGENT_IDS);
+		box.createDiv({ cls: "agent-sessions-empty-desc", text: t("empty.desc", { agents: descAgents }) });
+		const actionEl = box.createDiv({ cls: "agent-sessions-empty-action" });
 		if (enabledAgents.length === 0) {
-			this.renderEmptyFallback(actionEl, t("empty.noAgentEnabled"));
+			this.renderEmptyFallback(actionEl, t("empty.noAgentEnabled", { agents: descAgents }));
 			return;
 		}
 		const btn = actionEl.createEl("button", { cls: "mod-cta", text: t("action.newSession") });
@@ -289,7 +293,7 @@ export class SideView extends ItemView {
 		).then((results) => {
 			const found = results.some((r) => r.status === "fulfilled");
 			if (!found && actionEl.isConnected) {
-				this.renderEmptyFallback(actionEl, t("empty.noAgentFound"));
+				this.renderEmptyFallback(actionEl, t("empty.noAgentFound", { agents: enabledAgentsText(enabledAgents) }));
 			}
 		});
 	}

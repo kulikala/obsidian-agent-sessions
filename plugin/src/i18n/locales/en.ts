@@ -50,6 +50,7 @@ export const en = {
 	"common.listSep": ", ",
 	"common.newSession.claude": "New Claude Code session",
 	"common.newSession.codex": "New Codex session",
+	"common.agentsEither": "{a} or {b}",
 
 	// ---- Notices and errors (main.ts, terminal.ts) ----
 	"notice.noActiveNote": "No note is open",
@@ -134,9 +135,9 @@ export const en = {
 	"section.openTabs": "Open tabs",
 	"section.running": "Running",
 	"section.recent": "Recent",
-	"empty.desc": "Open and manage Claude Code and Codex sessions right here in Obsidian.",
-	"empty.noAgentEnabled": "No agent is enabled — turn one on in settings first.",
-	"empty.noAgentFound": "No enabled agent could be found — check the path in settings.",
+	"empty.desc": "No sessions yet. Start {agents} with the button below and it will show up here.",
+	"empty.noAgentEnabled": "Enable {agents} in settings to get started.",
+	"empty.noAgentFound": "Couldn't find the executable for {agents}. Check the path in settings.",
 
 	// ---- Row relative time (views/rows.ts's formatRelativeTime, side panel only) ----
 	"time.justNow": "just now",

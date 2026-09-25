@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AGENT_IDS } from "../../src/settings";
 import { setLang, t } from "../../src/i18n";
-import { AGENT_ICON, AGENT_NAME_KEY, formatRelativeTime, RelativeTimeTicker } from "../../src/views/rows";
+import { AGENT_ICON, AGENT_NAME_KEY, enabledAgentsText, formatRelativeTime, RelativeTimeTicker } from "../../src/views/rows";
 
 describe("formatRelativeTime", () => {
 	afterEach(() => setLang("en"));
@@ -139,5 +139,26 @@ describe("AGENT_ICON / AGENT_NAME_KEY (every registered agent has both)", () => 
 		for (const id of AGENT_IDS) {
 			expect(t(AGENT_NAME_KEY[id]).length).toBeGreaterThan(0);
 		}
+	});
+});
+
+describe("enabledAgentsText (T-106 addendum: empty.desc's {agents})", () => {
+	afterEach(() => setLang("en"));
+
+	it("names the single agent given", () => {
+		setLang("en");
+		expect(enabledAgentsText(["claude"])).toBe("Claude Code");
+		expect(enabledAgentsText(["codex"])).toBe("Codex");
+	});
+
+	it("joins two agents with 'or' (en) / 'か' (ja)", () => {
+		setLang("en");
+		expect(enabledAgentsText(["claude", "codex"])).toBe("Claude Code or Codex");
+		setLang("ja");
+		expect(enabledAgentsText(["claude", "codex"])).toBe("Claude Code か Codex");
+	});
+
+	it("returns an empty string for an empty list (callers use a different fallback then)", () => {
+		expect(enabledAgentsText([])).toBe("");
 	});
 });

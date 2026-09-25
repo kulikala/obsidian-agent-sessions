@@ -51,6 +51,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"common.listSep": "、",
 	"common.newSession.claude": "新規 Claude Code セッション",
 	"common.newSession.codex": "新規 Codex セッション",
+	"common.agentsEither": "{a} か {b}",
 
 	// ---- Notices and errors (main.ts, terminal.ts) ----
 	"notice.noActiveNote": "開いているノートがありません",
@@ -135,9 +136,9 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"section.openTabs": "開いているタブ",
 	"section.running": "起動中",
 	"section.recent": "最近",
-	"empty.desc": "Claude Code と Codex のセッションを、Obsidian の中からそのまま開いて管理する。",
-	"empty.noAgentEnabled": "有効なエージェントがありません——まず設定で1つ有効にしてください",
-	"empty.noAgentFound": "有効なエージェントの実行ファイルが見つかりません——設定でパスを確認してください",
+	"empty.desc": "まだセッションがありません。下のボタンで {agents} を起動すると、ここに並びます。",
+	"empty.noAgentEnabled": "設定で {agents} を有効にしてください。",
+	"empty.noAgentFound": "{agents} の実行ファイルが見つかりません。設定でパスを確認してください。",
 
 	// ---- Row relative time (views/rows.ts's formatRelativeTime, side panel only) ----
 	"time.justNow": "たった今",
