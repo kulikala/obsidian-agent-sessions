@@ -1,7 +1,7 @@
 {
 	"id": "agent-sessions",
 	"name": "Agent Sessions",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"minAppVersion": "1.7.2",
 	"description": "Open and manage Claude Code sessions as terminal tabs in Obsidian.",
 	"author": "Kaz Namba",
