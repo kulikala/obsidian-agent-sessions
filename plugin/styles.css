@@ -20,17 +20,48 @@
 	min-height: 0;
 }
 
-/* ---- Manager: per-agent analytics sections (T-104) ---- */
+/* ---- Manager: per-agent analytics panels (T-104, restructured as siblings in T-113) ---- */
 
-/* One per enabled agent when there's more than one (with 0 or 1, a single section with no
-   heading — unchanged from before T-104). A divider between sections when there's more than one. */
-.agent-sessions-manager-analysis-section + .agent-sessions-manager-analysis-section {
+/* One panel per enabled agent when there's more than one — side by side when there's room, stacked
+   otherwise (`auto-fit`/`minmax`, same technique as `.agent-sessions-manager-category-bars` below,
+   no container query needed for this part). With 0 or 1 agent enabled, `.agent-sessions-manager-
+   analysis-body` never gets this class at all — a single panel with no heading of its own, inside
+   the whole-area header/fold instead (unchanged from before T-104). */
+/* No explicit height, and no `overflow` of its own — grows to its natural content height, letting
+   the outer `.agent-sessions-manager-analysis-body` (unchanged, still `overflow-y: auto`) scroll
+   the whole grid together when it's taller than the fixed analysis-area height. Side by side
+   (`align-items: stretch`, the grid default) means two same-row panels still match heights when
+   both fit without scrolling. */
+.agent-sessions-manager-analysis-panels {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+	/* Lets the divider below tell side-by-side (2+ columns) from stacked (1) apart, based on this
+	   area's own rendered width rather than the viewport's. */
+	container-type: inline-size;
+}
+
+.agent-sessions-manager-analysis-panel {
+	min-width: 0;
+}
+
+/* Stacked (narrow): a horizontal divider between panels. */
+.agent-sessions-manager-analysis-panel + .agent-sessions-manager-analysis-panel {
 	border-top: 1px solid var(--background-modifier-border);
 }
 
-/* Clickable — folds/unfolds just this section (T-104 additional feature), independent of the
-   whole analysis area's own fold. `stopPropagation`'d in manager.ts so it doesn't also trigger
-   the analysis body's click-to-refresh. */
+/* Side by side (wide enough for a real second column): a vertical divider instead. */
+@container (min-width: 552px) {
+	.agent-sessions-manager-analysis-panel + .agent-sessions-manager-analysis-panel {
+		border-top: none;
+		border-left: 1px solid var(--background-modifier-border);
+	}
+}
+
+/* Clickable — folds/unfolds just this panel (T-104 additional feature, still true of a panel now
+   that T-113 made each one an independent sibling), independent of the whole analysis area's own
+   fold (only relevant with 0/1 agent enabled, where this heading doesn't exist at all).
+   `stopPropagation`'d in manager.ts so it doesn't also trigger the analysis body's
+   click-to-refresh. */
 .agent-sessions-manager-analysis-agent-heading {
 	display: flex;
 	align-items: center;
@@ -58,8 +89,8 @@
 	height: 100%;
 }
 
-/* The primary window's usage%, shown only while folded so a folded section still says something
-   at a glance (my own design call — T-104 only asked for fold/unfold, not what a folded section
+/* The primary window's usage%, shown only while folded so a folded panel still says something
+   at a glance (my own design call — T-104 only asked for fold/unfold, not what a folded panel
    shows). Pushed to the heading's right edge. */
 .agent-sessions-manager-analysis-agent-summary {
 	margin-left: auto;
@@ -68,17 +99,29 @@
 	visibility: hidden;
 }
 
-.agent-sessions-manager-analysis-section.is-folded .agent-sessions-manager-analysis-agent-heading {
+.agent-sessions-manager-analysis-panel.is-folded .agent-sessions-manager-analysis-agent-heading {
 	padding-bottom: var(--size-4-2);
 }
 
-.agent-sessions-manager-analysis-section.is-folded .agent-sessions-manager-analysis-agent-summary {
+.agent-sessions-manager-analysis-panel.is-folded .agent-sessions-manager-analysis-agent-summary {
 	visibility: visible;
 }
 
-.agent-sessions-manager-analysis-section.is-folded .agent-sessions-manager-stats,
-.agent-sessions-manager-analysis-section.is-folded .agent-sessions-manager-category-bars {
+.agent-sessions-manager-analysis-panel.is-folded .agent-sessions-manager-stats,
+.agent-sessions-manager-analysis-panel.is-folded .agent-sessions-manager-category-bars {
 	display: none;
+}
+
+/* T-113: shown instead of any stat cards for a non-Claude agent with no real window tracked yet
+   (e.g. a Codex account before its first json stats fetch, or one that's never had any quota
+   data at all) — never a "—" 5-hour/7-day placeholder pair, which would misleadingly read as
+   those two windows being tracked (just still loading) when they may not exist for this agent at
+   all. */
+.agent-sessions-manager-stats-empty {
+	grid-column: 1 / -1;
+	padding: var(--size-4-2) 0;
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
 }
 
 /* ---- Manager: stats bar ---- */
@@ -359,6 +402,12 @@
 
 .agent-sessions-manager-analysis.is-collapsed .agent-sessions-manager-analysis-header {
 	border-bottom: none;
+}
+
+/* T-113: no single "Analysis" heading at all once there's more than one sibling panel — each
+   panel has its own heading instead (`.agent-sessions-manager-analysis-agent-heading`). */
+.agent-sessions-manager-analysis.is-split .agent-sessions-manager-analysis-header {
+	display: none;
 }
 
 .agent-sessions-manager-analysis-body {
@@ -1188,8 +1237,6 @@
 	min-width: 0;
 	border-top: 1px solid var(--background-modifier-border);
 	cursor: pointer;
-	/* Lets the label switch to its short form (below) based on this area's own rendered width. */
-	container-type: inline-size;
 }
 
 /* Click-to-refresh feedback (shared with the manager's analysis area). The read itself is
@@ -1242,27 +1289,12 @@
 	height: 100%;
 }
 
+/* T-113: always the short form ("5h"/"7d"/"30d") — the side panel is too narrow for the long form
+   ("5-hour window") to ever be worth showing (unlike T-111's original container-query approach,
+   which switched to the short form only below 320px); the long form is still available, in a
+   tooltip. */
 .agent-sessions-limits-label {
 	color: var(--text-muted);
-}
-
-/* Both the long and short forms are always in the DOM (T-111) — a container query can only pick
-   which one is visible, not rewrite an element's own text. Long by default; narrower than 320px
-   (this area's own rendered width, via `container-type: inline-size` above — a judgment call,
-   picked as roughly where "30-day window"/"30 日枠" alongside a 3-digit % and a multi-day
-   countdown starts squeezing the bar uncomfortably thin) switches to the short one instead. */
-.agent-sessions-limits-label-short {
-	display: none;
-}
-
-@container (max-width: 320px) {
-	.agent-sessions-limits-label-long {
-		display: none;
-	}
-
-	.agent-sessions-limits-label-short {
-		display: inline;
-	}
 }
 
 .agent-sessions-limits-bar {

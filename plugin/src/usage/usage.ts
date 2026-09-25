@@ -2,7 +2,7 @@
 // inclusive of both ends) and formats it for display and Markdown copy. Pure functions only —
 // no dependency on `obsidian` or `@xterm/xterm` (tested in test/usage.test.ts).
 
-import { t } from "../i18n";
+import { getLang, t } from "../i18n";
 import type { UsageTotal, UsageTurn } from "../types";
 
 const TOTAL_KEYS = ["calls", "input", "cache_create", "cache_read", "output", "thinking"] as const;
@@ -61,9 +61,11 @@ export function sumRange(turns: UsageTurn[], from: number, to: number): UsageTot
 	return total;
 }
 
-/** Comma-separated thousands. */
+/** Comma-separated thousands (T-113), in the plugin's own display language (`getLang()`) rather
+ * than a fixed locale — every raw (non-`formatK`-abbreviated) count of 1,000 or more goes through
+ * this, so a number is never shown as a single run of digits with nothing marking the thousands. */
 export function formatNumber(n: number): string {
-	return n.toLocaleString("en-US");
+	return new Intl.NumberFormat(getLang()).format(n);
 }
 
 /** `999`→`999`, `1,234`→`1.2k`, `1,234,567`→`1.2M`, `1,234,000,000`→`1.2B`.
@@ -92,12 +94,13 @@ export function formatK(n: number): string {
 	return `${(n / 1_000_000_000).toFixed(1)}B`;
 }
 
-/** Below `$0.005` shows `<$0.01`; otherwise two decimal places. */
+/** Below `$0.005` shows `<$0.01`; otherwise two decimal places, comma-grouped (T-113) in the
+ * plugin's own display language. */
 export function formatCost(n: number): string {
 	if (n > 0 && n < 0.005) {
 		return "<$0.01";
 	}
-	return `$${n.toFixed(2)}`;
+	return `$${new Intl.NumberFormat(getLang(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
 }
 
 /** Formats `duration` (seconds) as `h m`. `null` shows as "—". */

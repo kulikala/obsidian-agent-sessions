@@ -9,7 +9,7 @@ import { sessionDisplayName } from "../sessions/name";
 import type { StatusInfo } from "../sessions/statusline";
 import { splitName } from "../sessions/tree";
 import type { Detail, UsageResult, UsageTotal } from "../types";
-import { formatK } from "../usage/usage";
+import { formatCost, formatK } from "../usage/usage";
 import { shortModelName } from "./manager-model";
 import { AGENT_NAME_KEY } from "./rows";
 import { AGENT_ICON_ID } from "../ui/icons";
@@ -36,10 +36,11 @@ export function totalTokens(total: Pick<UsageTotal, "input" | "output" | "cache_
 	return total.input + total.output + total.cache_read + total.cache_create;
 }
 
-/** `$x.xx`. */
-export function formatCost(cost: number): string {
-	return `$${cost.toFixed(2)}`;
-}
+/** `usage.ts`'s own `formatCost` (T-113: comma-grouped, `<$0.01` for a near-zero cost) — this
+ * module used to have its own separate, slightly different implementation (no comma grouping, no
+ * `<$0.01` case); re-exported from here instead of duplicated, since `manager.ts` and this
+ * module's own tests already import it from here. */
+export { formatCost };
 
 /** The (category if any, name with category stripped) pair shown in the name field. */
 export function categoryAndLabel(row: Row): { category: string | null; label: string } {

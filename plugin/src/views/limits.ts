@@ -312,7 +312,7 @@ export class LimitsView {
 		// second) — so the window shown is always the current one from the moment it resets,
 		// independent of how often `reload()`/`reloadStatsAgents()` runs.
 		const now = Date.now() / 1000;
-		const { setIcon } = require("obsidian") as typeof import("obsidian");
+		const { setIcon, setTooltip } = require("obsidian") as typeof import("obsidian");
 		this.agents.forEach((agent, agentIndex) => {
 			const wrapEl = this.agentWrapEls[agent];
 			if (!wrapEl) {
@@ -325,7 +325,16 @@ export class LimitsView {
 			// margin on; see styles.css).
 			let rowIndexWithinAgent = 0;
 			const renderRow = (label: string, shortLabel: string, w: RateLimitWindow | null) => {
-				this.renderAgentWindow(setIcon, wrapEl, agent, label, shortLabel, w, isGroupStartRow(agentIndex, rowIndexWithinAgent));
+				this.renderAgentWindow(
+					setIcon,
+					setTooltip,
+					wrapEl,
+					agent,
+					label,
+					shortLabel,
+					w,
+					isGroupStartRow(agentIndex, rowIndexWithinAgent)
+				);
 				rowIndexWithinAgent++;
 			};
 			if (agent === "claude") {
@@ -345,6 +354,7 @@ export class LimitsView {
 
 	private renderAgentWindow(
 		setIcon: typeof import("obsidian").setIcon,
+		setTooltip: typeof import("obsidian").setTooltip,
 		container: HTMLElement,
 		agent: AgentId,
 		label: string,
@@ -362,12 +372,12 @@ export class LimitsView {
 		if (icon) {
 			setIcon(el.createSpan({ cls: "agent-sessions-limits-agent-icon" }), icon);
 		}
-		// Both variants are always rendered; a narrow container hides the long one and shows the
-		// short one instead (T-111 — a container query can only toggle which element is visible,
-		// not rewrite an element's own text).
-		const labelEl = el.createSpan({ cls: "agent-sessions-limits-label" });
-		labelEl.createSpan({ cls: "agent-sessions-limits-label-long", text: label });
-		labelEl.createSpan({ cls: "agent-sessions-limits-label-short", text: shortLabel });
+		// T-113: always the short form here ("5h"/"7d"/"30d") — the side panel is too narrow for
+		// the long one ("5-hour window") at any width worth switching at, unlike the manager's own
+		// wider stat cards, which still use the long form. The long form is still available, in
+		// the tooltip.
+		const labelEl = el.createSpan({ cls: "agent-sessions-limits-label", text: shortLabel });
+		setTooltip(labelEl, label);
 		const barWrap = el.createDiv({ cls: "agent-sessions-limits-bar" });
 		const pct = w?.usedPercentage != null ? Math.min(100, Math.max(0, w.usedPercentage)) : 0;
 		const bar = barWrap.createDiv({ cls: "agent-sessions-limits-bar-fill" });

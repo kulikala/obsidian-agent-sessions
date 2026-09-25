@@ -26,7 +26,7 @@ import { loadStore } from "../sessions/store";
 import { sessionDisplayName } from "../sessions/name";
 import { buildManagerTree } from "../sessions/tree";
 import type { StatsResult, StatsWindow } from "../types";
-import { formatK } from "../usage/usage";
+import { formatK, formatNumber } from "../usage/usage";
 import { formatCost, renderDetail, type DetailContext } from "./detail";
 import { formatCountdown, realWindows } from "./limits";
 import {
@@ -111,20 +111,22 @@ export class ManagerView extends ItemView {
 	/** Whether each group key has an asking/waiting row (rebuilt in `render()`). */
 	private groupUrgency: Map<string, GroupUrgency> = new Map();
 	/**
-	 * The agents shown as separate analytics sections (T-104) — every enabled agent, falling
-	 * back to `["claude"]` alone if somehow none is (so there's always at least one section to
-	 * render into). Only actually split into headed sections when there's more than one;
-	 * with 0 or 1 it's today's single, headingless section. Rebuilt in `buildAnalysisSections`
-	 * (called from `buildSkeleton`, so a settings change re-splits/re-merges via the existing
-	 * full-skeleton rebuild `refreshLanguage` already does on `settings-changed`).
+	 * The agents shown as separate analytics panels (T-104, restructured as independent siblings
+	 * in T-113) — every enabled agent, falling back to `["claude"]` alone if somehow none is (so
+	 * there's always at least one panel to render into). Only actually split into headed sibling
+	 * panels when there's more than one; with 0 or 1 it's today's single, headingless panel inside
+	 * the whole-area "Analysis" header instead. Rebuilt in `buildAnalysisSections` (called from
+	 * `buildSkeleton`, so a settings change re-splits/re-merges via the existing full-skeleton
+	 * rebuild `refreshLanguage` already does on `settings-changed`).
 	 */
 	private analysisAgents: AgentId[] = [];
 	private statsBarEls: Partial<Record<AgentId, HTMLElement>> = {};
-	/** Each agent section's per-category-bars wrapper — the individual bars inside it (one per
+	/** Each agent panel's per-category-bars wrapper — the individual bars inside it (one per
 	 * window, T-104 addendum) are rebuilt fresh on every `renderCategoryBars()` call, same as
 	 * the stat cards, so no per-window element needs tracking here. */
 	private categoryBarWrapEls: Partial<Record<AgentId, HTMLElement>> = {};
-	/** The section element itself (T-104 additional feature: per-agent fold), its caret, and the
+	/** The panel element itself (T-104 additional feature: per-agent fold, T-113: now the whole
+	 * sibling panel, not a sub-section within one shared "Analysis" wrapper), its caret, and the
 	 * small "primary window usage%" summary shown next to the heading only while folded — `null`
 	 * when there's no summary to show (nothing tracked yet for that agent). Only populated when
 	 * `split` (more than one agent, so there's a heading to fold at all). */
@@ -306,10 +308,16 @@ export class ManagerView extends ItemView {
 		this.buildAnalysisSections();
 
 		this.applyAnalysisHeight(this.plugin.settings.managerAnalysisHeight);
-		this.applyAnalysisCollapsed(this.plugin.settings.managerAnalysisCollapsed);
 	}
 
-	/** The analytics area's heading: click to fold (a caret plus "Analysis"). Saves state to settings. */
+	/**
+	 * The whole-area heading: click to fold (a caret plus "Analysis"). Saves state to settings.
+	 * Only ever *visible* when exactly one agent is enabled (`buildAnalysisSections`'s `is-split`
+	 * class hides it via CSS otherwise — T-113 replaced the old single "Analysis" wrapper holding
+	 * every agent's section with independent sibling panels, each with its own heading, once
+	 * there's more than one) — always built regardless, so the DOM order (header, then body) stays
+	 * right without needing to rebuild it conditionally.
+	 */
 	private buildAnalysisHeader(): void {
 		const header = this.analysisEl.createDiv({ cls: "agent-sessions-manager-analysis-header" });
 		this.analysisCaretEl = header.createSpan({ cls: "agent-sessions-manager-analysis-caret" });
@@ -408,6 +416,14 @@ export class ManagerView extends ItemView {
 	 * unchanged from before T-104. Called from `buildSkeleton`, so a settings change re-splits
 	 * or re-merges the sections via the existing full-skeleton rebuild on `settings-changed`.
 	 */
+	/**
+	 * Builds one analytics panel per enabled agent (T-113: replaced the old single "Analysis"
+	 * wrapper holding every agent's own section — `buildAgentSectionHeading`'s old name — with
+	 * independent sibling panels, laid out side by side or stacked via `.agent-sessions-manager-
+	 * analysis-panels`' own `auto-fit`/`minmax` grid, once there's more than one agent). With 0 or
+	 * 1 agent enabled, this instead builds exactly one panel with no heading of its own, governed
+	 * by the whole-area header/fold (`buildAnalysisHeader`) — unchanged from before T-104 or T-113.
+	 */
 	private buildAnalysisSections(): void {
 		const enabled = AGENT_IDS.filter((id) => this.plugin.settings.agents[id].enabled);
 		this.analysisAgents = enabled.length > 0 ? enabled : ["claude"];
@@ -416,39 +432,46 @@ export class ManagerView extends ItemView {
 		this.agentSectionEls = {};
 		this.agentCaretEls = {};
 		this.agentSummaryEls = {};
+		this.analysisBodyEl.empty();
 		const split = this.analysisAgents.length > 1;
+		this.analysisEl.toggleClass("is-split", split);
+		this.analysisBodyEl.toggleClass("agent-sessions-manager-analysis-panels", split);
 		for (const agent of this.analysisAgents) {
-			const sectionEl = this.analysisBodyEl.createDiv({ cls: "agent-sessions-manager-analysis-section" });
+			const panelEl = this.analysisBodyEl.createDiv({ cls: "agent-sessions-manager-analysis-panel" });
 			if (split) {
-				this.agentSectionEls[agent] = sectionEl;
-				this.buildAgentSectionHeading(sectionEl, agent);
+				this.agentSectionEls[agent] = panelEl;
+				this.buildAgentPanelHeading(panelEl, agent);
 			}
-			this.statsBarEls[agent] = sectionEl.createDiv({ cls: "agent-sessions-manager-stats" });
-			this.categoryBarWrapEls[agent] = sectionEl.createDiv({ cls: "agent-sessions-manager-category-bars" });
+			this.statsBarEls[agent] = panelEl.createDiv({ cls: "agent-sessions-manager-stats" });
+			this.categoryBarWrapEls[agent] = panelEl.createDiv({ cls: "agent-sessions-manager-category-bars" });
 			if (split) {
 				this.applyAgentFolded(agent, this.plugin.settings.managerAnalysisFolded[agent] ?? false);
 			}
 		}
+		// The whole-area fold (`managerAnalysisCollapsed`) only applies to the single-panel case —
+		// forced open while split, since there's no visible header to toggle it from there anyway
+		// (a stale `true` from before a second agent was enabled must not hide the new panels).
+		this.applyAnalysisCollapsed(split ? false : this.plugin.settings.managerAnalysisCollapsed);
 		this.renderStatsBar();
 		this.renderCategoryBars();
 	}
 
 	/**
-	 * The agent-section heading: icon (`ui/icons.ts`, T-102) + display name + a caret — only
-	 * built when more than one agent is enabled (`buildAnalysisSections`'s `split`; a single
-	 * section is never foldable, there'd be nothing to fold it down to). Clicking it folds/unfolds
-	 * just this section, saved per-agent to `managerAnalysisFolded` — independent of the whole
+	 * The panel heading: icon (`ui/icons.ts`, T-102) + "<Agent> analysis" + a caret — only built
+	 * when more than one agent is enabled (`buildAnalysisSections`'s `split`; a single panel is
+	 * never foldable this way, and uses the whole-area heading/fold instead). Clicking it
+	 * folds/unfolds just this panel, saved per-agent to `managerAnalysisFolded` — independent of the
 	 * analysis area's own fold (`toggleAnalysisCollapsed`). `stopPropagation` keeps this click from
 	 * also triggering the analysis body's click-to-refresh.
 	 */
-	private buildAgentSectionHeading(container: HTMLElement, agent: AgentId): void {
+	private buildAgentPanelHeading(container: HTMLElement, agent: AgentId): void {
 		const heading = container.createDiv({ cls: "agent-sessions-manager-analysis-agent-heading" });
 		this.agentCaretEls[agent] = heading.createSpan({ cls: "agent-sessions-manager-analysis-agent-caret" });
 		const icon = AGENT_ICON_ID[agent];
 		if (icon) {
 			setIcon(heading.createSpan({ cls: "agent-sessions-manager-analysis-agent-icon" }), icon);
 		}
-		heading.createSpan({ text: t(AGENT_NAME_KEY[agent]) });
+		heading.createSpan({ text: t("manager.analysis.titleFor", { agent: t(AGENT_NAME_KEY[agent]) }) });
 		this.agentSummaryEls[agent] = heading.createSpan({ cls: "agent-sessions-manager-analysis-agent-summary" });
 		this.registerDomEvent(heading, "click", (evt) => {
 			evt.stopPropagation();
@@ -489,7 +512,17 @@ export class ManagerView extends ItemView {
 		el.setText(primary?.used_percentage != null ? `${Math.round(primary.used_percentage)}%` : "");
 	}
 
-	/** The usage bar (5-hour and 7-day windows) for every agent section: usage bar, countdown, cost, tokens, call count, session count. */
+	/** The usage bar (5-hour and 7-day windows) for every agent panel: usage bar, countdown, cost, tokens, call count, session count. */
+	/**
+	 * Claude always shows exactly its 5-hour/7-day pair, even as "—" placeholders before the first
+	 * `json stats` fetch (T-104's original loading look, unchanged by T-113 — team-lead's own
+	 * instruction: "Claude は今のまま"). Every other agent instead only ever shows windows it
+	 * actually has a tracked percentage for (`realWindows`, T-104 addendum/T-111's own rule for
+	 * the side panel's bars — T-113 brings the manager in line with it: showing 5-hour/7-day
+	 * placeholder cards for an agent that was never tracking either, e.g. a Codex account on a
+	 * 30-day-only plan, read as if those two windows were real, just still loading — a reported
+	 * bug); `stats.noUsageYet` is shown instead when there's nothing real to show yet.
+	 */
 	private renderStatsBar(): void {
 		for (const agent of this.analysisAgents) {
 			const el = this.statsBarEls[agent];
@@ -497,16 +530,24 @@ export class ManagerView extends ItemView {
 				continue;
 			}
 			el.empty();
-			const windows = orderedWindows(windowsForAgent(this.statsResult, agent));
-			if (windows.length === 0) {
-				// Not fetched yet (or nothing at all for this agent) — the two well-known
-				// windows as "—" placeholders, matching the pre-T-104 loading look, rather than
-				// an empty section.
-				this.renderStatsCard(el, t("stats.fiveHour"), null);
-				this.renderStatsCard(el, t("stats.sevenDay"), null);
+			if (agent === "claude") {
+				const windows = orderedWindows(windowsForAgent(this.statsResult, agent));
+				if (windows.length === 0) {
+					this.renderStatsCard(el, t("stats.fiveHour"), null);
+					this.renderStatsCard(el, t("stats.sevenDay"), null);
+				} else {
+					for (const w of windows) {
+						this.renderStatsCard(el, windowLabel(w.minutes), w);
+					}
+				}
 			} else {
-				for (const w of windows) {
-					this.renderStatsCard(el, windowLabel(w.minutes), w);
+				const windows = realWindows(windowsForAgent(this.statsResult, agent));
+				if (windows.length === 0) {
+					el.createDiv({ cls: "agent-sessions-manager-stats-empty", text: t("stats.noUsageYet") });
+				} else {
+					for (const w of windows) {
+						this.renderStatsCard(el, windowLabel(w.minutes), w);
+					}
 				}
 			}
 			this.updateAgentSummary(agent);
@@ -550,7 +591,7 @@ export class ManagerView extends ItemView {
 		this.renderMetric(
 			metrics,
 			t("stats.metric.sessions"),
-			summary ? String(summary.sessionCount) : "—",
+			summary ? formatNumber(summary.sessionCount) : "—",
 			t("stats.metric.sessionsTip")
 		);
 	}
@@ -617,10 +658,13 @@ export class ManagerView extends ItemView {
 		setTooltip(cell, tooltip);
 	}
 
-	/** Below each agent section's usage bar: one "by category" horizontal bar per window in that
+	/** Below each agent panel's usage bar: one "by category" horizontal bar per window in that
 	 * section (T-104 addendum — not just a fixed 5-hour/7-day pair), side by side when there's
 	 * room and stacked when there isn't (each is `topCategoryTotals` up to 8 by cost) — counting
 	 * only that agent's own sessions. */
+	/** Same Claude-vs-everyone-else split as `renderStatsBar` (T-113) — a non-Claude agent with no
+	 * real window yet renders nothing here at all rather than a second, redundant "no usage" line
+	 * (the stats bar above already says so). */
 	private renderCategoryBars(): void {
 		for (const agent of this.analysisAgents) {
 			const wrapEl = this.categoryBarWrapEls[agent];
@@ -629,15 +673,21 @@ export class ManagerView extends ItemView {
 			}
 			wrapEl.empty();
 			const rows = [...this.plugin.index.sessions.values()].filter((r) => r.agent === agent);
-			const windows = orderedWindows(windowsForAgent(this.statsResult, agent));
-			if (windows.length === 0) {
-				// Not fetched yet — match renderStatsBar's placeholder pair.
-				this.renderCategoryBar(wrapEl, t("stats.categoryBar.title", { window: t("stats.fiveHour") }), rows, null);
-				this.renderCategoryBar(wrapEl, t("stats.categoryBar.title", { window: t("stats.sevenDay") }), rows, null);
-				continue;
-			}
-			for (const w of windows) {
-				this.renderCategoryBar(wrapEl, t("stats.categoryBar.title", { window: windowLabel(w.minutes) }), rows, w);
+			if (agent === "claude") {
+				const windows = orderedWindows(windowsForAgent(this.statsResult, agent));
+				if (windows.length === 0) {
+					// Not fetched yet — match renderStatsBar's placeholder pair.
+					this.renderCategoryBar(wrapEl, t("stats.categoryBar.title", { window: t("stats.fiveHour") }), rows, null);
+					this.renderCategoryBar(wrapEl, t("stats.categoryBar.title", { window: t("stats.sevenDay") }), rows, null);
+					continue;
+				}
+				for (const w of windows) {
+					this.renderCategoryBar(wrapEl, t("stats.categoryBar.title", { window: windowLabel(w.minutes) }), rows, w);
+				}
+			} else {
+				for (const w of realWindows(windowsForAgent(this.statsResult, agent))) {
+					this.renderCategoryBar(wrapEl, t("stats.categoryBar.title", { window: windowLabel(w.minutes) }), rows, w);
+				}
 			}
 		}
 	}
@@ -876,7 +926,7 @@ export class ManagerView extends ItemView {
 			if (urgency) {
 				this.renderGroupUrgencyMark(head, urgency);
 			}
-			head.createSpan({ cls: "agent-sessions-manager-group-count", text: String(mrow.count) });
+			head.createSpan({ cls: "agent-sessions-manager-group-count", text: formatNumber(mrow.count) });
 			// Model and effort are per-session values, so the heading row leaves those cells empty.
 			tr.createEl("td", { cls: "agent-sessions-manager-col-model" });
 			tr.createEl("td", { cls: "agent-sessions-manager-col-effort" });

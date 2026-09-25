@@ -6,6 +6,7 @@ import {
 	formatDuration,
 	formatEpoch,
 	formatK,
+	formatNumber,
 	nextSelection,
 	promptOrBeforeFirst,
 	sumRange,
@@ -175,6 +176,33 @@ describe("formatCost (cost notation)", () => {
 		expect(formatCost(0.0051)).toBe("$0.01");
 		expect(formatCost(12.3)).toBe("$12.30");
 		expect(formatCost(0)).toBe("$0.00");
+	});
+
+	it("groups thousands with a comma (T-113), any digit count", () => {
+		expect(formatCost(1256.47)).toBe("$1,256.47");
+		expect(formatCost(1234567.89)).toBe("$1,234,567.89");
+		expect(formatCost(999.99)).toBe("$999.99");
+	});
+});
+
+describe("formatNumber (T-113: comma-grouped thousands for a raw, non-abbreviated count)", () => {
+	afterEach(() => setLang("en"));
+
+	it("leaves a number under 1,000 as-is", () => {
+		expect(formatNumber(0)).toBe("0");
+		expect(formatNumber(999)).toBe("999");
+	});
+
+	it("groups thousands with a comma", () => {
+		expect(formatNumber(1000)).toBe("1,000");
+		expect(formatNumber(1234567)).toBe("1,234,567");
+	});
+
+	it("uses the plugin's own display language, not a fixed locale", () => {
+		setLang("ja");
+		expect(formatNumber(1234567)).toBe("1,234,567"); // ja groups by 3 digits with commas too
+		setLang("en");
+		expect(formatNumber(1234567)).toBe("1,234,567");
 	});
 });
 

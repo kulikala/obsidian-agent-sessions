@@ -198,6 +198,8 @@ export const en = {
 	"group.archived": "Archive ({count})",
 	"group.other": "Other",
 	"manager.analysis.title": "Analysis",
+	"manager.analysis.titleFor": "{agent} analysis",
+	"stats.noUsageYet": "No usage data for this window yet.",
 
 	// ---- Detail view (views/detail.ts) ----
 	"detail.compacted": "Compacted",

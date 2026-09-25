@@ -199,6 +199,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"group.archived": "アーカイブ（{count}）",
 	"group.other": "その他",
 	"manager.analysis.title": "解析",
+	"manager.analysis.titleFor": "{agent} の解析",
+	"stats.noUsageYet": "この枠の使用状況はまだありません。",
 
 	// ---- Detail view (views/detail.ts) ----
 	"detail.compacted": "compact 済み",
