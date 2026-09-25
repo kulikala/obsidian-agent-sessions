@@ -219,15 +219,26 @@ describe("formatDuration (h m notation)", () => {
 	});
 });
 
-describe("formatEpoch (MM-DD HH:MM)", () => {
-	it("converts an epoch second to local MM-DD HH:MM", () => {
-		const ts = Math.floor(new Date(2024, 2, 5, 9, 7, 30).getTime() / 1000);
-		expect(formatEpoch(ts)).toBe("03-05 09:07");
+describe("formatEpoch (locale short date + time, T-115)", () => {
+	afterEach(() => setLang("en"));
+
+	it("omits the year when `ts` is in the same year as `now` (English, 12h)", () => {
+		const ts = Math.floor(new Date(2026, 2, 5, 9, 7, 30).getTime() / 1000);
+		const now = Math.floor(new Date(2026, 5, 1).getTime() / 1000);
+		expect(formatEpoch(ts, now)).toBe("3/5, 9:07 AM");
 	});
 
-	it("zero-pads single-digit month/day/hour/minute", () => {
+	it("includes the year (locale short-date style) when `ts` is a different year than `now`", () => {
+		const ts = Math.floor(new Date(2024, 2, 5, 9, 7, 30).getTime() / 1000);
+		const now = Math.floor(new Date(2026, 5, 1).getTime() / 1000);
+		expect(formatEpoch(ts, now)).toBe("3/5/24, 9:07 AM");
+	});
+
+	it("renders in Japanese (24h, year included) when the language is ja", () => {
+		setLang("ja");
 		const ts = Math.floor(new Date(2024, 0, 1, 1, 2, 0).getTime() / 1000);
-		expect(formatEpoch(ts)).toBe("01-01 01:02");
+		const now = Math.floor(new Date(2026, 5, 1).getTime() / 1000);
+		expect(formatEpoch(ts, now)).toBe("2024/01/01 1:02");
 	});
 
 	it("shows the em dash for null (e.g. a turn with no ts, like one before the session starts)", () => {

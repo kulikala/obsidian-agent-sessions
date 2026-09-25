@@ -3,6 +3,7 @@
 // no dependency on `obsidian` or `@xterm/xterm` (tested in test/usage.test.ts).
 
 import { getLang, t } from "../i18n";
+import { formatDateTimeShort } from "../i18n/datetime";
 import type { UsageTotal, UsageTurn } from "../types";
 
 const TOTAL_KEYS = ["calls", "input", "cache_create", "cache_read", "output", "thinking"] as const;
@@ -114,14 +115,14 @@ export function formatDuration(seconds: number | null): string {
 	return `${h}h ${m}m`;
 }
 
-/** `MM-DD HH:MM` (local time). `null` shows as "—" (turns with no `ts`, e.g. one recorded before the session started). */
-export function formatEpoch(ts: number | null): string {
+/** Locale-short date + time (T-115) — ja "2026/09/25 14:05", en "9/25/26, 2:05 PM" (year omitted
+ * when it's the current year). `null` shows as "—" (turns with no `ts`, e.g. one recorded before
+ * the session started). `now` defaults to the current time; pass it explicitly in tests. */
+export function formatEpoch(ts: number | null, now: number = Date.now() / 1000): string {
 	if (ts === null) {
 		return "—";
 	}
-	const d = new Date(ts * 1000);
-	const pad = (n: number) => String(n).padStart(2, "0");
-	return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+	return formatDateTimeShort(ts, getLang(), now);
 }
 
 /** Range-selection state. `null` = whole. `end === null` = only the start row is picked, waiting for the end row. */

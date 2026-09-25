@@ -1992,7 +1992,10 @@
 
 .agent-sessions-usage-table th:nth-child(2),
 .agent-sessions-usage-table td:nth-child(2) {
-	width: 8em;
+	/* T-115: this cell shows `formatEpoch`'s locale date+time directly (not a tooltip), and its
+	   longest rendered form is English's "9/25/26, 2:05 PM" (17 characters, wider than the old
+	   fixed "MM-DD HH:MM") — widened from 8em accordingly. */
+	width: 11em;
 }
 
 .agent-sessions-usage-table th:nth-child(4),

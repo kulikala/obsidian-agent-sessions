@@ -4,6 +4,7 @@
 
 import type { Row } from "../sessions/index";
 import { t, type Lang } from "../i18n";
+import { formatWeekdayTimeShort } from "../i18n/datetime";
 import { statusGroup, type ManagerStatusFilter, type TerminalStatus } from "../sessions/terminal-status";
 import { OTHER_GROUP, splitName, type ManagerTree } from "../sessions/tree";
 import type { StatsResult, StatsWindow, StatsWindows } from "../types";
@@ -397,17 +398,11 @@ export function weeklyPace(usedPct: number | null, start: number, end: number, n
 	return { kind: "over-pace", exhaustAt, daysBeforeReset, hoursBeforeReset, maxDailyPct, maxDailyCost, elapsedPct, usedPct };
 }
 
-/** Short weekday names, cached per language rather than built on every call. */
-const WEEKDAY_FORMATTER: Record<Lang, Intl.DateTimeFormat> = {
-	ja: new Intl.DateTimeFormat("ja-JP", { weekday: "short" }),
-	en: new Intl.DateTimeFormat("en-US", { weekday: "short" }),
-};
-
-/** Formats `epochSeconds` (local time) as "<weekday> HH:MM". */
+/** "<weekday> <time>" (e.g. ja "土 21:11", en "Sat 9:11 PM") — the pace-judgment display.
+ * Delegates to `i18n/datetime` (T-115) so every locale-aware date/time display in the plugin
+ * goes through the same cached `Intl.DateTimeFormat` instances. */
 export function formatWeekdayTime(epochSeconds: number, lang: Lang): string {
-	const d = new Date(epochSeconds * 1000);
-	const pad = (n: number) => String(n).padStart(2, "0");
-	return `${WEEKDAY_FORMATTER[lang].format(d)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+	return formatWeekdayTimeShort(epochSeconds, lang);
 }
 
 // ---- Model and effort columns ----------------------------------------------------------

@@ -43,11 +43,18 @@ describe("formatRelativeTime", () => {
 		expect(formatRelativeTime(now - 6 * 86400, now)).toBe("6 d ago");
 	});
 
-	it("falls back to 'MM-DD' (no time of day) at a week or more", () => {
+	it("falls back to a locale short date (no time of day, no year since it's the same year as `now`) at a week or more", () => {
 		const d = new Date((now - 7 * 86400) * 1000);
-		const pad = (n: number) => String(n).padStart(2, "0");
-		const expected = `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+		const expected = `${d.getMonth() + 1}/${d.getDate()}`;
 		expect(formatRelativeTime(now - 7 * 86400, now)).toBe(expected);
+	});
+
+	it("includes the year in the fallback date when it crosses into a different year than `now` (T-115)", () => {
+		const nowInJan = Math.floor(new Date(2026, 0, 3, 12, 0, 0).getTime() / 1000);
+		const aWeekEarlier = nowInJan - 7 * 86400; // lands in December 2025
+		expect(formatRelativeTime(aWeekEarlier, nowInJan)).toBe("12/27/25");
+		setLang("ja");
+		expect(formatRelativeTime(aWeekEarlier, nowInJan)).toBe("2025/12/27");
 	});
 
 	it("clamps a future timestamp to 'just now' rather than a negative duration", () => {

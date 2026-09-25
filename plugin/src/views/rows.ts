@@ -3,7 +3,8 @@
 import { renderCategoryChip } from "../ui/chip";
 import { AGENT_ICON_ID } from "../ui/icons";
 import type { Row } from "../sessions/index";
-import { t, type MessageKey } from "../i18n";
+import { getLang, t, type MessageKey } from "../i18n";
+import { formatDateShort, formatDateTimeShort } from "../i18n/datetime";
 import type AgentSessionsPlugin from "../main";
 import { categorizableLabel, sessionDisplayName } from "../sessions/name";
 import {
@@ -230,22 +231,22 @@ export function rowLabel(row: Row): string {
 
 export { renderCategoryChip };
 
-/** `MM-DD HH:MM` (local time). The tooltip for both the side panel row's and the manager
- * table's last-updated cell — `formatRelativeTime` is the displayed text in both places. */
+/** Locale-short date + time (T-115) — ja "2026/09/25 14:05", en "9/25/26, 2:05 PM" (year omitted
+ * when it's the current year). The tooltip for both the side panel row's and the manager table's
+ * last-updated cell — `formatRelativeTime` is the displayed text in both places. */
 export function formatTime(epochSeconds: number): string {
 	if (!epochSeconds) {
 		return "";
 	}
-	const d = new Date(epochSeconds * 1000);
-	const pad = (n: number) => String(n).padStart(2, "0");
-	return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+	return formatDateTimeShort(epochSeconds, getLang());
 }
 
 /**
  * The side panel's row time: "just now" under a minute, "N min ago" under an hour, "N h ago"
- * under a day, "yesterday" under two days, "N d ago" under a week, and "MM-DD" (no time of day)
- * from a week on — a plain duration cascade rather than calendar-day boundaries, so it doesn't
- * depend on timezone edge cases. `now` defaults to the current time; pass it explicitly in tests.
+ * under a day, "yesterday" under two days, "N d ago" under a week, and a locale-short date (no
+ * time of day, T-115) from a week on — a plain duration cascade rather than calendar-day
+ * boundaries, so it doesn't depend on timezone edge cases. `now` defaults to the current time;
+ * pass it explicitly in tests.
  */
 export function formatRelativeTime(epochSeconds: number, now: number = Date.now() / 1000): string {
 	if (!epochSeconds) {
@@ -267,9 +268,7 @@ export function formatRelativeTime(epochSeconds: number, now: number = Date.now(
 	if (diff < 604800) {
 		return t("time.daysAgo", { n: Math.floor(diff / 86400) });
 	}
-	const d = new Date(epochSeconds * 1000);
-	const pad = (n: number) => String(n).padStart(2, "0");
-	return `${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+	return formatDateShort(epochSeconds, getLang(), now);
 }
 
 /**

@@ -572,21 +572,27 @@ describe("windowShortLabel (T-111: the compact 5h/7d/30d form for a narrow side 
 	});
 });
 
-describe("formatWeekdayTime", () => {
-	it("formats local time as '<weekday> HH:MM'", () => {
+describe("formatWeekdayTime (locale weekday + time, T-115)", () => {
+	it("formats local time as '<weekday> <time>', each locale's own hour cycle (ja 24h, en 12h)", () => {
 		const d = new Date(2026, 0, 5, 14, 30, 0);
 		const epochSeconds = d.getTime() / 1000;
 		// Japanese fixture: asserts against the app's actual ja weekday abbreviations.
 		const weekdayJa = ["日", "月", "火", "水", "木", "金", "土"][d.getDay()];
 		const weekdayEn = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getDay()];
 		expect(formatWeekdayTime(epochSeconds, "ja")).toBe(`${weekdayJa} 14:30`);
-		expect(formatWeekdayTime(epochSeconds, "en")).toBe(`${weekdayEn} 14:30`);
+		expect(formatWeekdayTime(epochSeconds, "en")).toBe(`${weekdayEn} 2:30 PM`);
 	});
 
-	it("zero-pads hours and minutes to 2 digits", () => {
+	it("zero-pads minutes but not a single-digit hour (matches ja's own locale convention)", () => {
 		const d = new Date(2026, 5, 1, 9, 5, 0);
 		const epochSeconds = d.getTime() / 1000;
-		expect(formatWeekdayTime(epochSeconds, "ja")).toMatch(/^. 09:05$/);
+		expect(formatWeekdayTime(epochSeconds, "ja")).toMatch(/^. 9:05$/);
+	});
+
+	it("shows AM for a morning hour in English", () => {
+		const d = new Date(2026, 5, 1, 9, 5, 0);
+		const epochSeconds = d.getTime() / 1000;
+		expect(formatWeekdayTime(epochSeconds, "en")).toMatch(/^\w+ 9:05 AM$/);
 	});
 });
 
