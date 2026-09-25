@@ -18,6 +18,8 @@ function statsWindow(overrides: Partial<StatsWindow> = {}): StatsWindow {
 		used_percentage: null,
 		total: { calls: 0, input: 0, output: 0, cache_read: 0, cache_create: 0, cost: 0, unknown_cost: false },
 		sessions: {},
+		minutes: 300,
+		label_key: "window.5h",
 		...overrides,
 	};
 }

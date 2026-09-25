@@ -116,13 +116,53 @@ export function sessionCost(window: StatsWindow | null | undefined, id: string):
 	return entry ? entry.cost : null;
 }
 
+const WINDOW_KEY: Record<"5h" | "7d", string> = { "5h": "five_hour", "7d": "seven_day" };
+
 /** The `StatsWindow` for `key` ("5h" → `five_hour`, "7d" → `seven_day`) within `windows`, or
- * `null` if `windows` itself is. */
+ * `null` if `windows` itself is (or that fixed key is somehow missing). Only for the table's own
+ * fixed 5h/7d cost columns and sort — `windows` can hold other, arbitrary-length windows too
+ * (T-104 addendum), iterated instead via `orderedWindows`. */
 export function windowOf(windows: StatsWindows | null, key: "5h" | "7d"): StatsWindow | null {
 	if (!windows) {
 		return null;
 	}
-	return key === "5h" ? windows.five_hour : windows.seven_day;
+	return windows[WINDOW_KEY[key]] ?? null;
+}
+
+/**
+ * Every window in `windows`, sorted by length (`minutes`) ascending — so a 5-hour window always
+ * comes before a 7-day one, which comes before a 30-day one, regardless of the arbitrary key
+ * names (T-104 addendum: an agent's windows aren't just the fixed `five_hour`/`seven_day` pair
+ * anymore). Empty array if `windows` itself is `null`. Ties keep object insertion order.
+ */
+export function orderedWindows(windows: StatsWindows | null): StatsWindow[] {
+	if (!windows) {
+		return [];
+	}
+	return Object.values(windows).sort((a, b) => a.minutes - b.minutes);
+}
+
+/**
+ * A window's display label, derived purely from its length (`minutes`) — not Python's
+ * `label_key` hint, so this doesn't depend on that string matching a pre-registered i18n key for
+ * a length neither side anticipated. `300`/`10080` (5 hours/7 days) keep their existing exact
+ * wording; any other day-aligned or hour-aligned length gets a generic "N-day"/"N-hour" window
+ * label, and anything else falls back to minutes directly.
+ */
+export function windowLabel(minutes: number): string {
+	if (minutes === 300) {
+		return t("stats.fiveHour");
+	}
+	if (minutes === 10080) {
+		return t("stats.sevenDay");
+	}
+	if (minutes % 1440 === 0) {
+		return t("stats.window.nDay", { n: minutes / 1440 });
+	}
+	if (minutes % 60 === 0) {
+		return t("stats.window.nHour", { n: minutes / 60 });
+	}
+	return t("stats.window.nMinute", { n: minutes });
 }
 
 /**
@@ -220,7 +260,7 @@ export interface CategoryTotal {
  * Excludes archived sessions and unnamed child sessions from the count (the same filter
  * `buildManagerTree` uses for `active`/`unnamedOthers`).
  */
-export function categoryTotals(rows: Row[], stats: StatsResult | null, window: "5h" | "7d"): CategoryTotal[] {
+function categoryTotalsWith(rows: Row[], costOf: (row: Row) => number | null): CategoryTotal[] {
 	const buckets = new Map<string, CategoryTotal>();
 	for (const row of rows) {
 		if (row.archived || (!row.name && row.child)) {
@@ -229,11 +269,25 @@ export function categoryTotals(rows: Row[], stats: StatsResult | null, window: "
 		const key = categoryKeyOf(row);
 		const label = key === OTHER_GROUP ? t("category.other") : key;
 		const bucket = buckets.get(key) ?? { key, label, cost: 0, count: 0 };
-		bucket.cost += sessionCostForRow(stats, row, window) ?? 0;
+		bucket.cost += costOf(row) ?? 0;
 		bucket.count += 1;
 		buckets.set(key, bucket);
 	}
 	return [...buckets.values()];
+}
+
+export function categoryTotals(rows: Row[], stats: StatsResult | null, window: "5h" | "7d"): CategoryTotal[] {
+	return categoryTotalsWith(rows, (row) => sessionCostForRow(stats, row, window));
+}
+
+/**
+ * Same as `categoryTotals`, but against one already-resolved `StatsWindow` directly rather than
+ * a fixed "5h"/"7d" key within `stats` (T-104 addendum — an agent's analysis section iterates an
+ * arbitrary set of windows, not just those two). The caller is expected to have already scoped
+ * `rows` to the one agent `window` belongs to (`sessionCost` doesn't care whose window it is).
+ */
+export function categoryTotalsForWindow(rows: Row[], window: StatsWindow | null): CategoryTotal[] {
+	return categoryTotalsWith(rows, (row) => sessionCost(window, row.id));
 }
 
 /**
@@ -247,10 +301,17 @@ export function topCategoryTotals(totals: CategoryTotal[], n: number): CategoryT
 		.slice(0, n);
 }
 
-// ---- 7-day window pace judgment --------------------------------------------------
+// ---- Window pace judgment --------------------------------------------------
 
-/** Below this much elapsed time (seconds), the pace hasn't stabilized enough to judge. */
-const MIN_PACE_ELAPSED_SECONDS = 6 * 60 * 60;
+/**
+ * Below this elapsed *fraction* of the window's own length, the pace hasn't stabilized enough to
+ * judge. A fraction rather than a fixed absolute time (T-104 addendum: pace judgment now applies
+ * to every window an agent reports — 5-hour, 7-day, 30-day, or anything else — not just a fixed
+ * 7-day one) — this is the exact ratio the original fixed 6-hour threshold worked out to for a
+ * 7-day window, so a 7-day window's behavior is unchanged; a shorter window reaches this fraction
+ * sooner in absolute terms, a longer one later.
+ */
+const MIN_PACE_ELAPSED_FRACTION = (6 * 60 * 60) / (7 * 24 * 60 * 60);
 
 export type WeeklyPace =
 	| { kind: "unknown" }
@@ -278,13 +339,14 @@ export type WeeklyPace =
 	  };
 
 /**
- * Judges whether the 7-day window will run out at the current pace. `unknown` if `usedPct` is
- * absent. `too-early` if elapsed time (`now - start`) is under 6 hours, or the window's length
- * (`end - start`) is 0 or less — the pace hasn't stabilized enough to judge yet. Otherwise,
- * given the elapsed fraction `e = (now - start) / (end - start)`, the projection `usedPct / e`
- * being at most 100 means `on-track` (won't run out at this pace); over 100 means `over-pace`
- * (returns the projected exhaustion time and the daily cap needed to avoid running out).
- * `windowCost` (the window's total cost) feeds `over-pace`'s `maxDailyCost` (a $ estimate).
+ * Judges whether a window (5-hour, 7-day, 30-day, or any other length — T-104 addendum) will run
+ * out at the current pace. `unknown` if `usedPct` is absent. `too-early` if the elapsed fraction
+ * `e = (now - start) / (end - start)` is under `MIN_PACE_ELAPSED_FRACTION`, or the window's
+ * length (`end - start`) is 0 or less — the pace hasn't stabilized enough to judge yet.
+ * Otherwise, the projection `usedPct / e` being at most 100 means `on-track` (won't run out at
+ * this pace); over 100 means `over-pace` (returns the projected exhaustion time and the daily
+ * cap needed to avoid running out). `windowCost` (the window's total cost) feeds `over-pace`'s
+ * `maxDailyCost` (a $ estimate).
  */
 export function weeklyPace(usedPct: number | null, start: number, end: number, now: number, windowCost: number): WeeklyPace {
 	const duration = end - start;
@@ -292,10 +354,10 @@ export function weeklyPace(usedPct: number | null, start: number, end: number, n
 		return { kind: "unknown" };
 	}
 	const elapsed = now - start;
-	if (elapsed < MIN_PACE_ELAPSED_SECONDS) {
-		return { kind: "too-early", elapsedPct: Math.max(0, (elapsed / duration) * 100) };
-	}
 	const elapsedFrac = elapsed / duration;
+	if (elapsedFrac < MIN_PACE_ELAPSED_FRACTION) {
+		return { kind: "too-early", elapsedPct: Math.max(0, elapsedFrac * 100) };
+	}
 	const elapsedPct = elapsedFrac * 100;
 	const projectedPct = usedPct / elapsedFrac;
 	if (projectedPct <= 100) {

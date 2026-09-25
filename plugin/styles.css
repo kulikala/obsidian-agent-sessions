@@ -1125,11 +1125,18 @@
 	opacity: 0.6;
 }
 
+/* One wrapper per shown agent (T-104) — a plain block, so its rows just stack normally; a little
+   extra space between agents when there's more than one. */
+.agent-sessions-limits-agent + .agent-sessions-limits-agent {
+	margin-top: var(--size-2-1);
+}
+
 /* Fixed columns (agent icon, label, bar, %, countdown) so the bar's width never depends on how
-   wide its neighbors' text is — otherwise the 5h and 7d bars would end up different lengths
-   depending on digit count (e.g. "8%" vs "70%", or a countdown with a day count vs one without).
-   The agent icon (T-104) is the row's own first child when present — `renderWindow` re-adds it
-   on every redraw rather than rebuilding it, so this column stays populated across ticks. */
+   wide its neighbors' text is — otherwise two rows' bars would end up different lengths depending
+   on digit count (e.g. "8%" vs "70%", or a countdown with a day count vs one without). Every row
+   (icon included) is rebuilt fresh on each redraw (T-104 addendum: a non-Claude agent's row
+   *count* itself can change as fresh `json stats` data arrives, so there's nothing worth
+   preserving piecemeal across ticks). */
 .agent-sessions-limits-row {
 	display: grid;
 	grid-template-columns: auto auto 1fr 3em 6.5em;

@@ -7,17 +7,20 @@ import {
 	ARCHIVED_GROUP,
 	categoryKeyOf,
 	categoryTotals,
+	categoryTotalsForWindow,
 	flattenTree,
 	formatWeekdayTime,
 	isRealCategoryKey,
 	matchesStatusFilter,
 	moveSelection,
+	orderedWindows,
 	sessionCost,
 	sessionCostForRow,
 	shortModelName,
 	sortRows,
 	topCategoryTotals,
 	weeklyPace,
+	windowLabel,
 	windowOf,
 	windowSummary,
 	windowsForAgent,
@@ -169,12 +172,18 @@ function statsWindow(overrides: Partial<StatsWindow> = {}): StatsWindow {
 		used_percentage: null,
 		total: { calls: 0, input: 0, output: 0, cache_read: 0, cache_create: 0, cost: 0, unknown_cost: false },
 		sessions: {},
+		minutes: 300,
+		label_key: "window.5h",
 		...overrides,
 	};
 }
 
 function statsWindows(overrides: Partial<StatsWindows> = {}): StatsWindows {
-	return { five_hour: statsWindow(), seven_day: statsWindow(), ...overrides };
+	return {
+		five_hour: statsWindow({ minutes: 300, label_key: "window.5h" }),
+		seven_day: statsWindow({ minutes: 10080, label_key: "window.7d" }),
+		...overrides,
+	};
 }
 
 describe("sessionCost", () => {
@@ -395,6 +404,21 @@ describe("categoryTotals", () => {
 	});
 });
 
+describe("categoryTotalsForWindow (T-104 addendum: against one already-resolved window directly, e.g. from orderedWindows)", () => {
+	afterEach(() => setLang("en"));
+
+	it("sums cost per category from the given window, same as categoryTotals but window-first", () => {
+		const rows: Row[] = [row({ id: "1", name: "RIM: A" }), row({ id: "2", name: "RIM: B" })];
+		const w = statsWindow({ sessions: { "1": usage(2), "2": usage(3) } });
+		expect(categoryTotalsForWindow(rows, w)).toEqual([{ key: "RIM", label: "RIM", cost: 5, count: 2 }]);
+	});
+
+	it("cost is 0 for every category when the window is null (not fetched yet)", () => {
+		const rows: Row[] = [row({ id: "1", name: "RIM: A" })];
+		expect(categoryTotalsForWindow(rows, null)).toEqual([{ key: "RIM", label: "RIM", cost: 0, count: 1 }]);
+	});
+});
+
 describe("topCategoryTotals", () => {
 	function total(key: string, cost: number): CategoryTotal {
 		return { key, label: key, cost, count: 1 };
@@ -466,6 +490,57 @@ describe("weeklyPace", () => {
 		if (result.kind === "over-pace") {
 			expect(result.daysBeforeReset).toBeGreaterThanOrEqual(3);
 		}
+	});
+
+	it("the too-early threshold scales with the window's own length (T-104 addendum), not a fixed absolute time", () => {
+		const FIVE_HOURS = 5 * 60 * 60;
+		// ~3.57% of 5 hours is ~10.7 minutes — comfortably past that is "on track", not "too early",
+		// even though it's nowhere near the old fixed 6-hour threshold.
+		const settled = weeklyPace(10, 0, FIVE_HOURS, FIVE_HOURS * 0.2, 5);
+		expect(settled.kind).not.toBe("too-early");
+		// Just inside the same ~3.57% ratio is still "too early".
+		const early = weeklyPace(10, 0, FIVE_HOURS, FIVE_HOURS * 0.01, 5);
+		expect(early.kind).toBe("too-early");
+	});
+});
+
+describe("orderedWindows (T-104 addendum: an agent's windows aren't just a fixed five_hour/seven_day pair)", () => {
+	it("returns every window sorted by minutes ascending, regardless of key name", () => {
+		const fiveHour = statsWindow({ minutes: 300 });
+		const sevenDay = statsWindow({ minutes: 10080 });
+		const thirtyDay = statsWindow({ minutes: 43200 });
+		const windows = { seven_day: sevenDay, window_43200m: thirtyDay, five_hour: fiveHour };
+		expect(orderedWindows(windows)).toEqual([fiveHour, sevenDay, thirtyDay]);
+	});
+
+	it("is empty when windows itself is null", () => {
+		expect(orderedWindows(null)).toEqual([]);
+	});
+});
+
+describe("windowLabel (T-104 addendum: a window's label is derived from its length, not a fixed 5h/7d pair)", () => {
+	afterEach(() => setLang("en"));
+
+	it("300 minutes and 10080 minutes keep their existing exact wording", () => {
+		expect(windowLabel(300)).toBe("5-hour window");
+		expect(windowLabel(10080)).toBe("7-day window");
+	});
+
+	it("another day-aligned length becomes 'N-day window'", () => {
+		expect(windowLabel(43200)).toBe("30-day window");
+	});
+
+	it("another hour-aligned length becomes 'N-hour window'", () => {
+		expect(windowLabel(120)).toBe("2-hour window");
+	});
+
+	it("anything else falls back to minutes directly", () => {
+		expect(windowLabel(90)).toBe("90-minute window");
+	});
+
+	it("localizes through t() (Japanese fixture)", () => {
+		setLang("ja");
+		expect(windowLabel(43200)).toBe("30 日枠");
 	});
 });
 

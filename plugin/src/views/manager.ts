@@ -32,17 +32,19 @@ import {
 	ARCHIVED_GROUP,
 	categoryKeyOf,
 	categoryTotals,
+	categoryTotalsForWindow,
 	flattenTree,
 	formatWeekdayTime,
 	isRealCategoryKey,
 	matchesStatusFilter,
 	moveSelection,
+	orderedWindows,
 	sessionCostForRow,
 	shortModelName,
 	sortRows,
 	topCategoryTotals,
 	weeklyPace,
-	windowOf,
+	windowLabel,
 	windowSummary,
 	windowsForAgent,
 	type CategoryTotal,
@@ -117,8 +119,10 @@ export class ManagerView extends ItemView {
 	 */
 	private analysisAgents: AgentId[] = [];
 	private statsBarEls: Partial<Record<AgentId, HTMLElement>> = {};
-	/** The two per-category bars per agent section, 5-hour then 7-day (same left-to-right order as that section's stat cards above them). */
-	private categoryBarEls: Partial<Record<AgentId, Partial<Record<"5h" | "7d", HTMLElement>>>> = {};
+	/** Each agent section's per-category-bars wrapper — the individual bars inside it (one per
+	 * window, T-104 addendum) are rebuilt fresh on every `renderCategoryBars()` call, same as
+	 * the stat cards, so no per-window element needs tracking here. */
+	private categoryBarWrapEls: Partial<Record<AgentId, HTMLElement>> = {};
 	/** Debounce timer for `terminal-status`. */
 	private statusRenderTimer: ReturnType<typeof setTimeout> | null = null;
 	/** The bottom analytics area (the usage bar plus the per-category bar). Clicking its heading
@@ -400,7 +404,7 @@ export class ManagerView extends ItemView {
 		const enabled = AGENT_IDS.filter((id) => this.plugin.settings.agents[id].enabled);
 		this.analysisAgents = enabled.length > 0 ? enabled : ["claude"];
 		this.statsBarEls = {};
-		this.categoryBarEls = {};
+		this.categoryBarWrapEls = {};
 		const split = this.analysisAgents.length > 1;
 		for (const agent of this.analysisAgents) {
 			const sectionEl = this.analysisBodyEl.createDiv({ cls: "agent-sessions-manager-analysis-section" });
@@ -408,11 +412,7 @@ export class ManagerView extends ItemView {
 				this.buildAgentSectionHeading(sectionEl, agent);
 			}
 			this.statsBarEls[agent] = sectionEl.createDiv({ cls: "agent-sessions-manager-stats" });
-			const catWrap = sectionEl.createDiv({ cls: "agent-sessions-manager-category-bars" });
-			this.categoryBarEls[agent] = {
-				"5h": catWrap.createDiv({ cls: "agent-sessions-manager-category-bar" }),
-				"7d": catWrap.createDiv({ cls: "agent-sessions-manager-category-bar" }),
-			};
+			this.categoryBarWrapEls[agent] = sectionEl.createDiv({ cls: "agent-sessions-manager-category-bars" });
 		}
 		this.renderStatsBar();
 		this.renderCategoryBars();
@@ -437,15 +437,26 @@ export class ManagerView extends ItemView {
 				continue;
 			}
 			el.empty();
-			const windows = windowsForAgent(this.statsResult, agent);
-			this.renderStatsCard(el, t("stats.fiveHour"), windowOf(windows, "5h"), false);
-			this.renderStatsCard(el, t("stats.sevenDay"), windowOf(windows, "7d"), true);
+			const windows = orderedWindows(windowsForAgent(this.statsResult, agent));
+			if (windows.length === 0) {
+				// Not fetched yet (or nothing at all for this agent) — the two well-known
+				// windows as "—" placeholders, matching the pre-T-104 loading look, rather than
+				// an empty section.
+				this.renderStatsCard(el, t("stats.fiveHour"), null);
+				this.renderStatsCard(el, t("stats.sevenDay"), null);
+				continue;
+			}
+			for (const w of windows) {
+				this.renderStatsCard(el, windowLabel(w.minutes), w);
+			}
 		}
 	}
 
-	/** "Resets in…" next to the card's heading, a labeled 2×2 grid below it. `showPace` is only
-	 * true for the 7-day window — the "will this pace last?" judgment only makes sense weekly. */
-	private renderStatsCard(container: HTMLElement, label: string, w: StatsWindow | null, showPace: boolean): void {
+	/** "Resets in…" next to the card's heading, a labeled 2×2 grid below it. The pace line is
+	 * shown for every window now (T-104 addendum — `weeklyPace`'s "too early" threshold scales
+	 * with the window's own length, so a short window just settles into "too early" rather than
+	 * needing to be excluded here). */
+	private renderStatsCard(container: HTMLElement, label: string, w: StatsWindow | null): void {
 		const card = container.createDiv({ cls: "agent-sessions-manager-stats-card" });
 
 		const head = card.createDiv({ cls: "agent-sessions-manager-stats-head" });
@@ -463,9 +474,7 @@ export class ManagerView extends ItemView {
 		const pctText = w?.used_percentage != null ? `${Math.round(w.used_percentage)}%` : "—";
 		card.createDiv({ cls: "agent-sessions-manager-stats-pct", text: pctText });
 
-		if (showPace) {
-			this.renderPaceLine(card, w);
-		}
+		this.renderPaceLine(card, w);
 
 		const summary = w ? windowSummary(w) : null;
 		const metrics = card.createDiv({ cls: "agent-sessions-manager-stats-metrics" });
@@ -486,10 +495,11 @@ export class ManagerView extends ItemView {
 	}
 
 	/**
-	 * One line below the 7-day window's usage bar: whether the window will last at the current
-	 * pace (`weeklyPace`). Green if on track, orange with a daily-cap estimate (second line) if
-	 * it'll run out, or muted gray with the reason if it can't be judged yet. The tooltip
-	 * explains the judgment (elapsed % and used %).
+	 * One line below a card's usage bar: whether that window will last at the current pace
+	 * (`weeklyPace`, T-104 addendum — every window gets this line now, not just a fixed 7-day
+	 * one). Green if on track, orange with a daily-cap estimate (second line) if it'll run out,
+	 * or muted gray with the reason if it can't be judged yet. The tooltip explains the judgment
+	 * (elapsed % and used %).
 	 */
 	private renderPaceLine(card: HTMLElement, w: StatsWindow | null): void {
 		const lineEl = card.createDiv({ cls: "agent-sessions-manager-stats-pace" });
@@ -546,26 +556,36 @@ export class ManagerView extends ItemView {
 		setTooltip(cell, tooltip);
 	}
 
-	/** Below each agent section's usage bar: the "by category" horizontal bars — 5-hour then
-	 * 7-day, side by side when there's room and stacked when there isn't (each is
-	 * `topCategoryTotals` up to 8 by cost) — counting only that agent's own sessions (T-104). */
+	/** Below each agent section's usage bar: one "by category" horizontal bar per window in that
+	 * section (T-104 addendum — not just a fixed 5-hour/7-day pair), side by side when there's
+	 * room and stacked when there isn't (each is `topCategoryTotals` up to 8 by cost) — counting
+	 * only that agent's own sessions. */
 	private renderCategoryBars(): void {
 		for (const agent of this.analysisAgents) {
-			this.renderCategoryBar(agent, "5h", t("stats.categoryBar.title5h"));
-			this.renderCategoryBar(agent, "7d", t("stats.categoryBar.title7d"));
+			const wrapEl = this.categoryBarWrapEls[agent];
+			if (!wrapEl) {
+				continue;
+			}
+			wrapEl.empty();
+			const rows = [...this.plugin.index.sessions.values()].filter((r) => r.agent === agent);
+			const windows = orderedWindows(windowsForAgent(this.statsResult, agent));
+			if (windows.length === 0) {
+				// Not fetched yet — match renderStatsBar's placeholder pair.
+				this.renderCategoryBar(wrapEl, t("stats.categoryBar.title", { window: t("stats.fiveHour") }), rows, null);
+				this.renderCategoryBar(wrapEl, t("stats.categoryBar.title", { window: t("stats.sevenDay") }), rows, null);
+				continue;
+			}
+			for (const w of windows) {
+				this.renderCategoryBar(wrapEl, t("stats.categoryBar.title", { window: windowLabel(w.minutes) }), rows, w);
+			}
 		}
 	}
 
-	private renderCategoryBar(agent: AgentId, window: "5h" | "7d", title: string): void {
-		const el = this.categoryBarEls[agent]?.[window];
-		if (!el) {
-			return;
-		}
-		el.empty();
+	private renderCategoryBar(container: HTMLElement, title: string, rows: Row[], window: StatsWindow | null): void {
+		const el = container.createDiv({ cls: "agent-sessions-manager-category-bar" });
 		el.createDiv({ cls: "agent-sessions-manager-category-bar-title", text: title });
 
-		const allRows = [...this.plugin.index.sessions.values()].filter((r) => r.agent === agent);
-		const totals = categoryTotals(allRows, this.statsResult, window);
+		const totals = categoryTotalsForWindow(rows, window);
 		// Categories with 0 cost (inactive in this window) aren't listed.
 		const top = topCategoryTotals(totals, CATEGORY_BAR_TOP_N);
 		if (top.length === 0) {
@@ -573,7 +593,7 @@ export class ManagerView extends ItemView {
 			return;
 		}
 
-		const windowCost = windowOf(windowsForAgent(this.statsResult, agent), window)?.total.cost ?? 0;
+		const windowCost = window?.total.cost ?? 0;
 		const maxCost = Math.max(...top.map((c) => c.cost), 0);
 		const list = el.createDiv({ cls: "agent-sessions-manager-category-bar-list" });
 		for (const entry of top) {
