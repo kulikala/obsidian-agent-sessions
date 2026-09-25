@@ -2,12 +2,16 @@
 end of a rollout -- the codex analogue of `agentsessions.sessions.detail`.
 
 Reuses `agentsessions.sessions.detail.Detail` (same shape the JSON API and the
-plugin's detail panel already expect) and `clean_text` (machine-inserted content
-like `<recommended_plugins>` wrappers gets stripped the same way `<system-reminder>`
-does for Claude). `last_command` is left `None` -- Codex's `/rename` and `/compact`
-are plugin-side concerns (T-96), not something this phase reads out of the
-transcript. `model`/`effort` come from the most recent `turn_context` (Codex has no
-statusLine to carry them the way Claude Code does -- see plan/段9-Codex対応.md).
+plugin's detail panel already expect) and `clean_text`. `last_user` comes from
+`event_msg.user_message` (the literal text the user typed), filtered by
+`rollout.is_real_user_text` -- never from `response_item`'s role=user, which
+mixes in Codex's own injected context (AGENTS.md instructions,
+`<environment_context>`, ...; see `rollout.INJECTED_PREFIXES`) and would surface
+that instead of what the user actually last said. `last_command` is left `None`
+-- Codex's `/rename` and `/compact` are plugin-side concerns (T-96), not
+something this phase reads out of the transcript. `model`/`effort` come from
+the most recent `turn_context` (Codex has no statusLine to carry them the way
+Claude Code does -- see plan/段9-Codex対応.md).
 """
 import json
 from typing import Optional
@@ -47,37 +51,39 @@ def read_detail(path: str) -> Detail:
                     d.model = model
                 if isinstance(effort, str) and effort:
                     d.effort = effort
-            continue
-        if b'"response_item"' not in line:
-            continue
-        try:
-            rec = json.loads(line)
-        except ValueError:
-            continue
-        if not isinstance(rec, dict) or rec.get('type') != 'response_item':
-            continue
-        payload = rec.get('payload') or {}
-        ptype = payload.get('type')
-        if ptype in _TOOL_CALL_TYPES:
-            name = payload.get(_TOOL_CALL_TYPES[ptype])
-            if isinstance(name, str) and name and not d.last_assistant:
-                tools.append(name)
-            continue
-        if ptype != 'message':
-            continue
-        role = payload.get('role')
-        text = rollout.text_of(payload.get('content'))
-        if role == 'assistant':
-            if d.last_assistant or not text.strip():
-                continue
-            d.last_assistant = clean_text(text)
-            d.tools = list(reversed(tools))   # tools called after the response = what's currently running
-        elif role == 'user':
-            if d.last_user or not text.strip():
-                continue
-            cleaned = clean_text(text)
-            if cleaned:
-                d.last_user = cleaned
+        elif b'"user_message"' in line and not d.last_user:
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                rec = None
+            if isinstance(rec, dict) and rec.get('type') == 'event_msg':
+                payload = rec.get('payload') or {}
+                if payload.get('type') == 'user_message':
+                    msg = payload.get('message')
+                    # keep scanning past a filtered-out candidate (injected text,
+                    # a bare slash command) rather than settling for it -- an
+                    # earlier real message may still be found further back
+                    if isinstance(msg, str) and msg.strip() and rollout.is_real_user_text(msg):
+                        cleaned = clean_text(msg)
+                        if cleaned:
+                            d.last_user = cleaned
+        elif b'"response_item"' in line:
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                rec = None
+            if isinstance(rec, dict) and rec.get('type') == 'response_item':
+                payload = rec.get('payload') or {}
+                ptype = payload.get('type')
+                if ptype in _TOOL_CALL_TYPES:
+                    name = payload.get(_TOOL_CALL_TYPES[ptype])
+                    if isinstance(name, str) and name and not d.last_assistant:
+                        tools.append(name)
+                elif ptype == 'message' and payload.get('role') == 'assistant' and not d.last_assistant:
+                    text = rollout.text_of(payload.get('content'))
+                    if text.strip():
+                        d.last_assistant = clean_text(text)
+                        d.tools = list(reversed(tools))   # tools called after the response = what's currently running
         # keep scanning (bounded by TAIL_LIMIT) until model is found too, same
         # convention as sessions.detail.read_detail's last_command
         if d.last_user and d.last_assistant and d.model is not None:

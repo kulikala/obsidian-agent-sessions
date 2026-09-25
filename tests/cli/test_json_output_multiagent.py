@@ -10,7 +10,7 @@ from unittest import mock
 from agentsessions import config
 from agentsessions.cli import json_output as jsonout
 from agentsessions.daemon import protocol
-from tests.agents.codex_helpers import rollout_path, session_meta, user_message, write_rollout
+from tests.agents.codex_helpers import event_user_message, rollout_path, session_meta, write_rollout
 
 CLAUDE_ID = '11111111-1111-1111-1111-111111111111'
 CODEX_ID = '01000000-0000-0000-0000-00000000dead'
@@ -41,7 +41,7 @@ class TestMultiAgentScan(unittest.TestCase):
         ])
         write_rollout(rollout_path(self.codex_home, CODEX_ID), [
             session_meta(CODEX_ID, '/work/codex-project'),
-            user_message('a codex prompt', '2026-09-24T01:30:31Z'),
+            event_user_message('a codex prompt', '2026-09-24T01:30:31Z'),
         ])
 
         self.patchers = [

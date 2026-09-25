@@ -40,6 +40,34 @@ SESSION_ID_RE = re.compile(
 
 HEAD_LIMIT = 2000   # max number of lines to scan for the head (mirrors sessions.scan)
 
+# Prefixes marking Codex-injected context, never something the user actually
+# typed. Checked against real local `~/.codex/sessions` data (62 rollouts,
+# 2026-09-25): every one of these was found only in a `response_item` role=user
+# message, never in an `event_msg.user_message` (the preferred source below --
+# see `read_head`'s prompt and `agents.codex.detail.read_detail`'s `last_user`,
+# both of which read `event_msg.user_message` and never fall back to
+# `response_item` for it, precisely because it mixes injected context in).
+# `<user_instructions>`/`<permissions` weren't observed in the checked data but
+# are filtered anyway, per codex-rs's context-injection code cited in
+# plan/他エージェント対応-検討.md.
+INJECTED_PREFIXES = (
+    '# AGENTS.md instructions',
+    '<environment_context>',
+    '<user_instructions>',
+    '<permissions',
+)
+
+
+def is_real_user_text(text: str) -> bool:
+    """False for Codex-injected context (`INJECTED_PREFIXES`) and for a bare
+    slash command (`/exit`, `/compact`, ...) -- neither belongs in a session's
+    name or "last instruction" (mirrors `sessions.detail.is_human_prompt`'s role
+    for Claude Code, adapted to what Codex actually injects)."""
+    stripped = text.lstrip()
+    if not stripped or stripped.startswith('/'):
+        return False
+    return not any(stripped.startswith(p) for p in INJECTED_PREFIXES)
+
 
 def codex_home() -> str:
     """env `CODEX_HOME`, or `~/.codex`. Re-read on every call (not cached at import
@@ -106,6 +134,14 @@ class Head:
 
 
 def read_head(path: str, limit: int = HEAD_LIMIT) -> Head:
+    """`prompt` comes from `event_msg.user_message` -- the literal text the user
+    typed -- never `response_item`'s role=user (which is Codex's own reconstructed
+    prompt for the model and mixes in injected context like AGENTS.md instructions
+    or `<environment_context>`; see `INJECTED_PREFIXES`). Keeps scanning past a
+    `user_message` that fails `is_real_user_text` (injected text, or a bare slash
+    command) rather than settling for it -- a session's real first message may be
+    a later one. If none ever passes, `prompt` stays `''` (the session is still
+    listed, just nameless -- see `agents.codex.scan.scan`)."""
     h = Head()
     for n, d in enumerate(iter_records(path)):
         if n >= limit or (h.cwd and h.prompt and h.source):
@@ -119,13 +155,12 @@ def read_head(path: str, limit: int = HEAD_LIMIT) -> Head:
             if isinstance(source, str) and source:
                 h.source = source
                 h.child = source != 'cli'
-        elif t == 'response_item' and not h.prompt:
+        elif t == 'event_msg' and not h.prompt:
             payload = d.get('payload') or {}
-            if payload.get('type') == 'message' and payload.get('role') == 'user':
-                text = text_of(payload.get('content'))
-                text = text.strip().splitlines()[0].strip() if text.strip() else ''
-                if text and not text.startswith('<'):
-                    h.prompt = text
+            if payload.get('type') == 'user_message':
+                msg = payload.get('message')
+                if isinstance(msg, str) and msg.strip() and is_real_user_text(msg):
+                    h.prompt = msg.strip().splitlines()[0].strip()
     return h
 
 

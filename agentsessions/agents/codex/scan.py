@@ -21,9 +21,16 @@ from .rollout import Head, RACY_WINDOW
 def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
          home: Optional[str] = None) -> Dict[str, Session]:
     """Same contract as `sessions.scan.scan`, plus a one-shot batched `/rename`
-    lookup (`names.lookup_names`) for every id found, applied before the
-    "no name and no first message -> drop" rule so a renamed-but-empty thread
-    isn't dropped."""
+    lookup (`names.lookup_names`) for every id found -- but unlike
+    `sessions.scan.scan`, a session with no name and no usable first message is
+    NOT dropped: `rollout.read_head`'s prompt extraction already filters out
+    Codex's own injected context and slash commands (see `INJECTED_PREFIXES`),
+    so a session can legitimately end up with nothing left to show as a name
+    without that meaning the session itself is empty or bogus -- it's still a
+    real rollout the user ran. It's included with `name=None`, `first_prompt=''`,
+    which `cli/json_output._session_dict` already renders as an untitled row
+    (falling back to the id's first 8 characters), landing in "Other" like any
+    other nameless session."""
     home = home if home is not None else rollout.codex_home()
     now = time.time()
     heads: Dict[str, tuple] = {}   # sid -> (Head, last_activity, path)
@@ -59,8 +66,6 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
     out: Dict[str, Session] = {}
     for sid, (h, last_activity, file_mtime, p) in heads.items():
         name = names.get(sid)
-        if not name and not h.prompt:
-            continue
         mtime = last_activity or file_mtime
         out[sid] = Session(id=sid, name=name, cwd=h.cwd, mtime=mtime, path=p,
                             first_prompt=h.prompt, child=h.child, agent='codex')

@@ -39,9 +39,24 @@ def turn_context(model: str = 'gpt-5.6-terra', effort: str = 'medium',
 
 
 def user_message(text: str, ts: str) -> dict:
+    """A `response_item` role=user message -- Codex's own reconstructed prompt
+    for the model, which real data shows mixes in injected context (AGENTS.md
+    instructions, `<environment_context>`, ...). `read_head`/`read_detail`
+    deliberately never read this for a session's name or "last instruction" --
+    use `event_user_message` for a fixture representing what the user actually
+    typed."""
     return {'timestamp': ts, 'type': 'response_item',
             'payload': {'type': 'message', 'role': 'user',
                         'content': [{'type': 'input_text', 'text': text}]}}
+
+
+def event_user_message(text: str, ts: str) -> dict:
+    """An `event_msg.user_message` -- the literal text the user typed, never
+    mixed with injected context in real data (see `agents.codex.rollout`'s
+    module docstring). This is what `read_head`'s `prompt` and
+    `agents.codex.detail.read_detail`'s `last_user` actually read."""
+    return {'timestamp': ts, 'type': 'event_msg',
+            'payload': {'type': 'user_message', 'message': text}}
 
 
 def assistant_message(text: str, ts: str) -> dict:

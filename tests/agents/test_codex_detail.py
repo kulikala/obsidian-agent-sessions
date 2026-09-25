@@ -3,8 +3,8 @@ import unittest
 
 from agentsessions.agents.codex import detail
 from tests.agents.codex_helpers import (
-    assistant_message, function_call, rollout_path, session_meta, turn_context,
-    user_message, write_rollout,
+    assistant_message, event_user_message, function_call, rollout_path, session_meta,
+    turn_context, user_message, write_rollout,
 )
 
 ID1 = '04000000-0000-0000-0000-000000000001'
@@ -20,10 +20,10 @@ class TestCodexDetail(unittest.TestCase):
         write_rollout(p, [
             session_meta(ID1, '/work/one'),
             turn_context(model='gpt-5.6-terra', effort='low', ts='2026-09-24T01:30:30Z'),
-            user_message('first prompt', '2026-09-24T01:30:31Z'),
+            event_user_message('first prompt', '2026-09-24T01:30:31Z'),
             assistant_message('first reply', '2026-09-24T01:30:32Z'),
             turn_context(model='gpt-5.6-sol', effort='high', ts='2026-09-24T01:31:00Z'),
-            user_message('second prompt', '2026-09-24T01:31:01Z'),
+            event_user_message('second prompt', '2026-09-24T01:31:01Z'),
             assistant_message('second reply', '2026-09-24T01:31:02Z'),
         ])
         d = detail.read_detail(p)
@@ -36,7 +36,7 @@ class TestCodexDetail(unittest.TestCase):
         p = rollout_path(self.home, ID1)
         write_rollout(p, [
             session_meta(ID1, '/work/one'),
-            user_message('a prompt', '2026-09-24T01:30:31Z'),
+            event_user_message('a prompt', '2026-09-24T01:30:31Z'),
             assistant_message('a reply', '2026-09-24T01:30:32Z'),
         ])
         d = detail.read_detail(p)
@@ -48,12 +48,36 @@ class TestCodexDetail(unittest.TestCase):
         write_rollout(p, [
             session_meta(ID1, '/work/one'),
             turn_context(model='gpt-5.6-terra'),
-            user_message('do something', '2026-09-24T01:30:31Z'),
+            event_user_message('do something', '2026-09-24T01:30:31Z'),
             assistant_message('on it', '2026-09-24T01:30:32Z'),
             function_call('shell', '2026-09-24T01:30:33Z'),
         ])
         d = detail.read_detail(p)
         self.assertIn('shell', d.tools)
+
+    def test_last_user_ignores_injected_response_item_uses_event_user_message(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            event_user_message('what the user actually typed', '2026-09-24T01:30:31Z'),
+            assistant_message('an answer', '2026-09-24T01:30:32Z'),
+            # A later response_item role=user (Codex's own reconstructed
+            # context for the *next* model call) must never override last_user.
+            user_message('# AGENTS.md instructions for /Users/x\n...', '2026-09-24T01:30:33Z'),
+        ])
+        d = detail.read_detail(p)
+        self.assertEqual(d.last_user, 'what the user actually typed')
+
+    def test_last_user_skips_filtered_candidates_for_an_earlier_real_one(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            event_user_message('the real last thing said', '2026-09-24T01:30:31Z'),
+            assistant_message('ok', '2026-09-24T01:30:32Z'),
+            event_user_message('/compact', '2026-09-24T01:30:33Z'),
+        ])
+        d = detail.read_detail(p)
+        self.assertEqual(d.last_user, 'the real last thing said')
 
 
 if __name__ == '__main__':

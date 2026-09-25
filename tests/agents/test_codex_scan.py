@@ -13,8 +13,8 @@ from agentsessions.agents.codex import names as names_mod
 # so the submodule is fetched by its full dotted path, not `from ...codex import scan`.
 scan = importlib.import_module('agentsessions.agents.codex.scan')
 from tests.agents.codex_helpers import (
-    assistant_message, rollout_path, session_meta, turn_context, user_message,
-    write_rollout,
+    assistant_message, event_user_message, rollout_path, session_meta, turn_context,
+    user_message, write_rollout,
 )
 
 ID1 = '01000000-0000-0000-0000-000000000001'
@@ -40,7 +40,7 @@ class TestCodexScan(unittest.TestCase):
         write_rollout(p, [
             session_meta(ID1, '/work/one', source='vscode'),
             turn_context(),
-            user_message('hello from codex\nsecond line', '2026-09-24T01:30:31Z'),
+            event_user_message('hello from codex\nsecond line', '2026-09-24T01:30:31Z'),
             assistant_message('hi there', '2026-09-24T01:30:32Z'),
         ])
         result = scan.scan([p], home=self.home)
@@ -52,17 +52,22 @@ class TestCodexScan(unittest.TestCase):
         self.assertEqual(s.agent, 'codex')
         self.assertIsNone(s.name)   # no /rename in this fixture's sqlite (none provided)
 
-    def test_scan_drops_sessions_with_no_prompt_and_no_name(self):
+    def test_scan_keeps_untitled_session_with_no_name_and_no_prompt(self):
+        # Unlike Claude, a Codex session with nothing left after filtering is
+        # still shown (untitled), not dropped -- see agents.codex.scan.scan's
+        # docstring and plan/reports/T-95.md.
         p = rollout_path(self.home, ID2)
-        write_rollout(p, [session_meta(ID2, '/work/two')])   # no response_item at all
+        write_rollout(p, [session_meta(ID2, '/work/two')])   # no user content at all
         result = scan.scan([p], home=self.home)
-        self.assertNotIn(ID2, result)
+        self.assertIn(ID2, result)
+        self.assertIsNone(result[ID2].name)
+        self.assertEqual(result[ID2].first_prompt, '')
 
     def test_scan_child_false_for_source_cli(self):
         p = rollout_path(self.home, ID3)
         write_rollout(p, [
             session_meta(ID3, '/work/three', source='cli'),
-            user_message('a cli-originated prompt', '2026-09-24T01:30:31Z'),
+            event_user_message('a cli-originated prompt', '2026-09-24T01:30:31Z'),
         ])
         result = scan.scan([p], home=self.home)
         self.assertFalse(result[ID3].child)
@@ -71,7 +76,7 @@ class TestCodexScan(unittest.TestCase):
         p = rollout_path(self.home, ID1)
         write_rollout(p, [
             session_meta(ID1, '/work/one'),
-            user_message('the raw first prompt', '2026-09-24T01:30:31Z'),
+            event_user_message('the raw first prompt', '2026-09-24T01:30:31Z'),
         ])
         db = os.path.join(self.home, names_mod.DB_FILENAME)
         conn = sqlite3.connect(db)
@@ -100,6 +105,71 @@ class TestCodexScan(unittest.TestCase):
     def test_codex_home_env_override(self):
         with mock.patch.dict(os.environ, {'CODEX_HOME': '/custom/codex/home'}):
             self.assertEqual(rollout.codex_home(), '/custom/codex/home')
+
+
+class TestCodexPromptFiltering(unittest.TestCase):
+    """The bug this covers: a Codex session's displayed name was showing
+    injected context (e.g. "# AGENTS.md instructions for /Users/...") or a bare
+    slash command (e.g. "/exit") instead of what the user actually typed --
+    both real, observed cases (see plan/reports/T-95.md)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = self.tmp.name
+
+    def test_injected_response_item_is_ignored_even_if_it_comes_first(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            # An injected `<recommended_plugins>`-style response_item, exactly
+            # the shape real data shows preceding the real prompt.
+            user_message('<recommended_plugins>\nSome injected text.', '2026-09-24T01:30:31Z'),
+            event_user_message('Reply with the single word: ok', '2026-09-24T01:30:32Z'),
+        ])
+        result = scan.scan([p], home=self.home)
+        self.assertEqual(result[ID1].first_prompt, 'Reply with the single word: ok')
+
+    def test_agents_md_injection_marker_is_skipped(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            event_user_message('# AGENTS.md instructions for /Users/kuli/project\n...', '2026-09-24T01:30:31Z'),
+            event_user_message('DRAFT.md', '2026-09-24T01:30:32Z'),
+        ])
+        result = scan.scan([p], home=self.home)
+        self.assertEqual(result[ID1].first_prompt, 'DRAFT.md')
+
+    def test_environment_context_marker_is_skipped(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            event_user_message('<environment_context>\n<cwd>/work/one</cwd>\n</environment_context>',
+                                '2026-09-24T01:30:31Z'),
+        ])
+        result = scan.scan([p], home=self.home)
+        self.assertEqual(result[ID1].first_prompt, '')
+        self.assertIsNone(result[ID1].name)
+
+    def test_slash_command_only_session_is_untitled_not_dropped(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            event_user_message('/exit', '2026-09-24T01:30:31Z'),
+        ])
+        result = scan.scan([p], home=self.home)
+        self.assertIn(ID1, result)
+        self.assertEqual(result[ID1].first_prompt, '')
+        self.assertIsNone(result[ID1].name)
+
+    def test_real_prompt_that_happens_to_follow_a_slash_command_is_used(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            event_user_message('/compact', '2026-09-24T01:30:31Z'),
+            event_user_message('now continue with the refactor', '2026-09-24T01:30:32Z'),
+        ])
+        result = scan.scan([p], home=self.home)
+        self.assertEqual(result[ID1].first_prompt, 'now continue with the refactor')
 
 
 if __name__ == '__main__':
