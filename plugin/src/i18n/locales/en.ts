@@ -84,6 +84,8 @@ export const en = {
 	"error.agentMissing": "{name} was not found",
 
 	// ---- Settings tab (main.ts) ----
+	"settings.display.heading": "Display",
+	"settings.other.heading": "Other",
 	"settings.font.name": "Font",
 	"settings.fontSize.name": "Font size",
 	"settings.padding.name": "Padding",

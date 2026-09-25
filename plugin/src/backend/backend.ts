@@ -476,15 +476,25 @@ export function buildAgentArgv(agent: AgentId, bin: string, id: string, fresh: b
 }
 
 /**
- * Auto-detects each agent's binary via `locateBinary`'s full search (login shell → interactive
- * shell → common locations). `null` for an agent neither finds. Used only on first run (`main.ts`'s
- * `onload`, when settings have never saved an `agents` object before) and the settings tab's
- * "Detect again" button — never silently overwrites a path the user already typed in.
+ * Auto-detects a single agent's binary via `locateBinary`'s full search (login shell →
+ * interactive shell → common locations). `null` if not found. Backs both `detectAgents` (every
+ * agent, first run) and the settings tab's per-agent "Find again" button (T-117 — refinds just
+ * the one agent the button is on, rather than re-probing every agent's binary for an unrelated
+ * button click).
+ */
+export async function detectAgent(agent: AgentId, isMac = true): Promise<string | null> {
+	return locateBinary(AGENT_BIN_NAME[agent], isMac);
+}
+
+/**
+ * Auto-detects each agent's binary (`detectAgent`, run in turn). `null` for an agent neither
+ * finds. Used only on first run (`main.ts`'s `onload`, when settings have never saved an `agents`
+ * object before) — never silently overwrites a path the user already typed in.
  */
 export async function detectAgents(isMac = true): Promise<Record<AgentId, string | null>> {
 	const result = {} as Record<AgentId, string | null>;
 	for (const agent of AGENT_IDS) {
-		result[agent] = await locateBinary(AGENT_BIN_NAME[agent], isMac);
+		result[agent] = await detectAgent(agent, isMac);
 	}
 	return result;
 }

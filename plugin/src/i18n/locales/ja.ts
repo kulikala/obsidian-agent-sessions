@@ -85,6 +85,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"error.agentMissing": "{name} が見つからない",
 
 	// ---- Settings tab (main.ts) ----
+	"settings.display.heading": "表示",
+	"settings.other.heading": "その他",
 	"settings.font.name": "フォント",
 	"settings.fontSize.name": "フォントサイズ",
 	"settings.padding.name": "余白",

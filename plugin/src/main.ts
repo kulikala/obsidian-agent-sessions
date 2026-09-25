@@ -18,6 +18,7 @@ import {
 	agentVersion,
 	buildAgentArgv,
 	detail,
+	detectAgent,
 	detectAgents,
 	live,
 	loginEnv,
@@ -38,7 +39,7 @@ import { applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode
 import { reconcileSubmitKey, sendSequence } from "./terminal/keys";
 import { buildAtToken, selectionLineRange } from "./terminal/links";
 import { ConfirmModal, MoveToCategoryModal, NewSessionModal, RenameSessionModal } from "./ui/modals";
-import { registerAgentIcons } from "./ui/icons";
+import { AGENT_ICON_ID, registerAgentIcons } from "./ui/icons";
 import { sessionDisplayName } from "./sessions/name";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./sessions/open-session";
 import {
@@ -1170,9 +1171,22 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		this.plugin = plugin;
 	}
 
+	/**
+	 * Section order (T-117): agents (which CLI to launch, and how) → submit key (how to send in
+	 * the terminal) → display (how the plugin looks/reads) → other (everything else — paths,
+	 * sizes, counts with no natural home in the first three). Agents comes first since it's the
+	 * one setting most people open this tab for at all (enabling Codex, fixing a path); submit
+	 * key next since it's the other setting that changes how a session behaves, not just how it
+	 * looks.
+	 */
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
+
+		this.renderAgentsSetting(containerEl);
+		this.renderSubmitKeySetting(containerEl);
+
+		new Setting(containerEl).setName(t("settings.display.heading")).setHeading();
 
 		new Setting(containerEl)
 			.setName(t("settings.font.name"))
@@ -1212,7 +1226,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			);
 
 		this.renderLanguageSetting(containerEl);
-		this.renderSubmitKeySetting(containerEl);
+
+		new Setting(containerEl).setName(t("settings.other.heading")).setHeading();
 
 		new Setting(containerEl)
 			.setName(t("settings.recentCount.name"))
@@ -1234,8 +1249,6 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				})
 			);
-
-		this.renderAgentsSetting(containerEl);
 
 		new Setting(containerEl)
 			.setName(t("settings.agentSessionsPath.name"))
@@ -1274,19 +1287,26 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * The "Agents" section: per agent (Claude Code, Codex), an enabled toggle, a path field
-	 * (empty = auto-detect), and a multi-line "environment variables" field (`KEY=VALUE` per
-	 * line). A shared "Detect again" button re-runs `detectAgents` and shows each agent's result
-	 * inline — it only ever *shows* what it found; it never flips a toggle itself (that only
-	 * happens automatically once, on a genuine first run — see `main.ts`'s `onload`). The enabled
-	 * toggle refuses to turn off the last remaining enabled agent (at least one must stay on).
+	 * The "Agents" section (T-117: one sub-heading per agent, replacing the old flat list where
+	 * both agents' "Executable" and "Environment variables" rows looked identical and only their
+	 * position told them apart). Each agent's block: an icon+name heading with its enabled toggle
+	 * on the same row, then the path field (empty = auto-detect), the multi-line "environment
+	 * variables" field (`KEY=VALUE` per line), and last a "Find again" button with its own result
+	 * text (path/version once run, or "Enable" if it found a still-disabled agent) — one button
+	 * per agent, re-detecting just that agent, not both (a click on Codex's button has no reason
+	 * to also re-probe Claude's binary). A disabled agent's path/env/result rows are dimmed (not
+	 * hidden — the settings are still there to edit before flipping it back on), only its heading
+	 * row stays full-strength. The enabled toggle refuses to turn off the last remaining enabled
+	 * agent (at least one must stay on). Never flips a toggle on its own from detection — that
+	 * only happens automatically once, on a genuine first run (see `main.ts`'s `onload`).
 	 */
 	private renderAgentsSetting(containerEl: HTMLElement): void {
 		const sectionEl = containerEl.createDiv();
-		let detected: Partial<Record<AgentId, string | null>> = {};
-		/** `<bin> --version` for each entry in `detected`, filled in after detection (`agentVersion`
-		 * is a second, separate call — no reason to hold up showing the path on it). */
-		let versions: Partial<Record<AgentId, string | null>> = {};
+		const detected: Partial<Record<AgentId, string | null>> = {};
+		/** `<bin> --version` for whichever entries in `detected` have one, filled in after detection
+		 * (`agentVersion` is a second, separate call — no reason to hold up showing the path on it). */
+		const versions: Partial<Record<AgentId, string | null>> = {};
+		const detecting: Partial<Record<AgentId, boolean>> = {};
 
 		const redraw = (): void => {
 			sectionEl.empty();
@@ -1295,35 +1315,43 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 
 			for (const id of AGENT_IDS) {
 				const agentSettings = this.plugin.settings.agents[id];
+				const agentEl = sectionEl.createDiv({ cls: "agent-sessions-settings-agent" });
 
-				new Setting(sectionEl)
-					.setName(t(AGENT_DISPLAY_NAME_KEY[id]))
-					.addToggle((toggle) =>
-						toggle.setValue(agentSettings.enabled).onChange(async (value) => {
-							if (!value && AGENT_IDS.filter((other) => other !== id).every((other) => !this.plugin.settings.agents[other].enabled)) {
-								new Notice(t("notice.needsOneAgentEnabled"));
-								toggle.setValue(true);
-								return;
+				const heading = new Setting(agentEl).setHeading();
+				const iconEl = heading.nameEl.createSpan({ cls: "agent-sessions-settings-agent-icon" });
+				setIcon(iconEl, AGENT_ICON_ID[id]);
+				heading.nameEl.createSpan({ text: t(AGENT_DISPLAY_NAME_KEY[id]) });
+				heading.addToggle((toggle) =>
+					toggle.setValue(agentSettings.enabled).onChange(async (value) => {
+						if (!value && AGENT_IDS.filter((other) => other !== id).every((other) => !this.plugin.settings.agents[other].enabled)) {
+							new Notice(t("notice.needsOneAgentEnabled"));
+							toggle.setValue(true);
+							return;
+						}
+						agentSettings.enabled = value;
+						await this.plugin.saveSettings();
+						// T-108: Codex's config.toml gets its first sync right when it's
+						// enabled (mainly for the status_line default — the submit-key
+						// keymap lines only matter once submitKey is already non-"enter",
+						// which normally wouldn't happen before Codex itself was ever
+						// enabled, but syncCodexConfig() covers that case too either way).
+						if (id === "codex" && value) {
+							const codexResult = this.plugin.syncCodexConfig();
+							if (codexResult?.warning) {
+								new Notice(codexResult.warning);
+							} else if (codexResult?.status === "written") {
+								new Notice(t("notice.codexConfigWritten"));
 							}
-							agentSettings.enabled = value;
-							await this.plugin.saveSettings();
-							// T-108: Codex's config.toml gets its first sync right when it's
-							// enabled (mainly for the status_line default — the submit-key
-							// keymap lines only matter once submitKey is already non-"enter",
-							// which normally wouldn't happen before Codex itself was ever
-							// enabled, but syncCodexConfig() covers that case too either way).
-							if (id === "codex" && value) {
-								const codexResult = this.plugin.syncCodexConfig();
-								if (codexResult?.warning) {
-									new Notice(codexResult.warning);
-								} else if (codexResult?.status === "written") {
-									new Notice(t("notice.codexConfigWritten"));
-								}
-							}
-						})
-					);
+						}
+						redraw();
+					})
+				);
 
-				const pathSetting = new Setting(sectionEl)
+				const bodyEl = agentEl.createDiv({
+					cls: agentSettings.enabled ? "agent-sessions-settings-agent-body" : "agent-sessions-settings-agent-body is-disabled",
+				});
+
+				new Setting(bodyEl)
 					.setName(t("settings.agents.path.name"))
 					.setDesc(t("settings.agents.path.desc"))
 					.addText((text) =>
@@ -1332,31 +1360,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 							await this.plugin.saveSettings();
 						})
 					);
-				if (id in detected) {
-					const found = detected[id];
-					const version = versions[id];
-					const text = found
-						? version
-							? t("settings.agents.detected.foundWithVersion", { path: found, version })
-							: t("settings.agents.detected.found", { path: found })
-						: t("settings.agents.detected.notFound");
-					pathSetting.descEl.createDiv({ cls: "agent-sessions-agent-detected", text });
-					// A user with settings already saved never runs `autoDetectAgentsOnFirstRun` — if
-					// "Detect again" now finds an agent that's still off (e.g. installed after that
-					// first run, or found only once the search order below covered a version manager),
-					// offer to flip it on right here rather than making them go find the toggle above.
-					if (found && !agentSettings.enabled) {
-						pathSetting.addButton((button) =>
-							button.setButtonText(t("settings.agents.detected.enable")).onClick(async () => {
-								agentSettings.enabled = true;
-								await this.plugin.saveSettings();
-								redraw();
-							})
-						);
-					}
-				}
 
-				new Setting(sectionEl)
+				new Setting(bodyEl)
 					.setName(t("settings.agents.env.name"))
 					.setDesc(t("settings.agents.env.desc"))
 					.addTextArea((textArea) => {
@@ -1367,36 +1372,57 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 						textArea.inputEl.rows = 3;
 						textArea.inputEl.addClass("agent-sessions-agent-env");
 					});
-			}
 
-			new Setting(sectionEl).addButton((button) =>
-				button.setButtonText(t("settings.agents.detect.name")).onClick(async () => {
-					button.setDisabled(true);
-					try {
-						// Also re-probes the interactive-shell PATH a session launches with
-						// (`loginEnv`'s own cache) — otherwise "Detect again" could find a binary
-						// while a session started right after still launches with the stale PATH.
-						resetLoginEnvCache();
-						detected = await detectAgents(Platform.isMacOS);
-						versions = {};
-						redraw();
-						const found = AGENT_IDS.map((id) => detected[id]).filter((path): path is string => !!path);
-						await Promise.all(
-							found.map(async (path) => {
-								const version = await agentVersion(path);
-								for (const id of AGENT_IDS) {
-									if (detected[id] === path) {
-										versions[id] = version;
-									}
-								}
+				const resultSetting = new Setting(bodyEl);
+				if (id in detected) {
+					const found = detected[id];
+					const version = versions[id];
+					const text = found
+						? version
+							? t("settings.agents.detected.foundWithVersion", { path: found, version })
+							: t("settings.agents.detected.found", { path: found })
+						: t("settings.agents.detected.notFound");
+					resultSetting.descEl.createDiv({ cls: "agent-sessions-agent-detected", text });
+					// A user with settings already saved never runs `autoDetectAgentsOnFirstRun` — if
+					// "Find again" now finds an agent that's still off (e.g. installed after that
+					// first run, or found only once the search order below covered a version manager),
+					// offer to flip it on right here rather than making them go find the toggle above.
+					if (found && !agentSettings.enabled) {
+						resultSetting.addButton((button) =>
+							button.setButtonText(t("settings.agents.detected.enable")).onClick(async () => {
+								agentSettings.enabled = true;
+								await this.plugin.saveSettings();
+								redraw();
 							})
 						);
-					} finally {
-						button.setDisabled(false);
-						redraw();
 					}
-				})
-			);
+				}
+				resultSetting.addButton((button) => {
+					button.setButtonText(t("settings.agents.detect.name")).onClick(async () => {
+						try {
+							// Also re-probes the interactive-shell PATH a session launches with
+							// (`loginEnv`'s own cache) — otherwise "Find again" could find a binary
+							// while a session started right after still launches with the stale PATH.
+							resetLoginEnvCache();
+							// A fresh redraw right away (rather than calling this button's own
+							// `setDisabled` in place) so it's disabled the same way every other
+							// state change here shows up — through `detecting[id]` and `redraw()`,
+							// not a mix of direct component mutation and rebuilding from scratch.
+							detecting[id] = true;
+							redraw();
+							const found = await detectAgent(id, Platform.isMacOS);
+							detected[id] = found;
+							versions[id] = null;
+							redraw();
+							versions[id] = found ? await agentVersion(found) : null;
+						} finally {
+							detecting[id] = false;
+							redraw();
+						}
+					});
+					button.setDisabled(!!detecting[id]);
+				});
+			}
 		};
 
 		redraw();

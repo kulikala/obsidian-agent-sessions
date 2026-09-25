@@ -2281,8 +2281,35 @@
 	font-family: var(--font-monospace);
 }
 
-/* "Detect again"'s result, shown under the path field once it's been run this session. */
+/* "Find again"'s result, shown in its own row once it's been run for that agent this session. */
 .agent-sessions-agent-detected {
-	margin-top: var(--size-2-1);
 	color: var(--text-muted);
+}
+
+/* T-117: each agent's own sub-section within the Agents settings section (heading + toggle, then
+   its path/env/detection rows). A little breathing room between one agent's block and the next. */
+.agent-sessions-settings-agent + .agent-sessions-settings-agent {
+	margin-top: var(--size-4-3);
+}
+
+.agent-sessions-settings-agent-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 16px;
+	height: 16px;
+	margin-right: var(--size-2-2);
+	color: var(--text-normal);
+}
+
+.agent-sessions-settings-agent-icon svg {
+	width: 16px;
+	height: 16px;
+}
+
+/* A disabled agent's path/env/detection rows are dimmed, not hidden — they're still there to
+   configure before flipping the toggle back on. Its heading row (name + toggle) is outside this
+   wrapper, so the toggle itself always stays at full strength. */
+.agent-sessions-settings-agent-body.is-disabled {
+	opacity: 0.55;
 }
