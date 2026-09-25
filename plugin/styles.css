@@ -2313,3 +2313,9 @@
 .agent-sessions-settings-agent-body.is-disabled {
 	opacity: 0.55;
 }
+
+/* The Agents section's one-line description sits directly above the first
+   agent's sub-heading; give it room so the two don't run together. */
+.agent-sessions-agents-desc {
+	margin-bottom: var(--size-4-3);
+}

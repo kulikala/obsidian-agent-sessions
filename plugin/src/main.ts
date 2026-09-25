@@ -1316,7 +1316,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		const redraw = (): void => {
 			sectionEl.empty();
 			new Setting(sectionEl).setName(t("settings.agents.heading")).setHeading();
-			sectionEl.createDiv({ cls: "setting-item-description", text: t("settings.agents.desc") });
+			sectionEl.createDiv({ cls: "setting-item-description agent-sessions-agents-desc", text: t("settings.agents.desc") });
 
 			for (const id of AGENT_IDS) {
 				const agentSettings = this.plugin.settings.agents[id];
