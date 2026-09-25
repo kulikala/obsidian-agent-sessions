@@ -3,8 +3,8 @@ import unittest
 
 from agentsessions.agents.codex import detail
 from tests.agents.codex_helpers import (
-    assistant_message, event_user_message, function_call, rollout_path, session_meta,
-    turn_context, user_message, write_rollout,
+    assistant_message, event_user_message, function_call, item_completed_user_message,
+    rollout_path, session_meta, turn_context, user_message, write_rollout,
 )
 
 ID1 = '04000000-0000-0000-0000-000000000001'
@@ -78,6 +78,30 @@ class TestCodexDetail(unittest.TestCase):
         ])
         d = detail.read_detail(p)
         self.assertEqual(d.last_user, 'the real last thing said')
+
+    def test_last_user_reads_item_completed_user_message_newer_cli_versions(self):
+        # T-101: Codex CLI 0.156.1 has no user_message events at all, only
+        # item_completed(UserMessage).
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            user_message('<environment_context>\ninjected', '2026-09-24T01:30:31Z'),
+            item_completed_user_message('現在利用可能なツールを教えて。', '2026-09-24T01:30:32Z'),
+            assistant_message('answer', '2026-09-24T01:30:33Z'),
+        ])
+        d = detail.read_detail(p)
+        self.assertEqual(d.last_user, '現在利用可能なツールを教えて。')
+
+    def test_last_user_falls_back_to_filtered_response_item_as_last_resort(self):
+        # Neither item_completed(UserMessage) nor user_message at all.
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            user_message('<environment_context>\ninjected', '2026-09-24T01:30:31Z'),
+            user_message('what tools are available?', '2026-09-24T01:30:32Z'),
+        ])
+        d = detail.read_detail(p)
+        self.assertEqual(d.last_user, 'what tools are available?')
 
 
 if __name__ == '__main__':

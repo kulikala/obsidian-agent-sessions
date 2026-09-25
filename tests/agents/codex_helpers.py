@@ -41,22 +41,37 @@ def turn_context(model: str = 'gpt-5.6-terra', effort: str = 'medium',
 def user_message(text: str, ts: str) -> dict:
     """A `response_item` role=user message -- Codex's own reconstructed prompt
     for the model, which real data shows mixes in injected context (AGENTS.md
-    instructions, `<environment_context>`, ...). `read_head`/`read_detail`
-    deliberately never read this for a session's name or "last instruction" --
-    use `event_user_message` for a fixture representing what the user actually
-    typed."""
+    instructions, `<environment_context>`, ...) ahead of a real one. Ranked
+    lowest of the three sources `read_head`/`read_detail` try (T-101) -- a
+    last resort for CLI versions with neither of the other two -- so a fixture
+    using only this one, filtered, should still surface a real (non-injected)
+    message; use `event_user_message`/`item_completed_user_message` for a
+    higher-priority fixture."""
     return {'timestamp': ts, 'type': 'response_item',
             'payload': {'type': 'message', 'role': 'user',
                         'content': [{'type': 'input_text', 'text': text}]}}
 
 
 def event_user_message(text: str, ts: str) -> dict:
-    """An `event_msg.user_message` -- the literal text the user typed, never
-    mixed with injected context in real data (see `agents.codex.rollout`'s
-    module docstring). This is what `read_head`'s `prompt` and
-    `agents.codex.detail.read_detail`'s `last_user` actually read."""
+    """An `event_msg.user_message` -- the literal text the user typed, on Codex
+    CLI versions that write this event (never mixed with injected context in
+    real data). See `agents.codex.rollout`'s module docstring for the
+    version-dependent split with `item_completed_user_message`, below."""
     return {'timestamp': ts, 'type': 'event_msg',
             'payload': {'type': 'user_message', 'message': text}}
+
+
+def item_completed_user_message(text: str, ts: str, thread_id: str = 'thread-id',
+                                 turn_id: str = 'turn-id') -> dict:
+    """An `event_msg.item_completed` with `item.type == 'UserMessage'` -- the
+    newer Codex CLI versions' (e.g. 0.156.1) equivalent of `event_user_message`
+    (T-101: these versions don't write `user_message` events at all, only
+    this). Content blocks are typed `'text'`, not `'input_text'`/`'output_text'`
+    -- see `rollout.text_of`."""
+    return {'timestamp': ts, 'type': 'event_msg',
+            'payload': {'type': 'item_completed', 'thread_id': thread_id, 'turn_id': turn_id,
+                        'item': {'type': 'UserMessage', 'id': 'item-id',
+                                 'content': [{'type': 'text', 'text': text, 'text_elements': []}]}}}
 
 
 def assistant_message(text: str, ts: str) -> dict:

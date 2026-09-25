@@ -13,8 +13,8 @@ from agentsessions.agents.codex import names as names_mod
 # so the submodule is fetched by its full dotted path, not `from ...codex import scan`.
 scan = importlib.import_module('agentsessions.agents.codex.scan')
 from tests.agents.codex_helpers import (
-    assistant_message, event_user_message, rollout_path, session_meta, turn_context,
-    user_message, write_rollout,
+    assistant_message, event_user_message, item_completed_user_message, rollout_path,
+    session_meta, turn_context, user_message, write_rollout,
 )
 
 ID1 = '01000000-0000-0000-0000-000000000001'
@@ -80,8 +80,9 @@ class TestCodexScan(unittest.TestCase):
         ])
         db = os.path.join(self.home, names_mod.DB_FILENAME)
         conn = sqlite3.connect(db)
-        conn.execute('CREATE TABLE threads (id TEXT PRIMARY KEY, name TEXT)')
-        conn.execute('INSERT INTO threads (id, name) VALUES (?, ?)', (ID1, 'My Renamed Thread'))
+        conn.execute('CREATE TABLE threads (id TEXT PRIMARY KEY, name TEXT, title TEXT)')
+        conn.execute('INSERT INTO threads (id, name, title) VALUES (?, ?, ?)',
+                     (ID1, 'My Renamed Thread', 'the raw first prompt'))
         conn.commit()
         conn.close()
         result = scan.scan([p], home=self.home)
@@ -187,6 +188,84 @@ class TestCodexPromptFiltering(unittest.TestCase):
         ])
         result = scan.scan([p], home=self.home)
         self.assertEqual(result[ID1].first_prompt, 'now continue with the refactor')
+
+
+class TestCodexNewerCliVersion(unittest.TestCase):
+    """T-101: a real report -- Codex CLI 0.156.1 (codex-tui, source=cli) writes
+    neither `event_msg.user_message` nor a cleanly-recoverable `response_item`
+    alone; the literal typed text only shows up in `event_msg.item_completed`
+    with `item.type == 'UserMessage'`. bc41b97 only recognized `user_message`,
+    so these sessions got no name at all (json scan showed the raw id)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = self.tmp.name
+
+    def test_item_completed_user_message_is_used_when_theres_no_user_message_event(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one', source='cli'),
+            turn_context(),
+            user_message('<environment_context>\n<cwd>/work/one</cwd>', '2026-09-24T01:30:31Z'),
+            item_completed_user_message('現在利用可能なツールを教えて。', '2026-09-24T01:30:32Z'),
+        ])
+        result = scan.scan([p], home=self.home)
+        self.assertEqual(result[ID1].first_prompt, '現在利用可能なツールを教えて。')
+
+    def test_item_completed_user_message_outranks_a_filtered_response_item(self):
+        # Both present: item_completed must win even though the (filtered-out,
+        # so irrelevant) response_item appears earlier in the file.
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            user_message('# AGENTS.md instructions for /Users/x\n...', '2026-09-24T01:30:31Z'),
+            item_completed_user_message('the real question', '2026-09-24T01:30:32Z'),
+        ])
+        result = scan.scan([p], home=self.home)
+        self.assertEqual(result[ID1].first_prompt, 'the real question')
+
+    def test_filtered_response_item_is_the_last_resort_when_nothing_else_exists(self):
+        # Neither item_completed(UserMessage) nor user_message at all -- only
+        # response_item, which must still be tried (filtered) rather than give up.
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            user_message('<environment_context>\ninjected', '2026-09-24T01:30:31Z'),
+            user_message('what tools are available?', '2026-09-24T01:30:32Z'),
+        ])
+        result = scan.scan([p], home=self.home)
+        self.assertEqual(result[ID1].first_prompt, 'what tools are available?')
+
+    def test_threads_title_outranks_rollout_extraction(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            item_completed_user_message('rollout-derived text', '2026-09-24T01:30:31Z'),
+        ])
+        db = os.path.join(self.home, names_mod.DB_FILENAME)
+        conn = sqlite3.connect(db)
+        conn.execute('CREATE TABLE threads (id TEXT PRIMARY KEY, name TEXT, title TEXT)')
+        conn.execute('INSERT INTO threads (id, title) VALUES (?, ?)', (ID1, 'sqlite title wins'))
+        conn.commit()
+        conn.close()
+        result = scan.scan([p], home=self.home)
+        self.assertEqual(result[ID1].first_prompt, 'sqlite title wins')
+        self.assertIsNone(result[ID1].name)   # title isn't a /rename -- session stays unnamed
+
+    def test_empty_threads_title_falls_back_to_rollout_extraction(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            item_completed_user_message('rollout-derived text', '2026-09-24T01:30:31Z'),
+        ])
+        db = os.path.join(self.home, names_mod.DB_FILENAME)
+        conn = sqlite3.connect(db)
+        conn.execute('CREATE TABLE threads (id TEXT PRIMARY KEY, name TEXT, title TEXT)')
+        conn.execute('INSERT INTO threads (id, title) VALUES (?, ?)', (ID1, ''))
+        conn.commit()
+        conn.close()
+        result = scan.scan([p], home=self.home)
+        self.assertEqual(result[ID1].first_prompt, 'rollout-derived text')
 
 
 if __name__ == '__main__':

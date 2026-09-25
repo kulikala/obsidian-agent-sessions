@@ -2,16 +2,26 @@
 end of a rollout -- the codex analogue of `agentsessions.sessions.detail`.
 
 Reuses `agentsessions.sessions.detail.Detail` (same shape the JSON API and the
-plugin's detail panel already expect) and `clean_text`. `last_user` comes from
-`event_msg.user_message` (the literal text the user typed), filtered by
-`rollout.is_real_user_text` -- never from `response_item`'s role=user, which
-mixes in Codex's own injected context (AGENTS.md instructions,
-`<environment_context>`, ...; see `rollout.INJECTED_PREFIXES`) and would surface
-that instead of what the user actually last said. `last_command` is left `None`
--- Codex's `/rename` and `/compact` are plugin-side concerns (T-96), not
-something this phase reads out of the transcript. `model`/`effort` come from
-the most recent `turn_context` (Codex has no statusLine to carry them the way
-Claude Code does -- see plan/段9-Codex対応.md).
+plugin's detail panel already expect) and `clean_text`. `last_user` is the most
+recent candidate (walking backward) from any of `event_msg.item_completed`
+(item.type == 'UserMessage', newer Codex CLI versions), `event_msg.user_message`
+(older versions), or `response_item`'s role=user -- filtered by
+`rollout.is_real_user_text` in every case, since `response_item` mixes in
+Codex's own injected context (AGENTS.md instructions, `<environment_context>`,
+...; see `rollout.INJECTED_PREFIXES`) and would surface that instead of what
+the user actually last said if it weren't filtered (T-101: some Codex CLI
+versions have neither `item_completed`(UserMessage) nor `user_message` events
+at all, so `response_item` -- filtered -- is a needed last resort, not
+skippable the way it used to be assumed). Recency, not source, decides which
+candidate wins: whichever passes the filter first while walking backward is
+the most recent one, regardless of which of the three event shapes produced
+it -- no separate tier logic is needed here the way `rollout.read_head` needs
+one (see that function), since `item_completed`/`user_message` don't coexist
+in one rollout in practice. `last_command` is left `None` -- Codex's `/rename`
+and `/compact` are plugin-side concerns (T-96), not something this phase reads
+out of the transcript. `model`/`effort` come from the most recent
+`turn_context` (Codex has no statusLine to carry them the way Claude Code does
+-- see plan/段9-Codex対応.md).
 """
 import json
 from typing import Optional
@@ -51,6 +61,23 @@ def read_detail(path: str) -> Detail:
                     d.model = model
                 if isinstance(effort, str) and effort:
                     d.effort = effort
+        elif b'"item_completed"' in line and not d.last_user:
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                rec = None
+            if isinstance(rec, dict) and rec.get('type') == 'event_msg':
+                payload = rec.get('payload') or {}
+                if payload.get('type') == 'item_completed':
+                    item = payload.get('item') or {}
+                    if item.get('type') == 'UserMessage':
+                        text = rollout.text_of(item.get('content'))
+                        # keep scanning past a filtered-out candidate (injected
+                        # text, a bare slash command) for an earlier real one
+                        if text.strip() and rollout.is_real_user_text(text):
+                            cleaned = clean_text(text)
+                            if cleaned:
+                                d.last_user = cleaned
         elif b'"user_message"' in line and not d.last_user:
             try:
                 rec = json.loads(line)
@@ -84,6 +111,15 @@ def read_detail(path: str) -> Detail:
                     if text.strip():
                         d.last_assistant = clean_text(text)
                         d.tools = list(reversed(tools))   # tools called after the response = what's currently running
+                elif ptype == 'message' and payload.get('role') == 'user' and not d.last_user:
+                    # last resort: only used when neither item_completed(UserMessage)
+                    # nor user_message produced anything (T-101 -- some CLI versions
+                    # have neither), filtered the same way read_head's fallback is
+                    text = rollout.text_of(payload.get('content'))
+                    if text.strip() and rollout.is_real_user_text(text):
+                        cleaned = clean_text(text)
+                        if cleaned:
+                            d.last_user = cleaned
         # keep scanning (bounded by TAIL_LIMIT) until model is found too, same
         # convention as sessions.detail.read_detail's last_command
         if d.last_user and d.last_assistant and d.model is not None:

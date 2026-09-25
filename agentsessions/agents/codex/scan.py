@@ -26,22 +26,34 @@ from .rollout import Head, RACY_WINDOW
 # 2: read_head switched from response_item role=user (which mixes in Codex's
 # own injected context) to event_msg.user_message, and started filtering bare
 # slash commands (see rollout.py's INJECTED_PREFIXES/is_real_user_text).
-SCAN_SCHEMA_VERSION = 2
+# 3 (T-101): read_head also recognizes event_msg.item_completed(UserMessage)
+# (some Codex CLI versions, e.g. 0.156.1, have neither user_message events nor
+# a cleanly-recoverable response_item -- this is the only source they do have),
+# and a filtered response_item is now used as a last resort instead of never.
+SCAN_SCHEMA_VERSION = 3
 
 
 def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
          home: Optional[str] = None) -> Dict[str, Session]:
-    """Same contract as `sessions.scan.scan`, plus a one-shot batched `/rename`
-    lookup (`names.lookup_names`) for every id found -- but unlike
-    `sessions.scan.scan`, a session with no name and no usable first message is
-    NOT dropped: `rollout.read_head`'s prompt extraction already filters out
-    Codex's own injected context and slash commands (see `INJECTED_PREFIXES`),
-    so a session can legitimately end up with nothing left to show as a name
-    without that meaning the session itself is empty or bogus -- it's still a
-    real rollout the user ran. It's included with `name=None`, `first_prompt=''`,
-    which `cli/json_output._session_dict` already renders as an untitled row
-    (falling back to the id's first 8 characters), landing in "Other" like any
-    other nameless session."""
+    """Same contract as `sessions.scan.scan`, plus a one-shot batched lookup
+    (`names.lookup_thread_info`) of `state_5.sqlite`'s `threads.name` (an
+    explicit `/rename`) and `.title` (Codex's own auto-generated summary) for
+    every id found. Name resolution, highest priority first: `threads.name` ->
+    `threads.title` -> `rollout.read_head`'s own extraction (itself tiered --
+    see that function). `threads.title` outranks the rollout extraction because
+    it's computed by Codex itself from data this project doesn't always have
+    cheap access to (T-101), not because the rollout extraction is unreliable
+    -- when sqlite has nothing (unavailable, locked, or a thread not yet
+    indexed there), the rollout-derived `first_prompt` is exactly as good as
+    before.
+
+    Unlike `sessions.scan.scan`, a session with no name and no usable first
+    message is NOT dropped: the fallback chain above can legitimately come up
+    empty without that meaning the session itself is empty or bogus -- it's
+    still a real rollout the user ran. It's included with `name=None`,
+    `first_prompt=''`, which `cli/json_output._session_dict` already renders as
+    an untitled row (falling back to the id's first 8 characters), landing in
+    "Other" like any other nameless session."""
     home = home if home is not None else rollout.codex_home()
     now = time.time()
     heads: Dict[str, tuple] = {}   # sid -> (Head, last_activity, path)
@@ -74,12 +86,14 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
             continue
         heads[sid] = (h, last_activity, st.st_mtime, p)
 
-    names = _names.lookup_names(home, list(heads.keys()))
+    thread_info = _names.lookup_thread_info(home, list(heads.keys()))
 
     out: Dict[str, Session] = {}
     for sid, (h, last_activity, file_mtime, p) in heads.items():
-        name = names.get(sid)
+        info = thread_info.get(sid)
+        name = info.name if info else None
+        first_prompt = (info.title if info and info.title else None) or h.prompt
         mtime = last_activity or file_mtime
         out[sid] = Session(id=sid, name=name, cwd=h.cwd, mtime=mtime, path=p,
-                            first_prompt=h.prompt, child=h.child, agent='codex')
+                            first_prompt=first_prompt, child=h.child, agent='codex')
     return out
