@@ -29,6 +29,7 @@ describe("DEFAULT_SETTINGS", () => {
 			language: "auto",
 			managerAnalysisHeight: 240,
 			managerAnalysisCollapsed: false,
+			managerAnalysisFolded: { claude: false, codex: false },
 			managerStatusFilter: "all",
 		});
 	});
@@ -105,6 +106,33 @@ describe("mergeSettings (agents)", () => {
 
 	it("drops an unrecognized lastNewSessionAgent, falling back to the default (claude)", () => {
 		expect(mergeSettings({ lastNewSessionAgent: "gemini" }).lastNewSessionAgent).toBe("claude");
+	});
+});
+
+describe("mergeSettings (managerAnalysisFolded, T-104 additional feature)", () => {
+	it("keeps a saved value as-is when every agent's entry is a valid boolean", () => {
+		expect(mergeSettings({ managerAnalysisFolded: { claude: true, codex: false } }).managerAnalysisFolded).toEqual({
+			claude: true,
+			codex: false,
+		});
+	});
+
+	it("falls back to unfolded, per agent, for an invalid or missing entry", () => {
+		expect(mergeSettings({ managerAnalysisFolded: { claude: "yes" } }).managerAnalysisFolded).toEqual({
+			claude: false,
+			codex: false,
+		});
+	});
+
+	it("falls back to defaults entirely when managerAnalysisFolded isn't an object", () => {
+		expect(mergeSettings({ managerAnalysisFolded: "nope" }).managerAnalysisFolded).toEqual({
+			claude: false,
+			codex: false,
+		});
+	});
+
+	it("defaults to unfolded when there's no saved data at all", () => {
+		expect(mergeSettings(null).managerAnalysisFolded).toEqual({ claude: false, codex: false });
 	});
 });
 

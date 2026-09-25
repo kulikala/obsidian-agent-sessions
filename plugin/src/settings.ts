@@ -79,6 +79,11 @@ function defaultAgentSettings(): Record<AgentId, AgentSettings> {
 	};
 }
 
+/** Every agent unfolded by default. */
+function defaultAnalysisFolded(): Record<AgentId, boolean> {
+	return { claude: false, codex: false };
+}
+
 export interface AgentSessionsSettings {
 	fontFamily: string;
 	fontSize: number;
@@ -104,6 +109,10 @@ export interface AgentSessionsSettings {
 	managerAnalysisHeight: number;
 	/** Whether the manager's analytics area is collapsed. */
 	managerAnalysisCollapsed: boolean;
+	/** Whether each agent's own analytics section is folded (T-104 additional feature) —
+	 * independent of `managerAnalysisCollapsed`, which folds the whole area. Only meaningful when
+	 * more than one agent is enabled (a single section has no heading to fold at all). */
+	managerAnalysisFolded: Record<AgentId, boolean>;
 	/** The manager's status-filter menu selection (next to the name filter). Default `all`. */
 	managerStatusFilter: ManagerStatusFilter;
 }
@@ -124,6 +133,7 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	language: "auto",
 	managerAnalysisHeight: 240,
 	managerAnalysisCollapsed: false,
+	managerAnalysisFolded: defaultAnalysisFolded(),
 	managerStatusFilter: "all",
 };
 
@@ -148,6 +158,23 @@ function mergeAgentSettings(data: unknown): Record<AgentId, AgentSettings> {
 			path: typeof e.path === "string" ? e.path : defaults[id].path,
 			env: typeof e.env === "string" ? e.env : defaults[id].env,
 		};
+	}
+	return result;
+}
+
+/** Same defensive per-key merge as `mergeAgentSettings`, for the simpler `AgentId -> boolean`
+ * shape — a missing or malformed entry for a given agent falls back to unfolded rather than
+ * discarding the whole saved object (e.g. a value saved before a new agent id existed). */
+function mergeAnalysisFolded(data: unknown): Record<AgentId, boolean> {
+	const result = defaultAnalysisFolded();
+	if (typeof data !== "object" || data === null) {
+		return result;
+	}
+	const saved = data as Record<string, unknown>;
+	for (const id of AGENT_IDS) {
+		if (typeof saved[id] === "boolean") {
+			result[id] = saved[id] as boolean;
+		}
 	}
 	return result;
 }
@@ -189,6 +216,7 @@ export function mergeSettings(data: unknown, isMac = true): AgentSessionsSetting
 	}
 	delete saved.claudePath;
 	saved.agents = mergeAgentSettings(saved.agents);
+	saved.managerAnalysisFolded = mergeAnalysisFolded(saved.managerAnalysisFolded);
 	if (!AGENT_IDS.includes(saved.lastNewSessionAgent as AgentId)) {
 		delete saved.lastNewSessionAgent;
 	}

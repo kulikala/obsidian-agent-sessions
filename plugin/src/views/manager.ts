@@ -28,7 +28,7 @@ import { buildManagerTree } from "../sessions/tree";
 import type { StatsResult, StatsWindow } from "../types";
 import { formatK } from "../usage/usage";
 import { formatCost, renderDetail, type DetailContext } from "./detail";
-import { formatCountdown } from "./limits";
+import { formatCountdown, realWindows } from "./limits";
 import {
 	ARCHIVED_GROUP,
 	categoryKeyOf,
@@ -124,6 +124,13 @@ export class ManagerView extends ItemView {
 	 * window, T-104 addendum) are rebuilt fresh on every `renderCategoryBars()` call, same as
 	 * the stat cards, so no per-window element needs tracking here. */
 	private categoryBarWrapEls: Partial<Record<AgentId, HTMLElement>> = {};
+	/** The section element itself (T-104 additional feature: per-agent fold), its caret, and the
+	 * small "primary window usage%" summary shown next to the heading only while folded — `null`
+	 * when there's no summary to show (nothing tracked yet for that agent). Only populated when
+	 * `split` (more than one agent, so there's a heading to fold at all). */
+	private agentSectionEls: Partial<Record<AgentId, HTMLElement>> = {};
+	private agentCaretEls: Partial<Record<AgentId, HTMLElement>> = {};
+	private agentSummaryEls: Partial<Record<AgentId, HTMLElement>> = {};
 	/** Debounce timer for `terminal-status`. */
 	private statusRenderTimer: ReturnType<typeof setTimeout> | null = null;
 	/** The bottom analytics area (the usage bar plus the per-category bar). Clicking its heading
@@ -406,28 +413,80 @@ export class ManagerView extends ItemView {
 		this.analysisAgents = enabled.length > 0 ? enabled : ["claude"];
 		this.statsBarEls = {};
 		this.categoryBarWrapEls = {};
+		this.agentSectionEls = {};
+		this.agentCaretEls = {};
+		this.agentSummaryEls = {};
 		const split = this.analysisAgents.length > 1;
 		for (const agent of this.analysisAgents) {
 			const sectionEl = this.analysisBodyEl.createDiv({ cls: "agent-sessions-manager-analysis-section" });
 			if (split) {
+				this.agentSectionEls[agent] = sectionEl;
 				this.buildAgentSectionHeading(sectionEl, agent);
 			}
 			this.statsBarEls[agent] = sectionEl.createDiv({ cls: "agent-sessions-manager-stats" });
 			this.categoryBarWrapEls[agent] = sectionEl.createDiv({ cls: "agent-sessions-manager-category-bars" });
+			if (split) {
+				this.applyAgentFolded(agent, this.plugin.settings.managerAnalysisFolded[agent] ?? false);
+			}
 		}
 		this.renderStatsBar();
 		this.renderCategoryBars();
 	}
 
-	/** The agent-section heading: icon (`ui/icons.ts`, T-102) + display name — only shown when
-	 * more than one agent is enabled (`buildAnalysisSections`'s `split`). */
+	/**
+	 * The agent-section heading: icon (`ui/icons.ts`, T-102) + display name + a caret — only
+	 * built when more than one agent is enabled (`buildAnalysisSections`'s `split`; a single
+	 * section is never foldable, there'd be nothing to fold it down to). Clicking it folds/unfolds
+	 * just this section, saved per-agent to `managerAnalysisFolded` — independent of the whole
+	 * analysis area's own fold (`toggleAnalysisCollapsed`). `stopPropagation` keeps this click from
+	 * also triggering the analysis body's click-to-refresh.
+	 */
 	private buildAgentSectionHeading(container: HTMLElement, agent: AgentId): void {
 		const heading = container.createDiv({ cls: "agent-sessions-manager-analysis-agent-heading" });
+		this.agentCaretEls[agent] = heading.createSpan({ cls: "agent-sessions-manager-analysis-agent-caret" });
 		const icon = AGENT_ICON_ID[agent];
 		if (icon) {
 			setIcon(heading.createSpan({ cls: "agent-sessions-manager-analysis-agent-icon" }), icon);
 		}
 		heading.createSpan({ text: t(AGENT_NAME_KEY[agent]) });
+		this.agentSummaryEls[agent] = heading.createSpan({ cls: "agent-sessions-manager-analysis-agent-summary" });
+		this.registerDomEvent(heading, "click", (evt) => {
+			evt.stopPropagation();
+			this.toggleAgentFolded(agent);
+		});
+	}
+
+	private toggleAgentFolded(agent: AgentId): void {
+		const folded = !this.plugin.settings.managerAnalysisFolded[agent];
+		this.plugin.settings.managerAnalysisFolded = { ...this.plugin.settings.managerAnalysisFolded, [agent]: folded };
+		void this.plugin.saveSettings();
+		this.applyAgentFolded(agent, folded);
+	}
+
+	/** Folds/unfolds one agent's section: the heading stays, everything below it (usage bar,
+	 * category bars) hides via CSS, and the caret and summary next to the heading update. */
+	private applyAgentFolded(agent: AgentId, folded: boolean): void {
+		this.agentSectionEls[agent]?.toggleClass("is-folded", folded);
+		this.agentCaretEls[agent]?.setText(folded ? "▸" : "▾");
+		this.updateAgentSummary(agent);
+	}
+
+	/**
+	 * The small "primary window usage%" text shown next to a folded section's heading (my own
+	 * design call for T-104's per-agent-fold request, so a folded section still tells you
+	 * something at a glance instead of going completely silent): that agent's shortest real
+	 * window (`realWindows(...)[0]` — 5-hour for Claude; for an account with no 5h/7d quota
+	 * tracked at all, whichever non-standard window it does track, e.g. 30-day). Empty when
+	 * nothing is tracked yet. Only meaningful while folded (CSS hides it otherwise), but kept
+	 * up to date regardless so it's already correct the moment a section folds.
+	 */
+	private updateAgentSummary(agent: AgentId): void {
+		const el = this.agentSummaryEls[agent];
+		if (!el) {
+			return;
+		}
+		const primary = realWindows(windowsForAgent(this.statsResult, agent))[0];
+		el.setText(primary?.used_percentage != null ? `${Math.round(primary.used_percentage)}%` : "");
 	}
 
 	/** The usage bar (5-hour and 7-day windows) for every agent section: usage bar, countdown, cost, tokens, call count, session count. */
@@ -445,11 +504,12 @@ export class ManagerView extends ItemView {
 				// an empty section.
 				this.renderStatsCard(el, t("stats.fiveHour"), null);
 				this.renderStatsCard(el, t("stats.sevenDay"), null);
-				continue;
+			} else {
+				for (const w of windows) {
+					this.renderStatsCard(el, windowLabel(w.minutes), w);
+				}
 			}
-			for (const w of windows) {
-				this.renderStatsCard(el, windowLabel(w.minutes), w);
-			}
+			this.updateAgentSummary(agent);
 		}
 	}
 

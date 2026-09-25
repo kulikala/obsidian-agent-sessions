@@ -28,6 +28,9 @@
 	border-top: 1px solid var(--background-modifier-border);
 }
 
+/* Clickable — folds/unfolds just this section (T-104 additional feature), independent of the
+   whole analysis area's own fold. `stopPropagation`'d in manager.ts so it doesn't also trigger
+   the analysis body's click-to-refresh. */
 .agent-sessions-manager-analysis-agent-heading {
 	display: flex;
 	align-items: center;
@@ -36,6 +39,12 @@
 	font-size: var(--font-ui-small);
 	font-weight: var(--font-semibold);
 	color: var(--text-muted);
+	cursor: pointer;
+	user-select: none;
+}
+
+.agent-sessions-manager-analysis-agent-heading:hover {
+	color: var(--text-normal);
 }
 
 .agent-sessions-manager-analysis-agent-icon {
@@ -47,6 +56,29 @@
 .agent-sessions-manager-analysis-agent-icon svg {
 	width: 100%;
 	height: 100%;
+}
+
+/* The primary window's usage%, shown only while folded so a folded section still says something
+   at a glance (my own design call — T-104 only asked for fold/unfold, not what a folded section
+   shows). Pushed to the heading's right edge. */
+.agent-sessions-manager-analysis-agent-summary {
+	margin-left: auto;
+	font-weight: var(--font-normal);
+	font-variant-numeric: tabular-nums;
+	visibility: hidden;
+}
+
+.agent-sessions-manager-analysis-section.is-folded .agent-sessions-manager-analysis-agent-heading {
+	padding-bottom: var(--size-4-2);
+}
+
+.agent-sessions-manager-analysis-section.is-folded .agent-sessions-manager-analysis-agent-summary {
+	visibility: visible;
+}
+
+.agent-sessions-manager-analysis-section.is-folded .agent-sessions-manager-stats,
+.agent-sessions-manager-analysis-section.is-folded .agent-sessions-manager-category-bars {
+	display: none;
 }
 
 /* ---- Manager: stats bar ---- */
