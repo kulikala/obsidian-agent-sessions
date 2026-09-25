@@ -1,7 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AGENT_IDS } from "../../src/settings";
 import { setLang, t } from "../../src/i18n";
-import { AGENT_ICON, AGENT_NAME_KEY, enabledAgentsText, formatRelativeTime, RelativeTimeTicker } from "../../src/views/rows";
+import type AgentSessionsPlugin from "../../src/main";
+import {
+	AGENT_ICON,
+	AGENT_NAME_KEY,
+	createRowActions,
+	DelayedRevert,
+	enabledAgentsText,
+	formatRelativeTime,
+	RelativeTimeTicker,
+} from "../../src/views/rows";
 
 describe("formatRelativeTime", () => {
 	afterEach(() => setLang("en"));
@@ -160,5 +169,108 @@ describe("enabledAgentsText (T-106 addendum: empty.desc's {agents})", () => {
 
 	it("returns an empty string for an empty list (callers use a different fallback then)", () => {
 		expect(enabledAgentsText([])).toBe("");
+	});
+});
+
+describe("DelayedRevert (T-110: the side panel's revert-to-default-detail trigger)", () => {
+	beforeEach(() => {
+		vi.useFakeTimers();
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+	});
+
+	it("calls run once after ms has passed since schedule", () => {
+		const run = vi.fn();
+		const d = new DelayedRevert(200, run);
+		d.schedule();
+		vi.advanceTimersByTime(199);
+		expect(run).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(1);
+		expect(run).toHaveBeenCalledTimes(1);
+	});
+
+	it("never calls run if cancel() happens before ms elapses (a row entered before the list-leave delay fires)", () => {
+		const run = vi.fn();
+		const d = new DelayedRevert(200, run);
+		d.schedule();
+		vi.advanceTimersByTime(150);
+		d.cancel();
+		vi.advanceTimersByTime(1000);
+		expect(run).not.toHaveBeenCalled();
+	});
+
+	it("cancel() is a no-op when nothing is scheduled", () => {
+		const run = vi.fn();
+		const d = new DelayedRevert(200, run);
+		expect(() => d.cancel()).not.toThrow();
+		expect(run).not.toHaveBeenCalled();
+	});
+
+	it("schedule() while already pending restarts the delay from scratch (leave, then leave again before it fires)", () => {
+		const run = vi.fn();
+		const d = new DelayedRevert(200, run);
+		d.schedule();
+		vi.advanceTimersByTime(150);
+		d.schedule();
+		vi.advanceTimersByTime(150);
+		expect(run).not.toHaveBeenCalled();
+		vi.advanceTimersByTime(50);
+		expect(run).toHaveBeenCalledTimes(1);
+	});
+
+	it("simulates a real leave -> enter -> leave -> enter sequence across several rows: run() never fires as long as each gap is under ms", () => {
+		const run = vi.fn();
+		const d = new DelayedRevert(200, run);
+		// Leaving the list schedules the revert.
+		d.schedule();
+		// A row is entered 50ms later (well under the 200ms delay) — canceled, never reverted.
+		vi.advanceTimersByTime(50);
+		d.cancel();
+		// That row is left again (back to "outside any row" from the list's perspective) —
+		// schedules again.
+		vi.advanceTimersByTime(10);
+		d.schedule();
+		// Immediately entering another row cancels it again.
+		vi.advanceTimersByTime(5);
+		d.cancel();
+		vi.advanceTimersByTime(1000);
+		expect(run).not.toHaveBeenCalled();
+	});
+
+	it("pending reflects whether a delay is currently running", () => {
+		const d = new DelayedRevert(200, vi.fn());
+		expect(d.pending).toBe(false);
+		d.schedule();
+		expect(d.pending).toBe(true);
+		d.cancel();
+		expect(d.pending).toBe(false);
+		d.schedule();
+		vi.advanceTimersByTime(200);
+		expect(d.pending).toBe(false);
+	});
+});
+
+describe("createRowActions (T-110: showDetail/hideDetail/cancelHideDetail wiring)", () => {
+	const fakePlugin = {} as AgentSessionsPlugin;
+
+	it("routes showDetail/hideDetail/cancelHideDetail straight to the given callbacks", () => {
+		const onShow = vi.fn();
+		const onHide = vi.fn();
+		const onCancel = vi.fn();
+		const actions = createRowActions(fakePlugin, onShow, onHide, onCancel);
+		actions.showDetail("abc123");
+		expect(onShow).toHaveBeenCalledWith("abc123");
+		actions.hideDetail?.();
+		expect(onHide).toHaveBeenCalledTimes(1);
+		actions.cancelHideDetail?.();
+		expect(onCancel).toHaveBeenCalledTimes(1);
+	});
+
+	it("hideDetail/cancelHideDetail are undefined when not given (matches ManagerView, which has no revert-to-default concept)", () => {
+		const actions = createRowActions(fakePlugin, vi.fn());
+		expect(actions.hideDetail).toBeUndefined();
+		expect(actions.cancelHideDetail).toBeUndefined();
 	});
 });

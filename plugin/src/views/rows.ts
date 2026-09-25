@@ -25,8 +25,21 @@ export interface RowActions {
 	copyId(id: string): void;
 	/** Called after a 300ms hover. */
 	showDetail(id: string): void;
-	/** Called when the hover ends (to revert to the default display). */
+	/**
+	 * Called when the pointer leaves the list entirely (T-110) — the caller (`SideView`) wires
+	 * this to its list container's own `pointerleave`, not to any individual row's, so moving the
+	 * pointer directly from one row to another never triggers it. Not called by this file at all;
+	 * kept on `RowActions` (rather than as a separate side-panel-only callback) so it lives next
+	 * to `cancelHideDetail`, its counterpart.
+	 */
 	hideDetail?(): void;
+	/**
+	 * Called immediately on entering any row (T-110), before that row's own 300ms hover-confirm
+	 * timer starts — lets the caller cancel a pending, delayed `hideDetail` (if it debounces one)
+	 * so a leave/enter landing right on the list/row boundary still can't flash to the default
+	 * detail in between.
+	 */
+	cancelHideDetail?(): void;
 	/** Opens the session-analytics modal. */
 	showUsage(id: string): void;
 	/**
@@ -49,6 +62,46 @@ export interface RenderRowOptions {
 }
 
 const HOVER_DELAY_MS = 300;
+
+/**
+ * A cancelable, delayed callback (T-110) — `schedule()` (re)starts the delay from scratch,
+ * `cancel()` stops it without calling anything. Used for the side panel's "revert to the default
+ * detail" trigger (`SideView.onHoverEnd`/`cancelPendingHoverHide`): the delay absorbs a pointer
+ * leave/enter landing right on the boundary between the list and a row just inside it — `cancel()`
+ * is called from a row's own `pointerenter` (`RowActions.cancelHideDetail`). Kept as its own plain
+ * class, with nothing but a `setTimeout`, so it's directly testable with fake timers — unlike
+ * `SideView` itself, which imports `obsidian` eagerly.
+ */
+export class DelayedRevert {
+	private timer: ReturnType<typeof setTimeout> | null = null;
+
+	constructor(
+		private readonly ms: number,
+		private readonly run: () => void
+	) {}
+
+	/** (Re)starts the delay — cancels any timer already pending first. */
+	schedule(): void {
+		this.cancel();
+		this.timer = setTimeout(() => {
+			this.timer = null;
+			this.run();
+		}, this.ms);
+	}
+
+	/** Stops a pending delay without calling `run`. A no-op if nothing is pending. */
+	cancel(): void {
+		if (this.timer !== null) {
+			clearTimeout(this.timer);
+			this.timer = null;
+		}
+	}
+
+	/** Whether a timer is currently pending (for tests). */
+	get pending(): boolean {
+		return this.timer !== null;
+	}
+}
 
 /** Holds at most one selected row (highlighting only — `⋯` is always shown, independent of selection). */
 export class RowSelection {
@@ -364,14 +417,21 @@ export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptio
 
 	let hoverTimer: ReturnType<typeof setTimeout> | null = null;
 	el.addEventListener("pointerenter", () => {
+		// T-110: cancels a pending, delayed `hideDetail` from the list's own `pointerleave`
+		// *before* scheduling this row's own confirm timer — otherwise moving directly from one
+		// row to another (never actually leaving the list) could still flash back to the default
+		// detail if the previous row's hide-delay happened to fire before this row's 300ms is up.
+		opts.actions.cancelHideDetail?.();
 		hoverTimer = setTimeout(() => opts.actions.showDetail(row.id), HOVER_DELAY_MS);
 	});
 	el.addEventListener("pointerleave", () => {
+		// Only cancels *this row's own* not-yet-confirmed show — does not call `hideDetail` here
+		// (T-110): that's wired to the list container's own `pointerleave` instead, so moving
+		// between rows (without leaving the list) never reverts to the default detail at all.
 		if (hoverTimer) {
 			clearTimeout(hoverTimer);
 			hoverTimer = null;
 		}
-		opts.actions.hideDetail?.();
 	});
 
 	return el;
@@ -404,7 +464,8 @@ export function renderGroupHeader(
 export function createRowActions(
 	plugin: AgentSessionsPlugin,
 	onShowDetail: (id: string) => void,
-	onHideDetail?: () => void
+	onHideDetail?: () => void,
+	onCancelHideDetail?: () => void
 ): RowActions {
 	return {
 		openSession: (id) => {
@@ -442,6 +503,7 @@ export function createRowActions(
 		},
 		showDetail: onShowDetail,
 		hideDetail: onHideDetail,
+		cancelHideDetail: onCancelHideDetail,
 		showUsage: (id) => plugin.showUsage(id),
 		lastUserPrompt: (id) => plugin.index.getCachedDetail(id)?.last_command ?? undefined,
 	};

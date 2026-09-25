@@ -11,7 +11,15 @@ import { NewSessionModal } from "../ui/modals";
 import type { Row } from "../sessions/index";
 import { AGENT_IDS } from "../settings";
 import type { SideList } from "../sessions/tree";
-import { createRowActions, enabledAgentsText, RelativeTimeTicker, renderRow, RowSelection, type RowActions } from "./rows";
+import {
+	createRowActions,
+	DelayedRevert,
+	enabledAgentsText,
+	RelativeTimeTicker,
+	renderRow,
+	RowSelection,
+	type RowActions,
+} from "./rows";
 import { computeSideList, leafIdsOf } from "./side-list";
 import { renderDetail, type DetailContext } from "./detail";
 import { LimitsView } from "./limits";
@@ -22,6 +30,10 @@ export const VIEW_TYPE_SIDE = "agent-sessions-side";
 const MIN_DETAIL_HEIGHT = 80;
 /** `terminal-status` fires on every busy/idle change, so redraws are batched at this interval. */
 const TERMINAL_STATUS_DEBOUNCE_MS = 200;
+/** T-110: how long a revert-to-default (after the pointer leaves the whole list) waits before
+ * actually happening — long enough to absorb a leave/enter landing right on the boundary between
+ * the list and a row just inside it, short enough that a genuine leave still reverts promptly. */
+const HOVER_HIDE_DELAY_MS = 200;
 
 export class SideView extends ItemView {
 	private plugin: AgentSessionsPlugin;
@@ -38,6 +50,20 @@ export class SideView extends ItemView {
 	private detailHeight = 220;
 	/** True while a hover has temporarily swapped in a different detail view (reverts to default when it ends). */
 	private hovering = false;
+	/** T-110: the pending, delayed revert-to-default trigger — `schedule()`d only when the pointer
+	 * leaves the *whole list* (`listEl`'s own `pointerleave`, wired once in `buildSkeleton`, not
+	 * any individual row's), and `cancel()`ed the moment any row is entered
+	 * (`cancelPendingHoverHide`, called from `RowActions.cancelHideDetail`). Held on `this` rather
+	 * than inside the per-render `actions` closure so it survives a re-render happening
+	 * mid-transition. */
+	private readonly hoverHideRevert = new DelayedRevert(HOVER_HIDE_DELAY_MS, () => {
+		this.hovering = false;
+		this.showDefaultDetail();
+	});
+	/** The latest `render()`'s row actions — `listEl`'s own `pointerleave` listener (registered
+	 * once, in `buildSkeleton`) calls `this.actions.hideDetail` through this rather than closing
+	 * over a specific `render()` call's `actions`, which would go stale after the next one. */
+	private actions!: RowActions;
 	/** The nav's three buttons (their tooltips are redrawn when the language changes). */
 	private navButtons: { newSession?: HTMLElement; manager?: HTMLElement; more?: HTMLElement } = {};
 	/** Debounce timer for `terminal-status`. */
@@ -108,6 +134,13 @@ export class SideView extends ItemView {
 		this.listEl = listWrap.createDiv({ cls: "agent-sessions-list" });
 		this.handleEl = listWrap.createDiv({ cls: "agent-sessions-drag-handle" });
 		this.bindHandle();
+		// T-110: `pointerleave` on the list container itself only fires when the pointer actually
+		// leaves the whole list's bounds, never when moving between its children (rows, group
+		// headers, the gap between sections) — unlike a per-row `pointerleave`, which fires on
+		// every row-to-row transition. Registered once (this element is never replaced, only its
+		// children are, on each `render()`), so it always calls through `this.actions`, updated
+		// fresh by the most recent `render()`.
+		this.registerDomEvent(this.listEl, "pointerleave", () => this.actions?.hideDetail?.());
 
 		this.detailEl = this.contentEl.createDiv({ cls: "agent-sessions-detail" });
 		this.applyDetailHeight(this.plugin.settings.sideDetailHeight);
@@ -241,11 +274,16 @@ export class SideView extends ItemView {
 		this.listEl.empty();
 		this.selection.clear();
 		this.timeTicker.reset();
+		// Stored on `this` (T-110), not just a local, so `listEl`'s single, long-lived
+		// `pointerleave` listener (`buildSkeleton`) always calls into whichever `actions` this
+		// most recent `render()` produced, rather than a stale one from before a re-render.
 		const actions = createRowActions(
 			this.plugin,
 			(id) => this.onHoverShow(id),
-			() => this.onHoverEnd()
+			() => this.onHoverEnd(),
+			() => this.cancelPendingHoverHide()
 		);
+		this.actions = actions;
 		const list = computeSideList(this.plugin.index.sessions, this.terminalLeaves(), this.plugin.settings.recentCount);
 		// The needs-attention (asking/waiting) count is tallied across the whole list (open
 		// tabs + running + recent), and shown as a badge next to the "open tabs" heading.
@@ -383,10 +421,23 @@ export class SideView extends ItemView {
 		void this.renderDetailFor(id);
 	}
 
-	/** The hover ended: reverts to the default (the frontmost tab, or the top of the list). */
+	/**
+	 * The pointer left the list *entirely* (T-110 — wired to `listEl`'s own `pointerleave` in
+	 * `buildSkeleton`, not to any individual row's, so moving directly from one row to another
+	 * never reaches this at all): reverts to the default (the frontmost tab, or the top of the
+	 * list) after `HOVER_HIDE_DELAY_MS`, canceled by `cancelPendingHoverHide` if a row is entered
+	 * before it fires — a leave/enter pair landing right on the list/row boundary is the only way
+	 * this delay actually matters, since a genuine list-to-row transition never triggers it.
+	 */
 	private onHoverEnd(): void {
-		this.hovering = false;
-		this.showDefaultDetail();
+		this.hoverHideRevert.schedule();
+	}
+
+	/** Cancels a pending `onHoverEnd` revert — called when a row is entered
+	 * (`RowActions.cancelHideDetail`); `DelayedRevert.schedule()` also cancels any previous one
+	 * itself, so this isn't needed defensively inside `onHoverEnd`. */
+	private cancelPendingHoverHide(): void {
+		this.hoverHideRevert.cancel();
 	}
 
 	/**
