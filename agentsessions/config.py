@@ -67,6 +67,11 @@ EVENTS_LOG = os.path.join(RUNTIME_DIR, 'events.log')
 CACHE_PATH = os.path.join(RUNTIME_DIR, 'scan-cache.json')
 STATUS_DIR = os.path.join(RUNTIME_DIR, 'status')
 STATS_CACHE_PATH = os.path.join(RUNTIME_DIR, 'stats-cache.json')
+# Last-known-good {thread_id: {"name", "title"}} from state_5.sqlite (T-105):
+# a fallback for when the database genuinely can't be opened read-only right
+# now (e.g. no -wal file and no running codex to have created one), so a
+# session's name doesn't disappear just because this one read attempt failed.
+CODEX_NAMES_CACHE_PATH = os.path.join(RUNTIME_DIR, 'codex-names-cache.json')
 # Marks a session as just-compacted, before the next prompt is sent. Written on
 # `SessionStart` (source=compact), removed on `UserPromptSubmit`/`SessionEnd`.
 COMPACTED_DIR = os.path.join(RUNTIME_DIR, 'compacted')

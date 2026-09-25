@@ -6,6 +6,7 @@ from unittest import mock
 
 import importlib
 
+from agentsessions import config
 from agentsessions.agents.codex import rollout
 from agentsessions.agents.codex import names as names_mod
 # NB: `agentsessions.agents.codex` (the package __init__) binds the name `scan` to
@@ -26,6 +27,14 @@ class TestCodexScan(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = self.tmp.name
+        # T-105's last-known-name fallback persists to a file on disk by
+        # default (config.CODEX_NAMES_CACHE_PATH) -- isolate it per test so
+        # one test's sqlite entry can't leak into another's (fixed IDs are
+        # reused across tests in this file) or into this machine's real cache.
+        self._names_cache_patch = mock.patch.object(
+            config, 'CODEX_NAMES_CACHE_PATH', os.path.join(self.home, 'codex-names-cache.json'))
+        self._names_cache_patch.start()
+        self.addCleanup(self._names_cache_patch.stop)
 
     def test_list_transcripts_finds_rollouts_by_uuid_suffix(self):
         p1 = rollout_path(self.home, ID1)
@@ -134,6 +143,14 @@ class TestCodexPromptFiltering(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = self.tmp.name
+        # T-105's last-known-name fallback persists to a file on disk by
+        # default (config.CODEX_NAMES_CACHE_PATH) -- isolate it per test so
+        # one test's sqlite entry can't leak into another's (fixed IDs are
+        # reused across tests in this file) or into this machine's real cache.
+        self._names_cache_patch = mock.patch.object(
+            config, 'CODEX_NAMES_CACHE_PATH', os.path.join(self.home, 'codex-names-cache.json'))
+        self._names_cache_patch.start()
+        self.addCleanup(self._names_cache_patch.stop)
 
     def test_injected_response_item_is_ignored_even_if_it_comes_first(self):
         p = rollout_path(self.home, ID1)
@@ -200,6 +217,14 @@ class TestCodexNewerCliVersion(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.home = self.tmp.name
+        # T-105's last-known-name fallback persists to a file on disk by
+        # default (config.CODEX_NAMES_CACHE_PATH) -- isolate it per test so
+        # one test's sqlite entry can't leak into another's (fixed IDs are
+        # reused across tests in this file) or into this machine's real cache.
+        self._names_cache_patch = mock.patch.object(
+            config, 'CODEX_NAMES_CACHE_PATH', os.path.join(self.home, 'codex-names-cache.json'))
+        self._names_cache_patch.start()
+        self.addCleanup(self._names_cache_patch.stop)
 
     def test_item_completed_user_message_is_used_when_theres_no_user_message_event(self):
         p = rollout_path(self.home, ID1)
