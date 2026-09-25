@@ -86,6 +86,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 
 	// ---- Settings tab (main.ts) ----
 	"settings.display.heading": "表示",
+	"settings.input.heading": "入力",
 	"settings.other.heading": "その他",
 	"settings.font.name": "フォント",
 	"settings.fontSize.name": "フォントサイズ",

@@ -1172,19 +1172,19 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * Section order (T-117): agents (which CLI to launch, and how) → submit key (how to send in
-	 * the terminal) → display (how the plugin looks/reads) → other (everything else — paths,
-	 * sizes, counts with no natural home in the first three). Agents comes first since it's the
-	 * one setting most people open this tab for at all (enabling Codex, fixing a path); submit
-	 * key next since it's the other setting that changes how a session behaves, not just how it
-	 * looks.
+	 * Section order (T-118, correcting T-117's own first attempt): display (how the plugin
+	 * looks/reads) → input (how a session receives a keystroke) → other (everything else — paths,
+	 * sizes, counts with no natural home in the first two) → agents (which CLI to launch, and how)
+	 * last. T-117 had put agents first and submit key right after it with no heading of its own —
+	 * with no visual break between them, submit key read as if it were still part of Codex's own
+	 * block (Agents' last agent) rather than its own section. Giving submit key its own "Input"
+	 * heading fixes that regardless of where it sits, but moving agents to the very end (its own
+	 * settings are the most involved on the page — two sub-headings, six rows each) also means
+	 * every section above it is a short, uniform list, with nothing left to visually blend into.
 	 */
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-
-		this.renderAgentsSetting(containerEl);
-		this.renderSubmitKeySetting(containerEl);
 
 		new Setting(containerEl).setName(t("settings.display.heading")).setHeading();
 
@@ -1226,6 +1226,9 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			);
 
 		this.renderLanguageSetting(containerEl);
+
+		new Setting(containerEl).setName(t("settings.input.heading")).setHeading();
+		this.renderSubmitKeySetting(containerEl);
 
 		new Setting(containerEl).setName(t("settings.other.heading")).setHeading();
 
@@ -1284,6 +1287,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 					}
 				})
 			);
+
+		this.renderAgentsSetting(containerEl);
 	}
 
 	/**
