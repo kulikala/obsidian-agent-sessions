@@ -22,10 +22,16 @@ export interface ArchivedSession {
 	agent: string;
 }
 
-/** One entry in `sessions.json`'s `sessions` — the plugin's record of a session it started. */
+/** One entry in `sessions.json`'s `sessions` — the plugin's record of a session it started.
+ * `daemon`: only for a Codex session (no flag lets the caller assign a new session's own id —
+ * see `backend.ts`'s `buildAgentArgv`) — the daemon-tracked placeholder id the tab actually
+ * started under, once `json resolve codex` has learned this entry's key is the real thread id
+ * (design.md §3.3). Absent for Claude (and for a Codex session not yet resolved), where the
+ * daemon id and this entry's own key are simply the same id. */
 export interface StoreSessionEntry {
 	agent: string;
 	cwd: string;
+	daemon?: string;
 }
 
 /** The contents of `sessions.json`. */
@@ -78,6 +84,12 @@ export interface Detail {
 	/** The most recent slash command's name (e.g. `/compact`; arguments aren't included). `null` if there isn't one. */
 	last_command: string | null;
 	tools: string[];
+	/** The most recent turn's model/effort, for an agent with no statusLine (Codex) — `statusInfo`
+	 * (Claude's own live statusLine data) is preferred when it has a value; this is the fallback.
+	 * Optional/absent rather than `null` so older Python builds that don't send these yet degrade
+	 * to exactly today's behavior (falls through to "Default" the same as if they were never asked for). */
+	model?: string | null;
+	effort?: string | null;
 }
 
 /** A single turn from `json usage ID`. `ts`/`last_ts` are epoch seconds (`null` if absent). */

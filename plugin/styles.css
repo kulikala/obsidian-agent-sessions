@@ -426,8 +426,8 @@
 	overflow: hidden;
 }
 
-/* The name column's contents: the category chip (if any) plus the name. The chip is never
-   truncated — the name side gets the `…` instead. */
+/* The name column's contents: the agent mark, the category chip (if any), then the name. Neither
+   the agent mark nor the chip is ever truncated — the name side gets the `…` instead. */
 .agent-sessions-manager-name-cell {
 	display: flex;
 	align-items: center;
@@ -792,6 +792,24 @@
 	height: 14px;
 }
 
+/* Which agent a session belongs to (Claude Code, Codex, …) — a plain lucide icon, no brand
+   logos, no motion (unlike the status mark it sits next to). Same size as the status mark, muted
+   so it reads as secondary metadata rather than competing with it. */
+.agent-sessions-row-agent-mark {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 14px;
+	height: 14px;
+	flex: 0 0 auto;
+	color: var(--text-faint);
+}
+
+.agent-sessions-row-agent-mark svg {
+	width: 14px;
+	height: 14px;
+}
+
 /* The category chip (the part of the name before `': '`. Its color is a palette number fixed in
    `sessions.json`'s `categoryColors`). Never truncated — doesn't shrink under `flex: 0 0 auto`
    and has no `max-width`; when space is tight, the adjacent name (`.agent-sessions-row-name`)
@@ -835,8 +853,10 @@
 }
 
 /* When the side panel itself is narrow, drop the time first rather than let the name shrink
-   further — the name is the one thing on the row that identifies the session. */
-@container (max-width: 260px) {
+   further — the name is the one thing on the row that identifies the session. 260px + ~22px
+   (the agent mark's own 14px plus its gap, added in T-96) so the name keeps the same safety
+   margin it had before the agent mark existed. */
+@container (max-width: 282px) {
 	.agent-sessions-row-time {
 		display: none;
 	}
@@ -1942,4 +1962,18 @@
 /* The warning shown when the newline-key setting disagrees with keybindings.json. */
 .agent-sessions-settings-mismatch {
 	color: var(--text-error);
+}
+
+/* The Agents section's "environment variables" field (KEY=VALUE per line) — a fixed-width font
+   suits it better than prose, and a few rows of height so more than one variable is visible
+   without scrolling. */
+.agent-sessions-agent-env {
+	width: 100%;
+	font-family: var(--font-monospace);
+}
+
+/* "Detect again"'s result, shown under the path field once it's been run this session. */
+.agent-sessions-agent-detected {
+	margin-top: var(--size-2-1);
+	color: var(--text-muted);
 }

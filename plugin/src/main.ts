@@ -13,11 +13,23 @@ import {
 } from "obsidian";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
-import { detail, live, loginEnv, resolveAgentSessionsPath, resolveClaude, scan } from "./backend/backend";
+import {
+	agentEnvFor,
+	buildAgentArgv,
+	detail,
+	detectAgents,
+	live,
+	loginEnv,
+	resolve,
+	resolveAgentBinary,
+	resolveAgentSessionsPath,
+	scan,
+	setAgentEnv,
+} from "./backend/backend";
 import { DaemonClient, defaultSockPath, ensureDaemon } from "./backend/daemon-client";
 import { EditServer, editReplyFor, submitsAfterEdit, type EditReply, type EditRequest } from "./backend/edit-server";
 import { SessionIndex } from "./sessions/index";
-import { getLang, languageOptions, readObsidianLang, resolveLang, setLang, t } from "./i18n";
+import { getLang, languageOptions, readObsidianLang, resolveLang, setLang, t, type MessageKey } from "./i18n";
 import { applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./terminal/keybindings";
 import { reconcileSubmitKey, sendSequence } from "./terminal/keys";
 import { buildAtToken, selectionLineRange } from "./terminal/links";
@@ -25,14 +37,18 @@ import { ConfirmModal, NewSessionModal, RenameSessionModal } from "./ui/modals";
 import { sessionDisplayName } from "./sessions/name";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./sessions/open-session";
 import {
+	AGENT_IDS,
 	AgentSessionsSettings,
+	asAgentId,
 	DEFAULT_SETTINGS,
 	mergeSettings,
+	parseEnvLines,
 	SUBMIT_KEYS,
 	SUBMIT_KEYS_NON_MAC,
+	type AgentId,
 	type SubmitKey,
 } from "./settings";
-import { migrateFromMarkdown, StoreLockError, updateStore } from "./sessions/store";
+import { loadStore, migrateFromMarkdown, StoreLockError, updateStore } from "./sessions/store";
 import {
 	ALL_TERMINAL_STATUSES,
 	higherPriorityStatus,
@@ -54,6 +70,12 @@ import { TerminalView } from "./views/terminal";
 export { VIEW_TYPE_SIDE, VIEW_TYPE_MANAGER, VIEW_TYPE_TERMINAL };
 
 const RUNTIME_DIR = join(homedir(), ".agents", "sessions");
+/** The settings tab's per-agent heading (an autonym-like proper name, not translated — same idea
+ * as `i18n/index.ts`'s locale self-names). */
+const AGENT_DISPLAY_NAME_KEY: Record<AgentId, MessageKey> = {
+	claude: "settings.agents.claude.name",
+	codex: "settings.agents.codex.name",
+};
 /** Ctrl+S = Claude Code's `chat:stash` (stashes the draft; Claude restores it automatically after the next submit). */
 const STASH = "\x13";
 /** Bracketed paste markers. Wrapping a command in these lets it go in as one block without opening `/` completion. */
@@ -70,9 +92,19 @@ const WAIT_EXIT_MS = 30000;
 /** Terminal size used when starting headless (no screen). */
 const HEADLESS_COLS = 120;
 const HEADLESS_ROWS = 40;
+/** `resolveCodexSession`'s polling: how long between attempts, and how many of each stage
+ * (finding the daemon-tracked pid, then `json resolve`) before giving up. Generous, since a
+ * fresh Codex process opening its transcript for the first time isn't instant. */
+const RESOLVE_POLL_MS = 1000;
+const RESOLVE_PID_ATTEMPTS = 10;
+const RESOLVE_THREAD_ATTEMPTS = 20;
 
 function messageOf(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
+}
+
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -96,6 +128,9 @@ export default class AgentSessionsPlugin extends Plugin {
 	 */
 	terminalStatuses = new Map<string, TerminalStatus>();
 	private stopIndex: (() => void) | null = null;
+	/** True for exactly one `onload`: saved data had no `agents` object at all (pre-T-96, or a
+	 * genuinely first run) — `onload` runs `detectAgents` once and applies the result. */
+	private needsAgentDetection = false;
 	private opener!: SessionOpener<WorkspaceLeaf>;
 	/** The socket that receives `agent-sessions edit` requests. */
 	private editServer = new EditServer();
@@ -114,6 +149,7 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
+		await this.autoDetectAgentsOnFirstRun();
 		this.applyLanguage();
 		this.refreshTuiMode();
 		this.registerEvent(this.events.on("settings-changed", () => this.refreshTuiMode()));
@@ -213,7 +249,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			id: "new-session",
 			name: t("action.newSession"),
 			callback: () => {
-				new NewSessionModal(this, (name) => this.newSession(name || undefined)).open();
+				new NewSessionModal(this, (name, agent) => this.newSession(name || undefined, agent)).open();
 			},
 		});
 
@@ -243,7 +279,9 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		this.settings = mergeSettings(await this.loadData(), Platform.isMacOS);
+		const raw = await this.loadData();
+		this.settings = mergeSettings(raw, Platform.isMacOS);
+		this.needsAgentDetection = !(raw && typeof raw === "object" && "agents" in raw);
 	}
 
 	async saveSettings(): Promise<void> {
@@ -253,15 +291,45 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * Writes the submit-key symbol and the resolved display language to `ui.json`. The
-	 * submit-key symbol is read by the statusLine (the Python side's `format_status_line`) —
-	 * only sessions started with `AGENT_SESSIONS_ID` set actually attach it, so this writes
-	 * unconditionally. The language is read by the Python side to match the plugin's own display
-	 * language. Called from `saveSettings`, so a language-setting change gets picked up here too.
+	 * First run only (`needsAgentDetection`: saved settings had no `agents` object at all —
+	 * pre-T-96 data or a genuinely first run): auto-detects Claude/Codex (`detectAgents`) and
+	 * enables whichever is found. Neither found leaves Claude enabled (today's behavior,
+	 * unchanged) — at least one agent is always left enabled. Runs once; from then on the user's
+	 * own toggles in Settings are authoritative (re-detecting again only happens via the settings
+	 * tab's "Detect again" button, which shows the result rather than silently flipping a toggle).
+	 */
+	private async autoDetectAgentsOnFirstRun(): Promise<void> {
+		if (!this.needsAgentDetection) {
+			return;
+		}
+		this.needsAgentDetection = false;
+		try {
+			const found = await detectAgents(Platform.isMacOS);
+			for (const id of AGENT_IDS) {
+				this.settings.agents[id].enabled = found[id] !== null;
+			}
+			if (!AGENT_IDS.some((id) => this.settings.agents[id].enabled)) {
+				this.settings.agents.claude.enabled = true;
+			}
+			await this.saveSettings();
+		} catch (err) {
+			console.warn("agent-sessions: agent auto-detect failed", err);
+		}
+	}
+
+	/**
+	 * Writes the submit-key symbol, the resolved display language, and the enabled agent ids to
+	 * `ui.json`, and updates the env `envWithVault` overlays onto every `json …` call
+	 * (`setAgentEnv`/`agentEnvFor`). The submit-key symbol is read by the statusLine (the Python
+	 * side's `format_status_line`) — only sessions started with `AGENT_SESSIONS_ID` set actually
+	 * attach it, so this writes unconditionally. Called from `saveSettings`, so a language or
+	 * agent-settings change gets picked up here too.
 	 */
 	private syncUiState(): void {
+		setAgentEnv(agentEnvFor(this.settings));
+		const enabledAgents = AGENT_IDS.filter((id) => this.settings.agents[id].enabled);
 		try {
-			writeUiState(RUNTIME_DIR, this.settings.submitKey, getLang(), Platform.isMacOS);
+			writeUiState(RUNTIME_DIR, this.settings.submitKey, getLang(), enabledAgents, Platform.isMacOS);
 		} catch (err) {
 			console.warn("agent-sessions: couldn't write ui.json", err);
 		}
@@ -486,21 +554,46 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * was given, sends `/rename` once the tab's `start` has claude reach `idle` (no pending-name
 	 * state is kept elsewhere). After sending, waits via `index.waitForName` for `Row.name` to
 	 * reflect it (once it does, subscribers redraw the tab title themselves).
+	 *
+	 * `agent` defaults to the last one used (`settings.lastNewSessionAgent`, what the new-session
+	 * dialog remembers) and is saved back as the new "last used" value. Claude's `--session-id`
+	 * lets the caller assign `id` as the session's own persistent id, so a `sessions.json` entry
+	 * under it is meaningful from the very first scan. Codex has no equivalent (`buildAgentArgv`)
+	 * — its real thread id is only known once Codex itself creates its transcript — so a fresh
+	 * Codex session instead runs under `id` as a *daemon-only* placeholder (the tab talks to the
+	 * daemon under this id for its whole life) and `resolveCodexSession` polls `json resolve
+	 * codex` in the background to learn the real thread id and link it (design.md §3.3). Naming
+	 * at creation isn't attempted for a non-Claude agent — the `idle`/name-reflected waits below
+	 * only work through the registry/scan, which for a still-unresolved session are watching an
+	 * id nothing is filed under yet.
 	 */
-	newSession(name?: string): void {
+	newSession(name?: string, agent: AgentId = this.settings.lastNewSessionAgent): void {
+		if (agent !== this.settings.lastNewSessionAgent) {
+			this.settings.lastNewSessionAgent = agent;
+			void this.saveSettings();
+		}
 		const id = crypto.randomUUID();
 		const cwd = this.vaultPath();
-		try {
-			updateStore(this.storePath(), (store) => {
-				store.sessions[id] = { agent: "claude", cwd };
-			});
-		} catch (err) {
-			this.notifyLockError(err);
+		if (agent === "claude") {
+			try {
+				updateStore(this.storePath(), (store) => {
+					store.sessions[id] = { agent, cwd };
+				});
+			} catch (err) {
+				this.notifyLockError(err);
+				return;
+			}
+			this.index.refreshStore();
+		}
+		const opened = this.openSession(id, { agent, cwd, fresh: true });
+		if (agent !== "claude") {
+			void this.resolveCodexSession(id, cwd);
+		}
+		if (!name) {
 			return;
 		}
-		this.index.refreshStore();
-		const opened = this.openSession(id, { agent: "claude", cwd, fresh: true });
-		if (!name) {
+		if (agent !== "claude") {
+			new Notice(t("notice.renameAtCreateUnsupported"));
 			return;
 		}
 		void opened
@@ -515,6 +608,79 @@ export default class AgentSessionsPlugin extends Plugin {
 			.catch((err) => {
 				new Notice(t("notice.renameFailed", { error: messageOf(err) }));
 			});
+	}
+
+	/**
+	 * For a freshly-started Codex session (`newSession`, no caller-assignable id — see
+	 * `buildAgentArgv`): finds the daemon-tracked `placeholderId` session's own pid, then polls
+	 * `json resolve codex` (`backend.ts`'s `resolve`) until it learns the real thread id, then
+	 * links it in `sessions.json` (`sessions[thread] = {agent: "codex", cwd, daemon:
+	 * placeholderId}` — design.md §3.3) and rescans so the row appears under that id. The tab
+	 * itself (already open under `placeholderId`) is unaffected either way — it keeps talking to
+	 * the daemon under `placeholderId` for its whole life; `daemonIdFor` is what lets row-menu
+	 * actions (rename/compact/archive, keyed by the real thread id once linked) find it again.
+	 * Gives up silently after a bounded number of attempts (the tab keeps running regardless —
+	 * it just won't show up in the row list, or route to row-menu actions, until linked).
+	 */
+	private async resolveCodexSession(placeholderId: string, cwd: string): Promise<void> {
+		const since = Date.now() / 1000;
+		let client: DaemonClient;
+		try {
+			client = await ensureDaemon(this.sockPath(), this.agentSessionsPath());
+		} catch {
+			return;
+		}
+		try {
+			await client.hello("plugin");
+			let pid: number | null = null;
+			for (let i = 0; i < RESOLVE_PID_ATTEMPTS && pid === null; i++) {
+				const list = await client.list().catch(() => null);
+				const sessions = (list?.sessions as DaemonSession[] | undefined) ?? [];
+				pid = sessions.find((s) => s.id === placeholderId)?.pid ?? null;
+				if (pid === null) {
+					await sleep(RESOLVE_POLL_MS);
+				}
+			}
+			if (pid === null) {
+				return;
+			}
+			for (let i = 0; i < RESOLVE_THREAD_ATTEMPTS; i++) {
+				const { thread } = await resolve(this.agentSessionsPath(), this.vaultPath(), "codex", pid, since, cwd).catch(
+					() => ({ thread: null, transcript: null })
+				);
+				if (thread) {
+					try {
+						updateStore(this.storePath(), (store) => {
+							store.sessions[thread] = { agent: "codex", cwd, daemon: placeholderId };
+						});
+						this.index.refreshStore();
+						void this.index.rescan();
+					} catch (err) {
+						this.notifyLockError(err);
+					}
+					return;
+				}
+				await sleep(RESOLVE_POLL_MS);
+			}
+		} finally {
+			client.close();
+		}
+	}
+
+	/**
+	 * The daemon-tracked id to use for `findTerminalView`/`client.list()` lookups, for a given
+	 * row/session id. The same as `id` for everything except a linked Codex session (see
+	 * `resolveCodexSession`), where the row's own id (the real thread id) and the daemon's
+	 * tracked id (the placeholder it was started under) differ — `sessions.json`'s `daemon`
+	 * field on that entry is the link. Swallows a lock/read failure by falling back to `id`
+	 * unchanged — a transient store error shouldn't block sending a command entirely.
+	 */
+	private daemonIdFor(id: string): string {
+		try {
+			return loadStore(this.storePath()).sessions[id]?.daemon || id;
+		} catch {
+			return id;
+		}
 	}
 
 	/** Rename: sends `/rename` right away (even without a tab). */
@@ -557,11 +723,15 @@ export default class AgentSessionsPlugin extends Plugin {
 	// ---- Sending commands ------------------------------------------------------
 	//
 	// Sends `text` (`/rename NAME`, `/compact`) by one of three routes depending on where the
-	// session currently is. Every route sends the same one sequence (`commandBytes`): Ctrl+S
-	// (`chat:stash` — stashes the draft if there is one, does nothing if empty) → the command as
-	// bracketed paste (goes in as one block without opening `/` completion) → the submit
-	// sequence. The stashed draft isn't restored explicitly — Claude Code does that itself after
-	// the next submit ("Draft restored"); sending a restore here would just get it stashed again.
+	// session currently is. Every route sends the same shape of sequence (`commandBytes`): for
+	// Claude, Ctrl+S (`chat:stash` — stashes the draft if there is one, does nothing if empty;
+	// Claude Code-specific, so skipped for any other agent, which may not treat Ctrl+S as
+	// harmless) → the command as bracketed paste (goes in as one block without opening `/`
+	// completion — a standard terminal convention, not Claude-specific, so kept for every agent)
+	// → the submit sequence (Claude's own configured submit key, or plain `\r` for any other
+	// agent, whose keymap isn't touched — see `terminal.ts`'s `sendSubmit`). The stashed draft
+	// isn't restored explicitly — Claude Code does that itself after the next submit ("Draft
+	// restored"); sending a restore here would just get it stashed again.
 	// ① A tab exists and is attached: write to that tab.
 	// ② No tab, but the daemon has it: attach temporarily and write.
 	// ③ Not on the daemon: `start` (`--resume`) headless → wait for `idle` → write → once the
@@ -572,7 +742,10 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * Failures throw (the caller turns them into a `Notice`).
 	 */
 	async sendCommand(id: string, text: string, progress = t("progress.sending")): Promise<void> {
-		const view = this.findTerminalView(id);
+		// A linked Codex session's daemon-tracked id can differ from `id` itself (`daemonIdFor`)
+		// — everywhere else (Claude, or a not-yet-linked Codex session) they're the same id.
+		const daemonId = this.daemonIdFor(id);
+		const view = this.findTerminalView(daemonId);
 		if (view?.isAttached()) {
 			this.sendViaView(view, text);
 			return;
@@ -583,13 +756,16 @@ export default class AgentSessionsPlugin extends Plugin {
 			await client.hello("plugin");
 			const list = await client.list();
 			const sessions = (list.sessions as DaemonSession[] | undefined) ?? [];
-			const existing = sessions.find((s) => s.id === id);
+			const existing = sessions.find((s) => s.id === daemonId);
 			if (existing && existing.exited === null) {
-				await this.sendViaAttach(client, id, text);
+				await this.sendViaAttach(client, daemonId, text, existing.agent);
 			} else {
 				if (existing) {
-					await client.forget(id).catch(() => undefined);
+					await client.forget(daemonId).catch(() => undefined);
 				}
+				// Headless start/resume always uses the row's own id (`id`, not `daemonId`) —
+				// `codex resume <id>` needs the real, persistent thread id, not a placeholder
+				// from a since-ended daemon session (see `buildAgentArgv`).
 				await this.sendHeadless(client, id, text, progress);
 			}
 		} finally {
@@ -597,24 +773,26 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 	}
 
-	/** Stash → command as bracketed paste → submit sequence (`\r`, or `\x1b\r` when `submitKey !== 'enter'`). */
-	private commandBytes(text: string): Buffer {
-		return Buffer.from(STASH + PASTE_BEGIN + text + PASTE_END + submitSequence(this.settings), "utf8");
+	/** Stash (Claude only) → command as bracketed paste → submit sequence. */
+	private commandBytes(text: string, agent: AgentId): Buffer {
+		const stash = agent === "claude" ? STASH : "";
+		const submit = agent === "claude" ? submitSequence(this.settings) : "\r";
+		return Buffer.from(stash + PASTE_BEGIN + text + PASTE_END + submit, "utf8");
 	}
 
 	/** Route ①: write straight to that tab. */
 	private sendViaView(view: TerminalView, text: string): void {
-		view.sendBytes(this.commandBytes(text));
+		view.sendBytes(this.commandBytes(text, asAgentId(view.sessionAgent)));
 	}
 
 	/** Route ②: attach temporarily and write. */
-	private async sendViaAttach(client: DaemonClient, id: string, text: string): Promise<void> {
+	private async sendViaAttach(client: DaemonClient, id: string, text: string, agent: string): Promise<void> {
 		const res = await client.attach(id, HEADLESS_COLS, HEADLESS_ROWS);
 		if (!res.ok) {
 			throw new Error(t("error.attachFailed", { error: res.error ?? "unknown" }));
 		}
 		try {
-			client.writeInput(this.commandBytes(text));
+			client.writeInput(this.commandBytes(text, asAgentId(agent)));
 		} finally {
 			await client.detach().catch(() => undefined);
 		}
@@ -640,18 +818,21 @@ export default class AgentSessionsPlugin extends Plugin {
 			});
 		});
 		try {
-			const claude = await resolveClaude(this.settings.claudePath, Platform.isMacOS);
+			const agent = asAgentId(row.agent);
+			const agentSettings = this.settings.agents[agent];
+			const bin = await resolveAgentBinary(agent, agentSettings.path, Platform.isMacOS);
 			// `AGENT_SESSIONS_VAULT`: same reason as terminal.ts's startSession.
 			const env = {
 				...(await loginEnv(Platform.isMacOS)),
 				VISUAL: this.visualPath(),
 				AGENT_SESSIONS_VAULT: this.vaultPath(),
+				...parseEnvLines(agentSettings.env),
 			};
 			const res = await client.start({
 				id,
 				agent: row.agent || "claude",
 				cwd: row.cwd || this.vaultPath(),
-				argv: [claude, "--resume", id],
+				argv: buildAgentArgv(agent, bin, id, false),
 				env,
 				cols: HEADLESS_COLS,
 				rows: HEADLESS_ROWS,
@@ -667,12 +848,12 @@ export default class AgentSessionsPlugin extends Plugin {
 			if (!(await registry.waitFor(id, "idle", WAIT_IDLE_MS))) {
 				throw new Error(t("error.claudeStartWaitFailed"));
 			}
-			client.writeInput(this.commandBytes(text));
+			client.writeInput(this.commandBytes(text, agent));
 			await registry.waitFor(id, "busy", WAIT_BUSY_MS);
 			if (!(await registry.waitFor(id, "idle", WAIT_IDLE_MS))) {
 				throw new Error(t("error.replyWaitFailed"));
 			}
-			client.writeInput(this.commandBytes("/exit"));
+			client.writeInput(this.commandBytes("/exit", agent));
 			const timeout = new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), WAIT_EXIT_MS));
 			if ((await Promise.race([exited, timeout])) === "timeout") {
 				await client.kill(id).catch(() => undefined);
@@ -981,15 +1162,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 				})
 			);
 
-		new Setting(containerEl)
-			.setName(t("settings.claudePath.name"))
-			.setDesc(t("settings.claudePath.desc"))
-			.addText((text) =>
-				text.setValue(this.plugin.settings.claudePath).onChange(async (value) => {
-					this.plugin.settings.claudePath = value;
-					await this.plugin.saveSettings();
-				})
-			);
+		this.renderAgentsSetting(containerEl);
 
 		new Setting(containerEl)
 			.setName(t("settings.agentSessionsPath.name"))
@@ -1025,6 +1198,86 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 					}
 				})
 			);
+	}
+
+	/**
+	 * The "Agents" section: per agent (Claude Code, Codex), an enabled toggle, a path field
+	 * (empty = auto-detect), and a multi-line "environment variables" field (`KEY=VALUE` per
+	 * line). A shared "Detect again" button re-runs `detectAgents` and shows each agent's result
+	 * inline — it only ever *shows* what it found; it never flips a toggle itself (that only
+	 * happens automatically once, on a genuine first run — see `main.ts`'s `onload`). The enabled
+	 * toggle refuses to turn off the last remaining enabled agent (at least one must stay on).
+	 */
+	private renderAgentsSetting(containerEl: HTMLElement): void {
+		const sectionEl = containerEl.createDiv();
+		let detected: Partial<Record<AgentId, string | null>> = {};
+
+		const redraw = (): void => {
+			sectionEl.empty();
+			new Setting(sectionEl).setName(t("settings.agents.heading")).setHeading();
+			sectionEl.createDiv({ cls: "setting-item-description", text: t("settings.agents.desc") });
+
+			for (const id of AGENT_IDS) {
+				const agentSettings = this.plugin.settings.agents[id];
+
+				new Setting(sectionEl)
+					.setName(t(AGENT_DISPLAY_NAME_KEY[id]))
+					.addToggle((toggle) =>
+						toggle.setValue(agentSettings.enabled).onChange(async (value) => {
+							if (!value && AGENT_IDS.filter((other) => other !== id).every((other) => !this.plugin.settings.agents[other].enabled)) {
+								new Notice(t("notice.needsOneAgentEnabled"));
+								toggle.setValue(true);
+								return;
+							}
+							agentSettings.enabled = value;
+							await this.plugin.saveSettings();
+						})
+					);
+
+				const pathSetting = new Setting(sectionEl)
+					.setName(t("settings.agents.path.name"))
+					.setDesc(t("settings.agents.path.desc"))
+					.addText((text) =>
+						text.setValue(agentSettings.path).onChange(async (value) => {
+							agentSettings.path = value;
+							await this.plugin.saveSettings();
+						})
+					);
+				if (id in detected) {
+					const found = detected[id];
+					pathSetting.descEl.createDiv({
+						cls: "agent-sessions-agent-detected",
+						text: found ? t("settings.agents.detected.found", { path: found }) : t("settings.agents.detected.notFound"),
+					});
+				}
+
+				new Setting(sectionEl)
+					.setName(t("settings.agents.env.name"))
+					.setDesc(t("settings.agents.env.desc"))
+					.addTextArea((textArea) => {
+						textArea.setValue(agentSettings.env).onChange(async (value) => {
+							agentSettings.env = value;
+							await this.plugin.saveSettings();
+						});
+						textArea.inputEl.rows = 3;
+						textArea.inputEl.addClass("agent-sessions-agent-env");
+					});
+			}
+
+			new Setting(sectionEl).addButton((button) =>
+				button.setButtonText(t("settings.agents.detect.name")).onClick(async () => {
+					button.setDisabled(true);
+					try {
+						detected = await detectAgents(Platform.isMacOS);
+					} finally {
+						button.setDisabled(false);
+						redraw();
+					}
+				})
+			);
+		};
+
+		redraw();
 	}
 
 	/** Language: auto / Japanese / English. Changing it calls `setLang` → `saveSettings()`

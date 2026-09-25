@@ -52,6 +52,8 @@ export const en = {
 	"notice.noActiveNote": "No note is open",
 	"notice.noActiveTerminal": "No terminal tab is open",
 	"notice.renameWaitFailed": "Couldn't wait for the session to start, so it wasn't named",
+	"notice.renameAtCreateUnsupported": "Naming a new session at creation isn't supported yet for this agent — rename it once it's running instead.",
+	"notice.needsOneAgentEnabled": "At least one agent must stay enabled.",
 	"notice.renameFailed": "Failed to rename: {error}",
 	"progress.renaming": "Renaming…",
 	"notice.compactAlready": "The last instruction was /compact, so nothing was sent",
@@ -72,7 +74,7 @@ export const en = {
 	"notice.idCopied": "Copied the ID",
 	"notice.matchedKeybindings": "Matched keybindings.json",
 	"notice.markdownCopied": "Copied the Markdown",
-	"error.claudeMissing": "claude was not found",
+	"error.agentMissing": "{name} was not found",
 
 	// ---- Settings tab (main.ts) ----
 	"settings.font.name": "Font",
@@ -83,8 +85,17 @@ export const en = {
 	"settings.padding.none": "None",
 	"settings.recentCount.name": "Recent count (side panel)",
 	"settings.notifyOnIdle.name": "Notify when waiting for input",
-	"settings.claudePath.name": "Path to claude",
-	"settings.claudePath.desc": "Default when empty: $(which claude)",
+	"settings.agents.heading": "Agents",
+	"settings.agents.desc": "Which CLI agents can be launched, and how each one is found.",
+	"settings.agents.claude.name": "Claude Code",
+	"settings.agents.codex.name": "Codex",
+	"settings.agents.path.name": "Path",
+	"settings.agents.path.desc": "Empty = auto-detect.",
+	"settings.agents.env.name": "Environment variables",
+	"settings.agents.env.desc": "KEY=VALUE, one per line.",
+	"settings.agents.detect.name": "Detect again",
+	"settings.agents.detected.found": "Detected: {path}",
+	"settings.agents.detected.notFound": "Not detected.",
 	"settings.agentSessionsPath.name": "Path to agent-sessions",
 	"settings.agentSessionsPath.desc": "Default when empty: ~/bin/agent-sessions",
 	"settings.editorHeight.name": "Editor pane height (%)",
@@ -107,6 +118,7 @@ export const en = {
 	// ---- Modals (ui/modals.ts) ----
 	"modal.newSession.title": "New session",
 	"modal.newSession.nameField": "Name",
+	"modal.newSession.agentField": "Agent",
 	"modal.renameSession.title": "Rename",
 
 	// ---- Side panel (views/side.ts) ----

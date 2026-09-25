@@ -28,13 +28,68 @@ export function defaultFontFamily(isMac: boolean): string {
 	return isMac ? FONT_FAMILY_MAC : FONT_FAMILY_NON_MAC;
 }
 
+/** The CLI-agent adapters the plugin knows how to launch. Codex is `enabled: false` by default —
+ * `defaultAgentSettings()` is only what a saved-settings shape falls back to when nothing better
+ * is known; `main.ts`'s first-run auto-detect is what actually decides what's enabled the very
+ * first time (see its module comment). */
+export type AgentId = "claude" | "codex";
+
+export const AGENT_IDS: readonly AgentId[] = ["claude", "codex"];
+
+/** Narrows a `Row`/tab's `agent` (`string`, since it round-trips through JSON with no runtime
+ * validation) to a known `AgentId`, falling back to `claude` for anything else — a future/unknown
+ * agent id degrades to the original single-agent behavior rather than failing to launch at all. */
+export function asAgentId(agent: string): AgentId {
+	return agent === "codex" ? "codex" : "claude";
+}
+
+export interface AgentSettings {
+	enabled: boolean;
+	/** Absolute path to the executable. Empty means auto-detect (`backend.ts`'s `resolveAgentBinary`). */
+	path: string;
+	/** `KEY=VALUE`, one per line, merged into the launched process's environment (and, for
+	 * Codex's `CODEX_HOME` specifically, also into the environment `json …` calls get — see
+	 * `backend.ts`'s `setAgentEnv`). Blank lines and lines starting with `#` are ignored. */
+	env: string;
+}
+
+/** Parses an `AgentSettings.env` value (`KEY=VALUE` per line) into a plain object. Blank lines
+ * and lines starting with `#` are skipped; a line with no `=` is skipped too (rather than, say,
+ * treated as a key with an empty value — a stray line shouldn't silently set an empty-string env var). */
+export function parseEnvLines(text: string): Record<string, string> {
+	const result: Record<string, string> = {};
+	for (const rawLine of text.split("\n")) {
+		const line = rawLine.trim();
+		if (!line || line.startsWith("#")) {
+			continue;
+		}
+		const idx = line.indexOf("=");
+		if (idx <= 0) {
+			continue;
+		}
+		result[line.slice(0, idx).trim()] = line.slice(idx + 1).trim();
+	}
+	return result;
+}
+
+function defaultAgentSettings(): Record<AgentId, AgentSettings> {
+	return {
+		claude: { enabled: true, path: "", env: "" },
+		codex: { enabled: false, path: "", env: "" },
+	};
+}
+
 export interface AgentSessionsSettings {
 	fontFamily: string;
 	fontSize: number;
 	padding: Padding;
 	recentCount: number;
 	notifyOnIdle: boolean;
-	claudePath: string;
+	/** Per-agent enable/path/env settings, keyed by `AgentId`. */
+	agents: Record<AgentId, AgentSettings>;
+	/** The agent "New session" used last time, so the dialog defaults to it next time
+	 * (meaningless with only one agent enabled — the dialog skips the picker entirely then). */
+	lastNewSessionAgent: AgentId;
 	agentSessionsPath: string;
 	scrollback: number;
 	/** The editor pane's height, as a % of the body. */
@@ -59,7 +114,8 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	padding: "comfortable",
 	recentCount: 10,
 	notifyOnIdle: true,
-	claudePath: "",
+	agents: defaultAgentSettings(),
+	lastNewSessionAgent: "claude",
 	agentSessionsPath: "",
 	scrollback: 5000,
 	editorHeight: 40,
@@ -71,10 +127,37 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	managerStatusFilter: "all",
 };
 
+/** Validates a saved `agents` value, entry by entry — an invalid or missing field falls back to
+ * that one agent's own default rather than discarding the whole object (so a saved `codex.path`
+ * survives even if, say, `codex.env` was somehow corrupted). */
+function mergeAgentSettings(data: unknown): Record<AgentId, AgentSettings> {
+	const defaults = defaultAgentSettings();
+	const result = defaultAgentSettings();
+	if (typeof data !== "object" || data === null) {
+		return result;
+	}
+	const saved = data as Record<string, unknown>;
+	for (const id of AGENT_IDS) {
+		const entry = saved[id];
+		if (typeof entry !== "object" || entry === null) {
+			continue;
+		}
+		const e = entry as Record<string, unknown>;
+		result[id] = {
+			enabled: typeof e.enabled === "boolean" ? e.enabled : defaults[id].enabled,
+			path: typeof e.path === "string" ? e.path : defaults[id].path,
+			env: typeof e.env === "string" ? e.env : defaults[id].env,
+		};
+	}
+	return result;
+}
+
 /**
  * Layers saved data over the defaults. Drops keys that aren't in the current type (`newlineKey`)
  * and values that aren't in the current `SubmitKey` (`super+enter`, `meta+enter`, etc.), even if
  * they're left over in saved data — those get re-derived from keybindings.json at startup.
+ * Migrates a pre-T-96 top-level `claudePath` into `agents.claude.path` (once — see below) and
+ * validates `agents`/`lastNewSessionAgent` the same defensive way.
  *
  * `isMac` (default `true`): on non-macOS, drops a leftover `cmd+enter` in saved data (falling
  * back to `enter`), and uses the non-macOS default font only when `fontFamily` is absent from
@@ -98,6 +181,16 @@ export function mergeSettings(data: unknown, isMac = true): AgentSessionsSetting
 	}
 	if (!isMac && saved.submitKey === "cmd+enter") {
 		delete saved.submitKey;
+	}
+	// Pre-T-96 saved data has a single top-level `claudePath` instead of `agents`. Migrated once,
+	// the first time saved data with no `agents` object of its own is merged.
+	if (saved.agents === undefined && typeof saved.claudePath === "string" && saved.claudePath) {
+		saved.agents = { ...defaultAgentSettings(), claude: { ...defaultAgentSettings().claude, path: saved.claudePath } };
+	}
+	delete saved.claudePath;
+	saved.agents = mergeAgentSettings(saved.agents);
+	if (!AGENT_IDS.includes(saved.lastNewSessionAgent as AgentId)) {
+		delete saved.lastNewSessionAgent;
 	}
 	const defaults = isMac ? DEFAULT_SETTINGS : { ...DEFAULT_SETTINGS, fontFamily: defaultFontFamily(false) };
 	return Object.assign({}, defaults, saved) as AgentSessionsSettings;

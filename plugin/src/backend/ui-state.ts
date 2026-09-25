@@ -14,17 +14,28 @@ export interface UiState {
 	submitSymbol: string;
 	/** The resolved display language ("ja"/"en") — already resolved from "auto", never "auto" itself. */
 	language: Lang;
+	/** The currently-enabled agent ids (`AgentId[]`, but kept as `string[]` here the same way the
+	 * rest of this file avoids importing agent-specific types — see `agentsessions/agents/__init__.py`'s
+	 * `enabled_agents()`, which reads this array as its fallback when `AGENT_SESSIONS_AGENTS` isn't set
+	 * (outside a plugin-launched terminal — the TUI, a bare CLI invocation). */
+	agents: string[];
 }
 
 /**
  * Writes `ui.json` into `runtimeDir` (`~/.agents/sessions`). Called from `onload` and
- * `saveSettings` (so it's rewritten whenever the display language changes too, since changing
- * the language setting always goes through `saveSettings`). `isMac` (default `true`): on
- * non-macOS, writes the short text form used for the statusLine (e.g. `C-⏎`).
+ * `saveSettings` (so it's rewritten whenever the display language or agent toggles change too,
+ * since both always go through `saveSettings`). `isMac` (default `true`): on non-macOS, writes
+ * the short text form used for the statusLine (e.g. `C-⏎`).
  */
-export function writeUiState(runtimeDir: string, submitKey: SubmitKey, language: Lang, isMac = true): void {
+export function writeUiState(
+	runtimeDir: string,
+	submitKey: SubmitKey,
+	language: Lang,
+	agents: string[],
+	isMac = true
+): void {
 	fs.mkdirSync(runtimeDir, { recursive: true });
-	const state: UiState = { submitKey, submitSymbol: submitKeyStatuslineSymbol(submitKey, isMac), language };
+	const state: UiState = { submitKey, submitSymbol: submitKeyStatuslineSymbol(submitKey, isMac), language, agents };
 	const data = JSON.stringify(state, null, 1);
 	const filePath = path.join(runtimeDir, "ui.json");
 	const tmp = path.join(runtimeDir, `.ui.${process.pid}.${Date.now()}.tmp`);

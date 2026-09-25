@@ -3,9 +3,15 @@
 import { App, Modal, Setting } from "obsidian";
 import type AgentSessionsPlugin from "../main";
 import { renderCategoryChip } from "./chip";
-import { t } from "../i18n";
+import { t, type MessageKey } from "../i18n";
 import { composeName, filterCategories, tokenizeNameInput } from "../sessions/name";
+import { AGENT_IDS, type AgentId } from "../settings";
 import { splitName } from "../sessions/tree";
+
+const AGENT_NAME_KEY: Record<AgentId, MessageKey> = {
+	claude: "settings.agents.claude.name",
+	codex: "settings.agents.codex.name",
+};
 
 interface ComposedNameField {
 	getValue(): { category: string; name: string };
@@ -198,19 +204,43 @@ function buildComposedNameField(
 	};
 }
 
-/** New session: enter category and name in one field, confirmed by "Start". */
+/**
+ * New session: enter category and name in one field, confirmed by "Start". If more than one
+ * agent is enabled, also picks which one to launch (defaulting to `settings.lastNewSessionAgent`
+ * — the choice remembered from last time); with only one enabled, the picker is skipped entirely
+ * and that one is used, matching it being the only meaningful choice.
+ */
 export class NewSessionModal extends Modal {
 	private field!: ComposedNameField;
+	private agent: AgentId;
+	private readonly enabledAgents: AgentId[];
 
 	constructor(
 		private plugin: AgentSessionsPlugin,
-		private onSubmit: (name: string) => void
+		private onSubmit: (name: string, agent: AgentId) => void
 	) {
 		super(plugin.app);
+		this.enabledAgents = AGENT_IDS.filter((id) => plugin.settings.agents[id].enabled);
+		const last = plugin.settings.lastNewSessionAgent;
+		this.agent = this.enabledAgents.includes(last) ? last : (this.enabledAgents[0] ?? "claude");
 	}
 
 	onOpen(): void {
 		this.setTitle(t("modal.newSession.title"));
+		if (this.enabledAgents.length > 1) {
+			new Setting(this.contentEl).setName(t("modal.newSession.agentField")).addDropdown((dropdown) => {
+				const options: Record<string, string> = {};
+				for (const id of this.enabledAgents) {
+					options[id] = t(AGENT_NAME_KEY[id]);
+				}
+				dropdown
+					.addOptions(options)
+					.setValue(this.agent)
+					.onChange((value) => {
+						this.agent = value as AgentId;
+					});
+			});
+		}
 		this.field = buildComposedNameField(
 			this.contentEl,
 			this.plugin.index.categories(),
@@ -228,7 +258,7 @@ export class NewSessionModal extends Modal {
 
 	private submit(): void {
 		const { category, name } = this.field.getValue();
-		this.onSubmit(composeName(category, name));
+		this.onSubmit(composeName(category, name), this.agent);
 		this.close();
 	}
 

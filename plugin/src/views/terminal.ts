@@ -17,7 +17,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { BackendError, loginEnv, resolveClaude } from "../backend/backend";
+import { AGENT_BIN_NAME, BackendError, buildAgentArgv, loginEnv, resolveAgentBinary } from "../backend/backend";
 import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../backend/daemon-client";
 import { t } from "../i18n";
 import { classifyCtrlKeyNonMac, classifyEnter, resolveEnterAction, sendSequence } from "../terminal/keys";
@@ -28,7 +28,7 @@ import { MarkTracker, type MarkerHandle, type MarkerSource } from "../terminal/m
 import { RenameSessionModal } from "../ui/modals";
 import { sessionDisplayName } from "../sessions/name";
 import { VIEW_TYPE_TERMINAL } from "../sessions/open-session";
-import type { Padding } from "../settings";
+import { asAgentId, parseEnvLines, type Padding } from "../settings";
 import {
 	ALL_TERMINAL_STATUSES,
 	statusTooltip,
@@ -48,7 +48,8 @@ export interface TerminalState {
 	agent: string;
 	cwd: string;
 	fontSize?: number;
-	/** A brand-new session. Stays true until the first `start` completes, and starts with `--session-id`. */
+	/** A brand-new session. Stays true until the first `start` completes (see `buildAgentArgv`
+	 * for how each agent's fresh-launch argv differs). */
 	fresh?: boolean;
 }
 
@@ -67,7 +68,7 @@ const TERMINAL_MIN_ROWS = 8;
 
 type ExitReason =
 	| { kind: "exited"; code: number; resumeFailed: boolean }
-	| { kind: "claude-missing"; message: string }
+	| { kind: "agent-missing"; message: string }
 	| { kind: "daemon-unavailable"; message: string }
 	| { kind: "disconnected" }
 	| { kind: "error"; message: string };
@@ -169,6 +170,12 @@ export class TerminalView extends ItemView {
 	/** Used by the side panel and manager to find the target for renaming or compacting. */
 	get sessionId(): string {
 		return this.id;
+	}
+
+	/** Used by `main.ts`'s `sendCommand` (route ①, writing straight to an attached tab) to build
+	 * agent-appropriate command bytes without a second lookup — this tab already knows its own agent. */
+	get sessionAgent(): string {
+		return this.agent;
 	}
 
 	/** Writes straight to the PTY, used by `@` insertion. */
@@ -474,7 +481,7 @@ export class TerminalView extends ItemView {
 			return { kind: "daemon-unavailable", message: err.message };
 		}
 		if (err instanceof BackendError) {
-			return { kind: "claude-missing", message: err.message };
+			return { kind: "agent-missing", message: err.message };
 		}
 		return { kind: "error", message: messageOf(err) };
 	}
@@ -508,17 +515,22 @@ export class TerminalView extends ItemView {
 	}
 
 	private async startSession(client: DaemonClient, fresh: boolean): Promise<void> {
-		const claude = await resolveClaude(this.plugin.settings.claudePath, Platform.isMacOS);
+		const agent = asAgentId(this.agent);
+		const agentSettings = this.plugin.settings.agents[agent];
+		const bin = await resolveAgentBinary(agent, agentSettings.path, Platform.isMacOS);
 		// `VISUAL` is for the built-in editor; `EDITOR` is left alone. `AGENT_SESSIONS_VAULT` is
 		// here so claude's own hooks/statusLine (agent-sessions hook/status) don't lose track of
 		// the vault — the daemon just passes `env` straight through to execvpe, so without this
-		// it wouldn't work in an environment that has it in neither `env` nor vault.json.
+		// it wouldn't work in an environment that has it in neither `env` nor vault.json. The
+		// agent's own configured "environment variables" (Settings) go last, so the user can
+		// override any of the above (e.g. a custom VISUAL) if they really want to.
 		const env = {
 			...(await loginEnv(Platform.isMacOS)),
 			VISUAL: this.plugin.visualPath(),
 			AGENT_SESSIONS_VAULT: this.plugin.vaultPath(),
+			...parseEnvLines(agentSettings.env),
 		};
-		const argv = fresh ? [claude, "--session-id", this.id] : [claude, "--resume", this.id];
+		const argv = buildAgentArgv(agent, bin, this.id, fresh);
 		const cwd = this.cwd || this.plugin.vaultPath();
 		const res = await client.start({
 			id: this.id,
@@ -579,10 +591,15 @@ export class TerminalView extends ItemView {
 
 	/**
 	 * When the submit key is pressed: writes the submit sequence and records an instruction
-	 * marker for jump. This is the only place an instruction marker gets recorded (not from `onData`).
+	 * marker for jump. This is the only place an instruction marker gets recorded (not from
+	 * `onData`). Claude tabs use the configured submit key's own sequence (`submitSequence`,
+	 * possibly `\x1b\r` when `settings.submitKey !== "enter"` and keybindings.json maps plain
+	 * Enter to a newline instead); every other agent's keymap isn't touched, so plain `\r` is
+	 * always "submit" for them.
 	 */
 	private sendSubmit(): void {
-		this.sendInput(Buffer.from(submitSequence(this.plugin.settings), "binary"));
+		const bytes = this.agent === "claude" ? submitSequence(this.plugin.settings) : "\r";
+		this.sendInput(Buffer.from(bytes, "binary"));
 		this.marks.markInstruction();
 	}
 
@@ -627,7 +644,8 @@ export class TerminalView extends ItemView {
 		const early = this.startedAt > 0 && Date.now() - this.startedAt <= EARLY_EXIT_MS;
 		this.startedAt = 0;
 		if (early && code === 127) {
-			this.showExit({ kind: "claude-missing", message: t("error.claudeMissing") });
+			const bin = AGENT_BIN_NAME[asAgentId(this.agent)];
+			this.showExit({ kind: "agent-missing", message: t("error.agentMissing", { name: bin }) });
 			return;
 		}
 		const resumeFailed =
@@ -833,20 +851,27 @@ export class TerminalView extends ItemView {
 			}
 			return true;
 		}
-		// Intercept every Enter combination and send the submit or newline sequence ourselves.
-		const submitKey = this.plugin.settings.submitKey;
-		const enterAction = resolveEnterAction(classifyEnter(ev), submitKey);
-		if (enterAction !== "passthrough") {
-			ev.preventDefault();
-			ev.stopPropagation();
-			if (ev.type === "keydown") {
-				if (enterAction === "submit") {
-					this.sendSubmit();
-				} else {
-					this.sendInput(Buffer.from(sendSequence("newline", submitKey), "binary"));
+		// Intercept every Enter combination and send the submit or newline sequence ourselves —
+		// Claude tabs only. This whole mechanism exists because Claude Code's own keybindings.json
+		// can be rewritten (`terminal/keybindings.ts`) to make Enter mean "newline" instead of
+		// "submit", which only makes sense paired with that rewrite. Codex's keymap isn't touched
+		// (its own default Enter/newline handling is unconfirmed — see plan/段9-Codex対応.md), so
+		// its tabs get plain passthrough: every keystroke, Enter included, goes straight to the PTY.
+		if (this.agent === "claude") {
+			const submitKey = this.plugin.settings.submitKey;
+			const enterAction = resolveEnterAction(classifyEnter(ev), submitKey);
+			if (enterAction !== "passthrough") {
+				ev.preventDefault();
+				ev.stopPropagation();
+				if (ev.type === "keydown") {
+					if (enterAction === "submit") {
+						this.sendSubmit();
+					} else {
+						this.sendInput(Buffer.from(sendSequence("newline", submitKey), "binary"));
+					}
 				}
+				return false;
 			}
-			return false;
 		}
 		if (ev.metaKey && !ev.ctrlKey && !ev.altKey) {
 			if (ev.key === "+" || ev.key === "=" || ev.key === "-" || ev.key === "0") {
@@ -993,7 +1018,7 @@ export class TerminalView extends ItemView {
 				}
 				button(t("action.close"), undefined, () => void this.closeTab(true));
 				break;
-			case "claude-missing": {
+			case "agent-missing": {
 				msg.setText(reason.message);
 				const link = msg.createEl("a", { text: t("action.openSettings"), cls: "agent-sessions-exit-link" });
 				this.registerDomEvent(link, "click", (e) => {

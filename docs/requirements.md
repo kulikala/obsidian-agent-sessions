@@ -1,13 +1,14 @@
 # Agent Sessions requirements
 
-Opens and manages Claude Code sessions inside Obsidian. Three pieces make up one tool: the plugin (Obsidian), the daemon, and the CLI/TUI.
+Opens and manages Claude Code and Codex CLI sessions inside Obsidian. Three pieces make up one tool: the plugin (Obsidian), the daemon, and the CLI/TUI.
 
 ## Terms
 
-- **Session**: one Claude Code conversation. `~/.claude/projects/<project>/<id>.jsonl` is the source of truth. The ID is Claude Code's own session ID.
-- **Name**: the name set via `/rename` (the transcript's `custom-title` line). A name of the form `Category: Name` groups by everything before `: `.
+- **Session**: one Claude Code or Codex conversation. For Claude Code, `~/.claude/projects/<project>/<id>.jsonl` is the source of truth and the ID is Claude Code's own session ID; for Codex, `~/.codex/sessions/**/rollout-*.jsonl` and the ID is Codex's own thread ID.
+- **Agent**: which CLI a session belongs to — Claude Code or Codex (R-M).
+- **Name**: the name set via `/rename` (Claude Code: the transcript's `custom-title` line; Codex: its own thread name). A name of the form `Category: Name` groups by everything before `: `.
 - **Running**: a session whose PTY the daemon is holding.
-- **Status**: the value Claude Code writes to `~/.claude/sessions/<pid>.json` — `busy`/`shell`/`idle`/`waiting` (waiting on a dialog for an answer).
+- **Status**: for Claude Code, the value it writes to `~/.claude/sessions/<pid>.json` — `busy`/`shell`/`idle`/`waiting` (waiting on a dialog for an answer); Codex has no such ledger file and is inferred from its transcript's tail instead (design §3.3).
 - **Attach/detach**: a tab connecting to, or disconnecting from, a running session's PTY. Detaching doesn't stop the session.
 
 ## Scope
@@ -15,6 +16,7 @@ Opens and manages Claude Code sessions inside Obsidian. Three pieces make up one
 | Area | Covered here |
 |---|---|
 | Session list GUI, terminal, daemon, restore, fonts, renaming, state display and notifications, path linking, `@` insertion, jumping to prompts/responses, CLI/TUI | R-T, R-S, R-D, R-A, R-N, R-C (design §4–§12) |
+| Multi-agent (Claude Code / Codex): settings, auto-detection, launch, display | R-M (design §3.3, §7.7) |
 | The built-in editor (inside the plugin) | R-E (design §7.4) |
 | Token aggregation (per-session and by range), 5-hour/7-day window statistics | R-S12, R-S13 (design §13) |
 | Uninstalling | R-U (design §20) |
@@ -22,23 +24,33 @@ Opens and manages Claude Code sessions inside Obsidian. Three pieces make up one
 | Release process | R-REL (design §21) |
 | An IDE bridge (accept/reject diffs, live selection updates) | Undecided. Out of scope |
 
-Agent CLIs other than Claude Code (e.g. Codex) are a future direction. The data model and screens already carry an `agent` field, but only Claude Code is supported.
+Agent CLIs other than Claude Code and Codex (opencode, agy, …) are a future direction (design §25); the data model and screens carry a general `agent` field, not just these two.
 
 ## Requirements
 
 ### R-T Terminal
 
-- R-T1 A tab is dedicated to Claude Code — it never falls back to a plain shell. When `claude` exits, the tab shows an exit screen (Resume / Close).
+- R-T1 A tab is dedicated to one CLI agent (Claude Code or Codex — R-M) — it never falls back to a plain shell. When the agent's process exits, the tab shows an exit screen (Resume / Close).
 - R-T2 Font family and size are configurable. Each tab can also change its own size (Cmd +/Cmd −/reset on macOS, the non-macOS equivalents in R-T5c) independently, and keeps that size across a restore.
 - R-T2a Terminal padding is configurable: comfortable (default), compact, or none — "none" is meant for laying tabs out in splits.
 - R-T3 No clipped characters at the right edge. No flicker while a session is active. Japanese text, emoji, and box-drawing characters keep correct widths.
 - R-T4 Colors follow Obsidian's own theme (light/dark) and update when the theme changes.
 - R-T5 Every key Claude Code itself uses (Esc, Ctrl+C, arrow keys, Tab, and more) always reaches the terminal — Obsidian's hotkeys never intercept them.
-- R-T5a One **submit key** setting (Enter/Shift+Enter/Ctrl+Enter/Option+Enter/Cmd+Enter, default Enter; Cmd+Enter is macOS-only — R-T5c). Any other Enter combination becomes a newline.
+- R-T5a One **submit key** setting (Enter/Shift+Enter/Ctrl+Enter/Option+Enter/Cmd+Enter, default Enter; Cmd+Enter is macOS-only — R-T5c). Any other Enter combination becomes a newline. Claude tabs only — R-T5a through R-T5d don't apply to a Codex tab, whose own keymap isn't touched (R-M).
 - R-T5b Setting the submit key to anything other than Enter also writes to Claude Code's own `keybindings.json` (`Chat` context), since Enter itself becomes a newline. The settings tab re-reads that file every time it opens and offers to reconcile a mismatch, and explains that the change affects Claude Code everywhere, including sessions started outside Obsidian.
 - R-T5c On platforms other than macOS, Ctrl (not Cmd) is Obsidian's own hotkey modifier, and Claude Code itself uses many Ctrl combinations. The default routes every Ctrl-combination to the terminal; only Ctrl+Shift+C (copy selection), Ctrl+Shift+V (paste), Ctrl+Shift+=/−/0 (font size), Ctrl+Shift+W (close tab), Ctrl+Shift+P (command palette), Ctrl+Tab, and Ctrl+, go to Obsidian instead. Plain Ctrl+W and Ctrl+P (which Claude Code's own input line can use for word-delete and history) always reach the terminal.
 - R-T5d The submit-key setting offers Cmd+Enter only on macOS (a non-macOS Super/Windows key doesn't reliably reach the browser — a window manager can intercept it first); the button/statusLine symbols and labels for the other four choices are shown in a form appropriate to the platform.
 - R-T6 Multiple tabs stay independently stable when open at once. Closing a tab leaks no output and leaves no memory behind.
+
+### R-M Multi-agent (Claude Code / Codex)
+
+- R-M1 Settings has an "Agents" section: for each of Claude Code and Codex, an enabled toggle, a path (empty = auto-detect), and multi-line environment variables (`KEY=VALUE` per line). At least one agent stays enabled at all times.
+- R-M2 The first time the plugin ever runs with no saved agent settings, it auto-detects each agent (a login shell's `command -v`, then common install locations) and enables whichever it finds; if neither is found, Claude Code stays enabled (unchanged from before multi-agent support). A "Detect again" button re-runs detection any time and shows the result, without changing any toggle itself.
+- R-M3 Starting a new session offers a choice of agent only when more than one is enabled (with exactly one enabled, that one is used without asking); the choice made is remembered as the default for next time.
+- R-M4 Claude Code and Codex sessions are listed, sorted, grouped, and filtered together — no agent-specific split in the side panel or the Session Manager. A small icon (not a brand logo) on each row and in the detail pane shows which agent a session belongs to.
+- R-M5 The submit-key setting, Enter interception, and `keybindings.json` (R-T5a–d) apply to Claude Code tabs only; a Codex tab's own keymap is left untouched.
+- R-M6 Renaming/compacting an existing session (R-S6) works the same way regardless of agent. Naming a session at the moment it's created is Claude Code only — a new Codex session can't be named until it's finished starting.
+- R-M7 The detail pane's model/effort badges fall back to the most recent turn's values (from `json detail`) for an agent with no statusLine (Codex); "Default" if neither that nor statusLine has a value.
 
 ### R-S Session management (GUI)
 
@@ -49,8 +61,8 @@ Agent CLIs other than Claude Code (e.g. Codex) are a future direction. The data 
 - R-S4 The side panel's list is "open tabs → running (no tab) → recent, N items". Each row shows a category chip, then the name with the category stripped, then a relative last-updated time ("just now" / "N min ago" / "N h ago" / "yesterday" / "N d ago", falling back to "MM-DD" past a week; the absolute time is in a tooltip). Status stays in sync, the frontmost tab's row is highlighted, and clicking a row switches to that tab. The name never shrinks past a minimum width — if the row gets too narrow to fit everything, the time is what disappears, not the name. The rate-limits area shows 5-hour/7-day usage percentages and a countdown to reset (no "resets in" label, just the time itself), laid out so the two bars are always the same length regardless of how wide the percentage/countdown text is; clicking the area re-reads the latest usage data immediately.
 - R-S5 Clicking a row opens that session's tab. **If a tab for that session already exists, the view switches to it** — opening from the list never creates a second tab for the same session (splitting or duplicating a tab intentionally can, per R-N4).
 - R-S6 Every row's right edge always has a `⋯` (rename via `/rename`; compress via `/compact`, disabled if the last command already was `/compact`; archive, or unarchive if already archived; end session, when running; session analysis; copy ID). Right-click opens the same menu. No session-level action lives in the nav row (new/manager/`⋯`).
-- R-S7 A new session comes from a dialog with a single combined input: a category chip, then free text for the name (typing a suggestion, `:`, or pasting a `Category: Name` string all recognize the category and strip it from the text). The name is optional — a session can start unnamed. The rename dialog uses the same input, pre-split into the current category and name. Naming is reflected in the tab title immediately, even for a tab never brought to front. Category color is fixed and shared between the side panel and the manager. New sessions always start in the vault's root folder. If a name was given at creation, `/rename` is sent right after starting.
-- R-S8 Renaming (`/rename`) and compressing (`/compact`) apply immediately by sending the command to the session. With no open tab, the plugin attaches temporarily; if the session isn't running at all, it's started in the background, the command is sent, and it's stopped again with `/exit`. A draft in progress is stashed before sending (Claude Code restores it automatically afterward).
+- R-S7 A new session comes from a dialog with a single combined input: a category chip, then free text for the name (typing a suggestion, `:`, or pasting a `Category: Name` string all recognize the category and strip it from the text). The name is optional — a session can start unnamed. The rename dialog uses the same input, pre-split into the current category and name. Naming is reflected in the tab title immediately, even for a tab never brought to front. Category color is fixed and shared between the side panel and the manager. New sessions always start in the vault's root folder. If a name was given at creation, `/rename` is sent right after starting (Claude Code only — R-M6).
+- R-S8 Renaming (`/rename`) and compressing (`/compact`) apply immediately by sending the command to the session. With no open tab, the plugin attaches temporarily; if the session isn't running at all, it's started in the background, the command is sent, and it's stopped again with `/exit`. A draft in progress is stashed before sending, Claude Code only (it restores the stash automatically afterward) — skipped for any other agent, whose own keybinding for it isn't known (R-M5).
 - R-S9 Management state (folded groups, archive, category colors) lives in `<vault>/.agents/sessions/sessions.json`.
 - R-S10 Opening the manager never starts `claude`. **Only choosing "New" or clicking a row starts a session.**
 - R-S11 The detail pane (shared by the side panel and the manager) shows the name, badges for model/effort/rc (rc: a hollow circle when disconnected or unknown, a solid green circle when connected), a context-usage donut (with a separate mark right after a compact), total tokens and cost, the most recent prompt and response (truncated, click for the full text), tools, folder, and ID. With nothing selected, it shows the frontmost tab's session.
@@ -69,7 +81,7 @@ Agent CLIs other than Claude Code (e.g. Codex) are a future direction. The data 
 - R-A1 A tab's icon differs by state (connecting, working, running a shell command, asking a question — waiting for an answer, e.g. AskUserQuestion or a permission prompt — unread response, editing, just-compacted, waiting, detached, exited, error). Color and motion (spin/blink/pulse) distinguish them further, and motion respects `prefers-reduced-motion`. Side-panel and manager row marks share the same icon, color, and motion as the tab. The manager (`layout-dashboard`) and side panel (`list-tree`) icons differ from the terminal's own. These fine-grained states are further classified into groups matching Claude's own app's status buckets — needs input (asking), needs review (unread response, just-compacted), running (connecting, working, running a shell command), done (idle, editing, detached, exited) — with icons, colors, and tooltips aligned to Claude's own app for each group; an archived session always shows as its own group (an archive-box icon), regardless of its last-known state.
 - R-A5 A session asking a question or with an unread response is visible even when its tab isn't in front: the side panel's "open tabs" heading shows a badge with the number of sessions needing input and the number needing review (each omitted at zero; clicking opens the highest-priority target), the manager's group headings show the same priority mark, and list rows highlight asking (strong background, color bar, bold) more strongly than needing review (weaker background).
 - R-A2 A background session becoming unread triggers an Obsidian notification (can be turned off); clicking it switches to that tab.
-- R-A3 `statusLine` (below the session, in Claude Code's own UI) shows the submit-key symbol (only when launched from the plugin, first in the line), model, effort, context-usage percentage, and rc. An unavailable model or effort shows "Default".
+- R-A3 `statusLine` (below the session, in Claude Code's own UI; Claude Code only — Codex has none, R-M7) shows the submit-key symbol (only when launched from the plugin, first in the line), model, effort, context-usage percentage, and rc. An unavailable model or effort shows "Default".
 - R-A4 State comes from `~/.claude/sessions/<pid>.json` (written by Claude Code) and the JSON `statusLine` receives — never inferred from on-screen text.
 
 ### R-N Navigation and references

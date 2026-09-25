@@ -55,7 +55,7 @@ describe("dictionary (ja and en have matching key sets today)", () => {
 		const sampleKeys: MessageKey[] = [
 			"action.newSession",
 			"common.untitled",
-			"error.claudeMissing",
+			"error.agentMissing",
 			"usage.md.title",
 			"settings.language.name",
 		];

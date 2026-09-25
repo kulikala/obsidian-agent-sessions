@@ -53,6 +53,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"notice.noActiveNote": "開いているノートがありません",
 	"notice.noActiveTerminal": "開いているターミナルがありません",
 	"notice.renameWaitFailed": "セッションの起動を待てなかったため、名前を付けられませんでした",
+	"notice.renameAtCreateUnsupported": "このエージェントでは、作成時に名前を付けることはまだできません——起動してから名前を変更してください",
+	"notice.needsOneAgentEnabled": "少なくとも1つのエージェントは有効にしてください",
 	"notice.renameFailed": "名前の変更に失敗しました: {error}",
 	"progress.renaming": "名前を変更しています…",
 	"notice.compactAlready": "直近の指示が /compact のため、圧縮は送りません",
@@ -73,7 +75,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"notice.idCopied": "ID をコピーしました",
 	"notice.matchedKeybindings": "keybindings.json に合わせました",
 	"notice.markdownCopied": "Markdown をコピーしました",
-	"error.claudeMissing": "claude が見つからない",
+	"error.agentMissing": "{name} が見つからない",
 
 	// ---- Settings tab (main.ts) ----
 	"settings.font.name": "フォント",
@@ -84,8 +86,17 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"settings.padding.none": "なし",
 	"settings.recentCount.name": "最近の件数（サイドパネル）",
 	"settings.notifyOnIdle.name": "指示待ちの通知",
-	"settings.claudePath.name": "claude のパス",
-	"settings.claudePath.desc": "空欄時のデフォルト: $(which claude)",
+	"settings.agents.heading": "エージェント",
+	"settings.agents.desc": "起動できる CLI エージェントと、それぞれの見つけ方。",
+	"settings.agents.claude.name": "Claude Code",
+	"settings.agents.codex.name": "Codex",
+	"settings.agents.path.name": "パス",
+	"settings.agents.path.desc": "空欄 = 自動検出。",
+	"settings.agents.env.name": "環境変数",
+	"settings.agents.env.desc": "KEY=VALUE を1行ずつ。",
+	"settings.agents.detect.name": "再検出",
+	"settings.agents.detected.found": "検出: {path}",
+	"settings.agents.detected.notFound": "未検出。",
 	"settings.agentSessionsPath.name": "agent-sessions のパス",
 	"settings.agentSessionsPath.desc": "空欄時のデフォルト: ~/bin/agent-sessions",
 	"settings.editorHeight.name": "編集領域の高さ（%）",
@@ -108,6 +119,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	// ---- Modals (ui/modals.ts) ----
 	"modal.newSession.title": "新規セッション",
 	"modal.newSession.nameField": "名前",
+	"modal.newSession.agentField": "エージェント",
 	"modal.renameSession.title": "名前を変更",
 
 	// ---- Side panel (views/side.ts) ----

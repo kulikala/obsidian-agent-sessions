@@ -2,7 +2,7 @@
 
 import { renderCategoryChip } from "../ui/chip";
 import type { Row } from "../sessions/index";
-import { t } from "../i18n";
+import { t, type MessageKey } from "../i18n";
 import type AgentSessionsPlugin from "../main";
 import {
 	resolveRowStatus,
@@ -85,6 +85,37 @@ export function rowStatusMark(container: HTMLElement, plugin: AgentSessionsPlugi
 	setIcon(mark, icon);
 	setTooltip(mark, statusTooltip(status, row.archived));
 	return mark;
+}
+
+/** The icon distinguishing which agent a session belongs to — deliberately generic lucide icons,
+ * not brand logos. */
+export const AGENT_ICON: Record<string, string> = {
+	claude: "sparkles",
+	codex: "square-code",
+};
+
+/** The agent's display-name key (`settings.agents.<id>.name` — the same proper names used in
+ * Settings' "Agents" section, so the two stay consistent). */
+export const AGENT_NAME_KEY: Record<string, MessageKey> = {
+	claude: "settings.agents.claude.name",
+	codex: "settings.agents.codex.name",
+};
+
+/**
+ * A small icon marking which agent a session belongs to (Claude Code, Codex, …) — shared by the
+ * side panel's rows, the manager's rows, and (via the same icon/tooltip) the detail pane's badge.
+ * An unrecognized agent id renders nothing rather than a broken icon — forward-compatible with a
+ * future third agent this build doesn't know about yet.
+ */
+export function renderAgentMark(container: HTMLElement, agent: string): void {
+	const icon = AGENT_ICON[agent];
+	if (!icon) {
+		return;
+	}
+	const { setIcon, setTooltip } = require("obsidian") as typeof import("obsidian");
+	const mark = container.createSpan({ cls: "agent-sessions-row-agent-mark" });
+	setIcon(mark, icon);
+	setTooltip(mark, t(AGENT_NAME_KEY[agent]));
 }
 
 export function displayName(row: Row): string {
@@ -266,6 +297,7 @@ export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptio
 	}
 
 	rowStatusMark(el, opts.plugin, row);
+	renderAgentMark(el, row.agent);
 	// Makes rows that are asking (waiting for an answer) or waiting (idle since busy, not yet seen) stand out.
 	const attentionStatus = resolveRowStatus(opts.plugin, row);
 	if (attentionStatus === "asking") {

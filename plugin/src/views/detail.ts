@@ -1,6 +1,6 @@
 // The detail view — a component shared by the side panel and the manager. Renders the name,
-// badges (model/effort/rc), a context-usage donut, total tokens/cost, the last instruction and
-// response (click to expand), tools, folder, and ID.
+// badges (agent/model/effort/rc), a context-usage donut, total tokens/cost, the last instruction
+// and response (click to expand), tools, folder, and ID.
 
 import { renderCategoryChip } from "../ui/chip";
 import type { Row } from "../sessions/index";
@@ -9,6 +9,7 @@ import type { StatusInfo } from "../sessions/statusline";
 import { splitName } from "../sessions/tree";
 import type { Detail, UsageResult, UsageTotal } from "../types";
 import { formatK } from "../usage/usage";
+import { AGENT_NAME_KEY } from "./rows";
 
 export interface DetailContext {
 	row: Row;
@@ -113,10 +114,20 @@ function renderDonut(container: HTMLElement, percent: number | null): void {
 	wrap.appendChild(svg);
 }
 
-function renderBadges(container: HTMLElement, statusInfo: StatusInfo | null, rc: boolean | null): void {
+function renderBadges(
+	container: HTMLElement,
+	agent: string,
+	statusInfo: StatusInfo | null,
+	detail: Detail | null,
+	rc: boolean | null
+): void {
 	const row = container.createDiv({ cls: "agent-sessions-detail-badges" });
-	row.createSpan({ cls: "agent-sessions-badge", text: statusInfo?.model ?? t("common.default") });
-	row.createSpan({ cls: "agent-sessions-badge", text: statusInfo?.effort ?? t("common.default") });
+	const agentNameKey = AGENT_NAME_KEY[agent];
+	row.createSpan({ cls: "agent-sessions-badge", text: agentNameKey ? t(agentNameKey) : agent });
+	// `statusInfo` (Claude's own live statusLine data) wins when present; `detail`'s most-recent-turn
+	// model/effort is the fallback for an agent with no statusLine (Codex) — see `types.ts`'s `Detail`.
+	row.createSpan({ cls: "agent-sessions-badge", text: statusInfo?.model ?? detail?.model ?? t("common.default") });
+	row.createSpan({ cls: "agent-sessions-badge", text: statusInfo?.effort ?? detail?.effort ?? t("common.default") });
 	const rcBadge = row.createSpan({ cls: "agent-sessions-badge" });
 	rcBadge.appendText("rc ");
 	// ○ both when there's no ledger entry (`null`) and when disconnected; only ● when connected (`true`).
@@ -171,7 +182,7 @@ export function renderDetail(container: HTMLElement, ctx: DetailContext | null):
 		renderCategoryChip(catEl, category, ctx.categoryColorIndex(category));
 	}
 	container.createEl("h4", { cls: "agent-sessions-detail-name", text: label });
-	renderBadges(container, statusInfo, rc);
+	renderBadges(container, row.agent, statusInfo, detail, rc);
 
 	const statsRow = container.createDiv({ cls: "agent-sessions-detail-stats" });
 	renderDonut(statsRow, statusInfo?.ctxPercent ?? null);

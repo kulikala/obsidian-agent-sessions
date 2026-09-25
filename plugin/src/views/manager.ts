@@ -51,6 +51,7 @@ import {
 	formatRelativeTime,
 	formatTime,
 	RelativeTimeTicker,
+	renderAgentMark,
 	renderCategoryChip,
 	rowLabel,
 	rowStatusMark,
@@ -664,7 +665,7 @@ export class ManagerView extends ItemView {
 	}
 
 	private openNewSessionModal(): void {
-		new NewSessionModal(this.plugin, (name) => this.plugin.newSession(name || undefined)).open();
+		new NewSessionModal(this.plugin, (name, agent) => this.plugin.newSession(name || undefined, agent)).open();
 	}
 
 	private showMoreMenu(evt: MouseEvent): void {
@@ -798,6 +799,7 @@ export class ManagerView extends ItemView {
 		rowStatusMark(markTd, this.plugin, row);
 		const nameTd = tr.createEl("td", { cls: "agent-sessions-manager-col-name" });
 		const nameWrap = nameTd.createDiv({ cls: "agent-sessions-manager-name-cell" });
+		renderAgentMark(nameWrap, row.agent);
 		const category = categoryOf(row);
 		// A row under a heading (group, no-category, or no-name — `indent` is true) doesn't get
 		// its own chip, since the heading above it already shows the category once. Only rows in

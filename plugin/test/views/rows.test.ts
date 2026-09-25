@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { setLang } from "../../src/i18n";
-import { formatRelativeTime, RelativeTimeTicker } from "../../src/views/rows";
+import { AGENT_IDS } from "../../src/settings";
+import { setLang, t } from "../../src/i18n";
+import { AGENT_ICON, AGENT_NAME_KEY, formatRelativeTime, RelativeTimeTicker } from "../../src/views/rows";
 
 describe("formatRelativeTime", () => {
 	afterEach(() => setLang("en"));
@@ -118,5 +119,25 @@ describe("RelativeTimeTicker", () => {
 		ticker.stop();
 		vi.advanceTimersByTime(120000);
 		expect(el.setText).not.toHaveBeenCalled();
+	});
+});
+
+describe("AGENT_ICON / AGENT_NAME_KEY (every registered agent has both)", () => {
+	it("gives every agent id a non-empty icon", () => {
+		for (const id of AGENT_IDS) {
+			expect(AGENT_ICON[id]).toBeTruthy();
+		}
+	});
+
+	it("gives every agent id a distinct icon (no two agents look the same)", () => {
+		const icons = AGENT_IDS.map((id) => AGENT_ICON[id]);
+		expect(new Set(icons).size).toBe(icons.length);
+	});
+
+	it("gives every agent id a name key that resolves to a non-empty string", () => {
+		setLang("en");
+		for (const id of AGENT_IDS) {
+			expect(t(AGENT_NAME_KEY[id]).length).toBeGreaterThan(0);
+		}
 	});
 });

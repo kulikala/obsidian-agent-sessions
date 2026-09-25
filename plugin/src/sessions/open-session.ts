@@ -17,7 +17,9 @@ export interface WorkspaceLike<L extends LeafLike> {
 export interface OpenSessionOptions {
 	agent?: string;
 	cwd?: string;
-	/** A brand-new session (no transcript yet). Makes `start`'s argv use `--session-id`. */
+	/** A brand-new session (no transcript yet) — `views/terminal.ts`'s `startSession` picks the
+	 * agent-appropriate fresh-launch argv (`backend.ts`'s `buildAgentArgv`; Claude's is
+	 * `--session-id`, Codex has no equivalent). */
 	fresh?: boolean;
 }
 

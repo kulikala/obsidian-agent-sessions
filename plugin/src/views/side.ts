@@ -154,7 +154,7 @@ export class SideView extends ItemView {
 	}
 
 	private openNewSessionModal(): void {
-		new NewSessionModal(this.plugin, (name) => this.plugin.newSession(name || undefined)).open();
+		new NewSessionModal(this.plugin, (name, agent) => this.plugin.newSession(name || undefined, agent)).open();
 	}
 
 	private showMoreMenu(evt: MouseEvent): void {
