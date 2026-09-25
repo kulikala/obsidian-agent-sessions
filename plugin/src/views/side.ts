@@ -114,6 +114,13 @@ export class SideView extends ItemView {
 
 		this.onLayoutChange();
 		this.onActiveLeafChange();
+		// T-112 follow-up: right after a reload, the workspace layout may not have fully settled
+		// yet by the time onOpen() itself runs (`getMostRecentLeaf` too can still return something
+		// stale/wrong at that point) — re-derives frontId (and redraws) once more once it has.
+		this.app.workspace.onLayoutReady(() => {
+			this.refreshFrontId();
+			this.render();
+		});
 	}
 
 	/** Batches redraws triggered by `terminal-status`, which fires on every tab state change. */
@@ -268,25 +275,38 @@ export class SideView extends ItemView {
 	}
 
 	/**
-	 * Re-derives `frontId` from the active leaf's own live `TerminalView.sessionId` getter (T-112
-	 * follow-up) — not a cached snapshot from the leaf's `getViewState().state.id`, which goes
-	 * stale the moment `relinkId` swaps a Codex tab's id (its daemon-tracked placeholder to the
-	 * real, resolved thread id) while that tab stays in front the whole time: no new
-	 * `active-leaf-change` event fires to catch it, so a snapshot taken once, back when the tab
-	 * first became active, would keep pointing at an id no row is ever filed under again.
-	 * `sessionId` is a plain getter returning the view's own current `id` field, so reading it
-	 * fresh here is always correct regardless of whether `relinkId` has run since.
+	 * Re-derives `frontId` from the current live `TerminalView.sessionId` getter of the most
+	 * recently active leaf in the root split (T-112 follow-up) — not a cached snapshot from a
+	 * leaf's `getViewState().state.id`, which goes stale the moment `relinkId` swaps a Codex tab's
+	 * id (its daemon-tracked placeholder to the real, resolved thread id) while that tab stays in
+	 * front the whole time: no new `active-leaf-change` event fires to catch it, so a snapshot
+	 * taken once, back when the tab first became active, would keep pointing at an id no row is
+	 * ever filed under again. `sessionId` is a plain getter returning the view's own current `id`
+	 * field, so reading it fresh here is always correct regardless of whether `relinkId` has run
+	 * since.
 	 *
-	 * Only updates `frontId` when the active leaf actually is one of this plugin's own terminal
-	 * tabs — same as before, leaves it as whatever it last was otherwise (e.g. the user clicked
-	 * into a note; the side panel keeps highlighting the last real frontmost terminal tab rather
-	 * than losing track of it). Called once from `active-leaf-change` itself, and once more at the
-	 * top of every `render()` (below) — the second call is what actually closes the "relinked
-	 * while already front" gap, since `render()` also runs on every `terminal-status` event
-	 * (`relinkId` triggers one of those itself, via `refreshTerminalStatus`).
+	 * Uses `getMostRecentLeaf(rootSplit)`, not `workspace.activeLeaf` (itself deprecated,
+	 * "especially without checking whether activeLeaf is null" per its own doc comment) — a second
+	 * bug this same follow-up fixes: right after a reload, or whenever focus is actually in the
+	 * side panel itself (clicking a row, for instance), `activeLeaf` can be the side panel's own
+	 * leaf or `null`, neither of which is a `TerminalView`, so `frontId` never got set at all in
+	 * that case. `getMostRecentLeaf(rootSplit)` — "the most recently active leaf in a given
+	 * workspace root ... useful for interacting with the leaf in the root split while a sidebar
+	 * leaf might be active" (Obsidian's own doc comment) — tracks the last real content-area tab
+	 * regardless of where focus currently is, `rootSplit` excluding both the side panel and any
+	 * pop-out window.
+	 *
+	 * Only updates `frontId` when that leaf actually is one of this plugin's own terminal tabs —
+	 * same as before, leaves it as whatever it last was otherwise (e.g. every terminal tab has been
+	 * closed; the side panel keeps highlighting the last real frontmost terminal tab rather than
+	 * losing track of it). Called from `active-leaf-change`, once more at the top of every
+	 * `render()` (below — closes the "relinked while already front" gap, since `render()` also runs
+	 * on every `terminal-status` event, which `relinkId` triggers via `refreshTerminalStatus`), and
+	 * once more from `onLayoutReady` (closes the "reload, before layout settles" gap).
 	 */
 	private refreshFrontId(): void {
-		const view = this.app.workspace.activeLeaf?.view;
+		const leaf = this.app.workspace.getMostRecentLeaf(this.app.workspace.rootSplit);
+		const view = leaf?.view;
 		const activeSessionId = view instanceof TerminalView ? view.sessionId : null;
 		this.frontId = nextFrontId(this.frontId, activeSessionId);
 	}
