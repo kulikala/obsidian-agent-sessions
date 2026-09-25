@@ -7,6 +7,7 @@ import { attentionCounts, type AttentionCounts } from "../sessions/attention";
 import { resolveAgentBinary, usage } from "../backend/backend";
 import { t } from "../i18n";
 import { VIEW_TYPE_TERMINAL } from "../sessions/open-session";
+import { TerminalView } from "./terminal";
 import { NewSessionModal } from "../ui/modals";
 import type { Row } from "../sessions/index";
 import { AGENT_IDS } from "../settings";
@@ -15,6 +16,7 @@ import {
 	createRowActions,
 	DelayedRevert,
 	enabledAgentsText,
+	nextFrontId,
 	RelativeTimeTicker,
 	renderRow,
 	RowSelection,
@@ -261,16 +263,36 @@ export class SideView extends ItemView {
 	}
 
 	private onActiveLeafChange(): void {
-		const activeLeaf = this.app.workspace.activeLeaf;
-		const state = activeLeaf?.view.getViewType() === VIEW_TYPE_TERMINAL ? activeLeaf.getViewState().state : undefined;
-		const id = typeof state?.id === "string" ? state.id : undefined;
-		if (id) {
-			this.frontId = id;
-		}
+		this.refreshFrontId();
 		this.render();
 	}
 
+	/**
+	 * Re-derives `frontId` from the active leaf's own live `TerminalView.sessionId` getter (T-112
+	 * follow-up) — not a cached snapshot from the leaf's `getViewState().state.id`, which goes
+	 * stale the moment `relinkId` swaps a Codex tab's id (its daemon-tracked placeholder to the
+	 * real, resolved thread id) while that tab stays in front the whole time: no new
+	 * `active-leaf-change` event fires to catch it, so a snapshot taken once, back when the tab
+	 * first became active, would keep pointing at an id no row is ever filed under again.
+	 * `sessionId` is a plain getter returning the view's own current `id` field, so reading it
+	 * fresh here is always correct regardless of whether `relinkId` has run since.
+	 *
+	 * Only updates `frontId` when the active leaf actually is one of this plugin's own terminal
+	 * tabs — same as before, leaves it as whatever it last was otherwise (e.g. the user clicked
+	 * into a note; the side panel keeps highlighting the last real frontmost terminal tab rather
+	 * than losing track of it). Called once from `active-leaf-change` itself, and once more at the
+	 * top of every `render()` (below) — the second call is what actually closes the "relinked
+	 * while already front" gap, since `render()` also runs on every `terminal-status` event
+	 * (`relinkId` triggers one of those itself, via `refreshTerminalStatus`).
+	 */
+	private refreshFrontId(): void {
+		const view = this.app.workspace.activeLeaf?.view;
+		const activeSessionId = view instanceof TerminalView ? view.sessionId : null;
+		this.frontId = nextFrontId(this.frontId, activeSessionId);
+	}
+
 	private render(): void {
+		this.refreshFrontId();
 		this.listEl.empty();
 		this.selection.clear();
 		this.timeTicker.reset();

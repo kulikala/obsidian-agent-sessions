@@ -9,6 +9,7 @@ import {
 	DelayedRevert,
 	enabledAgentsText,
 	formatRelativeTime,
+	nextFrontId,
 	RelativeTimeTicker,
 } from "../../src/views/rows";
 
@@ -272,5 +273,34 @@ describe("createRowActions (T-110: showDetail/hideDetail/cancelHideDetail wiring
 		const actions = createRowActions(fakePlugin, vi.fn());
 		expect(actions.hideDetail).toBeUndefined();
 		expect(actions.cancelHideDetail).toBeUndefined();
+	});
+});
+
+describe("nextFrontId (T-112 follow-up: the frontmost tab's id must never go stale after relinkId)", () => {
+	it("uses the active terminal's live session id when there is one", () => {
+		expect(nextFrontId(null, "abc")).toBe("abc");
+		expect(nextFrontId("old", "abc")).toBe("abc");
+	});
+
+	it("keeps the previous value when there's no active terminal tab right now (e.g. a note is focused)", () => {
+		expect(nextFrontId("abc", null)).toBe("abc");
+		expect(nextFrontId(null, null)).toBeNull();
+	});
+
+	it("picks up a changed session id on the very same tab (the relinkId regression: a Codex tab's placeholder id swaps to its real, resolved thread id while it stays in front the whole time, with no new active-leaf-change event)", () => {
+		// First read: the tab just opened, still under its daemon-tracked placeholder id.
+		let frontId = nextFrontId(null, "placeholder-01a0d786");
+		expect(frontId).toBe("placeholder-01a0d786");
+		// relinkId happens later (json resolve codex learned the real thread id) while this same
+		// tab is still the active leaf — a later call with the *new* live sessionId must win,
+		// not keep returning the stale placeholder.
+		frontId = nextFrontId(frontId, "01a0d786-1531-7e50-ae91-59190098e1ef");
+		expect(frontId).toBe("01a0d786-1531-7e50-ae91-59190098e1ef");
+	});
+
+	it("Claude tabs are unaffected: their session id never changes, so repeated calls are idempotent", () => {
+		let frontId = nextFrontId(null, "claude-session-id");
+		frontId = nextFrontId(frontId, "claude-session-id");
+		expect(frontId).toBe("claude-session-id");
 	});
 });

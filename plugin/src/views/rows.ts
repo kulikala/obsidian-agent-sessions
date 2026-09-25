@@ -103,6 +103,24 @@ export class DelayedRevert {
 	}
 }
 
+/**
+ * The side panel's frontmost-tab id, re-derived every time this is called (T-112 follow-up) —
+ * never a cached snapshot. `activeSessionId` is expected to be the active leaf's own live
+ * `TerminalView.sessionId` getter (`null` when the active leaf isn't one of this plugin's own
+ * terminal tabs) — reading that fresh on every call is what actually matters here: a *cached*
+ * id (taken once, back when a tab first became the active leaf) goes stale the moment `relinkId`
+ * swaps it (a Codex tab's daemon-tracked placeholder id to its real, resolved thread id) while
+ * that tab stays in front the whole time, since no new `active-leaf-change` event fires to catch
+ * it — `sessionId` itself doesn't have this problem (it's a plain getter over the view's current
+ * `id` field), so calling this again with the *same* leaf's view, after its `sessionId` has since
+ * changed, correctly picks up the new value. Falls back to `previousFrontId` unchanged when
+ * there's no active terminal tab right now (e.g. the user clicked into a note) — the side panel
+ * keeps highlighting the last real frontmost terminal tab rather than losing track of it.
+ */
+export function nextFrontId(previousFrontId: string | null, activeSessionId: string | null): string | null {
+	return activeSessionId ?? previousFrontId;
+}
+
 /** Holds at most one selected row (highlighting only — `⋯` is always shown, independent of selection). */
 export class RowSelection {
 	private current: HTMLElement | null = null;
