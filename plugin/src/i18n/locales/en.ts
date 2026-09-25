@@ -73,6 +73,8 @@ export const en = {
 	"notice.scanFailed": "Failed to scan sessions: {message}",
 	"notice.idCopied": "Copied the ID",
 	"notice.matchedKeybindings": "Matched keybindings.json",
+	"notice.keybindingsWritten": "Updated keybindings.json",
+	"notice.keybindingsUnchanged": "keybindings.json already matched — nothing to write",
 	"notice.markdownCopied": "Copied the Markdown",
 	"error.agentMissing": "{name} was not found",
 
@@ -107,7 +109,7 @@ export const en = {
 	"settings.language.optionAuto": "Auto",
 	"settings.submitKey.name": "Submit key",
 	"settings.submitKey.desc":
-		"Choosing anything other than Enter makes Enter insert a newline instead. This writes to ~/.claude/keybindings.json (it also affects claude started from other terminal apps).",
+		"Choosing anything other than Enter makes Enter insert a newline instead. This writes to ~/.claude/keybindings.json (it also affects claude started from other terminal apps) — but only this plugin's own terminal tabs reliably send the chosen key: it intercepts every Enter combination itself and always sends the same bytes for \"submit\", regardless of modifier. In a terminal app outside Obsidian, whether Ctrl+Enter or Cmd+Enter is even distinguishable from plain Enter depends on that terminal — many aren't able to, and send plain Enter either way.",
 	"settings.submitKey.currentUnreadable": "Current keybindings.json: can't read {path}",
 	"settings.submitKey.currentCustom": "Current keybindings.json Chat enter: {raw}",
 	"settings.submitKey.currentNewline": "Current keybindings.json Chat enter: chat:newline",

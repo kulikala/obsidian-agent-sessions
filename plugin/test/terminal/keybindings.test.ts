@@ -3,7 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "../../src/terminal/keybindings";
-import { deriveSubmitKey, reconcileSubmitKey } from "../../src/terminal/keys";
+import {
+	deriveSubmitKey,
+	reconcileSubmitKey,
+	sendSequence,
+	submitKeyButtonLabel,
+	submitKeyStatuslineSymbol,
+} from "../../src/terminal/keys";
+import { SUBMIT_KEYS } from "../../src/settings";
 
 describe("readEnterMode", () => {
 	let dir: string;
@@ -115,7 +122,7 @@ describe("applySubmitKey", () => {
 
 	it("for a non-enter key: creates the file if missing, writing both keys plus $schema/$docs", () => {
 		const result = applySubmitKey(filePath, "cmd+enter");
-		expect(result).toEqual({});
+		expect(result).toEqual({ status: "written", warning: undefined });
 
 		const data = JSON.parse(readFileSync(filePath, "utf8"));
 		expect(data.$schema).toBe("https://www.schemastore.org/claude-code-keybindings.json");
@@ -129,17 +136,25 @@ describe("applySubmitKey", () => {
 
 	it("for enter: does nothing (doesn't create the file) if it's missing", () => {
 		const result = applySubmitKey(filePath, "enter");
-		expect(result).toEqual({});
+		expect(result).toEqual({ status: "unchanged" });
 		expect(() => readFileSync(filePath, "utf8")).toThrow();
 	});
 
 	it("switching cmd+enter back to enter removes both keys, and the now-empty Chat block along with them", () => {
 		applySubmitKey(filePath, "cmd+enter");
 		const result = applySubmitKey(filePath, "enter");
-		expect(result).toEqual({});
+		expect(result).toEqual({ status: "written", warning: undefined });
 
 		const data = JSON.parse(readFileSync(filePath, "utf8"));
 		expect(data.bindings.find((b: { context: string }) => b.context === "Chat")).toBeUndefined();
+	});
+
+	it("re-applying the same submit key is a no-op (status unchanged, nothing written)", () => {
+		applySubmitKey(filePath, "ctrl+enter");
+		const before = readFileSync(filePath, "utf8");
+		const result = applySubmitKey(filePath, "ctrl+enter");
+		expect(result).toEqual({ status: "unchanged" });
+		expect(readFileSync(filePath, "utf8")).toBe(before);
 	});
 
 	it("leaves other contexts and other keys untouched", () => {
@@ -174,6 +189,7 @@ describe("applySubmitKey", () => {
 		);
 
 		const result = applySubmitKey(filePath, "enter");
+		expect(result.status).toBe("written");
 		expect(result.warning).toContain("enter");
 		const data = JSON.parse(readFileSync(filePath, "utf8"));
 		const chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
@@ -181,9 +197,23 @@ describe("applySubmitKey", () => {
 		expect(chat.bindings).toEqual({ enter: "chat:clear" });
 	});
 
-	it("doesn't write to malformed JSON, and returns a warning instead", () => {
+	it("warns about a mismatched value on any owned key, not just enter/meta+enter", () => {
+		writeFileSync(
+			filePath,
+			JSON.stringify({ bindings: [{ context: "Chat", bindings: { "ctrl+enter": "chat:externalEditor" } }] })
+		);
+		const result = applySubmitKey(filePath, "enter");
+		expect(result.warning).toContain("ctrl+enter");
+		const data = JSON.parse(readFileSync(filePath, "utf8"));
+		const chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
+		// Not ours (a different action entirely), so it's left in place.
+		expect(chat.bindings).toEqual({ "ctrl+enter": "chat:externalEditor" });
+	});
+
+	it("doesn't write to malformed JSON, and returns status failed with a warning instead", () => {
 		writeFileSync(filePath, "{not json");
 		const result = applySubmitKey(filePath, "cmd+enter");
+		expect(result.status).toBe("failed");
 		expect(result.warning).toBeTruthy();
 		expect(readFileSync(filePath, "utf8")).toBe("{not json");
 	});
@@ -198,7 +228,7 @@ describe("applySubmitKey", () => {
 		}
 	});
 
-	it("switching back to enter from a real-world shape (with cmd+enter added) removes only our own two keys", () => {
+	it("switching back to enter from a real-world shape (with cmd+enter added) removes every owned key", () => {
 		writeFileSync(
 			filePath,
 			JSON.stringify({
@@ -207,10 +237,28 @@ describe("applySubmitKey", () => {
 				],
 			})
 		);
-		applySubmitKey(filePath, "enter");
+		const result = applySubmitKey(filePath, "enter");
+		expect(result).toEqual({ status: "written", warning: undefined });
+		const data = JSON.parse(readFileSync(filePath, "utf8"));
+		// Nothing left to remove leaves the Chat block itself removed too.
+		expect(data.bindings.find((b: { context: string }) => b.context === "Chat")).toBeUndefined();
+	});
+
+	it("switching between two non-enter keys clears a stale alternate-submit binding left on a third key", () => {
+		// A past version wrote shift+enter directly (D-41's predecessor); simulate that leftover.
+		writeFileSync(
+			filePath,
+			JSON.stringify({
+				bindings: [
+					{ context: "Chat", bindings: { enter: "chat:newline", "shift+enter": "chat:submit" } },
+				],
+			})
+		);
+		const result = applySubmitKey(filePath, "ctrl+enter");
+		expect(result).toEqual({ status: "written", warning: undefined });
 		const data = JSON.parse(readFileSync(filePath, "utf8"));
 		const chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
-		expect(chat.bindings).toEqual({ "cmd+enter": "chat:submit" });
+		expect(chat.bindings).toEqual({ enter: "chat:newline", "meta+enter": "chat:submit" });
 	});
 });
 
@@ -253,6 +301,73 @@ describe("reconcileSubmitKey", () => {
 		expect(reconcileSubmitKey(undefined, "cmd+enter")).toBe("enter");
 		expect(reconcileSubmitKey({}, "enter")).toBe("enter");
 	});
+});
+
+/**
+ * The full submit-key combination table (T-98's "組み合わせの総点検"), tying together every
+ * piece that has to agree for a given `submitKey`: `applySubmitKey`'s effect on
+ * `keybindings.json`'s `Chat` block, the PTY bytes `sendSequence` produces for submit/newline
+ * (what `main.ts`'s `commandBytes`/`views/terminal.ts`'s `sendSubmit` actually send — both call
+ * `sendSequence`/`submitSequence` directly, so there's nothing agent- or command-specific left to
+ * check separately here), and the label/symbol shown in the settings dropdown, the built-in
+ * editor's "send" button, and the statusLine (`ui.json`'s `submitSymbol`). This is Claude-only —
+ * every other agent never touches `keybindings.json` at all and always sends plain `\r`
+ * (`views/terminal.ts`'s `this.agent === "claude"` guard around all of §7.2's mechanics, and
+ * `main.ts`'s `commandBytes`), so there's no agent dimension to cross here.
+ */
+describe("the submit-key combination table (submitKey × platform, Claude only)", () => {
+	let dir: string;
+	let filePath: string;
+
+	beforeEach(() => {
+		dir = mkdtempSync(join(tmpdir(), "agent-sessions-keybindings-"));
+		filePath = join(dir, "keybindings.json");
+	});
+
+	afterEach(() => {
+		rmSync(dir, { recursive: true, force: true });
+	});
+
+	const ROWS: Record<
+		(typeof SUBMIT_KEYS)[number],
+		{ chat: Record<string, string> | undefined; submit: string; newline: string; macSymbol: string }
+	> = {
+		enter: { chat: undefined, submit: "\r", newline: "\x1b\r", macSymbol: "⏎" },
+		"shift+enter": { chat: { enter: "chat:newline", "meta+enter": "chat:submit" }, submit: "\x1b\r", newline: "\r", macSymbol: "⇧⏎" },
+		"ctrl+enter": { chat: { enter: "chat:newline", "meta+enter": "chat:submit" }, submit: "\x1b\r", newline: "\r", macSymbol: "⌃⏎" },
+		"alt+enter": { chat: { enter: "chat:newline", "meta+enter": "chat:submit" }, submit: "\x1b\r", newline: "\r", macSymbol: "⌥⏎" },
+		"cmd+enter": { chat: { enter: "chat:newline", "meta+enter": "chat:submit" }, submit: "\x1b\r", newline: "\r", macSymbol: "⌘⏎" },
+	};
+
+	for (const submitKey of SUBMIT_KEYS) {
+		const row = ROWS[submitKey];
+
+		it(`${submitKey}: keybindings.json Chat block`, () => {
+			applySubmitKey(filePath, submitKey);
+			let chat: Record<string, string> | undefined;
+			try {
+				const data = JSON.parse(readFileSync(filePath, "utf8")) as {
+					bindings?: { context: string; bindings?: Record<string, string> }[];
+				};
+				chat = data.bindings?.find((b) => b.context === "Chat")?.bindings;
+			} catch (err) {
+				if ((err as NodeJS.ErrnoException).code !== "ENOENT") {
+					throw err;
+				}
+			}
+			expect(chat).toEqual(row.chat);
+		});
+
+		it(`${submitKey}: PTY bytes (submit / newline)`, () => {
+			expect(sendSequence("submit", submitKey)).toBe(row.submit);
+			expect(sendSequence("newline", submitKey)).toBe(row.newline);
+		});
+
+		it(`${submitKey}: macOS label/symbol (dropdown, editor "send" button, statusLine)`, () => {
+			expect(submitKeyButtonLabel(submitKey, true)).toBe(row.macSymbol);
+			expect(submitKeyStatuslineSymbol(submitKey, true)).toBe(row.macSymbol);
+		});
+	}
 });
 
 describe("defaultKeybindingsPath", () => {

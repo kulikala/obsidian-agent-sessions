@@ -74,6 +74,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"notice.scanFailed": "一覧の走査に失敗しました: {message}",
 	"notice.idCopied": "ID をコピーしました",
 	"notice.matchedKeybindings": "keybindings.json に合わせました",
+	"notice.keybindingsWritten": "keybindings.json を書き換えました",
+	"notice.keybindingsUnchanged": "keybindings.json は既にこの内容でした（書き換えなし）",
 	"notice.markdownCopied": "Markdown をコピーしました",
 	"error.agentMissing": "{name} が見つからない",
 
@@ -108,7 +110,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"settings.language.optionAuto": "自動",
 	"settings.submitKey.name": "送信キー",
 	"settings.submitKey.desc":
-		"Enter 以外を選ぶと、Enter は改行になります。そのため ~/.claude/keybindings.json に書き込みます（他のターミナルアプリで起動した claude にも効きます）",
+		"Enter 以外を選ぶと、Enter は改行になります。そのため ~/.claude/keybindings.json に書き込みます（他のターミナルアプリで起動した claude にも効きます）。ただし、選んだキーが確実に働くのはこのプラグイン自身のターミナルタブだけです——Enter の全組み合わせを自前で横取りし、どの修飾キーでも「送信」には同じバイト列を送るためです。Obsidian の外のターミナルアプリでは、Ctrl+Enter や Cmd+Enter がそもそも素の Enter と区別できるかはターミナル次第で、多くは区別できず素の Enter として届きます。",
 	"settings.submitKey.currentUnreadable": "現在の keybindings.json：{path} が読めません",
 	"settings.submitKey.currentCustom": "現在の keybindings.json の Chat の enter：{raw}",
 	"settings.submitKey.currentNewline": "現在の keybindings.json の Chat の enter：chat:newline",

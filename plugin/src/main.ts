@@ -1402,6 +1402,10 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			void this.plugin.saveSettings();
 			if (result.warning) {
 				new Notice(result.warning);
+			} else if (result.status === "written") {
+				new Notice(t("notice.keybindingsWritten"));
+			} else if (result.status === "unchanged") {
+				new Notice(t("notice.keybindingsUnchanged"));
 			}
 			this.display();
 		};
