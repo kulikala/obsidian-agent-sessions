@@ -5,6 +5,7 @@ import {
 	SEVEN_DAY_SECONDS,
 	formatCountdown,
 	fromStatsWindow,
+	isGroupStartRow,
 	pickLatestLimits,
 	realWindows,
 	rollForwardWindow,
@@ -159,6 +160,24 @@ describe("realWindows (T-104 addendum, re-verified against the exact reported fi
 
 	it("is empty when windows itself is null (not fetched yet)", () => {
 		expect(realWindows(null)).toEqual([]);
+	});
+});
+
+describe("isGroupStartRow (T-111: which row gets the inter-agent-group spacing)", () => {
+	it("is false for the first agent's rows, however many there are", () => {
+		expect(isGroupStartRow(0, 0)).toBe(false);
+		expect(isGroupStartRow(0, 1)).toBe(false);
+		expect(isGroupStartRow(0, 2)).toBe(false);
+	});
+
+	it("is true only for the very first row of a second-or-later agent", () => {
+		expect(isGroupStartRow(1, 0)).toBe(true);
+		expect(isGroupStartRow(2, 0)).toBe(true);
+	});
+
+	it("is false for a later agent's later rows", () => {
+		expect(isGroupStartRow(1, 1)).toBe(false);
+		expect(isGroupStartRow(1, 2)).toBe(false);
 	});
 });
 

@@ -24,7 +24,7 @@ import { AGENT_IDS, type AgentId } from "../settings";
 import type { StatsWindow, StatsWindows } from "../types";
 import type AgentSessionsPlugin from "../main";
 import { AGENT_ICON_ID } from "../ui/icons";
-import { orderedWindows, windowLabel } from "./manager-model";
+import { orderedWindows, windowLabel, windowShortLabel } from "./manager-model";
 
 /** How long the "is-refreshing" visual state stays on after a click (the read itself is near-instant). */
 const REFRESH_FLASH_MS = 200;
@@ -52,6 +52,16 @@ export const SEVEN_DAY_SECONDS = 7 * 24 * 60 * 60;
  */
 export function realWindows(windows: StatsWindows | null): StatsWindow[] {
 	return orderedWindows(windows).filter((w) => w.used_percentage !== null);
+}
+
+/**
+ * Whether a row needs the small top margin that visually separates one agent's group of rows
+ * from the previous agent's (T-111) — true only for the very first row of every agent *after*
+ * the first shown, since that first agent's own first row needs no separation from anything
+ * above it. `agentIndex`/`rowIndexWithinAgent` are both 0-based.
+ */
+export function isGroupStartRow(agentIndex: number, rowIndexWithinAgent: number): boolean {
+	return agentIndex > 0 && rowIndexWithinAgent === 0;
 }
 
 export interface LimitsInfo {
@@ -303,25 +313,34 @@ export class LimitsView {
 		// independent of how often `reload()`/`reloadStatsAgents()` runs.
 		const now = Date.now() / 1000;
 		const { setIcon } = require("obsidian") as typeof import("obsidian");
-		for (const agent of this.agents) {
+		this.agents.forEach((agent, agentIndex) => {
 			const wrapEl = this.agentWrapEls[agent];
 			if (!wrapEl) {
-				continue;
+				return;
 			}
 			wrapEl.empty();
+			// T-111: a little extra space above the first row of a second-or-later agent group —
+			// applied to the row itself (`agentWrapEls[agent]`, i.e. this whole `.agent-sessions-
+			// limits-agent`, is `display: contents` now, so it has no box of its own to put a
+			// margin on; see styles.css).
+			let rowIndexWithinAgent = 0;
+			const renderRow = (label: string, shortLabel: string, w: RateLimitWindow | null) => {
+				this.renderAgentWindow(setIcon, wrapEl, agent, label, shortLabel, w, isGroupStartRow(agentIndex, rowIndexWithinAgent));
+				rowIndexWithinAgent++;
+			};
 			if (agent === "claude") {
-				this.renderAgentWindow(setIcon, wrapEl, agent, t("stats.fiveHour"), rollForwardWindow(this.claudeInfo?.fiveHour ?? null, FIVE_HOUR_SECONDS, now));
-				this.renderAgentWindow(setIcon, wrapEl, agent, t("stats.sevenDay"), rollForwardWindow(this.claudeInfo?.sevenDay ?? null, SEVEN_DAY_SECONDS, now));
-				continue;
+				renderRow(t("stats.fiveHour"), t("stats.fiveHour.short"), rollForwardWindow(this.claudeInfo?.fiveHour ?? null, FIVE_HOUR_SECONDS, now));
+				renderRow(t("stats.sevenDay"), t("stats.sevenDay.short"), rollForwardWindow(this.claudeInfo?.sevenDay ?? null, SEVEN_DAY_SECONDS, now));
+				return;
 			}
 			// Only windows this agent actually has a tracked percentage for (T-104 addendum) —
 			// skips e.g. a null five_hour/seven_day pair entirely for an account whose only real
 			// window is a non-standard length, rather than showing a permanently dashed-out row.
 			for (const w of realWindows(this.statsWindows[agent] ?? null)) {
 				const durationSeconds = w.minutes * 60;
-				this.renderAgentWindow(setIcon, wrapEl, agent, windowLabel(w.minutes), rollForwardWindow(fromStatsWindow(w), durationSeconds, now));
+				renderRow(windowLabel(w.minutes), windowShortLabel(w.minutes), rollForwardWindow(fromStatsWindow(w), durationSeconds, now));
 			}
-		}
+		});
 	}
 
 	private renderAgentWindow(
@@ -329,14 +348,26 @@ export class LimitsView {
 		container: HTMLElement,
 		agent: AgentId,
 		label: string,
-		w: RateLimitWindow | null
+		shortLabel: string,
+		w: RateLimitWindow | null,
+		isGroupStart: boolean
 	): void {
+		// T-111: every row is a `display: grid; grid-template-columns: subgrid` item spanning the
+		// host's own column tracks (`.agent-sessions-limits`), so the icon/label/bar/%/countdown
+		// columns line up across every row regardless of which agent it belongs to or how many
+		// other rows are above/below it — see styles.css for the full mechanism.
 		const el = container.createDiv({ cls: "agent-sessions-limits-row" });
+		el.toggleClass("is-group-start", isGroupStart);
 		const icon = AGENT_ICON_ID[agent];
 		if (icon) {
 			setIcon(el.createSpan({ cls: "agent-sessions-limits-agent-icon" }), icon);
 		}
-		el.createSpan({ cls: "agent-sessions-limits-label", text: label });
+		// Both variants are always rendered; a narrow container hides the long one and shows the
+		// short one instead (T-111 — a container query can only toggle which element is visible,
+		// not rewrite an element's own text).
+		const labelEl = el.createSpan({ cls: "agent-sessions-limits-label" });
+		labelEl.createSpan({ cls: "agent-sessions-limits-label-long", text: label });
+		labelEl.createSpan({ cls: "agent-sessions-limits-label-short", text: shortLabel });
 		const barWrap = el.createDiv({ cls: "agent-sessions-limits-bar" });
 		const pct = w?.usedPercentage != null ? Math.min(100, Math.max(0, w.usedPercentage)) : 0;
 		const bar = barWrap.createDiv({ cls: "agent-sessions-limits-bar-fill" });

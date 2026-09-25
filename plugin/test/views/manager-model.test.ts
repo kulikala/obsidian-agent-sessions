@@ -23,6 +23,7 @@ import {
 	weeklyPace,
 	windowLabel,
 	windowOf,
+	windowShortLabel,
 	windowSummary,
 	windowsForAgent,
 	type CategoryTotal,
@@ -542,6 +543,32 @@ describe("windowLabel (T-104 addendum: a window's label is derived from its leng
 	it("localizes through t() (Japanese fixture)", () => {
 		setLang("ja");
 		expect(windowLabel(43200)).toBe("30 日枠");
+	});
+});
+
+describe("windowShortLabel (T-111: the compact 5h/7d/30d form for a narrow side panel)", () => {
+	afterEach(() => setLang("en"));
+
+	it("300 minutes and 10080 minutes are '5h'/'7d'", () => {
+		expect(windowShortLabel(300)).toBe("5h");
+		expect(windowShortLabel(10080)).toBe("7d");
+	});
+
+	it("another day-aligned length becomes 'Nd'", () => {
+		expect(windowShortLabel(43200)).toBe("30d");
+	});
+
+	it("another hour-aligned length becomes 'Nh'", () => {
+		expect(windowShortLabel(120)).toBe("2h");
+	});
+
+	it("anything else falls back to 'Nm'", () => {
+		expect(windowShortLabel(90)).toBe("90m");
+	});
+
+	it("localizes through t() (Japanese fixture — same short glyphs as English today)", () => {
+		setLang("ja");
+		expect(windowShortLabel(43200)).toBe("30d");
 	});
 });
 

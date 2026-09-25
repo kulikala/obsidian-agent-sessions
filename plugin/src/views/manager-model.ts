@@ -166,6 +166,28 @@ export function windowLabel(minutes: number): string {
 }
 
 /**
+ * `windowLabel`'s compact form (T-111 — "5h"/"7d"/"30d" rather than "5-hour window"/"7-day
+ * window"/"30-day window"), for the side panel's rate-limit rows at a narrow width, where the
+ * full label would otherwise crowd out the bar itself. Same length-based derivation, same two
+ * exact-length special cases.
+ */
+export function windowShortLabel(minutes: number): string {
+	if (minutes === 300) {
+		return t("stats.fiveHour.short");
+	}
+	if (minutes === 10080) {
+		return t("stats.sevenDay.short");
+	}
+	if (minutes % 1440 === 0) {
+		return t("stats.window.nDay.short", { n: minutes / 1440 });
+	}
+	if (minutes % 60 === 0) {
+		return t("stats.window.nHour.short", { n: minutes / 60 });
+	}
+	return t("stats.window.nMinute.short", { n: minutes });
+}
+
+/**
  * `stats`'s windows for `agent` (T-103/T-104) — its own `agents.<agent>.windows` if present,
  * falling back to the legacy top-level `windows` only for Claude (backward compat with a
  * pre-T-103 Python build, which never has `agents` at all). `null` if there's nothing for that
