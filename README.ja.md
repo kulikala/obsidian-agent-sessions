@@ -32,8 +32,8 @@
 パッケージ化された配布物はまだ無いため、ローカルの clone から入れる。
 
 ```sh
-git clone <このリポジトリ> agent-sessions
-cd agent-sessions
+git clone https://github.com/kulikala/obsidian-agent-sessions.git
+cd obsidian-agent-sessions
 (cd plugin && npm install && npm run build)
 ./scripts/install.sh /path/to/your/vault
 ```

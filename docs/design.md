@@ -14,7 +14,7 @@ Agent Sessions runs and manages [Claude Code](https://claude.com/claude-code) se
 Scanning, status detection, and aggregation live only in Python (`agentsessions/`). The plugin displays that JSON, writes `sessions.json`, and renders the PTY as a terminal. This split exists so the CLI, the TUI, and the plugin always see the same session list and the same numbers — there is exactly one place that decides what a session's status is or what a turn cost, and it is not TypeScript.
 
 ```
-agent-sessions/
+obsidian-agent-sessions/
 ├── plugin/                    Obsidian plugin (TypeScript, esbuild, vitest)
 │   ├── src/                   Organized by responsibility, the same shape as agentsessions/ below
 │   │   ├── main.ts            Plugin entry point: view registration, commands, settings, openSession, sendCommand

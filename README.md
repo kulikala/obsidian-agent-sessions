@@ -32,8 +32,8 @@ Run and manage [Claude Code](https://claude.com/claude-code) sessions as termina
 There is no packaged release yet, so the plugin is installed from a local clone.
 
 ```sh
-git clone <this-repository> agent-sessions
-cd agent-sessions
+git clone https://github.com/kulikala/obsidian-agent-sessions.git
+cd obsidian-agent-sessions
 (cd plugin && npm install && npm run build)
 ./scripts/install.sh /path/to/your/vault
 ```
