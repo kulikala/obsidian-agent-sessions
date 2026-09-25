@@ -162,12 +162,40 @@ def send_daemon_op(op: str, client: str = 'json', sock_path: Optional[str] = Non
             pass
 
 
+def _codex_daemon_links() -> Dict[str, str]:
+    """`{daemon_uuid: thread_id}` for every Codex session sessions.json links
+    (`sessions[<thread_id>] = {"agent": "codex", "daemon": "<daemon_uuid>"}`,
+    written by the plugin once `json resolve codex` finds the real thread id --
+    see design.md §3.3). A link whose `daemon_uuid` no longer names a running
+    daemon session (the daemon restarted, or the plugin already re-resumed under
+    a new uuid) is simply never looked up by `_daemon_list`'s relabeling below,
+    so a stale entry here is inert, not a bug to guard against."""
+    st = store.load(path=config.STORE_PATH)
+    out: Dict[str, str] = {}
+    for thread_id, entry in st.sessions.items():
+        if isinstance(entry, dict) and entry.get('agent') == 'codex':
+            daemon_id = entry.get('daemon')
+            if isinstance(daemon_id, str) and daemon_id:
+                out[daemon_id] = thread_id
+    return out
+
+
 def _daemon_list() -> dict:
-    """Fetches the daemon's `list`. `running: false` if it isn't up (this never starts it)."""
+    """Fetches the daemon's `list`. `running: false` if it isn't up (this never
+    starts it). Codex sessions are relabeled from the daemon-assigned uuid
+    `start` was called with to the resolved thread id (Claude Code sessions are
+    unaffected -- there, the daemon uuid already *is* the transcript id), so a
+    consumer only ever sees thread ids for Codex, matching `json scan`'s rows."""
     resp = send_daemon_op('list')
     if resp is None or not resp.get('ok'):
         return {'running': False, 'sessions': []}
-    return {'running': True, 'sessions': resp.get('sessions', [])}
+    sessions = resp.get('sessions', [])
+    if any(isinstance(s, dict) and s.get('agent') == 'codex' for s in sessions):
+        links = _codex_daemon_links()
+        sessions = [dict(s, id=links[s['id']]) if isinstance(s, dict) and s.get('agent') == 'codex'
+                    and s.get('id') in links else s
+                    for s in sessions]
+    return {'running': True, 'sessions': sessions}
 
 
 def _live_dict(sid: str, agent: str, l) -> dict:

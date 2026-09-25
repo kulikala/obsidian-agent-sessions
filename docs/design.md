@@ -157,12 +157,13 @@ obsidian-agent-sessions/
   "folded": ["Docs", "その他のセッション"],
   "archived": [{"id": "5778f81f-…", "name": "Release notes", "agent": "claude"}],
   "pendingRenames": {},
-  "sessions": {"68d25490-…": {"agent": "claude", "cwd": "/path/to/vault"}},
+  "sessions": {"68d25490-…": {"agent": "claude", "cwd": "/path/to/vault"},
+               "0199ccbc-…": {"agent": "codex", "daemon": "9d1f2e4a-…"}},
   "categoryColors": {"Docs": 0, "Infra": 3}
 }
 ```
 
-- `sessions` holds the `agent` and `cwd` of sessions the plugin itself started. A scan's own transcript-derived data takes priority once the transcript exists; this entry exists to show a brand-new session (before its transcript is written) in the list at all.
+- `sessions` holds the `agent` and `cwd` of sessions the plugin itself started. A scan's own transcript-derived data takes priority once the transcript exists; this entry exists to show a brand-new session (before its transcript is written) in the list at all. For Codex specifically, a session's key is its resolved *thread id* (its permanent identity — see §3.3), not the daemon-assigned uuid it was launched under; `daemon` (instead of `cwd`) holds that launch-time uuid, so `json live`'s daemon-list merge can relabel it. Nothing is written here for a Codex session before it resolves (unlike Claude, which writes a `cwd`-only placeholder immediately) — there's no stable key to write it under yet.
 - `archived`'s `name` is a cached copy for the manager's Archive section; the transcript remains the source of truth.
 - `categoryColors` maps a category name (the part of `splitName`'s `Category: Name` split before the colon) to a palette index (0–11). Once assigned, an index never changes (§11).
 - `pendingRenames` is read and written back unchanged by both the Python and TypeScript sides; nothing reads it. Renames go through `sendCommand` (§6) directly.
@@ -190,6 +191,8 @@ Agent Sessions has no default vault. `agentsessions/config.py`'s `VAULT` (via `_
 - **Usage**: `agents/codex/usage.py` diffs successive `token_count` events' running totals (`info.total_token_usage`) into per-call deltas, bucketed into turns the same way `usage.turns.collect` splits on human prompts. Shape matches `Turn.to_dict()` field-for-field, plus `unknown_cost: bool` — Codex models not in `usage/pricing.py`'s `OPENAI_PRICES` report `cost: null` rather than a fabricated dollar figure (§13.3).
 - **Stats**: `agents/codex/stats.py` adds `stats_output()['agents']['codex']['windows']` = the `rate_limits.primary`/`secondary` from the most recent `token_count` event across all rollouts — additive to the existing (Claude-only) `windows` key, so a Claude-only deployment's `json stats` shape is unchanged.
 - **New-session id resolution**: unlike every other agent, Codex has no flag letting the caller pick its own session id, so a new Codex session is started under a daemon-assigned uuid like any other, and `agent-sessions json resolve codex --pid PID --since ISO_OR_EPOCH --cwd PATH` is polled afterward to learn the real thread id (`agents/codex/resolve.py`). It tries, in order: (1) an open-fd inspection (`lsof -a -p PID -Fn` on macOS, `/proc/PID/fd/*` on Linux) of `PID` and its descendants (Codex has been observed to re-exec or fork a wrapper before opening its rollout) for a currently-open rollout path — exact, no ambiguity; (2) a fallback scan for the newest rollout whose `session_meta` has `timestamp >= since`, matching `cwd`, `source == 'cli'`, and a thread id not already linked to a *different* daemon session in `sessions.json` (`already_linked`, passed by `json_output.resolve_output`). `null`/`null` (not an error) means the rollout hasn't been written yet; the plugin is expected to retry. The daemon's own child pid, needed for `--pid`, was already in `list`'s response (`Session.to_dict()`'s `pid`) — no wire-protocol change was needed for this.
+
+  Once resolved, the thread id becomes that session's permanent identity (matching how Claude Code already works, where the daemon uuid *is* the transcript id) — the plugin swaps the tab's own id and writes the `sessions[<thread id>] = {"agent": "codex", "daemon": "<uuid>"}` link above, but the daemon keeps running that session under its original uuid (it was never told otherwise). So `json live`'s daemon-list merge (`json_output._daemon_list`) relabels: for a daemon session with `agent == "codex"`, it looks up `sessions.json` for a link whose `daemon` matches that session's `id`, and if found, replaces `id` with the thread id in the response — the only place this indirection is needed, since `json scan`'s own Codex rows are already keyed by thread id (§3.3, `agents/codex/scan.py`). A link whose `daemon` uuid no longer names a running daemon session (the daemon restarted; the plugin will `codex resume <thread>` and get a new uuid, rewriting the link) is simply never matched by this lookup — stale, not an error.
 
 ## 4. The daemon and its wire protocol
 
