@@ -8,6 +8,7 @@ import {
 	categoryKeyOf,
 	categoryTotals,
 	categoryTotalsForWindow,
+	codexShortModelName,
 	flattenTree,
 	formatWeekdayTime,
 	isRealCategoryKey,
@@ -563,16 +564,47 @@ describe("formatWeekdayTime", () => {
 });
 
 describe("shortModelName", () => {
-	it("drops a trailing `(...)`", () => {
-		expect(shortModelName("Opus 5.5 (1M context)")).toBe("Opus 5.5");
+	it("drops a trailing `(...)` for Claude", () => {
+		expect(shortModelName("Opus 5.5 (1M context)", "claude")).toBe("Opus 5.5");
 	});
 
-	it("leaves the name as-is when there's no parenthetical", () => {
-		expect(shortModelName("Sonnet 5")).toBe("Sonnet 5");
+	it("leaves the name as-is for Claude when there's no parenthetical", () => {
+		expect(shortModelName("Sonnet 5", "claude")).toBe("Sonnet 5");
 	});
 
-	it("returns an empty string for null", () => {
-		expect(shortModelName(null)).toBe("");
+	it("returns an empty string for null, any agent", () => {
+		expect(shortModelName(null, "claude")).toBe("");
+		expect(shortModelName(null, "codex")).toBe("");
+	});
+
+	it("uses codexShortModelName for a codex row instead of parenthetical-stripping", () => {
+		expect(shortModelName("gpt-5.6-luna", "codex")).toBe("GPT-5.6 Luna");
+	});
+});
+
+describe("codexShortModelName (T-107: Codex's raw model id has no separate display name)", () => {
+	it("uppercases a short (<=3 char) first segment and hyphen-joins a version number", () => {
+		expect(codexShortModelName("gpt-5.6-luna")).toBe("GPT-5.6 Luna");
+	});
+
+	it("title-cases a trailing word segment, space-joined", () => {
+		expect(codexShortModelName("gpt-5-codex")).toBe("GPT-5 Codex");
+	});
+
+	it("handles a short first segment with a trailing word and no version number", () => {
+		expect(codexShortModelName("o3-mini")).toBe("O3 Mini");
+	});
+
+	it("keeps a version-only id compact (no trailing word)", () => {
+		expect(codexShortModelName("gpt-4.1")).toBe("GPT-4.1");
+	});
+
+	it("title-cases (not uppercases) a longer first segment — not a short brand-style prefix", () => {
+		expect(codexShortModelName("davinci-3")).toBe("Davinci-3");
+	});
+
+	it("title-cases a single-segment id with no hyphen at all", () => {
+		expect(codexShortModelName("codex")).toBe("Codex");
 	});
 });
 

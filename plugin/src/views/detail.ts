@@ -10,6 +10,7 @@ import type { StatusInfo } from "../sessions/statusline";
 import { splitName } from "../sessions/tree";
 import type { Detail, UsageResult, UsageTotal } from "../types";
 import { formatK } from "../usage/usage";
+import { shortModelName } from "./manager-model";
 import { AGENT_NAME_KEY } from "./rows";
 import { AGENT_ICON_ID } from "../ui/icons";
 
@@ -114,11 +115,12 @@ function renderDonut(container: HTMLElement, percent: number | null): void {
 
 function renderBadges(
 	container: HTMLElement,
-	agent: string,
+	sessionRow: Row,
 	statusInfo: StatusInfo | null,
 	detail: Detail | null,
 	rc: boolean | null
 ): void {
+	const agent = sessionRow.agent;
 	const row = container.createDiv({ cls: "agent-sessions-detail-badges" });
 	const agentNameKey = AGENT_NAME_KEY[agent];
 	const agentBadge = row.createSpan({ cls: "agent-sessions-badge agent-sessions-badge-agent" });
@@ -128,10 +130,28 @@ function renderBadges(
 		setIcon(agentBadge.createSpan({ cls: "agent-sessions-badge-agent-icon" }), agentIcon);
 	}
 	agentBadge.createSpan({ text: agentNameKey ? t(agentNameKey) : agent });
-	// `statusInfo` (Claude's own live statusLine data) wins when present; `detail`'s most-recent-turn
-	// model/effort is the fallback for an agent with no statusLine (Codex) — see `types.ts`'s `Detail`.
-	row.createSpan({ cls: "agent-sessions-badge", text: statusInfo?.model ?? detail?.model ?? t("common.default") });
-	row.createSpan({ cls: "agent-sessions-badge", text: statusInfo?.effort ?? detail?.effort ?? t("common.default") });
+	// `statusInfo` (Claude's own live statusLine data) wins when present. Otherwise, for an agent
+	// with no statusLine at all (Codex): `sessionRow.model`/`.effort` (T-107, `json scan`'s
+	// Codex-only fields — already loaded, no extra fetch) first, then `detail`'s most-recent-turn
+	// model/effort (`json detail`, per-session, may not have resolved yet) as a last resort.
+	const model = statusInfo?.model ?? sessionRow.model ?? detail?.model ?? null;
+	const modelBadge = row.createSpan({ cls: "agent-sessions-badge" });
+	if (statusInfo?.model) {
+		// Claude's own display name, shown as-is (unchanged from before T-107).
+		modelBadge.setText(statusInfo.model);
+	} else if (model) {
+		// Codex's raw model id (e.g. "gpt-5.6-luna") needs an actual short-name transform, not
+		// just a parenthetical-stripping one — the full raw value goes in the tooltip.
+		const { setTooltip } = require("obsidian") as typeof import("obsidian");
+		modelBadge.setText(shortModelName(model, agent));
+		setTooltip(modelBadge, model);
+	} else {
+		modelBadge.setText(t("common.default"));
+	}
+	row.createSpan({
+		cls: "agent-sessions-badge",
+		text: statusInfo?.effort ?? sessionRow.effort ?? detail?.effort ?? t("common.default"),
+	});
 	const rcBadge = row.createSpan({ cls: "agent-sessions-badge" });
 	rcBadge.appendText("rc ");
 	// ○ both when there's no ledger entry (`null`) and when disconnected; only ● when connected (`true`).
@@ -186,7 +206,7 @@ export function renderDetail(container: HTMLElement, ctx: DetailContext | null):
 		renderCategoryChip(catEl, category, ctx.categoryColorIndex(category));
 	}
 	container.createEl("h4", { cls: "agent-sessions-detail-name", text: label });
-	renderBadges(container, row.agent, statusInfo, detail, rc);
+	renderBadges(container, row, statusInfo, detail, rc);
 
 	const statsRow = container.createDiv({ cls: "agent-sessions-detail-stats" });
 	renderDonut(statsRow, statusInfo?.ctxPercent ?? null);

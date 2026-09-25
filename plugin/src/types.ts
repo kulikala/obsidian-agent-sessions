@@ -13,6 +13,13 @@ export interface ScanSession {
 	last_activity: number;
 	child: boolean;
 	transcript: string | null;
+	/** From the most recent `turn_context` (T-107) — Codex only, additive: absent (not `null`)
+	 * from the JSON object entirely for Claude, or for a Codex session with no `turn_context` yet.
+	 * Claude's own model/effort come from statusLine instead (`sessions/statusline.ts`), which
+	 * wins over these when present (`views/detail.ts`'s `renderBadges`, `views/manager.ts`'s model/
+	 * effort columns). */
+	model?: string;
+	effort?: string;
 }
 
 /** One archived entry in `sessions.json`. */

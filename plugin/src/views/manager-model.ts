@@ -391,13 +391,47 @@ export function formatWeekdayTime(epochSeconds: number, lang: Lang): string {
 // ---- Model and effort columns ----------------------------------------------------------
 
 /**
- * A shortened form of a model's display name with any `(...)` suffix dropped (e.g.
- * `"Opus 5.5 (1M context)"` → `"Opus 5.5"`). Used in the table's model column — the full value
- * (`statusInfo.model` as-is) is shown in the tooltip.
+ * A shortened form of a model's display name — used in the table's model column (T-107: also
+ * `detail.ts`'s model badge for a Codex fallback), the full value shown in a tooltip instead.
+ * Claude's `statusInfo.model` is already a human display name (Claude Code's own statusLine hook)
+ * with any `(...)` suffix just dropped (e.g. `"Opus 5.5 (1M context)"` → `"Opus 5.5"`); Codex's
+ * `model` (T-107, `json scan`'s new field, from its own transcript — there's no statusLine-style
+ * hook to format it for display) is a raw model id like `"gpt-5.6-luna"` and needs an actual
+ * transform (`codexShortModelName`) to read as a name rather than an id.
  */
-export function shortModelName(model: string | null): string {
+export function shortModelName(model: string | null, agent: string): string {
 	if (!model) {
 		return "";
 	}
+	if (agent === "codex") {
+		return codexShortModelName(model);
+	}
 	return model.replace(/\s*\([^)]*\)\s*$/, "").trim();
+}
+
+/**
+ * `"gpt-5.6-luna"` → `"GPT-5.6 Luna"` (T-107, my own judgment call — Codex's raw model id has no
+ * separate human display name to fall back to, unlike Claude's statusLine). Splits on `-`: the
+ * first segment is uppercased if it's short (≤3 chars — a brand/family-style prefix like `gpt`/
+ * `o3`, not a real word); any digit-leading segment (a version number, e.g. `5.6`) stays
+ * hyphen-joined to what's before it; everything else is Title Cased and space-joined instead, so
+ * a trailing word reads like a name (`luna` → `Luna`) rather than staying id-like.
+ */
+export function codexShortModelName(raw: string): string {
+	const parts = raw.split("-").filter(Boolean);
+	if (parts.length === 0) {
+		return raw;
+	}
+	let result = "";
+	for (let i = 0; i < parts.length; i++) {
+		const part = parts[i];
+		const versionLike = /^\d/.test(part);
+		const formatted = versionLike
+			? part
+			: i === 0 && part.length <= 3
+				? part.toUpperCase()
+				: part.charAt(0).toUpperCase() + part.slice(1);
+		result += i === 0 ? formatted : (versionLike ? "-" : " ") + formatted;
+	}
+	return result;
 }

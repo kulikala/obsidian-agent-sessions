@@ -950,8 +950,14 @@ export class ManagerView extends ItemView {
 			this.timeTicker.track(timeTd, row.last_activity);
 		}
 		const statusInfo = this.plugin.index.statusline.get(row.id);
-		this.renderShortValueCell(tr, "agent-sessions-manager-col-model", shortModelName(statusInfo?.model ?? null), statusInfo?.model ?? null);
-		this.renderShortValueCell(tr, "agent-sessions-manager-col-effort", statusInfo?.effort ?? "", statusInfo?.effort ?? null);
+		// statusInfo (Claude's own live statusLine data) wins when present; row.model/effort
+		// (T-107, json scan's Codex-only fields, from its most recent turn_context) is the
+		// fallback for an agent with no statusLine at all (Codex) — same fallback `detail.ts`'s
+		// badges use, just sourced from the already-scanned row instead of a per-session fetch.
+		const model = statusInfo?.model ?? row.model ?? null;
+		this.renderShortValueCell(tr, "agent-sessions-manager-col-model", shortModelName(model, row.agent), model);
+		const effort = statusInfo?.effort ?? row.effort ?? null;
+		this.renderShortValueCell(tr, "agent-sessions-manager-col-effort", effort ?? "", effort);
 		this.renderCostCell(tr, "agent-sessions-manager-col-5h", row, "5h");
 		this.renderCostCell(tr, "agent-sessions-manager-col-7d", row, "7d");
 		tr.createEl("td", { cls: "agent-sessions-manager-col-folder", text: row.folder });
