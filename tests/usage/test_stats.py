@@ -376,6 +376,25 @@ class IncrementalCacheTest(StatsTestBase):
         self.assertIn(self.path, cache)
         self.assertEqual(cache[self.path]['offset'], os.path.getsize(self.path))
 
+    def test_stale_schema_version_forces_a_full_reread_not_incremental(self):
+        """An upgrade that changes how a bucket is computed must not layer new
+        buckets on top of buckets computed by the old logic just because
+        offset/mtime/size still look consistent -- see STATS_SCHEMA_VERSION."""
+        self.compute(now=self.now)
+        cache = stats.load_cache(self.cache_path)
+        self.assertEqual(cache[self.path]['schema_version'], stats.STATS_SCHEMA_VERSION)
+        bucket_key_1 = stats._bucket_key(self.ts1)
+        # Tamper with both the bucket (to prove it gets discarded, not reused)
+        # and the schema_version (to simulate an old, pre-upgrade cache entry).
+        cache[self.path]['buckets'][str(bucket_key_1)]['calls'] = 999
+        cache[self.path]['schema_version'] = stats.STATS_SCHEMA_VERSION - 1
+        stats.save_cache(cache, self.cache_path)
+
+        self.compute(now=self.now)
+        cache2 = stats.load_cache(self.cache_path)
+        self.assertEqual(cache2[self.path]['schema_version'], stats.STATS_SCHEMA_VERSION)
+        self.assertEqual(cache2[self.path]['buckets'][str(bucket_key_1)]['calls'], 1)   # not 999: fully re-read
+
     def test_corrupted_entry_for_one_file_is_reread(self):
         self.compute(now=self.now)
         cache = stats.load_cache(self.cache_path)

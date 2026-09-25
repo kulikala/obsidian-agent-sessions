@@ -7,7 +7,7 @@ import unittest
 from unittest import mock
 
 from agentsessions.sessions import cache
-from agentsessions.sessions.scan import scan
+from agentsessions.sessions.scan import SCAN_SCHEMA_VERSION, scan
 
 ID1 = '11111111-1111-1111-1111-111111111111'
 
@@ -122,6 +122,21 @@ class TestScanUsesCache(unittest.TestCase):
         }}
         result = scan([self.path], cache=c)
         self.assertEqual(result[ID1].first_prompt, 'initial question')
+
+    def test_stale_schema_version_forces_reread_even_if_mtime_size_match(self):
+        """An upgrade that changes read_head_info's extraction logic must not
+        leave an old cache entry's already-extracted `head` sitting there
+        forever just because mtime/size still match -- see SCAN_SCHEMA_VERSION."""
+        st = os.stat(self.path)
+        c = {self.path: {
+            'mtime': st.st_mtime, 'size': st.st_size,
+            'schema_version': SCAN_SCHEMA_VERSION - 1,   # stale on purpose
+            'head': {'cwd': '/a', 'prompt': 'stale cached content', 'child': False},
+            'last_activity': None,
+        }}
+        result = scan([self.path], cache=c)
+        self.assertEqual(result[ID1].first_prompt, 'initial question')
+        self.assertEqual(c[self.path]['schema_version'], SCAN_SCHEMA_VERSION)
 
 
 if __name__ == '__main__':

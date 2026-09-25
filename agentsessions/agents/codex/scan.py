@@ -1,12 +1,14 @@
 """Enumerating and caching Codex rollout transcripts -- the codex analogue of
 `agentsessions.sessions.scan.scan`.
 
-Shares the same cache-entry shape (`path -> {mtime, size, head, last_activity}`)
-and the same `RACY_WINDOW` guard against coarse filesystem clocks (see
-`agentsessions.sessions.scan`'s module docstring) as the claude adapter, so both
-agents can share one `scan-cache.json` without collisions -- the path itself is
-the cache key, and a Codex rollout path never collides with a Claude transcript
-path.
+Shares the same cache-entry shape (`path -> {mtime, size, schema_version, head,
+last_activity}`) and the same `RACY_WINDOW` guard against coarse filesystem
+clocks (see `agentsessions.sessions.scan`'s module docstring) as the claude
+adapter, so both agents can share one `scan-cache.json` without collisions --
+the path itself is the cache key, and a Codex rollout path never collides with
+a Claude transcript path. `schema_version` (see `SCAN_SCHEMA_VERSION`, below) is
+codex's own, independent of claude's `SCAN_SCHEMA_VERSION` -- an entry with a
+stale or missing version is never trusted regardless of mtime/size.
 """
 import os
 import time
@@ -16,6 +18,15 @@ from ...sessions.model import Session
 from . import names as _names
 from . import rollout
 from .rollout import Head, RACY_WINDOW
+
+# Bumped whenever `rollout.read_head`'s extraction logic changes in a way that
+# would make an old cache entry's `head` wrong -- same mechanism and same
+# reasoning as `sessions.scan.SCAN_SCHEMA_VERSION`, versioned independently
+# since claude's and codex's extraction logic change on their own schedules.
+# 2: read_head switched from response_item role=user (which mixes in Codex's
+# own injected context) to event_msg.user_message, and started filtering bare
+# slash commands (see rollout.py's INJECTED_PREFIXES/is_real_user_text).
+SCAN_SCHEMA_VERSION = 2
 
 
 def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
@@ -42,7 +53,8 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
             st = os.stat(p)
             cached = cache.get(p) if cache is not None else None
             racy = (now - st.st_mtime) < RACY_WINDOW
-            if cached and not racy and cached.get('mtime') == st.st_mtime and cached.get('size') == st.st_size:
+            if cached and not racy and cached.get('mtime') == st.st_mtime and cached.get('size') == st.st_size \
+                    and cached.get('schema_version') == SCAN_SCHEMA_VERSION:
                 head_d = cached.get('head') or {}
                 h = Head(cwd=head_d.get('cwd', ''), prompt=head_d.get('prompt', ''),
                          child=bool(head_d.get('child')), source=head_d.get('source', ''))
@@ -54,6 +66,7 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
                     cache[p] = {
                         'mtime': st.st_mtime,
                         'size': st.st_size,
+                        'schema_version': SCAN_SCHEMA_VERSION,
                         'head': {'cwd': h.cwd, 'prompt': h.prompt, 'child': h.child, 'source': h.source},
                         'last_activity': last_activity,
                     }

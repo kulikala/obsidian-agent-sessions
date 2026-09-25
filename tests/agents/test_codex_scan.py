@@ -95,12 +95,29 @@ class TestCodexScan(unittest.TestCase):
         os.utime(p, (old_mtime, old_mtime))
         st = os.stat(p)
         cache = {p: {'mtime': st.st_mtime, 'size': st.st_size,
+                     'schema_version': scan.SCAN_SCHEMA_VERSION,
                      'head': {'cwd': '/cached/cwd', 'prompt': 'cached prompt', 'child': True, 'source': 'vscode'},
                      'last_activity': 12345.0}}
         result = scan.scan([p], cache=cache, home=self.home)
         self.assertEqual(result[ID1].cwd, '/cached/cwd')
         self.assertEqual(result[ID1].first_prompt, 'cached prompt')
         self.assertEqual(result[ID1].mtime, 12345.0)
+
+    def test_stale_schema_version_forces_a_fresh_read_not_the_cached_value(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [session_meta(ID1, '/work/one'), event_user_message('real prompt', '2026-09-24T01:30:31Z')])
+        st = os.stat(p)
+        old_mtime = st.st_mtime - 100
+        os.utime(p, (old_mtime, old_mtime))
+        st = os.stat(p)
+        cache = {p: {'mtime': st.st_mtime, 'size': st.st_size,
+                     'schema_version': scan.SCAN_SCHEMA_VERSION - 1,   # stale on purpose
+                     'head': {'cwd': '/stale/cwd', 'prompt': 'stale prompt', 'child': True, 'source': 'vscode'},
+                     'last_activity': 12345.0}}
+        result = scan.scan([p], cache=cache, home=self.home)
+        self.assertEqual(result[ID1].cwd, '/work/one')
+        self.assertEqual(result[ID1].first_prompt, 'real prompt')
+        self.assertEqual(cache[p]['schema_version'], scan.SCAN_SCHEMA_VERSION)   # re-written with the current version
 
     def test_codex_home_env_override(self):
         with mock.patch.dict(os.environ, {'CODEX_HOME': '/custom/codex/home'}):

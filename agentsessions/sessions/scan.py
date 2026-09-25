@@ -14,6 +14,15 @@ from .model import Session
 # If mtime is newer than this, don't trust a cached mtime/size match (see scan() below).
 RACY_WINDOW = 2.0
 
+# Bumped whenever this module's extraction logic changes in a way that would
+# make an old cache entry's `head` wrong (a new field read out of the
+# transcript, a changed filtering rule, ...). A cache entry whose
+# `schema_version` doesn't match is never trusted, regardless of mtime/size,
+# so upgrading agent-sessions itself can't leave stale extracted data sitting
+# in scan-cache.json forever (see agents/codex/scan.py's SCAN_SCHEMA_VERSION
+# for the same mechanism on the codex side, versioned independently).
+SCAN_SCHEMA_VERSION = 1
+
 UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
 TITLE_PATTERN = '^{"type": *"custom-title"'      # grep (BRE)
 TITLE_PATTERN_RG = r'^\{"type": ?"custom-title"'  # ripgrep / Python re (also valid BRE)
@@ -236,7 +245,8 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None) -> Dict[str,
             st = os.stat(p)
             cached = cache.get(p) if cache is not None else None
             racy = (now - st.st_mtime) < RACY_WINDOW
-            if cached and not racy and cached.get('mtime') == st.st_mtime and cached.get('size') == st.st_size:
+            if cached and not racy and cached.get('mtime') == st.st_mtime and cached.get('size') == st.st_size \
+                    and cached.get('schema_version') == SCAN_SCHEMA_VERSION:
                 head = cached.get('head') or {}
                 h = Head(cwd=head.get('cwd', ''), prompt=head.get('prompt', ''),
                          child=bool(head.get('child')))
@@ -248,6 +258,7 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None) -> Dict[str,
                     cache[p] = {
                         'mtime': st.st_mtime,
                         'size': st.st_size,
+                        'schema_version': SCAN_SCHEMA_VERSION,
                         'head': {'cwd': h.cwd, 'prompt': h.prompt, 'child': h.child},
                         'last_activity': last_activity,
                     }

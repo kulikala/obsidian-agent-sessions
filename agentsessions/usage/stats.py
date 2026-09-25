@@ -15,7 +15,10 @@ For each file, the read position (`offset`), 10-minute buckets, and the most rec
 `~/.agents/sessions/stats-cache.json`. Transcripts are append-only, so if a file has
 grown, only the part after `offset` is read; if it has shrunk, it's read from
 scratch. A corrupted cache (whether the whole file or a single entry) is discarded
-and rebuilt from scratch.
+and rebuilt from scratch -- same treatment as an entry whose `schema_version`
+doesn't match this module's `STATS_SCHEMA_VERSION` (see that constant's comment):
+an upgrade that changes how a bucket is computed can't leave stale-logic buckets
+sitting in the cache forever.
 """
 
 import glob
@@ -33,6 +36,19 @@ BUCKET_SECONDS = 600          # 10 minutes
 RECENT_IDS_LIMIT = 200
 FIVE_HOUR_SECONDS = 5 * 3600
 SEVEN_DAY_SECONDS = 7 * 24 * 3600
+
+# Bumped whenever this module's per-line bucket computation changes in a way
+# that would make an old cache entry's *already-computed* buckets wrong (a
+# changed field, a different cost formula, ...) -- unlike the offset/size
+# check, which only protects against re-reading lines already accounted for,
+# this protects against trusting old buckets computed by logic that no longer
+# matches this file's own logic. A mismatched (or missing, i.e. pre-versioning)
+# entry is treated as absent: a fresh read from offset 0, discarding the old
+# buckets rather than layering new ones on top of possibly-wrong old ones. Same
+# mechanism as sessions.scan.SCAN_SCHEMA_VERSION / agents.codex.scan.SCAN_SCHEMA_VERSION,
+# versioned independently since this cache's shape (incremental, offset-based)
+# is unrelated to theirs (whole-head, mtime/size-based).
+STATS_SCHEMA_VERSION = 1
 
 TOTAL_KEYS = ('calls', 'input', 'output', 'cache_read', 'cache_create')
 
@@ -217,9 +233,14 @@ def save_cache(cache: Dict[str, dict], path: str) -> None:
 
 
 def _load_entry(raw_entry) -> Optional[dict]:
-    """Returns `None` if the shape is malformed (wrong types), so the caller re-reads
-    from scratch."""
+    """Returns `None` if the shape is malformed (wrong types) or was computed by
+    a different `STATS_SCHEMA_VERSION` (including a pre-versioning entry, which
+    has no `schema_version` key at all) -- either way, the caller re-reads from
+    scratch rather than trusting buckets that may no longer match this module's
+    own logic."""
     if not isinstance(raw_entry, dict):
+        return None
+    if raw_entry.get('schema_version') != STATS_SCHEMA_VERSION:
         return None
     offset = raw_entry.get('offset')
     size = raw_entry.get('size')
@@ -265,7 +286,8 @@ def _update_file_buckets(path: str, raw_entry) -> dict:
     try:
         st = os.stat(path)
     except OSError:
-        return {'mtime': 0.0, 'size': 0, 'offset': 0, 'recent_ids': [], 'buckets': {}}
+        return {'mtime': 0.0, 'size': 0, 'offset': 0, 'recent_ids': [], 'buckets': {},
+                'schema_version': STATS_SCHEMA_VERSION}
     mtime, size = st.st_mtime, st.st_size
 
     loaded = _load_entry(raw_entry)
@@ -276,7 +298,8 @@ def _update_file_buckets(path: str, raw_entry) -> dict:
     elif loaded['size'] == size and loaded['mtime'] == mtime:
         # unchanged: skip opening the file
         return {'mtime': mtime, 'size': size, 'offset': loaded['offset'],
-                'recent_ids': loaded['recent_ids'], 'buckets': loaded['buckets']}
+                'recent_ids': loaded['recent_ids'], 'buckets': loaded['buckets'],
+                'schema_version': STATS_SCHEMA_VERSION}
     else:
         offset = loaded['offset']
         buckets = loaded['buckets']
@@ -330,7 +353,8 @@ def _update_file_buckets(path: str, raw_entry) -> dict:
         recent_ids = recent_ids[len(recent_ids) - RECENT_IDS_LIMIT:]
 
     return {'mtime': mtime, 'size': size, 'offset': new_offset,
-            'recent_ids': recent_ids, 'buckets': buckets}
+            'recent_ids': recent_ids, 'buckets': buckets,
+            'schema_version': STATS_SCHEMA_VERSION}
 
 
 # ---- Window totals -----------------------------------------------------------
