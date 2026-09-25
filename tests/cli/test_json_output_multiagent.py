@@ -108,10 +108,16 @@ class TestCodexDaemonRelabeling(unittest.TestCase):
             mock.patch.object(config, 'STORE_PATH', self.store_path),
             mock.patch.object(config, 'SOCK_PATH', self.sock_path),
             mock.patch.object(config, 'SESSIONS_DIR', self.sessions_dir),
+            # Same reason as JsonoutTestBase in test_json_output.py: don't let
+            # agents.enabled_agents() fall through to this machine's real ui.json.
+            mock.patch.object(config, 'UI_STATE_PATH', os.path.join(self.tmp, 'ui.json')),
         ]
         for p in self.patchers:
             p.start()
             self.addCleanup(p.stop)
+        old_agents_env = os.environ.pop('AGENT_SESSIONS_AGENTS', None)
+        if old_agents_env is not None:
+            self.addCleanup(os.environ.__setitem__, 'AGENT_SESSIONS_AGENTS', old_agents_env)
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)

@@ -40,10 +40,18 @@ class JsonoutTestBase(unittest.TestCase):
             mock.patch.object(config, 'STORE_PATH', self.store_path),
             mock.patch.object(config, 'CACHE_PATH', self.cache_path),
             mock.patch.object(config, 'SESSIONS_DIR', self.sessions_dir),
+            # Without this, agents.enabled_agents()'s ui.json fallback would read
+            # this *machine's* real ~/.agents/sessions/ui.json (written by a real
+            # plugin instance) instead of defaulting to ['claude'] -- these tests
+            # assume Claude-only unless a test explicitly overrides AGENT_SESSIONS_AGENTS.
+            mock.patch.object(config, 'UI_STATE_PATH', os.path.join(self.tmp, 'ui.json')),
         ]
         for p in self.patchers:
             p.start()
             self.addCleanup(p.stop)
+        old_agents_env = os.environ.pop('AGENT_SESSIONS_AGENTS', None)
+        if old_agents_env is not None:
+            self.addCleanup(os.environ.__setitem__, 'AGENT_SESSIONS_AGENTS', old_agents_env)
 
     def tearDown(self):
         shutil.rmtree(self.tmp, ignore_errors=True)

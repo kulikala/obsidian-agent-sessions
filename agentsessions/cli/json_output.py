@@ -280,8 +280,12 @@ def resolve_output(agent: str, pid: int, since: float, cwd: str) -> dict:
     if agent != 'codex':
         return {'thread': None, 'transcript': None}
     st = store.load(path=config.STORE_PATH)
-    already_linked = {v.get('thread') for v in st.sessions.values()
-                       if isinstance(v, dict) and isinstance(v.get('thread'), str)}
+    # A Codex link is keyed BY the thread id (`sessions[<thread_id>] =
+    # {"agent": "codex", "daemon": "<uuid>", ...}` -- see §3/§3.3 of design.md
+    # and `_codex_daemon_links`, above) -- so an already-linked thread id is the
+    # dict key itself, not a value field.
+    already_linked = {sid for sid, v in st.sessions.items()
+                       if isinstance(v, dict) and v.get('agent') == 'codex'}
     thread, transcript = codex_agent.resolve.resolve(pid, since, cwd, already_linked=already_linked)
     return {'thread': thread, 'transcript': transcript}
 
