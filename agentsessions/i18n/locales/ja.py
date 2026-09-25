@@ -46,6 +46,8 @@ MESSAGES = {
                                    '（手で直す）',
     'setup.keybindings_unreadable': 'keybindings.json を読めない: {error}',
     'setup.keybindings_broken': 'keybindings.json が壊れている（手で直す）: {path}',
+    'setup.config_toml_removed': 'config.toml: 自分の行を取り除いた: {path}',
+    'setup.config_toml_unreadable': 'config.toml を読めない: {error}',
 
     'cmd.needs_value': '{flag} には値が要ります',
     'cmd.no_changes': '変更なし',

@@ -54,6 +54,8 @@ MESSAGES = {
                                    '(value differs from ours; fix it by hand)',
     'setup.keybindings_unreadable': 'keybindings.json: could not read it: {error}',
     'setup.keybindings_broken': 'keybindings.json: malformed (fix it by hand): {path}',
+    'setup.config_toml_removed': 'config.toml: removed managed lines: {path}',
+    'setup.config_toml_unreadable': 'config.toml: could not read it: {error}',
 
     # cmd_setup.py
     'cmd.needs_value': '{flag} needs a value',
