@@ -6,10 +6,13 @@
 import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
 import type AgentSessionsPlugin from "../main";
 import { urgencyByGroupKey, type GroupUrgency } from "../sessions/attention";
+import type { Row } from "../sessions/index";
 import { stats, usage } from "../backend/backend";
 import { paletteHueDeg } from "../sessions/category";
 import { getLang, t } from "../i18n";
 import { NewSessionModal } from "../ui/modals";
+import { AGENT_ICON_ID } from "../ui/icons";
+import { AGENT_IDS, type AgentId } from "../settings";
 import {
 	managerStatusFilterLabelKey,
 	MANAGER_STATUS_FILTERS,
@@ -34,18 +37,20 @@ import {
 	isRealCategoryKey,
 	matchesStatusFilter,
 	moveSelection,
-	sessionCost,
+	sessionCostForRow,
 	shortModelName,
 	sortRows,
 	topCategoryTotals,
 	weeklyPace,
 	windowOf,
 	windowSummary,
+	windowsForAgent,
 	type CategoryTotal,
 	type ManagerRow,
 	type SortKey,
 } from "./manager-model";
 import {
+	AGENT_NAME_KEY,
 	categoryOf,
 	createRowActions,
 	formatRelativeTime,
@@ -76,7 +81,6 @@ export class ManagerView extends ItemView {
 	private plugin: AgentSessionsPlugin;
 
 	private wrapEl!: HTMLElement;
-	private statsBarEl!: HTMLElement;
 	private headEls: Partial<Record<SortKey, HTMLElement>> = {};
 	private tableBodyEl!: HTMLTableSectionElement;
 	private detailEl!: HTMLElement;
@@ -103,8 +107,18 @@ export class ManagerView extends ItemView {
 	};
 	/** Whether each group key has an asking/waiting row (rebuilt in `render()`). */
 	private groupUrgency: Map<string, GroupUrgency> = new Map();
-	/** The two per-category bars, 5-hour then 7-day (same left-to-right order as the stat cards above). */
-	private categoryBarEls: Partial<Record<"5h" | "7d", HTMLElement>> = {};
+	/**
+	 * The agents shown as separate analytics sections (T-104) — every enabled agent, falling
+	 * back to `["claude"]` alone if somehow none is (so there's always at least one section to
+	 * render into). Only actually split into headed sections when there's more than one;
+	 * with 0 or 1 it's today's single, headingless section. Rebuilt in `buildAnalysisSections`
+	 * (called from `buildSkeleton`, so a settings change re-splits/re-merges via the existing
+	 * full-skeleton rebuild `refreshLanguage` already does on `settings-changed`).
+	 */
+	private analysisAgents: AgentId[] = [];
+	private statsBarEls: Partial<Record<AgentId, HTMLElement>> = {};
+	/** The two per-category bars per agent section, 5-hour then 7-day (same left-to-right order as that section's stat cards above them). */
+	private categoryBarEls: Partial<Record<AgentId, Partial<Record<"5h" | "7d", HTMLElement>>>> = {};
 	/** Debounce timer for `terminal-status`. */
 	private statusRenderTimer: ReturnType<typeof setTimeout> | null = null;
 	/** The bottom analytics area (the usage bar plus the per-category bar). Clicking its heading
@@ -277,8 +291,7 @@ export class ManagerView extends ItemView {
 		this.analysisBodyEl = this.analysisEl.createDiv({ cls: "agent-sessions-manager-analysis-body" });
 		this.registerDomEvent(this.analysisBodyEl, "click", () => void this.refreshStatsFromClick());
 		setTooltip(this.analysisBodyEl, t("action.clickToRefresh"));
-		this.buildStatsBar();
-		this.buildCategoryBars();
+		this.buildAnalysisSections();
 
 		this.applyAnalysisHeight(this.plugin.settings.managerAnalysisHeight);
 		this.applyAnalysisCollapsed(this.plugin.settings.managerAnalysisCollapsed);
@@ -375,16 +388,59 @@ export class ManagerView extends ItemView {
 		}
 	}
 
-	/** The usage bar (5-hour and 7-day windows): usage bar, countdown, cost, tokens, call count, session count. */
-	private buildStatsBar(): void {
-		this.statsBarEl = this.analysisBodyEl.createDiv({ cls: "agent-sessions-manager-stats" });
+	/**
+	 * Builds one analytics section per agent in `analysisAgents` (T-104): a heading (icon+name)
+	 * when there's more than one, then that agent's own usage bar (5-hour/7-day cards) and
+	 * per-category bars. With 0 or 1 agent enabled, `analysisAgents` is a single-item array
+	 * (falling back to `["claude"]`), so this renders exactly one section with no heading —
+	 * unchanged from before T-104. Called from `buildSkeleton`, so a settings change re-splits
+	 * or re-merges the sections via the existing full-skeleton rebuild on `settings-changed`.
+	 */
+	private buildAnalysisSections(): void {
+		const enabled = AGENT_IDS.filter((id) => this.plugin.settings.agents[id].enabled);
+		this.analysisAgents = enabled.length > 0 ? enabled : ["claude"];
+		this.statsBarEls = {};
+		this.categoryBarEls = {};
+		const split = this.analysisAgents.length > 1;
+		for (const agent of this.analysisAgents) {
+			const sectionEl = this.analysisBodyEl.createDiv({ cls: "agent-sessions-manager-analysis-section" });
+			if (split) {
+				this.buildAgentSectionHeading(sectionEl, agent);
+			}
+			this.statsBarEls[agent] = sectionEl.createDiv({ cls: "agent-sessions-manager-stats" });
+			const catWrap = sectionEl.createDiv({ cls: "agent-sessions-manager-category-bars" });
+			this.categoryBarEls[agent] = {
+				"5h": catWrap.createDiv({ cls: "agent-sessions-manager-category-bar" }),
+				"7d": catWrap.createDiv({ cls: "agent-sessions-manager-category-bar" }),
+			};
+		}
 		this.renderStatsBar();
+		this.renderCategoryBars();
 	}
 
+	/** The agent-section heading: icon (`ui/icons.ts`, T-102) + display name — only shown when
+	 * more than one agent is enabled (`buildAnalysisSections`'s `split`). */
+	private buildAgentSectionHeading(container: HTMLElement, agent: AgentId): void {
+		const heading = container.createDiv({ cls: "agent-sessions-manager-analysis-agent-heading" });
+		const icon = AGENT_ICON_ID[agent];
+		if (icon) {
+			setIcon(heading.createSpan({ cls: "agent-sessions-manager-analysis-agent-icon" }), icon);
+		}
+		heading.createSpan({ text: t(AGENT_NAME_KEY[agent]) });
+	}
+
+	/** The usage bar (5-hour and 7-day windows) for every agent section: usage bar, countdown, cost, tokens, call count, session count. */
 	private renderStatsBar(): void {
-		this.statsBarEl.empty();
-		this.renderStatsCard(this.statsBarEl, t("stats.fiveHour"), this.statsResult?.windows.five_hour ?? null, false);
-		this.renderStatsCard(this.statsBarEl, t("stats.sevenDay"), this.statsResult?.windows.seven_day ?? null, true);
+		for (const agent of this.analysisAgents) {
+			const el = this.statsBarEls[agent];
+			if (!el) {
+				continue;
+			}
+			el.empty();
+			const windows = windowsForAgent(this.statsResult, agent);
+			this.renderStatsCard(el, t("stats.fiveHour"), windowOf(windows, "5h"), false);
+			this.renderStatsCard(el, t("stats.sevenDay"), windowOf(windows, "7d"), true);
+		}
 	}
 
 	/** "Resets in…" next to the card's heading, a labeled 2×2 grid below it. `showPace` is only
@@ -490,29 +546,25 @@ export class ManagerView extends ItemView {
 		setTooltip(cell, tooltip);
 	}
 
-	/** Below the usage bar: the "by category" horizontal bars — 5-hour then 7-day, side by side
-	 * when there's room and stacked when there isn't (each is `topCategoryTotals` up to 8 by cost). */
-	private buildCategoryBars(): void {
-		const wrap = this.analysisBodyEl.createDiv({ cls: "agent-sessions-manager-category-bars" });
-		this.categoryBarEls["5h"] = wrap.createDiv({ cls: "agent-sessions-manager-category-bar" });
-		this.categoryBarEls["7d"] = wrap.createDiv({ cls: "agent-sessions-manager-category-bar" });
-		this.renderCategoryBars();
-	}
-
+	/** Below each agent section's usage bar: the "by category" horizontal bars — 5-hour then
+	 * 7-day, side by side when there's room and stacked when there isn't (each is
+	 * `topCategoryTotals` up to 8 by cost) — counting only that agent's own sessions (T-104). */
 	private renderCategoryBars(): void {
-		this.renderCategoryBar("5h", t("stats.categoryBar.title5h"));
-		this.renderCategoryBar("7d", t("stats.categoryBar.title7d"));
+		for (const agent of this.analysisAgents) {
+			this.renderCategoryBar(agent, "5h", t("stats.categoryBar.title5h"));
+			this.renderCategoryBar(agent, "7d", t("stats.categoryBar.title7d"));
+		}
 	}
 
-	private renderCategoryBar(window: "5h" | "7d", title: string): void {
-		const el = this.categoryBarEls[window];
+	private renderCategoryBar(agent: AgentId, window: "5h" | "7d", title: string): void {
+		const el = this.categoryBarEls[agent]?.[window];
 		if (!el) {
 			return;
 		}
 		el.empty();
 		el.createDiv({ cls: "agent-sessions-manager-category-bar-title", text: title });
 
-		const allRows = [...this.plugin.index.sessions.values()];
+		const allRows = [...this.plugin.index.sessions.values()].filter((r) => r.agent === agent);
 		const totals = categoryTotals(allRows, this.statsResult, window);
 		// Categories with 0 cost (inactive in this window) aren't listed.
 		const top = topCategoryTotals(totals, CATEGORY_BAR_TOP_N);
@@ -521,7 +573,7 @@ export class ManagerView extends ItemView {
 			return;
 		}
 
-		const windowCost = windowOf(this.statsResult, window)?.total.cost ?? 0;
+		const windowCost = windowOf(windowsForAgent(this.statsResult, agent), window)?.total.cost ?? 0;
 		const maxCost = Math.max(...top.map((c) => c.cost), 0);
 		const list = el.createDiv({ cls: "agent-sessions-manager-category-bar-list" });
 		for (const entry of top) {
@@ -816,8 +868,8 @@ export class ManagerView extends ItemView {
 		const statusInfo = this.plugin.index.statusline.get(row.id);
 		this.renderShortValueCell(tr, "agent-sessions-manager-col-model", shortModelName(statusInfo?.model ?? null), statusInfo?.model ?? null);
 		this.renderShortValueCell(tr, "agent-sessions-manager-col-effort", statusInfo?.effort ?? "", statusInfo?.effort ?? null);
-		this.renderCostCell(tr, "agent-sessions-manager-col-5h", this.statsResult?.windows.five_hour, row.id);
-		this.renderCostCell(tr, "agent-sessions-manager-col-7d", this.statsResult?.windows.seven_day, row.id);
+		this.renderCostCell(tr, "agent-sessions-manager-col-5h", row, "5h");
+		this.renderCostCell(tr, "agent-sessions-manager-col-7d", row, "7d");
 		tr.createEl("td", { cls: "agent-sessions-manager-col-folder", text: row.folder });
 
 		const menuTd = tr.createEl("td", { cls: "agent-sessions-manager-col-menu" });
@@ -839,9 +891,11 @@ export class ManagerView extends ItemView {
 		return tr;
 	}
 
-	/** One 5h/7d column cell: blank if that session had no usage within the window. */
-	private renderCostCell(tr: HTMLTableRowElement, cls: string, window: StatsWindow | undefined, id: string): void {
-		const cost = sessionCost(window ?? null, id);
+	/** One 5h/7d column cell: blank if that session had no usage within the window. Looks up
+	 * `row`'s own agent's windows (`sessionCostForRow`) — a mixed-agent table still attributes
+	 * each row's cost to the right agent's data (T-104). */
+	private renderCostCell(tr: HTMLTableRowElement, cls: string, row: Row, key: "5h" | "7d"): void {
+		const cost = sessionCostForRow(this.statsResult, row, key);
 		tr.createEl("td", {
 			cls: `${cls} agent-sessions-manager-col-num`,
 			text: cost != null ? formatCost(cost) : "",

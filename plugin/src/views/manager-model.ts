@@ -6,7 +6,7 @@ import type { Row } from "../sessions/index";
 import { t, type Lang } from "../i18n";
 import { statusGroup, type ManagerStatusFilter, type TerminalStatus } from "../sessions/terminal-status";
 import { OTHER_GROUP, splitName, type ManagerTree } from "../sessions/tree";
-import type { StatsResult, StatsWindow } from "../types";
+import type { StatsResult, StatsWindow, StatsWindows } from "../types";
 
 /** A special group key that's never foldable (the archive heading). */
 export const ARCHIVED_GROUP = "__archived__";
@@ -116,12 +116,34 @@ export function sessionCost(window: StatsWindow | null | undefined, id: string):
 	return entry ? entry.cost : null;
 }
 
-/** The `StatsWindow` for `key` ("5h" → `five_hour`, "7d" → `seven_day`), or `null` if `stats` itself is. */
-export function windowOf(stats: StatsResult | null, key: "5h" | "7d"): StatsWindow | null {
+/** The `StatsWindow` for `key` ("5h" → `five_hour`, "7d" → `seven_day`) within `windows`, or
+ * `null` if `windows` itself is. */
+export function windowOf(windows: StatsWindows | null, key: "5h" | "7d"): StatsWindow | null {
+	if (!windows) {
+		return null;
+	}
+	return key === "5h" ? windows.five_hour : windows.seven_day;
+}
+
+/**
+ * `stats`'s windows for `agent` (T-103/T-104) — its own `agents.<agent>.windows` if present,
+ * falling back to the legacy top-level `windows` only for Claude (backward compat with a
+ * pre-T-103 Python build, which never has `agents` at all). `null` if there's nothing for that
+ * agent yet (`stats` itself not fetched yet, or an agent with no `agents` entry — e.g. it isn't
+ * currently enabled, though in practice every row's own agent is always an enabled one, since
+ * `json scan`/`live` only ever return sessions for agents in `AGENT_SESSIONS_AGENTS`).
+ */
+export function windowsForAgent(stats: StatsResult | null, agent: string): StatsWindows | null {
 	if (!stats) {
 		return null;
 	}
-	return key === "5h" ? stats.windows.five_hour : stats.windows.seven_day;
+	return stats.agents?.[agent]?.windows ?? (agent === "claude" ? stats.windows : null);
+}
+
+/** `row`'s cost within `window`, from its own agent's windows in `stats` (`windowsForAgent`) —
+ * so a mixed-agent row list still attributes each row's cost to the right agent's data. */
+export function sessionCostForRow(stats: StatsResult | null, row: Row, window: "5h" | "7d"): number | null {
+	return sessionCost(windowOf(windowsForAgent(stats, row.agent), window), row.id);
 }
 
 /**
@@ -134,10 +156,9 @@ export function sortRows(rows: ManagerRow[], key: SortKey, stats: StatsResult | 
 	if (key === "updated") {
 		return rows;
 	}
-	const window = windowOf(stats, key);
 	const sessions = rows.filter((r): r is Extract<ManagerRow, { kind: "session" }> => r.kind === "session");
 	return sessions
-		.map((r) => ({ row: r, cost: sessionCost(window, r.row.id) }))
+		.map((r) => ({ row: r, cost: sessionCostForRow(stats, r.row, key) }))
 		.sort((a, b) => {
 			if (a.cost === null && b.cost === null) {
 				return 0;
@@ -200,7 +221,6 @@ export interface CategoryTotal {
  * `buildManagerTree` uses for `active`/`unnamedOthers`).
  */
 export function categoryTotals(rows: Row[], stats: StatsResult | null, window: "5h" | "7d"): CategoryTotal[] {
-	const w = windowOf(stats, window);
 	const buckets = new Map<string, CategoryTotal>();
 	for (const row of rows) {
 		if (row.archived || (!row.name && row.child)) {
@@ -209,7 +229,7 @@ export function categoryTotals(rows: Row[], stats: StatsResult | null, window: "
 		const key = categoryKeyOf(row);
 		const label = key === OTHER_GROUP ? t("category.other") : key;
 		const bucket = buckets.get(key) ?? { key, label, cost: 0, count: 0 };
-		bucket.cost += sessionCost(w, row.id) ?? 0;
+		bucket.cost += sessionCostForRow(stats, row, window) ?? 0;
 		bucket.count += 1;
 		buckets.set(key, bucket);
 	}

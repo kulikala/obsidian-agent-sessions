@@ -113,7 +113,7 @@ export class SideView extends ItemView {
 		this.applyDetailHeight(this.plugin.settings.sideDetailHeight);
 
 		this.limitsHostEl = this.contentEl.createDiv({ cls: "agent-sessions-limits-host" });
-		this.limitsView = new LimitsView(this.limitsHostEl, this.plugin.index.statusline.dir);
+		this.limitsView = new LimitsView(this.limitsHostEl, this.plugin);
 	}
 
 	private buildNav(): void {
@@ -127,7 +127,8 @@ export class SideView extends ItemView {
 		this.navButtons.more = moreBtn;
 	}
 
-	/** When the language changes: redraws the nav's tooltips, the list, and the detail pane. */
+	/** When the language or agent settings change: redraws the nav's tooltips, the list, the
+	 * detail pane, and (T-104) rebuilds the rate-limit rows if the enabled-agent set changed. */
 	private refreshLanguage(): void {
 		if (this.navButtons.newSession) {
 			setTooltip(this.navButtons.newSession, t("action.newSession"));
@@ -138,6 +139,7 @@ export class SideView extends ItemView {
 		if (this.navButtons.more) {
 			setTooltip(this.navButtons.more, t("action.more"));
 		}
+		this.limitsView.refreshAgents();
 		this.render();
 	}
 

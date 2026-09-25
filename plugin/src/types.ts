@@ -138,7 +138,10 @@ export interface UsageResult {
 	to: number | null;
 }
 
-/** One window/session usage summary from `json stats`. */
+/** One window/session usage summary from `json stats`. `unknown_cost` (T-103/T-104): true when
+ * this total/entry includes a call from a model not in the price table (Codex only for now —
+ * Claude's is always false) — `cost` is then a floor, not the true total, the same convention as
+ * `json usage`'s per-turn `unknown_cost`. */
 export interface StatsUsage {
 	calls: number;
 	input: number;
@@ -146,9 +149,13 @@ export interface StatsUsage {
 	cache_read: number;
 	cache_create: number;
 	cost: number;
+	unknown_cost: boolean;
 }
 
-/** One window (5-hour or 7-day) from `json stats`. `start`/`end` are epoch seconds. */
+/** One window (5-hour or 7-day) from `json stats`. `start`/`end` are epoch seconds.
+ * `used_percentage` can be `null` — not just while data hasn't arrived yet (Claude's existing
+ * "no status/*.json yet" case), but permanently for a Codex account on a plan that doesn't track
+ * 5h/7d rate limits at all (T-103/T-104's confirmed real-world case). */
 export interface StatsWindow {
 	start: number;
 	end: number;
@@ -157,10 +164,17 @@ export interface StatsWindow {
 	sessions: Record<string, StatsUsage>;
 }
 
-/** The full output of `json stats`. */
+/** A `{five_hour, seven_day}` pair — one agent's windows, or the (Claude-only) top-level ones. */
+export interface StatsWindows {
+	five_hour: StatsWindow;
+	seven_day: StatsWindow;
+}
+
+/** The full output of `json stats`. `windows` is always present (Claude's own, unconditionally —
+ * kept for backward compat even once `agents` is read instead, per lnx-py). `agents` (T-103/
+ * T-104) has an entry only for a currently-enabled agent, each with the identical `StatsWindows`
+ * shape as the top-level `windows` — `agents.claude.windows` duplicates the top-level content. */
 export interface StatsResult {
-	windows: {
-		five_hour: StatsWindow;
-		seven_day: StatsWindow;
-	};
+	windows: StatsWindows;
+	agents?: Record<string, { windows: StatsWindows }>;
 }

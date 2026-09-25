@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setLang } from "../../src/i18n";
 import type { Row } from "../../src/sessions/index";
 import { OTHER_GROUP, type ManagerTree } from "../../src/sessions/tree";
-import type { StatsResult, StatsUsage, StatsWindow } from "../../src/types";
+import type { StatsResult, StatsUsage, StatsWindow, StatsWindows } from "../../src/types";
 import {
 	ARCHIVED_GROUP,
 	categoryKeyOf,
@@ -13,11 +13,14 @@ import {
 	matchesStatusFilter,
 	moveSelection,
 	sessionCost,
+	sessionCostForRow,
 	shortModelName,
 	sortRows,
 	topCategoryTotals,
 	weeklyPace,
+	windowOf,
 	windowSummary,
+	windowsForAgent,
 	type CategoryTotal,
 	type ManagerRow,
 } from "../../src/views/manager-model";
@@ -155,8 +158,8 @@ describe("moveSelection", () => {
 	});
 });
 
-function usage(cost: number): StatsUsage {
-	return { calls: 1, input: 0, output: 0, cache_read: 0, cache_create: 0, cost };
+function usage(cost: number, unknownCost = false): StatsUsage {
+	return { calls: 1, input: 0, output: 0, cache_read: 0, cache_create: 0, cost, unknown_cost: unknownCost };
 }
 
 function statsWindow(overrides: Partial<StatsWindow> = {}): StatsWindow {
@@ -164,10 +167,14 @@ function statsWindow(overrides: Partial<StatsWindow> = {}): StatsWindow {
 		start: 0,
 		end: 100,
 		used_percentage: null,
-		total: { calls: 0, input: 0, output: 0, cache_read: 0, cache_create: 0, cost: 0 },
+		total: { calls: 0, input: 0, output: 0, cache_read: 0, cache_create: 0, cost: 0, unknown_cost: false },
 		sessions: {},
 		...overrides,
 	};
+}
+
+function statsWindows(overrides: Partial<StatsWindows> = {}): StatsWindows {
+	return { five_hour: statsWindow(), seven_day: statsWindow(), ...overrides };
 }
 
 describe("sessionCost", () => {
@@ -183,6 +190,69 @@ describe("sessionCost", () => {
 	it("returns the cost when it's there", () => {
 		const w = statsWindow({ sessions: { "1": usage(2.5) } });
 		expect(sessionCost(w, "1")).toBe(2.5);
+	});
+});
+
+describe("windowOf", () => {
+	it("returns null when windows itself is", () => {
+		expect(windowOf(null, "5h")).toBeNull();
+	});
+
+	it("picks five_hour/seven_day by key", () => {
+		const fiveHour = statsWindow({ start: 1 });
+		const sevenDay = statsWindow({ start: 2 });
+		const windows = statsWindows({ five_hour: fiveHour, seven_day: sevenDay });
+		expect(windowOf(windows, "5h")).toBe(fiveHour);
+		expect(windowOf(windows, "7d")).toBe(sevenDay);
+	});
+});
+
+describe("windowsForAgent (T-103/T-104: per-agent windows, with Claude's legacy top-level fallback)", () => {
+	it("returns null when stats itself is", () => {
+		expect(windowsForAgent(null, "claude")).toBeNull();
+	});
+
+	it("prefers agents.<agent>.windows when present", () => {
+		const claudeWindows = statsWindows();
+		const codexWindows = statsWindows({ five_hour: statsWindow({ start: 99 }) });
+		const stats: StatsResult = {
+			windows: statsWindows(),
+			agents: { claude: { windows: claudeWindows }, codex: { windows: codexWindows } },
+		};
+		expect(windowsForAgent(stats, "claude")).toBe(claudeWindows);
+		expect(windowsForAgent(stats, "codex")).toBe(codexWindows);
+	});
+
+	it("falls back to the top-level windows for claude when agents is absent (pre-T-103 shape)", () => {
+		const topLevel = statsWindows();
+		const stats: StatsResult = { windows: topLevel };
+		expect(windowsForAgent(stats, "claude")).toBe(topLevel);
+	});
+
+	it("is null for a non-claude agent with no agents entry (no legacy fallback exists for it)", () => {
+		const stats: StatsResult = { windows: statsWindows() };
+		expect(windowsForAgent(stats, "codex")).toBeNull();
+	});
+});
+
+describe("sessionCostForRow (T-104: a row's cost comes from its own agent's windows)", () => {
+	it("attributes each row's cost to its own agent, not a shared window", () => {
+		const stats: StatsResult = {
+			windows: statsWindows(),
+			agents: {
+				claude: { windows: statsWindows({ five_hour: statsWindow({ sessions: { "1": usage(5) } }) }) },
+				codex: { windows: statsWindows({ five_hour: statsWindow({ sessions: { "1": usage(9) } }) }) },
+			},
+		};
+		// Same session id under both agents (ids aren't guaranteed unique across agents in this
+		// fixture) — each row's own `agent` field picks the right one.
+		expect(sessionCostForRow(stats, row({ id: "1", agent: "claude" }), "5h")).toBe(5);
+		expect(sessionCostForRow(stats, row({ id: "1", agent: "codex" }), "5h")).toBe(9);
+	});
+
+	it("is null when that agent has nothing for this window", () => {
+		const stats: StatsResult = { windows: statsWindows() };
+		expect(sessionCostForRow(stats, row({ id: "1", agent: "codex" }), "5h")).toBeNull();
 	});
 });
 
@@ -227,7 +297,7 @@ describe("sortRows", () => {
 describe("windowSummary", () => {
 	it("tokens are input + output + cache read + cache create; session count is the key count of sessions", () => {
 		const w = statsWindow({
-			total: { calls: 3, input: 10, output: 20, cache_read: 5, cache_create: 1, cost: 1.23 },
+			total: { calls: 3, input: 10, output: 20, cache_read: 5, cache_create: 1, cost: 1.23, unknown_cost: false },
 			sessions: { a: usage(1), b: usage(2) },
 		});
 		expect(windowSummary(w)).toEqual({ tokens: 36, sessionCount: 2 });
@@ -306,6 +376,22 @@ describe("categoryTotals", () => {
 	it("cost is 0 when the window has no usage", () => {
 		const rows: Row[] = [row({ id: "1", name: "RIM: Meeting notes" })];
 		expect(categoryTotals(rows, null, "5h")).toEqual([{ key: "RIM", label: "RIM", cost: 0, count: 1 }]);
+	});
+
+	it("attributes a mixed-agent row list's costs to each row's own agent (T-104)", () => {
+		const rows: Row[] = [
+			row({ id: "1", agent: "claude", name: "RIM: Claude session" }),
+			row({ id: "1", agent: "codex", name: "RIM: Codex session" }),
+		];
+		const stats: StatsResult = {
+			windows: statsWindows(),
+			agents: {
+				claude: { windows: statsWindows({ seven_day: statsWindow({ sessions: { "1": usage(2) } }) }) },
+				codex: { windows: statsWindows({ seven_day: statsWindow({ sessions: { "1": usage(7) } }) }) },
+			},
+		};
+		const totals = categoryTotals(rows, stats, "7d");
+		expect(totals).toEqual([{ key: "RIM", label: "RIM", cost: 9, count: 2 }]);
 	});
 });
 

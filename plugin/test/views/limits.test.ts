@@ -4,10 +4,23 @@ import {
 	FIVE_HOUR_SECONDS,
 	SEVEN_DAY_SECONDS,
 	formatCountdown,
+	fromStatsWindow,
 	pickLatestLimits,
 	rollForwardWindow,
 	type RawLimitsFile,
 } from "../../src/views/limits";
+import type { StatsWindow } from "../../src/types";
+
+function statsWindow(overrides: Partial<StatsWindow> = {}): StatsWindow {
+	return {
+		start: 0,
+		end: 100,
+		used_percentage: null,
+		total: { calls: 0, input: 0, output: 0, cache_read: 0, cache_create: 0, cost: 0, unknown_cost: false },
+		sessions: {},
+		...overrides,
+	};
+}
 
 describe("pickLatestLimits", () => {
 	it("takes five_hour and seven_day from the file with the latest mtime that has rate_limits", () => {
@@ -91,6 +104,22 @@ describe("rollForwardWindow", () => {
 
 	it("stays null when the window itself is null", () => {
 		expect(rollForwardWindow(null, FIVE_HOUR_SECONDS, 1_700_000_000)).toBeNull();
+	});
+});
+
+describe("fromStatsWindow (T-103/T-104: a json stats StatsWindow, e.g. agents.codex.windows, converted to the same shape as the file-based path)", () => {
+	it("is null when the window itself is", () => {
+		expect(fromStatsWindow(null)).toBeNull();
+	});
+
+	it("maps used_percentage as-is and end to resetsAt", () => {
+		const w = statsWindow({ end: 12345, used_percentage: 42 });
+		expect(fromStatsWindow(w)).toEqual({ usedPercentage: 42, resetsAt: 12345 });
+	});
+
+	it("carries a null used_percentage through as-is (a real case: some Codex accounts track no 5h/7d quota at all) rather than dropping the whole window", () => {
+		const w = statsWindow({ end: 12345, used_percentage: null });
+		expect(fromStatsWindow(w)).toEqual({ usedPercentage: null, resetsAt: 12345 });
 	});
 });
 
