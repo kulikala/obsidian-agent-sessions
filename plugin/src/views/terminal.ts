@@ -29,6 +29,7 @@ import { RenameSessionModal } from "../ui/modals";
 import { sessionDisplayName } from "../sessions/name";
 import { VIEW_TYPE_TERMINAL } from "../sessions/open-session";
 import { asAgentId, parseEnvLines, type Padding } from "../settings";
+import { classifyCodexTitleStatus, type CodexTitleStatus } from "../sessions/codex-title-status";
 import {
 	ALL_TERMINAL_STATUSES,
 	statusTooltip,
@@ -128,6 +129,10 @@ export class TerminalView extends ItemView {
 	private earlyOutput = "";
 
 	private waiting = false;
+	/** Codex only (T-108) — the most recent classification of Codex's own OSC-0 terminal title
+	 * (`classifyCodexTitleStatus`, updated live by `onTitleChange` in `onOpen()`). `null` for
+	 * Claude always, and for Codex whenever the title carries neither of Codex's own markers. */
+	private titleStatus: CodexTitleStatus = null;
 	/** The session's own real name (`Row.name`), never the fallback chain — used as-is for
 	 * pre-filling "Rename" (T-106). `getDisplayText()` runs it (and `label`) through
 	 * `sessionDisplayName` for the actual tab title. */
@@ -295,10 +300,24 @@ export class TerminalView extends ItemView {
 				void this.client.resize(cols, rows).catch(() => undefined);
 			}
 		});
+		// Codex only (T-108): Codex writes its own status (busy/blocked-on-input) into the OSC-0
+		// terminal title, live — reading it back here is a far more immediate signal than waiting
+		// for the daemon's next rollout-tail poll. No-op for every other agent.
+		const onTitleChange = this.terminal.onTitleChange((title) => {
+			if (this.agent !== "codex") {
+				return;
+			}
+			const next = classifyCodexTitleStatus(title);
+			if (next !== this.titleStatus) {
+				this.titleStatus = next;
+				this.updateIcon();
+			}
+		});
 		this.register(() => {
 			onData.dispose();
 			onBinary.dispose();
 			onResize.dispose();
+			onTitleChange.dispose();
 		});
 
 		const ro = new ResizeObserver((entries) => {
@@ -1238,6 +1257,7 @@ export class TerminalView extends ItemView {
 			waiting: this.waiting,
 			compacted: this.plugin.index.compactedTracker.has(this.id),
 			attached: this.attached,
+			titleStatus: this.titleStatus,
 		});
 	}
 

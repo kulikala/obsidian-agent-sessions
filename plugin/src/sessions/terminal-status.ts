@@ -38,6 +38,14 @@ export interface TerminalStatusInput {
 	/** After `busy→idle`, this tab still hasn't been brought to front (distinct from claude's own `waiting` above). */
 	waiting: boolean;
 	/**
+	 * Codex only (T-108) — classified from its own OSC-0 terminal title (`classifyCodexTitleStatus`,
+	 * read live via xterm's `onTitleChange`), a far more immediate signal than the daemon's own
+	 * rollout-tail-based `registryStatus` for this agent. `null`/`undefined` for Claude always
+	 * (it has no equivalent), and for Codex whenever the title carries neither marker — in which
+	 * case `registryStatus` alone decides, same as before this field existed.
+	 */
+	titleStatus?: "working" | "asking" | null;
+	/**
 	 * Right after a compact (manual `/compact` or automatic context compaction), before the next
 	 * instruction has been sent (`CompactedTracker`). Kept as its own state rather than folded
 	 * into "waiting for input" (`waiting`), since the context having just been reset is a
@@ -48,7 +56,9 @@ export interface TerminalStatusInput {
 	attached: boolean;
 }
 
-/** Priority order: error > exited > asking > editing > connecting > running-shell > working > waiting > compacted > detached > idle. */
+/** Priority order: error > exited > asking (registry `waiting` or Codex's own `titleStatus`) >
+ * editing > connecting > running-shell > working (registry `busy` or Codex's own `titleStatus`) >
+ * waiting > compacted > detached > idle. */
 export function terminalStatus(input: TerminalStatusInput): TerminalStatus {
 	if (input.error) {
 		return "error";
@@ -56,7 +66,7 @@ export function terminalStatus(input: TerminalStatusInput): TerminalStatus {
 	if (input.exited) {
 		return "exited";
 	}
-	if (input.registryStatus === "waiting") {
+	if (input.registryStatus === "waiting" || input.titleStatus === "asking") {
 		return "asking";
 	}
 	if (input.editing) {
@@ -68,7 +78,7 @@ export function terminalStatus(input: TerminalStatusInput): TerminalStatus {
 	if (input.registryStatus === "shell") {
 		return "running-shell";
 	}
-	if (input.registryStatus === "busy") {
+	if (input.registryStatus === "busy" || input.titleStatus === "working") {
 		return "working";
 	}
 	if (input.waiting) {

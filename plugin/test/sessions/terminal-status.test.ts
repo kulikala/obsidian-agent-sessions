@@ -86,6 +86,23 @@ describe("terminalStatus", () => {
 		expect(terminalStatus(input({ registryStatus: "shell" }))).toBe("running-shell");
 	});
 
+	it("is working when Codex's own titleStatus says working, even with no registryStatus (T-108)", () => {
+		expect(terminalStatus(input({ registryStatus: null, titleStatus: "working" }))).toBe("working");
+	});
+
+	it("is asking when Codex's own titleStatus says asking, even with no registryStatus (T-108)", () => {
+		expect(terminalStatus(input({ registryStatus: null, titleStatus: "asking" }))).toBe("asking");
+	});
+
+	it("titleStatus asking outranks registryStatus busy (T-108 — asking is still the higher-priority state)", () => {
+		expect(terminalStatus(input({ registryStatus: "busy", titleStatus: "asking" }))).toBe("asking");
+	});
+
+	it("registryStatus waiting still wins even when titleStatus is undefined/null (Claude, unaffected by T-108)", () => {
+		expect(terminalStatus(input({ registryStatus: "waiting", titleStatus: null }))).toBe("asking");
+		expect(terminalStatus(input({ registryStatus: "waiting" }))).toBe("asking");
+	});
+
 	it("is connecting while attach/start is in progress", () => {
 		expect(terminalStatus(input({ connecting: true }))).toBe("connecting");
 	});
