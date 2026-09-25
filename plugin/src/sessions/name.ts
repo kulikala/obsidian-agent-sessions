@@ -106,6 +106,30 @@ export function tokenizeNameInput(text: string): NameInputToken | null {
 	return null;
 }
 
+export interface ChipFieldState {
+	category: string;
+	name: string;
+}
+
+/**
+ * The result of editing a category chip in place (T-112, `ui/modals.ts`'s `beginEditChip`),
+ * applied to the field's existing state. `result === null` means the edit was canceled
+ * (Escape, or the dialog closing mid-edit) — the state comes back completely unchanged, not even
+ * re-trimmed. Otherwise `result` becomes the new category (trimmed; an empty string removes it
+ * entirely, same as clearing it with the chip's own "×"). **`name` always passes through
+ * unchanged, in every case** — this is what actually fixes the reported bug (clicking a chip used
+ * to discard whatever was in the name field, since the old click handler dumped the category's
+ * own text into that same input). Called from both `buildComposedNameField`'s chip and
+ * `MoveToCategoryModal`'s, so this one function is what keeps that guarantee true everywhere a
+ * chip can be edited, not just something asserted independently in each caller.
+ */
+export function applyChipEditResult(state: ChipFieldState, result: string | null): ChipFieldState {
+	if (result === null) {
+		return state;
+	}
+	return { category: result.trim(), name: state.name };
+}
+
 /**
  * Suggestions while typing a category: case-insensitive prefix matches first (in their original
  * order), then case-insensitive substring matches that aren't already a prefix match (also in

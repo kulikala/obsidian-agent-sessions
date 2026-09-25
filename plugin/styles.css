@@ -433,9 +433,16 @@
 	background-color: var(--background-modifier-hover);
 }
 
-.agent-sessions-manager-row.is-selected {
-	background-color: var(--background-modifier-hover);
-	box-shadow: inset 2px 0 0 var(--text-accent);
+/* T-112: matches the side panel's own frontmost-row treatment (a distinct "active" background,
+   not the same one `:hover` uses, plus an accent bar) — applied to `<td>` rather than `<tr>`,
+   same reason as asking/waiting below: with `border-collapse: collapse`, a `<tr>`'s own
+   background/border don't render reliably. */
+.agent-sessions-manager-row.is-selected td {
+	background-color: var(--background-modifier-active-hover);
+}
+
+.agent-sessions-manager-row.is-selected td:first-child {
+	box-shadow: inset 2px 0 0 var(--interactive-accent);
 }
 
 .agent-sessions-manager-row.is-archived {
@@ -458,6 +465,14 @@
 
 .agent-sessions-manager-row.is-waiting td {
 	background-color: hsl(30 80% 50% / 0.1);
+}
+
+/* When a selected row is also asking/waiting (T-112), the state's own background/border (above,
+   later in source order, so it wins) stays primary; selection still shows as a thin accent ring
+   around the first cell instead of competing for the same background/border. */
+.agent-sessions-manager-row.is-selected.is-asking td:first-child,
+.agent-sessions-manager-row.is-selected.is-waiting td:first-child {
+	box-shadow: inset 0 0 0 1px var(--interactive-accent);
 }
 
 /* The small asking/waiting marker on a group heading. Sized to line up with the count. */
@@ -837,8 +852,14 @@
 	background-color: var(--background-modifier-hover);
 }
 
+/* T-112: bold alone was too easy to miss — a background (a theme "active" variant, readable on
+   both light and dark) and a left accent bar make the frontmost tab's row stand out at a glance,
+   not just on close reading. */
 .agent-sessions-row.is-front {
 	font-weight: var(--font-bold);
+	background-color: var(--background-modifier-active-hover);
+	border-left: 3px solid var(--interactive-accent);
+	padding-left: calc(var(--size-4-3) - 3px);
 }
 
 .agent-sessions-row.is-indented {
@@ -864,6 +885,15 @@
 
 .agent-sessions-row.is-waiting {
 	background-color: hsl(30 80% 50% / 0.1);
+}
+
+/* When the frontmost tab's row is also asking/waiting (T-112), the state's own background and
+   left border (above, declared later so they win the cascade) stay as the primary signal — color
+   means urgency, not frontness. Frontness still shows, as a thin accent ring around the whole
+   row, so neither is lost when both apply at once. */
+.agent-sessions-row.is-front.is-asking,
+.agent-sessions-row.is-front.is-waiting {
+	box-shadow: inset 0 0 0 1px var(--interactive-accent);
 }
 
 /* The status icon (the same lucide icon as the tab header, via `setIcon`; this used to be a
@@ -1592,6 +1622,15 @@
 	margin: 0;
 }
 
+/* The chip's own click-to-edit-in-place replacement (T-112) — sized to its own content (a `size`
+   attribute set in JS) rather than growing to fill the row like the main name input next to it,
+   so it still reads as "this one chip became editable" rather than a second full-width field. */
+.agent-sessions-name-chip-edit {
+	flex: 0 1 auto;
+	min-width: 4em;
+	max-width: 14em;
+}
+
 /* Category suggestions (candidates from existing categories, shown with a chip; only shown before
    a category is confirmed). `position: fixed`, appended to <body> rather than the input it
    belongs to (T-104(e)) — these dialogs are Obsidian `Modal`s, whose own chrome (`.modal`) clips
@@ -1625,12 +1664,6 @@
 .agent-sessions-name-suggest-item.is-active,
 .agent-sessions-name-suggest-item:hover {
 	background-color: var(--background-modifier-hover);
-}
-
-.agent-sessions-name-suggest-item-label {
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
 }
 
 .agent-sessions-exit {

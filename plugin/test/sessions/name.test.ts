@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { setLang } from "../../src/i18n";
 import {
+	applyChipEditResult,
 	categorizableLabel,
 	composeName,
 	filterCategories,
@@ -9,6 +10,44 @@ import {
 	tokenizeNameInput,
 } from "../../src/sessions/name";
 import { splitName } from "../../src/sessions/tree";
+
+describe("applyChipEditResult (T-112: editing a category chip in place never discards the name)", () => {
+	it("replaces the category with the confirmed result, trimmed, leaving name untouched", () => {
+		expect(applyChipEditResult({ category: "old", name: "セッション管理" }, "  new  ")).toEqual({
+			category: "new",
+			name: "セッション管理",
+		});
+	});
+
+	it("removes the category when the result is an empty string, still leaving name untouched", () => {
+		expect(applyChipEditResult({ category: "old", name: "セッション管理" }, "")).toEqual({
+			category: "",
+			name: "セッション管理",
+		});
+		expect(applyChipEditResult({ category: "old", name: "セッション管理" }, "   ")).toEqual({
+			category: "",
+			name: "セッション管理",
+		});
+	});
+
+	it("a canceled edit (result: null) returns the state completely unchanged, not even re-trimmed", () => {
+		const state = { category: "old", name: "セッション管理" };
+		expect(applyChipEditResult(state, null)).toBe(state);
+	});
+
+	it("never touches name even when name is empty (the New Session dialog's typical starting state)", () => {
+		expect(applyChipEditResult({ category: "old", name: "" }, "new")).toEqual({ category: "new", name: "" });
+	});
+
+	it("regression pin for the reported bug: name is never replaced by the category text, whatever it is", () => {
+		// Before the fix, clicking the chip set the shared input's value to the category's own
+		// text directly, discarding a real session name like this one.
+		const before = { category: "Skill dev", name: "Session management" };
+		const after = applyChipEditResult(before, "Different category");
+		expect(after.name).toBe("Session management");
+		expect(after.name).not.toBe("Different category");
+	});
+});
 
 describe("composeName", () => {
 	it("joins category and name with ': '", () => {

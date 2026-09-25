@@ -5,7 +5,7 @@ import type AgentSessionsPlugin from "../main";
 import { renderCategoryChip } from "./chip";
 import { AGENT_ICON_ID } from "./icons";
 import { t, type MessageKey } from "../i18n";
-import { composeName, filterCategories, tokenizeNameInput } from "../sessions/name";
+import { applyChipEditResult, composeName, filterCategories, tokenizeNameInput } from "../sessions/name";
 import { AGENT_IDS, type AgentId } from "../settings";
 import { splitName } from "../sessions/tree";
 import { computeSuggestPosition } from "./suggest-position";
@@ -87,8 +87,10 @@ function buildCategorySuggest(
 			suggestEl.style.display = "";
 			for (const cat of items) {
 				const itemEl = suggestEl.createDiv({ cls: "agent-sessions-name-suggest-item" });
+				// T-112: just the chip (its own text already shows the category name in full) —
+				// a separate label span used to repeat the same text right next to it, showing
+				// every category name twice per row.
 				renderCategoryChip(itemEl, cat, colorIndexFor(cat));
-				itemEl.createSpan({ cls: "agent-sessions-name-suggest-item-label", text: cat });
 				// mousedown rather than click: needs to fire first, otherwise the input's blur
 				// fires first and closes the suggestions before the click registers.
 				itemEl.addEventListener("mousedown", (evt) => {
@@ -134,13 +136,112 @@ function buildCategorySuggest(
 
 /** A small "×" appended to a category chip (T-104(e)) — shared by the composed name field's chip
  * and `MoveToCategoryModal`'s, so both dialogs remove a chip the same way. Its own click handler
- * stops propagation so it doesn't also trigger the chip's own click-to-revert-to-text. */
+ * stops propagation so it doesn't also trigger the chip's own click-to-edit. */
 function appendChipRemove(chip: HTMLElement, onRemove: () => void): void {
 	const removeEl = chip.createSpan({ cls: "agent-sessions-name-chip-remove", text: "×" });
 	removeEl.addEventListener("click", (evt) => {
 		evt.stopPropagation();
 		onRemove();
 	});
+}
+
+interface ChipEditHandle {
+	/** Cancels an in-progress edit as if Escape had been pressed — for a caller's own `destroy()`
+	 * to call defensively, in case the dialog closes mid-edit without a `blur` (which normally
+	 * finishes it) ever reaching `editEl`. A no-op if the edit already finished on its own. */
+	cancel(): void;
+}
+
+/**
+ * Lets a chip be edited in place (T-112): swaps `chipEl` for a small text input, pre-filled with
+ * `currentCategory` and selected (so retyping from scratch is one keystroke away), with the same
+ * suggestion dropdown (`buildCategorySuggest`) anchored to it. Confirming — picking a suggestion,
+ * Enter/Tab, or losing focus — calls `onDone` with the new category (`""` removes it entirely);
+ * Escape calls it with `null` (canceled, no change at all). Either way `editEl` is removed from
+ * the DOM before `onDone` runs, so the caller's own chip-rendering function can just run again
+ * as if nothing else happened — critically, **this never touches anything else in the caller's
+ * own field** (e.g. the composed name field's separate "name" text), unlike the older
+ * revert-to-editable-text behavior this replaces for a chip's click specifically (Backspace still
+ * uses that older behavior, in callers where it applies — merging into one field is safe there
+ * precisely because the field's own other content is already empty by the time Backspace reaches
+ * it, which a chip click never guarantees).
+ */
+function beginEditChip(
+	boxEl: HTMLElement,
+	chipEl: HTMLElement,
+	currentCategory: string,
+	categories: string[],
+	colorIndexFor: (category: string) => number,
+	onDone: (result: string | null) => void
+): ChipEditHandle {
+	const editEl = document.createElement("input");
+	editEl.type = "text";
+	editEl.className = "agent-sessions-name-input-field agent-sessions-name-chip-edit";
+	editEl.value = currentCategory;
+	editEl.size = Math.max(4, currentCategory.length + 2);
+	chipEl.replaceWith(editEl);
+	editEl.focus();
+	editEl.select();
+
+	let finished = false;
+	const suggest = buildCategorySuggest(boxEl, categories, colorIndexFor, (cat) => finish(cat));
+
+	function finish(value: string): void {
+		if (finished) {
+			return;
+		}
+		finished = true;
+		suggest.close();
+		suggest.destroy();
+		editEl.remove();
+		onDone(value.trim());
+	}
+
+	function cancel(): void {
+		if (finished) {
+			return;
+		}
+		finished = true;
+		suggest.close();
+		suggest.destroy();
+		editEl.remove();
+		onDone(null);
+	}
+
+	suggest.openFor(currentCategory);
+	editEl.addEventListener("input", () => suggest.openFor(editEl.value));
+	editEl.addEventListener("keydown", (evt) => {
+		if (evt.key === "ArrowDown") {
+			evt.preventDefault();
+			suggest.moveHighlight(1);
+			return;
+		}
+		if (evt.key === "ArrowUp") {
+			evt.preventDefault();
+			suggest.moveHighlight(-1);
+			return;
+		}
+		if (evt.key === "Enter" || evt.key === "Tab") {
+			evt.preventDefault();
+			if (suggest.isOpen() && suggest.confirmHighlighted()) {
+				return;
+			}
+			finish(editEl.value);
+			return;
+		}
+		if (evt.key === "Escape") {
+			evt.preventDefault();
+			cancel();
+		}
+	});
+	// A suggestion's own mousedown (buildCategorySuggest) already calls finish() and
+	// preventDefault()s before blur would otherwise fire — same ordering this file's other
+	// suggest-driven inputs already rely on. The setTimeout lets that happen first.
+	editEl.addEventListener("blur", () => {
+		window.setTimeout(() => finish(editEl.value), 0);
+	});
+
+	return { cancel };
 }
 
 interface ComposedNameField {
@@ -173,6 +274,7 @@ function buildComposedNameField(
 
 	let category = initial.category.trim();
 	let chipEl: HTMLElement | null = null;
+	let activeChipEdit: ChipEditHandle | null = null;
 
 	function renderChip(): void {
 		chipEl?.remove();
@@ -180,12 +282,29 @@ function buildComposedNameField(
 		if (category) {
 			chipEl = renderCategoryChip(boxEl, category, colorIndexFor(category));
 			boxEl.insertBefore(chipEl, inputEl);
-			chipEl.addEventListener("click", () => revertChip());
+			// T-112: clicking the chip edits just the category, in place — never touches `name`
+			// (unlike the older `revertChip`, still used below for Backspace, which is only safe
+			// there because the field's own other content — the name — is already empty by the
+			// time Backspace can reach it).
+			chipEl.addEventListener("click", () => {
+				const el = chipEl;
+				if (!el) {
+					return;
+				}
+				activeChipEdit = beginEditChip(boxEl, el, category, categories, colorIndexFor, (result) => {
+					activeChipEdit = null;
+					category = applyChipEditResult({ category, name: inputEl.value }, result).category;
+					renderChip();
+					inputEl.focus();
+				});
+			});
 			appendChipRemove(chipEl, () => clearCategory());
 		}
 	}
 
-	/** Turns the chip back into text so it can be edited again (shared by Backspace and click). */
+	/** Turns the chip back into text so it can be edited again — used only by Backspace (with the
+	 * name field already empty at that point, so there's nothing to lose by merging the category
+	 * back into it as combined "Category: Name" text). */
 	function revertChip(): void {
 		if (!category) {
 			return;
@@ -289,7 +408,10 @@ function buildComposedNameField(
 	return {
 		getValue: () => ({ category, name: inputEl.value }),
 		focus: () => inputEl.focus(),
-		destroy: () => suggest.destroy(),
+		destroy: () => {
+			activeChipEdit?.cancel();
+			suggest.destroy();
+		},
 	};
 }
 
@@ -439,6 +561,7 @@ export class MoveToCategoryModal extends Modal {
 	private category: string;
 	private chipEl: HTMLElement | null = null;
 	private boxEl!: HTMLElement;
+	private activeChipEdit: ChipEditHandle | null = null;
 
 	constructor(
 		private plugin: AgentSessionsPlugin,
@@ -525,13 +648,24 @@ export class MoveToCategoryModal extends Modal {
 		if (this.category) {
 			const chip = renderCategoryChip(this.boxEl, this.category, this.plugin.index.categoryColorIndex(this.category));
 			this.boxEl.insertBefore(chip, this.inputEl);
-			chip.addEventListener("click", () => this.revertChip());
+			// T-112: same click-to-edit-in-place as the composed name field's chip, for a
+			// consistent feel across every dialog with a category chip.
+			chip.addEventListener("click", () => {
+				const categories = this.plugin.index.categories();
+				const colorIndexFor = (c: string) => this.plugin.index.categoryColorIndex(c);
+				this.activeChipEdit = beginEditChip(this.boxEl, chip, this.category, categories, colorIndexFor, (result) => {
+					this.activeChipEdit = null;
+					this.category = applyChipEditResult({ category: this.category, name: this.inputEl.value }, result).category;
+					this.renderChip();
+					this.inputEl.focus();
+				});
+			});
 			appendChipRemove(chip, () => this.clearCategory());
 			this.chipEl = chip;
 		}
 	}
 
-	/** Turns the chip back into text so it can be edited again (shared by Backspace and click). */
+	/** Turns the chip back into text so it can be edited again — used only by Backspace. */
 	private revertChip(): void {
 		if (!this.category) {
 			return;
@@ -578,6 +712,7 @@ export class MoveToCategoryModal extends Modal {
 	}
 
 	onClose(): void {
+		this.activeChipEdit?.cancel();
 		this.suggest.destroy();
 		this.contentEl.empty();
 	}
