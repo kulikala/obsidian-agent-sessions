@@ -1,14 +1,15 @@
 // The side panel: a grid of four areas (nav, list, detail, rate limit). The list and detail
 // areas' heights can be adjusted via a drag handle between them (saved to `settings.sideDetailHeight`).
 
-import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
+import { ItemView, Menu, Notice, Platform, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
 import type AgentSessionsPlugin from "../main";
 import { attentionCounts, type AttentionCounts } from "../sessions/attention";
-import { usage } from "../backend/backend";
+import { resolveAgentBinary, usage } from "../backend/backend";
 import { t } from "../i18n";
 import { VIEW_TYPE_TERMINAL } from "../sessions/open-session";
 import { NewSessionModal } from "../ui/modals";
 import type { Row } from "../sessions/index";
+import { AGENT_IDS } from "../settings";
 import type { SideList } from "../sessions/tree";
 import { createRowActions, RelativeTimeTicker, renderRow, RowSelection, type RowActions } from "./rows";
 import { computeSideList, leafIdsOf } from "./side-list";
@@ -250,9 +251,52 @@ export class SideView extends ItemView {
 		this.renderSection(this.listEl, t("section.openTabs"), list.openTabs, actions, attention);
 		this.renderSection(this.listEl, t("section.running"), list.running, actions);
 		this.renderSection(this.listEl, t("section.recent"), list.recent, actions);
+		if (list.openTabs.length === 0 && list.running.length === 0 && list.recent.length === 0) {
+			this.renderEmptyState(this.listEl);
+		}
 		if (!this.hovering) {
 			this.showDefaultDetail(list);
 		}
+	}
+
+	/**
+	 * Shown instead of the (otherwise blank) list when there are no sessions at all yet
+	 * (T-104): a wordmark, a short description, and a "New session" button — the same action
+	 * as the nav's `+`. If no agent is enabled, that's swapped for a button that opens settings
+	 * instead, since there'd be nothing to launch. If at least one is enabled, the button shows
+	 * first (optimistically) while a background check (`resolveAgentBinary`) confirms at least
+	 * one enabled agent's binary can actually be found; if none can, it's swapped to the same
+	 * open-settings fallback (a real click would otherwise just error out) — never awaited, so
+	 * it never delays the rest of `render()`. The rate-limit bars (§8's separate `limitsHostEl`)
+	 * are unaffected either way — they don't depend on the session list at all.
+	 */
+	private renderEmptyState(container: HTMLElement): void {
+		const box = container.createDiv({ cls: "agent-sessions-empty" });
+		box.createDiv({ cls: "agent-sessions-empty-wordmark", text: "Agent Sessions" });
+		box.createDiv({ cls: "agent-sessions-empty-desc", text: t("empty.desc") });
+		const actionEl = box.createDiv({ cls: "agent-sessions-empty-action" });
+		const enabledAgents = AGENT_IDS.filter((id) => this.plugin.settings.agents[id].enabled);
+		if (enabledAgents.length === 0) {
+			this.renderEmptyFallback(actionEl, t("empty.noAgentEnabled"));
+			return;
+		}
+		const btn = actionEl.createEl("button", { cls: "mod-cta", text: t("action.newSession") });
+		this.registerDomEvent(btn, "click", () => this.openNewSessionModal());
+		void Promise.allSettled(
+			enabledAgents.map((id) => resolveAgentBinary(id, this.plugin.settings.agents[id].path, Platform.isMacOS))
+		).then((results) => {
+			const found = results.some((r) => r.status === "fulfilled");
+			if (!found && actionEl.isConnected) {
+				this.renderEmptyFallback(actionEl, t("empty.noAgentFound"));
+			}
+		});
+	}
+
+	private renderEmptyFallback(container: HTMLElement, message: string): void {
+		container.empty();
+		container.createDiv({ cls: "agent-sessions-empty-desc", text: message });
+		const btn = container.createEl("button", { text: t("action.openSettings") });
+		this.registerDomEvent(btn, "click", () => this.plugin.openSettings());
 	}
 
 	private renderSection(

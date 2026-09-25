@@ -133,6 +133,9 @@ export const en = {
 	"section.openTabs": "Open tabs",
 	"section.running": "Running",
 	"section.recent": "Recent",
+	"empty.desc": "Open and manage Claude Code and Codex sessions right here in Obsidian.",
+	"empty.noAgentEnabled": "No agent is enabled — turn one on in settings first.",
+	"empty.noAgentFound": "No enabled agent could be found — check the path in settings.",
 
 	// ---- Row relative time (views/rows.ts's formatRelativeTime, side panel only) ----
 	"time.justNow": "just now",

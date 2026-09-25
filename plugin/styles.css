@@ -662,6 +662,39 @@
 	overflow-x: hidden;
 }
 
+/* The side panel's empty state (T-104) — shown instead of the (otherwise blank) list when
+   there are no sessions at all yet. */
+.agent-sessions-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--size-4-2);
+	height: 100%;
+	padding: var(--size-4-6) var(--size-4-4);
+	text-align: center;
+}
+
+.agent-sessions-empty-wordmark {
+	font-family: var(--font-interface);
+	font-size: var(--font-ui-larger);
+	font-weight: var(--font-bold);
+	color: var(--text-normal);
+}
+
+.agent-sessions-empty-desc {
+	max-width: 26em;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.agent-sessions-empty-action {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--size-4-2);
+}
+
 /* The 4px drag handle between the list and the detail pane. */
 .agent-sessions-drag-handle {
 	flex: 0 0 4px;

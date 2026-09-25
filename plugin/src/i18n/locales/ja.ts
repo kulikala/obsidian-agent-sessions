@@ -134,6 +134,9 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"section.openTabs": "開いているタブ",
 	"section.running": "起動中",
 	"section.recent": "最近",
+	"empty.desc": "Claude Code と Codex のセッションを、Obsidian の中からそのまま開いて管理する。",
+	"empty.noAgentEnabled": "有効なエージェントがありません——まず設定で1つ有効にしてください",
+	"empty.noAgentFound": "有効なエージェントの実行ファイルが見つかりません——設定でパスを確認してください",
 
 	// ---- Row relative time (views/rows.ts's formatRelativeTime, side panel only) ----
 	"time.justNow": "たった今",
