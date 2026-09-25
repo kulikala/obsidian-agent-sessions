@@ -45,12 +45,14 @@ Agent CLIs other than Claude Code and Codex (opencode, agy, …) are a future di
 ### R-M Multi-agent (Claude Code / Codex)
 
 - R-M1 Settings has an "Agents" section: for each of Claude Code and Codex, an enabled toggle, a path (empty = auto-detect), and multi-line environment variables (`KEY=VALUE` per line). At least one agent stays enabled at all times.
-- R-M2 The first time the plugin ever runs with no saved agent settings, it auto-detects each agent (a login shell's `command -v`, then common install locations) and enables whichever it finds; if neither is found, Claude Code stays enabled (unchanged from before multi-agent support). A "Detect again" button re-runs detection any time and shows the result, without changing any toggle itself.
+- R-M2 The first time the plugin ever runs with no saved agent settings, it auto-detects each agent — a login shell's `command -v`, then the same probe in an interactive shell (catches a version manager like mise/asdf/nvm/volta whose shell integration only loads interactively), then a list of common install locations aware of those version managers — and enables whichever it finds; if neither is found, Claude Code stays enabled (unchanged from before multi-agent support). A "Detect again" button re-runs detection any time and shows the result and detected version, without changing any toggle itself.
 - R-M3 Starting a new session offers a choice of agent only when more than one is enabled (with exactly one enabled, that one is used without asking); the choice made is remembered as the default for next time.
 - R-M4 Claude Code and Codex sessions are listed, sorted, grouped, and filtered together — no agent-specific split in the side panel or the Session Manager. A small icon (not a brand logo) on each row and in the detail pane shows which agent a session belongs to.
 - R-M5 The submit-key setting, Enter interception, and `keybindings.json` (R-T5a–d) apply to Claude Code tabs only; a Codex tab's own keymap is left untouched.
 - R-M6 Renaming/compacting an existing session (R-S6) works the same way regardless of agent. Naming a session at the moment it's created is Claude Code only — a new Codex session can't be named until it's finished starting.
 - R-M7 The detail pane's model/effort badges fall back to the most recent turn's values (from `json detail`) for an agent with no statusLine (Codex); "Default" if neither that nor statusLine has a value.
+- R-M8 A binary resolved through a version manager may need its own directory on `PATH` at launch (e.g. a `#!/usr/bin/env node` wrapper script) — every launch prepends it, regardless of how the binary was found.
+- R-M9 A new Codex session's real (thread) id isn't known until Codex creates its transcript, which can be well after the tab opens. The plugin keeps polling to learn it for as long as the tab stays open, and once learned, that id becomes the session's permanent identity everywhere (tab, row, one-session-one-tab matching) — the same as Claude Code's session id always is.
 
 ### R-S Session management (GUI)
 

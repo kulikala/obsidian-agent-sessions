@@ -95,6 +95,7 @@ export const en = {
 	"settings.agents.env.desc": "KEY=VALUE, one per line.",
 	"settings.agents.detect.name": "Detect again",
 	"settings.agents.detected.found": "Detected: {path}",
+	"settings.agents.detected.foundWithVersion": "Detected: {path} ({version})",
 	"settings.agents.detected.notFound": "Not detected.",
 	"settings.agentSessionsPath.name": "Path to agent-sessions",
 	"settings.agentSessionsPath.desc": "Default when empty: ~/bin/agent-sessions",

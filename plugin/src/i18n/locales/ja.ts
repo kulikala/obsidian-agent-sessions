@@ -96,6 +96,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"settings.agents.env.desc": "KEY=VALUE を1行ずつ。",
 	"settings.agents.detect.name": "再検出",
 	"settings.agents.detected.found": "検出: {path}",
+	"settings.agents.detected.foundWithVersion": "検出: {path}（{version}）",
 	"settings.agents.detected.notFound": "未検出。",
 	"settings.agentSessionsPath.name": "agent-sessions のパス",
 	"settings.agentSessionsPath.desc": "空欄時のデフォルト: ~/bin/agent-sessions",

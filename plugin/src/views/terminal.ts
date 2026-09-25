@@ -17,7 +17,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { AGENT_BIN_NAME, BackendError, buildAgentArgv, loginEnv, resolveAgentBinary } from "../backend/backend";
+import { AGENT_BIN_NAME, BackendError, buildAgentArgv, loginEnv, resolveAgentBinary, withBinDirOnPath } from "../backend/backend";
 import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../backend/daemon-client";
 import { t } from "../i18n";
 import { classifyCtrlKeyNonMac, classifyEnter, resolveEnterAction, sendSequence } from "../terminal/keys";
@@ -51,6 +51,10 @@ export interface TerminalState {
 	/** A brand-new session. Stays true until the first `start` completes (see `buildAgentArgv`
 	 * for how each agent's fresh-launch argv differs). */
 	fresh?: boolean;
+	/** The daemon-tracked id, when it differs from `id` (a linked Codex session — see the field
+	 * comment on `daemonId` below). Omitted (falls back to `id`) for Claude and for a not-yet-linked
+	 * Codex session, which are the same id. */
+	daemonId?: string;
 }
 
 const PADDING_PX: Record<Padding, number> = { comfortable: 12, compact: 4, none: 0 };
@@ -81,6 +85,20 @@ export class TerminalView extends ItemView {
 	navigation = false;
 
 	private id = "";
+	/**
+	 * The id the daemon's PTY-session is tracked under — `client.start/attach/resize/forget` and
+	 * the daemon's own `list`/`exit` data all key off this, never off `id`. The same as `id` for
+	 * Claude always (its "id" IS the daemon id, by construction — `buildAgentArgv`'s
+	 * `--session-id`/`--resume`) and for a not-yet-linked Codex session (both start out equal to
+	 * the placeholder `newSession` minted). Diverges once `relinkId` swaps `id` to the real thread
+	 * id while this keeps pointing at the placeholder PTY the daemon already has running — the
+	 * daemon has no rename op, so that placeholder is what this one PTY answers to for its whole
+	 * life. A resume-relaunch after the daemon itself restarted (`startSession`) mints a fresh one.
+	 */
+	private daemonId = "";
+	/** True once `id` has been swapped away from `daemonId` (a linked Codex session). Derived from
+	 * `setState`/`relinkId`, not persisted directly — `getState` re-derives it by comparing the two. */
+	private linked = false;
 	private agent = "claude";
 	private cwd = "";
 	private fontSize: number | undefined;
@@ -201,6 +219,9 @@ export class TerminalView extends ItemView {
 		if (this.fresh) {
 			state.fresh = true;
 		}
+		if (this.linked) {
+			state.daemonId = this.daemonId;
+		}
 		return state;
 	}
 
@@ -215,6 +236,8 @@ export class TerminalView extends ItemView {
 			this.terminal.reset();
 		}
 		this.id = nextId;
+		this.daemonId = typeof s.daemonId === "string" && s.daemonId ? s.daemonId : nextId;
+		this.linked = this.daemonId !== nextId;
 		this.agent = typeof s.agent === "string" && s.agent ? s.agent : "claude";
 		this.cwd = typeof s.cwd === "string" ? s.cwd : "";
 		this.fontSize = typeof s.fontSize === "number" ? s.fontSize : undefined;
@@ -463,7 +486,7 @@ export class TerminalView extends ItemView {
 			await client.hello("plugin");
 			const list = await client.list();
 			const sessions = (list.sessions as DaemonSession[] | undefined) ?? [];
-			if (!sessions.some((s) => s.id === this.id)) {
+			if (!sessions.some((s) => s.id === this.daemonId)) {
 				await this.startSession(client, this.fresh);
 			}
 			await this.attachTo(client);
@@ -498,7 +521,7 @@ export class TerminalView extends ItemView {
 		});
 		client.on("replayed", () => this.onReplayed());
 		client.on("exit", (id: string, code: number) => {
-			if (id === this.id) {
+			if (id === this.daemonId) {
 				this.onExit(typeof code === "number" ? code : -1);
 			}
 		});
@@ -524,16 +547,31 @@ export class TerminalView extends ItemView {
 		// it wouldn't work in an environment that has it in neither `env` nor vault.json. The
 		// agent's own configured "environment variables" (Settings) go last, so the user can
 		// override any of the above (e.g. a custom VISUAL) if they really want to.
-		const env = {
-			...(await loginEnv(Platform.isMacOS)),
-			VISUAL: this.plugin.visualPath(),
-			AGENT_SESSIONS_VAULT: this.plugin.vaultPath(),
-			...parseEnvLines(agentSettings.env),
-		};
+		// `withBinDirOnPath`: `bin` can be a version-manager-resolved `#!/usr/bin/env node` script
+		// (Codex's `codex.js`) — its own directory needs to be on PATH for that shebang to resolve.
+		const env = withBinDirOnPath(
+			{
+				...(await loginEnv(Platform.isMacOS)),
+				VISUAL: this.plugin.visualPath(),
+				AGENT_SESSIONS_VAULT: this.plugin.vaultPath(),
+				...parseEnvLines(agentSettings.env),
+			},
+			bin
+		);
 		const argv = buildAgentArgv(agent, bin, this.id, fresh);
 		const cwd = this.cwd || this.plugin.vaultPath();
+		// A resume-relaunch (not `fresh`) of an already-linked non-Claude session means the daemon
+		// itself restarted — the PTY `daemonId` used to point at is gone, and the daemon has no
+		// rename op, so this can't just re-`start` under the old `daemonId`. Mint a fresh one and
+		// re-link `sessions.json`'s `sessions[id].daemon` to it (`linkCodexSession`) so out-of-tab
+		// lookups (`main.ts`'s `daemonIdFor`) keep finding this PTY. Claude never takes this branch
+		// — its `id` IS the daemon id, permanently, by construction (`buildAgentArgv`).
+		if (agent !== "claude" && !fresh && this.linked) {
+			this.daemonId = crypto.randomUUID();
+			this.plugin.linkCodexSession(this.id, cwd, this.daemonId);
+		}
 		const res = await client.start({
-			id: this.id,
+			id: this.daemonId,
 			agent: this.agent,
 			cwd,
 			argv,
@@ -554,13 +592,35 @@ export class TerminalView extends ItemView {
 
 	private async attachTo(client: DaemonClient): Promise<void> {
 		this.replayChunks = [];
-		const res = await client.attach(this.id, this.terminal.cols, this.terminal.rows);
+		const res = await client.attach(this.daemonId, this.terminal.cols, this.terminal.rows);
 		if (!res.ok) {
 			this.replayChunks = null;
 			throw new Error(t("error.attachFailed", { error: res.error ?? "unknown" }));
 		}
 		this.attached = true;
 		this.updateIcon();
+	}
+
+	/**
+	 * Swaps this tab's own id from the daemon-tracked placeholder to `newId` (the real, permanent
+	 * id — a Codex thread id, once `main.ts`'s `resolveCodexSession` learns it). `daemonId` is left
+	 * untouched: the daemon has no rename op, so every daemon-protocol call keeps addressing the
+	 * same PTY by the id `start` was originally called with, for its whole life. From this point on,
+	 * `id` (row matching, `sendCommand` route ①, the saved workspace layout) is the real id
+	 * everywhere — only daemon-protocol calls still go through `daemonId`.
+	 */
+	relinkId(newId: string): void {
+		if (this.id === newId) {
+			return;
+		}
+		const oldId = this.id;
+		this.id = newId;
+		this.linked = true;
+		this.refreshName();
+		this.updateIcon();
+		this.app.workspace.requestSaveLayout();
+		this.plugin.refreshTerminalStatus(oldId);
+		this.plugin.refreshTerminalStatus(newId);
 	}
 
 	private disconnect(): void {
@@ -1067,7 +1127,7 @@ export class TerminalView extends ItemView {
 		this.updateIcon();
 		try {
 			const client = this.client ?? (await this.openClient());
-			await client.forget(this.id).catch(() => undefined);
+			await client.forget(this.daemonId).catch(() => undefined);
 			this.terminal.reset();
 			await this.startSession(client, fresh);
 			await this.attachTo(client);
@@ -1090,7 +1150,7 @@ export class TerminalView extends ItemView {
 	/** Closes: sends `forget` first if the session has already exited, then closes the tab. */
 	private async closeTab(forget: boolean): Promise<void> {
 		if (forget && this.client) {
-			await this.client.forget(this.id).catch(() => undefined);
+			await this.client.forget(this.daemonId).catch(() => undefined);
 		}
 		this.leaf.detach();
 	}

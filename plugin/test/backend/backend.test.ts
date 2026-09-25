@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { agentEnvFor, buildAgentArgv, defaultLoginShell, envWithVault, setAgentEnv } from "../../src/backend/backend";
+import {
+	agentEnvFor,
+	buildAgentArgv,
+	commonBinDirs,
+	defaultLoginShell,
+	envWithVault,
+	setAgentEnv,
+	sortVersionsDesc,
+	withBinDirOnPath,
+} from "../../src/backend/backend";
 import { DEFAULT_SETTINGS } from "../../src/settings";
 
 describe("envWithVault (ensures every code path that calls json… gets AGENT_SESSIONS_VAULT)", () => {
@@ -103,5 +112,90 @@ describe("defaultLoginShell (non-macOS fallback when $SHELL is unset)", () => {
 
 	it("is sh on non-macOS (some minimal environments lack bash)", () => {
 		expect(defaultLoginShell(false)).toBe("/bin/sh");
+	});
+});
+
+describe("sortVersionsDesc", () => {
+	it("sorts numeric-dotted versions newest-first", () => {
+		expect(sortVersionsDesc(["24.14.0", "24.18.0", "20.11.0"])).toEqual(["24.18.0", "24.14.0", "20.11.0"]);
+	});
+
+	it("compares a bare major version against a fully-qualified one component-by-component", () => {
+		expect(sortVersionsDesc(["24", "24.18.0"])).toEqual(["24.18.0", "24"]);
+	});
+
+	it("strips a leading v (nvm's directory naming) before comparing", () => {
+		expect(sortVersionsDesc(["v20.11.0", "v22.1.0"])).toEqual(["v22.1.0", "v20.11.0"]);
+	});
+
+	it("sorts a non-numeric label (e.g. mise's lts) after every numeric version", () => {
+		expect(sortVersionsDesc(["lts", "24.18.0", "20.11.0"])).toEqual(["24.18.0", "20.11.0", "lts"]);
+	});
+
+	it("keeps ties (including two non-numeric labels) in their original order", () => {
+		expect(sortVersionsDesc(["lts", "current", "24.0.0"])).toEqual(["24.0.0", "lts", "current"]);
+	});
+
+	it("doesn't mutate the input array", () => {
+		const input = ["24.0.0", "20.0.0"];
+		sortVersionsDesc(input);
+		expect(input).toEqual(["24.0.0", "20.0.0"]);
+	});
+});
+
+describe("commonBinDirs (search order: mise shims/installs, asdf, volta, nvm, then generic locations)", () => {
+	const base = { home: "/Users/kaz", isMac: true, miseNodeVersions: [], nvmNodeVersions: [], npmPrefix: "" };
+
+	it("puts mise's shims first, then its node installs newest-first, before anything else", () => {
+		const dirs = commonBinDirs({ ...base, miseNodeVersions: ["24.14.0", "24.18.0", "lts"] });
+		expect(dirs.slice(0, 4)).toEqual([
+			"/Users/kaz/.local/share/mise/shims",
+			"/Users/kaz/.local/share/mise/installs/node/24.18.0/bin",
+			"/Users/kaz/.local/share/mise/installs/node/24.14.0/bin",
+			"/Users/kaz/.local/share/mise/installs/node/lts/bin",
+		]);
+	});
+
+	it("includes asdf's shims, volta, and nvm's installs newest-first, in that order", () => {
+		const dirs = commonBinDirs({ ...base, nvmNodeVersions: ["v18.0.0", "v20.0.0"] });
+		expect(dirs).toContain("/Users/kaz/.asdf/shims");
+		expect(dirs).toContain("/Users/kaz/.volta/bin");
+		const nvmIdx18 = dirs.indexOf("/Users/kaz/.nvm/versions/node/v18.0.0/bin");
+		const nvmIdx20 = dirs.indexOf("/Users/kaz/.nvm/versions/node/v20.0.0/bin");
+		expect(nvmIdx20).toBeGreaterThanOrEqual(0);
+		expect(nvmIdx20).toBeLessThan(nvmIdx18);
+	});
+
+	it("includes /opt/homebrew/bin only on macOS", () => {
+		expect(commonBinDirs({ ...base, isMac: true })).toContain("/opt/homebrew/bin");
+		expect(commonBinDirs({ ...base, isMac: false })).not.toContain("/opt/homebrew/bin");
+	});
+
+	it("ends with ~/.local/bin, the homebrew/usr-local pair, then npm's prefix if given", () => {
+		const dirs = commonBinDirs({ ...base, npmPrefix: "/opt/custom-npm" });
+		expect(dirs.slice(-4)).toEqual(["/Users/kaz/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "/opt/custom-npm/bin"]);
+	});
+
+	it("omits npm's prefix dir entirely when npmPrefix is empty", () => {
+		expect(commonBinDirs(base).at(-1)).toBe("/usr/local/bin");
+	});
+});
+
+describe("withBinDirOnPath (a version-manager-resolved binary needs its own dir on PATH — e.g. codex.js's #!/usr/bin/env node)", () => {
+	it("prepends bin's directory onto an existing PATH", () => {
+		const env = withBinDirOnPath({ PATH: "/usr/bin:/bin" }, "/Users/kaz/.local/share/mise/shims/codex");
+		expect(env.PATH).toBe("/Users/kaz/.local/share/mise/shims:/usr/bin:/bin");
+	});
+
+	it("sets PATH to just bin's directory when there was none", () => {
+		const env = withBinDirOnPath({} as Record<string, string>, "/usr/local/bin/codex");
+		expect(env.PATH).toBe("/usr/local/bin");
+	});
+
+	it("doesn't mutate the input env (returns a new object)", () => {
+		const input = { PATH: "/usr/bin" };
+		const result = withBinDirOnPath(input, "/opt/homebrew/bin/claude");
+		expect(input).toEqual({ PATH: "/usr/bin" });
+		expect(result).not.toBe(input);
 	});
 });

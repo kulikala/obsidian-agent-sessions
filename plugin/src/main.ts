@@ -15,6 +15,7 @@ import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import {
 	agentEnvFor,
+	agentVersion,
 	buildAgentArgv,
 	detail,
 	detectAgents,
@@ -25,6 +26,7 @@ import {
 	resolveAgentSessionsPath,
 	scan,
 	setAgentEnv,
+	withBinDirOnPath,
 } from "./backend/backend";
 import { DaemonClient, defaultSockPath, ensureDaemon } from "./backend/daemon-client";
 import { EditServer, editReplyFor, submitsAfterEdit, type EditReply, type EditRequest } from "./backend/edit-server";
@@ -92,12 +94,13 @@ const WAIT_EXIT_MS = 30000;
 /** Terminal size used when starting headless (no screen). */
 const HEADLESS_COLS = 120;
 const HEADLESS_ROWS = 40;
-/** `resolveCodexSession`'s polling: how long between attempts, and how many of each stage
- * (finding the daemon-tracked pid, then `json resolve`) before giving up. Generous, since a
- * fresh Codex process opening its transcript for the first time isn't instant. */
-const RESOLVE_POLL_MS = 1000;
-const RESOLVE_PID_ATTEMPTS = 10;
-const RESOLVE_THREAD_ATTEMPTS = 20;
+/** `resolveCodexSession`'s polling interval, and how many attempts before giving up on finding
+ * the daemon-tracked pid (should appear almost immediately after `start`). Thread-id resolution
+ * itself isn't bounded by an attempt count — Codex doesn't create its rollout file until the first
+ * turn completes, which can be well after the tab opens, so that stage keeps retrying for as long
+ * as the tab stays open (`resolveCodexSession`'s loop condition). */
+const RESOLVE_POLL_MS = 2000;
+const RESOLVE_PID_ATTEMPTS = 15;
 
 function messageOf(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
@@ -560,12 +563,13 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * lets the caller assign `id` as the session's own persistent id, so a `sessions.json` entry
 	 * under it is meaningful from the very first scan. Codex has no equivalent (`buildAgentArgv`)
 	 * — its real thread id is only known once Codex itself creates its transcript — so a fresh
-	 * Codex session instead runs under `id` as a *daemon-only* placeholder (the tab talks to the
-	 * daemon under this id for its whole life) and `resolveCodexSession` polls `json resolve
-	 * codex` in the background to learn the real thread id and link it (design.md §3.3). Naming
-	 * at creation isn't attempted for a non-Claude agent — the `idle`/name-reflected waits below
-	 * only work through the registry/scan, which for a still-unresolved session are watching an
-	 * id nothing is filed under yet.
+	 * Codex session instead runs under `id` as a *daemon-only* placeholder at first (the tab's own
+	 * `TerminalView.daemonId` tracks it) while `resolveCodexSession` polls `json resolve codex` in
+	 * the background to learn the real thread id; once found, the tab's own `id` is swapped to it
+	 * (`TerminalView.relinkId`) and `sessions.json` links the two (design.md §3.3). Naming at
+	 * creation isn't attempted for a non-Claude agent — the `idle`/name-reflected waits below only
+	 * work through the registry/scan, which for a still-unresolved session are watching an id
+	 * nothing is filed under yet.
 	 */
 	newSession(name?: string, agent: AgentId = this.settings.lastNewSessionAgent): void {
 		if (agent !== this.settings.lastNewSessionAgent) {
@@ -613,14 +617,15 @@ export default class AgentSessionsPlugin extends Plugin {
 	/**
 	 * For a freshly-started Codex session (`newSession`, no caller-assignable id — see
 	 * `buildAgentArgv`): finds the daemon-tracked `placeholderId` session's own pid, then polls
-	 * `json resolve codex` (`backend.ts`'s `resolve`) until it learns the real thread id, then
-	 * links it in `sessions.json` (`sessions[thread] = {agent: "codex", cwd, daemon:
-	 * placeholderId}` — design.md §3.3) and rescans so the row appears under that id. The tab
-	 * itself (already open under `placeholderId`) is unaffected either way — it keeps talking to
-	 * the daemon under `placeholderId` for its whole life; `daemonIdFor` is what lets row-menu
-	 * actions (rename/compact/archive, keyed by the real thread id once linked) find it again.
-	 * Gives up silently after a bounded number of attempts (the tab keeps running regardless —
-	 * it just won't show up in the row list, or route to row-menu actions, until linked).
+	 * `json resolve codex` (`backend.ts`'s `resolve`) until it learns the real thread id. Codex
+	 * doesn't create its rollout file until the first turn completes, which can be well after the
+	 * tab opens — this keeps retrying for as long as the tab stays open (checked each iteration via
+	 * `findTerminalView`), rather than giving up after a fixed window, so a tab left idle for a
+	 * while before its first message still gets linked once one is sent. Once found: links
+	 * `sessions.json` (`linkCodexSession` — design.md §3.3), rescans so the row appears under that
+	 * id, and swaps every open tab for `placeholderId` (normally one, but a split can make several)
+	 * over to it (`TerminalView.relinkId`) so `id` is the real id everywhere from then on — row
+	 * matching, `sendCommand` route ①, and the saved workspace layout.
 	 */
 	private async resolveCodexSession(placeholderId: string, cwd: string): Promise<void> {
 		const since = Date.now() / 1000;
@@ -634,6 +639,9 @@ export default class AgentSessionsPlugin extends Plugin {
 			await client.hello("plugin");
 			let pid: number | null = null;
 			for (let i = 0; i < RESOLVE_PID_ATTEMPTS && pid === null; i++) {
+				if (!this.findTerminalView(placeholderId)) {
+					return;
+				}
 				const list = await client.list().catch(() => null);
 				const sessions = (list?.sessions as DaemonSession[] | undefined) ?? [];
 				pid = sessions.find((s) => s.id === placeholderId)?.pid ?? null;
@@ -644,20 +652,13 @@ export default class AgentSessionsPlugin extends Plugin {
 			if (pid === null) {
 				return;
 			}
-			for (let i = 0; i < RESOLVE_THREAD_ATTEMPTS; i++) {
+			while (this.findTerminalView(placeholderId)) {
 				const { thread } = await resolve(this.agentSessionsPath(), this.vaultPath(), "codex", pid, since, cwd).catch(
 					() => ({ thread: null, transcript: null })
 				);
 				if (thread) {
-					try {
-						updateStore(this.storePath(), (store) => {
-							store.sessions[thread] = { agent: "codex", cwd, daemon: placeholderId };
-						});
-						this.index.refreshStore();
-						void this.index.rescan();
-					} catch (err) {
-						this.notifyLockError(err);
-					}
+					this.linkCodexSession(thread, cwd, placeholderId);
+					this.relinkTerminalViews(placeholderId, thread);
 					return;
 				}
 				await sleep(RESOLVE_POLL_MS);
@@ -668,12 +669,44 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * The daemon-tracked id to use for `findTerminalView`/`client.list()` lookups, for a given
-	 * row/session id. The same as `id` for everything except a linked Codex session (see
-	 * `resolveCodexSession`), where the row's own id (the real thread id) and the daemon's
-	 * tracked id (the placeholder it was started under) differ — `sessions.json`'s `daemon`
-	 * field on that entry is the link. Swallows a lock/read failure by falling back to `id`
-	 * unchanged — a transient store error shouldn't block sending a command entirely.
+	 * Writes/overwrites `sessions.json`'s Codex daemon link (`sessions[id] = {agent: "codex", cwd,
+	 * daemon: daemonId}` — design.md §3.3) and rescans so the row picks it up. Called both by
+	 * `resolveCodexSession` (the first link, keyed by the real thread id it just learned) and by
+	 * `TerminalView.startSession`'s resume-after-daemon-restart relaunch (re-linking the same
+	 * thread id to a brand-new `daemonId` — the daemon has no rename op, so the old one just stops
+	 * being referenced once a new PTY exists under a different id).
+	 */
+	linkCodexSession(id: string, cwd: string, daemonId: string): void {
+		try {
+			updateStore(this.storePath(), (store) => {
+				store.sessions[id] = { agent: "codex", cwd, daemon: daemonId };
+			});
+			this.index.refreshStore();
+			void this.index.rescan();
+		} catch (err) {
+			this.notifyLockError(err);
+		}
+	}
+
+	/** Calls `TerminalView.relinkId(newId)` on every open tab currently at `oldId` (normally one,
+	 * but a split can make several). */
+	private relinkTerminalViews(oldId: string, newId: string): void {
+		for (const view of this.terminalViews()) {
+			if (view.sessionId === oldId) {
+				view.relinkId(newId);
+			}
+		}
+	}
+
+	/**
+	 * The daemon-tracked id to use for `client.list()`-level lookups (route ②/③ of `sendCommand`),
+	 * for a given row/session id. The same as `id` for everything except a linked Codex session
+	 * (see `resolveCodexSession`), where the row's own id (the real thread id) and the daemon's
+	 * tracked id (`TerminalView.daemonId`) differ — `sessions.json`'s `daemon` field on that entry
+	 * is the link. Not used for route ① (`findTerminalView`) — an open tab's own `sessionId` is
+	 * already the real id post-relink, so that lookup uses `id` directly. Swallows a lock/read
+	 * failure by falling back to `id` unchanged — a transient store error shouldn't block sending a
+	 * command entirely.
 	 */
 	private daemonIdFor(id: string): string {
 		try {
@@ -742,10 +775,10 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * Failures throw (the caller turns them into a `Notice`).
 	 */
 	async sendCommand(id: string, text: string, progress = t("progress.sending")): Promise<void> {
-		// A linked Codex session's daemon-tracked id can differ from `id` itself (`daemonIdFor`)
-		// — everywhere else (Claude, or a not-yet-linked Codex session) they're the same id.
-		const daemonId = this.daemonIdFor(id);
-		const view = this.findTerminalView(daemonId);
+		// Route ①: an open tab's own `sessionId` is the real id post-relink (or the only id it's
+		// ever had, for Claude / a not-yet-linked Codex session), so this looks it up by `id`
+		// directly — no `daemonIdFor` conversion needed here.
+		const view = this.findTerminalView(id);
 		if (view?.isAttached()) {
 			this.sendViaView(view, text);
 			return;
@@ -756,6 +789,9 @@ export default class AgentSessionsPlugin extends Plugin {
 			await client.hello("plugin");
 			const list = await client.list();
 			const sessions = (list.sessions as DaemonSession[] | undefined) ?? [];
+			// Routes ②/③ talk to the daemon's raw session list, which is always keyed by its own
+			// tracked id (`daemonIdFor`) — for a linked Codex session that can differ from `id`.
+			const daemonId = this.daemonIdFor(id);
 			const existing = sessions.find((s) => s.id === daemonId);
 			if (existing && existing.exited === null) {
 				await this.sendViaAttach(client, daemonId, text, existing.agent);
@@ -821,13 +857,16 @@ export default class AgentSessionsPlugin extends Plugin {
 			const agent = asAgentId(row.agent);
 			const agentSettings = this.settings.agents[agent];
 			const bin = await resolveAgentBinary(agent, agentSettings.path, Platform.isMacOS);
-			// `AGENT_SESSIONS_VAULT`: same reason as terminal.ts's startSession.
-			const env = {
-				...(await loginEnv(Platform.isMacOS)),
-				VISUAL: this.visualPath(),
-				AGENT_SESSIONS_VAULT: this.vaultPath(),
-				...parseEnvLines(agentSettings.env),
-			};
+			// `AGENT_SESSIONS_VAULT`/`withBinDirOnPath`: same reason as terminal.ts's startSession.
+			const env = withBinDirOnPath(
+				{
+					...(await loginEnv(Platform.isMacOS)),
+					VISUAL: this.visualPath(),
+					AGENT_SESSIONS_VAULT: this.vaultPath(),
+					...parseEnvLines(agentSettings.env),
+				},
+				bin
+			);
 			const res = await client.start({
 				id,
 				agent: row.agent || "claude",
@@ -1211,6 +1250,9 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 	private renderAgentsSetting(containerEl: HTMLElement): void {
 		const sectionEl = containerEl.createDiv();
 		let detected: Partial<Record<AgentId, string | null>> = {};
+		/** `<bin> --version` for each entry in `detected`, filled in after detection (`agentVersion`
+		 * is a second, separate call — no reason to hold up showing the path on it). */
+		let versions: Partial<Record<AgentId, string | null>> = {};
 
 		const redraw = (): void => {
 			sectionEl.empty();
@@ -1245,10 +1287,13 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 					);
 				if (id in detected) {
 					const found = detected[id];
-					pathSetting.descEl.createDiv({
-						cls: "agent-sessions-agent-detected",
-						text: found ? t("settings.agents.detected.found", { path: found }) : t("settings.agents.detected.notFound"),
-					});
+					const version = versions[id];
+					const text = found
+						? version
+							? t("settings.agents.detected.foundWithVersion", { path: found, version })
+							: t("settings.agents.detected.found", { path: found })
+						: t("settings.agents.detected.notFound");
+					pathSetting.descEl.createDiv({ cls: "agent-sessions-agent-detected", text });
 				}
 
 				new Setting(sectionEl)
@@ -1269,6 +1314,19 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 					button.setDisabled(true);
 					try {
 						detected = await detectAgents(Platform.isMacOS);
+						versions = {};
+						redraw();
+						const found = AGENT_IDS.map((id) => detected[id]).filter((path): path is string => !!path);
+						await Promise.all(
+							found.map(async (path) => {
+								const version = await agentVersion(path);
+								for (const id of AGENT_IDS) {
+									if (detected[id] === path) {
+										versions[id] = version;
+									}
+								}
+							})
+						);
 					} finally {
 						button.setDisabled(false);
 						redraw();

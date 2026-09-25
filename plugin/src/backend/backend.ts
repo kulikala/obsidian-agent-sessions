@@ -4,7 +4,7 @@
 import { execFile } from "node:child_process";
 import * as fs from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { t } from "../i18n";
 import { AGENT_IDS, parseEnvLines, type AgentId, type AgentSettings } from "../settings";
 import type { Detail, LiveResult, ScanResult, StatsResult, UsageResult } from "../types";
@@ -35,10 +35,11 @@ function firstLine(text: string): string {
 function execFileText(
 	cmd: string,
 	args: string[],
-	env?: NodeJS.ProcessEnv
+	env?: NodeJS.ProcessEnv,
+	timeoutMs?: number
 ): Promise<{ stdout: string; stderr: string }> {
 	return new Promise((resolve, reject) => {
-		execFile(cmd, args, { encoding: "utf8", env }, (err, stdout, stderr) => {
+		execFile(cmd, args, { encoding: "utf8", env, timeout: timeoutMs }, (err, stdout, stderr) => {
 			if (err) {
 				const e = err as NodeJS.ErrnoException & { stderr?: string };
 				e.stderr = stderr;
@@ -213,59 +214,144 @@ export function resetLoginEnvCache(): void {
 }
 
 /** Each agent's executable basename — `command -v <name>`, and the last path segment checked
- * against in `detectAgents`' common install locations. */
+ * against in `commonBinDirs`' common install locations. */
 export const AGENT_BIN_NAME: Record<AgentId, string> = { claude: "claude", codex: "codex" };
 
+/** How long the interactive-shell probe (`execInteractive`) is allowed to run before being killed
+ * — guards against a hung/blocking rc file. */
+const INTERACTIVE_PROBE_TIMEOUT_MS = 3000;
+
 /**
- * Resolves `agent`'s executable path. If the setting is empty, looks it up via the login shell's
- * `command -v <bin>`. Throws `BackendError` if it can't be found. `isMac` (default `true`) picks
- * the fallback shell when `$SHELL` isn't set.
+ * Runs `probe` (a shell command, e.g. `command -v codex`) inside an *interactive* shell
+ * (`$SHELL -i -c`, as opposed to `loginEnv`'s `-l -c`) — a tool installed by a version manager
+ * (mise, etc.) whose shell integration is wired into `.zshrc`/`.bashrc` rather than a profile file
+ * only shows up on `PATH` there; a login-but-non-interactive invocation never sources it. An
+ * interactive shell can print prompts, banners, or other rc-file noise to stdout ahead of the
+ * probe's own output, so `probe` is wrapped between two unique markers and only the text between
+ * them is trusted. `null` on any failure — non-zero exit, timeout, or the markers not found.
  */
-export async function resolveAgentBinary(agent: AgentId, configuredPath: string, isMac = true): Promise<string> {
-	if (configuredPath) {
-		return configuredPath;
-	}
-	const shell = process.env.SHELL || defaultLoginShell(isMac);
-	const bin = AGENT_BIN_NAME[agent];
+async function execInteractive(shell: string, probe: string, timeoutMs = INTERACTIVE_PROBE_TIMEOUT_MS): Promise<string | null> {
+	const begin = `__agent_sessions_begin_${Date.now()}__`;
+	const end = `__agent_sessions_end_${Date.now()}__`;
+	const wrapped = `printf '%s\\n' '${begin}'; ${probe}; printf '%s\\n' '${end}'`;
 	try {
-		const { stdout } = await execFileText(shell, ["-l", "-c", `command -v ${bin}`]);
-		const path = stdout.trim();
-		if (!path) {
-			throw new BackendError(t("error.agentMissing", { name: bin }));
+		const { stdout } = await execFileText(shell, ["-i", "-c", wrapped], undefined, timeoutMs);
+		const startIdx = stdout.indexOf(begin);
+		const endIdx = stdout.indexOf(end);
+		if (startIdx === -1 || endIdx === -1 || endIdx < startIdx) {
+			return null;
 		}
-		return path;
-	} catch (err) {
-		if (err instanceof BackendError) {
-			throw err;
-		}
-		throw new BackendError(t("error.agentMissing", { name: bin }));
+		return stdout.slice(startIdx + begin.length, endIdx).trim() || null;
+	} catch {
+		return null;
 	}
 }
 
+/** Plain-data input to `commonBinDirs`, gathered by `gatherCommonBinDirsInput` (filesystem/shell
+ * I/O) so the directory-list logic itself stays pure and unit-testable. */
+export interface CommonBinDirsInput {
+	home: string;
+	isMac: boolean;
+	/** Directory names under `~/.local/share/mise/installs/node/` (e.g. "24", "24.14.0", "lts"), unsorted. */
+	miseNodeVersions: string[];
+	/** Directory names under `~/.nvm/versions/node/` (e.g. "v20.11.0"), unsorted. */
+	nvmNodeVersions: string[];
+	/** `npm config get prefix`'s output, trimmed, or empty if npm isn't available. */
+	npmPrefix: string;
+}
+
 /**
- * Common install locations checked when a login-shell `command -v` misses (e.g. a binary
- * installed by a non-shell installer, or a shell whose startup files aren't read the same way
- * non-interactively) — `~/.local/bin`, `/opt/homebrew/bin` (macOS only), `/usr/local/bin`,
- * `~/.npm-global/bin`, and npm's own configured global prefix (`npm config get prefix`, if npm
- * is on `$PATH` at all).
+ * Sorts version-like directory names newest-first: a numeric-dotted version (optionally prefixed
+ * with "v") compares component-by-component, descending; a non-numeric label (e.g. "lts") sorts
+ * after every numeric version. Ties (including two non-numeric labels) keep their original order.
+ * Pure.
  */
-async function commonBinDirs(shell: string, isMac: boolean): Promise<string[]> {
-	const dirs = [
-		join(homedir(), ".local", "bin"),
-		...(isMac ? ["/opt/homebrew/bin"] : []),
-		"/usr/local/bin",
-		join(homedir(), ".npm-global", "bin"),
-	];
+export function sortVersionsDesc(versions: string[]): string[] {
+	const parse = (v: string): number[] | null => {
+		const stripped = v.startsWith("v") ? v.slice(1) : v;
+		if (!/^\d+(\.\d+)*$/.test(stripped)) {
+			return null;
+		}
+		return stripped.split(".").map(Number);
+	};
+	return versions
+		.map((v, i) => ({ v, i, parts: parse(v) }))
+		.sort((a, b) => {
+			if (a.parts && b.parts) {
+				const len = Math.max(a.parts.length, b.parts.length);
+				for (let k = 0; k < len; k++) {
+					const diff = (b.parts[k] ?? 0) - (a.parts[k] ?? 0);
+					if (diff !== 0) {
+						return diff;
+					}
+				}
+				return a.i - b.i;
+			}
+			if (a.parts && !b.parts) {
+				return -1;
+			}
+			if (!a.parts && b.parts) {
+				return 1;
+			}
+			return a.i - b.i;
+		})
+		.map((x) => x.v);
+}
+
+/**
+ * Common install locations checked when neither shell probe finds a binary — mise's shims
+ * (self-resolving; mise looks up the right version internally, so this needs no other help), its
+ * per-version node installs newest-first (a node-managed tool like Codex's `codex.js` lives under
+ * `installs/node/<version>/bin/`), asdf's shims, volta, nvm's per-version installs newest-first,
+ * `~/.local/bin`, `/opt/homebrew/bin` (macOS only), `/usr/local/bin`, and npm's own configured
+ * global prefix. Pure — the caller gathers `miseNodeVersions`/`nvmNodeVersions`/`npmPrefix`
+ * (filesystem/shell I/O) and passes them in as plain data.
+ */
+export function commonBinDirs(input: CommonBinDirsInput): string[] {
+	const { home, isMac, miseNodeVersions, nvmNodeVersions, npmPrefix } = input;
+	const dirs: string[] = [join(home, ".local", "share", "mise", "shims")];
+	for (const v of sortVersionsDesc(miseNodeVersions)) {
+		dirs.push(join(home, ".local", "share", "mise", "installs", "node", v, "bin"));
+	}
+	dirs.push(join(home, ".asdf", "shims"));
+	dirs.push(join(home, ".volta", "bin"));
+	for (const v of sortVersionsDesc(nvmNodeVersions)) {
+		dirs.push(join(home, ".nvm", "versions", "node", v, "bin"));
+	}
+	dirs.push(join(home, ".local", "bin"));
+	if (isMac) {
+		dirs.push("/opt/homebrew/bin");
+	}
+	dirs.push("/usr/local/bin");
+	if (npmPrefix) {
+		dirs.push(join(npmPrefix, "bin"));
+	}
+	return dirs;
+}
+
+function listVersionDirs(dir: string): string[] {
+	try {
+		return fs
+			.readdirSync(dir, { withFileTypes: true })
+			.filter((e) => e.isDirectory())
+			.map((e) => e.name);
+	} catch {
+		return [];
+	}
+}
+
+async function gatherCommonBinDirsInput(shell: string, isMac: boolean): Promise<CommonBinDirsInput> {
+	const home = homedir();
+	const miseNodeVersions = listVersionDirs(join(home, ".local", "share", "mise", "installs", "node"));
+	const nvmNodeVersions = listVersionDirs(join(home, ".nvm", "versions", "node"));
+	let npmPrefix = "";
 	try {
 		const { stdout } = await execFileText(shell, ["-l", "-c", "npm config get prefix"]);
-		const prefix = stdout.trim();
-		if (prefix) {
-			dirs.push(join(prefix, "bin"));
-		}
+		npmPrefix = stdout.trim();
 	} catch {
 		// npm isn't installed/on PATH — no extra directory to check.
 	}
-	return dirs;
+	return { home, isMac, miseNodeVersions, nvmNodeVersions, npmPrefix };
 }
 
 function isExecutable(path: string): boolean {
@@ -274,6 +360,73 @@ function isExecutable(path: string): boolean {
 		return true;
 	} catch {
 		return false;
+	}
+}
+
+/**
+ * Finds `bin`'s path: the login shell's `command -v <bin>` first, then the same probe in an
+ * *interactive* shell (`execInteractive` — catches a version manager only activated from
+ * `.zshrc`/`.bashrc`), then `commonBinDirs`' fixed locations (first executable match wins). `null`
+ * if none of the three finds it. Shared by `resolveAgentBinary` and `detectAgents` so there's one
+ * search order for every agent and every caller.
+ */
+async function locateBinary(bin: string, isMac: boolean): Promise<string | null> {
+	const shell = process.env.SHELL || defaultLoginShell(isMac);
+	try {
+		const { stdout } = await execFileText(shell, ["-l", "-c", `command -v ${bin}`]);
+		const path = stdout.trim();
+		if (path) {
+			return path;
+		}
+	} catch {
+		// Falls through to the interactive-shell probe.
+	}
+	const interactive = await execInteractive(shell, `command -v ${bin}`);
+	if (interactive) {
+		return interactive;
+	}
+	const dirs = commonBinDirs(await gatherCommonBinDirsInput(shell, isMac));
+	return dirs.map((dir) => join(dir, bin)).find(isExecutable) ?? null;
+}
+
+/**
+ * Resolves `agent`'s executable path. If the setting is empty, runs `locateBinary`'s full search
+ * (login shell → interactive shell → common locations). Throws `BackendError` if it can't be
+ * found. `isMac` (default `true`) picks the fallback shell when `$SHELL` isn't set.
+ */
+export async function resolveAgentBinary(agent: AgentId, configuredPath: string, isMac = true): Promise<string> {
+	if (configuredPath) {
+		return configuredPath;
+	}
+	const bin = AGENT_BIN_NAME[agent];
+	const found = await locateBinary(bin, isMac);
+	if (!found) {
+		throw new BackendError(t("error.agentMissing", { name: bin }));
+	}
+	return found;
+}
+
+/**
+ * Prepends `bin`'s own directory onto `env.PATH`. A binary resolved through a version manager is
+ * often a `#!/usr/bin/env node` script (Codex's `codex.js`) rather than a real executable — without
+ * its own directory on `PATH`, the spawned process's `env node` lookup can fail if node isn't
+ * already reachable through whatever `PATH` it inherits (mise's shims resolve the right node
+ * version internally, but still need their own directory reachable at all). Harmless for a real
+ * ELF/Mach-O binary too, so applied unconditionally, for every agent, at every launch site.
+ */
+export function withBinDirOnPath<T extends Record<string, string | undefined>>(env: T, bin: string): T {
+	const dir = dirname(bin);
+	return { ...env, PATH: env.PATH ? `${dir}${delimiter}${env.PATH}` : dir };
+}
+
+/** `<bin> --version`, trimmed to its first non-blank line. `null` on any failure (missing, not
+ * executable, unrecognized flag, …) — best-effort, shown next to the detected path in Settings. */
+export async function agentVersion(bin: string): Promise<string | null> {
+	try {
+		const { stdout } = await execFileText(bin, ["--version"], withBinDirOnPath(process.env, bin));
+		return firstLine(stdout) || null;
+	} catch {
+		return null;
 	}
 }
 
@@ -291,29 +444,15 @@ export function buildAgentArgv(agent: AgentId, bin: string, id: string, fresh: b
 }
 
 /**
- * Auto-detects each agent's binary: the login shell's `command -v <bin>` first, then
- * `commonBinDirs`' fixed locations (first executable match wins). `null` for an agent neither
- * finds. Used only on first run (`main.ts`'s `onload`, when settings have never saved an `agents`
- * object before) and the settings tab's "Detect again" button — never silently overwrites a path
- * the user already typed in.
+ * Auto-detects each agent's binary via `locateBinary`'s full search (login shell → interactive
+ * shell → common locations). `null` for an agent neither finds. Used only on first run (`main.ts`'s
+ * `onload`, when settings have never saved an `agents` object before) and the settings tab's
+ * "Detect again" button — never silently overwrites a path the user already typed in.
  */
 export async function detectAgents(isMac = true): Promise<Record<AgentId, string | null>> {
-	const shell = process.env.SHELL || defaultLoginShell(isMac);
-	const dirs = await commonBinDirs(shell, isMac);
 	const result = {} as Record<AgentId, string | null>;
 	for (const agent of AGENT_IDS) {
-		const bin = AGENT_BIN_NAME[agent];
-		let found: string | null = null;
-		try {
-			const { stdout } = await execFileText(shell, ["-l", "-c", `command -v ${bin}`]);
-			found = stdout.trim() || null;
-		} catch {
-			found = null;
-		}
-		if (!found) {
-			found = dirs.map((dir) => join(dir, bin)).find(isExecutable) ?? null;
-		}
-		result[agent] = found;
+		result[agent] = await locateBinary(AGENT_BIN_NAME[agent], isMac);
 	}
 	return result;
 }
