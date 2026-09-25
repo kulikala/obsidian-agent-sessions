@@ -31,6 +31,11 @@ class Detail:
     last_assistant: str = ''    # most recent Claude response (one that has text)
     tools: List[str] = None     # names of tools called in the most recent response
     last_command: Optional[str] = None   # most recent slash command name (no arguments)
+    # Claude Code carries model/effort via statusLine's StatusInfo instead (§14), so
+    # these stay None here; Codex has no statusLine, so agents.codex.detail populates
+    # them from the most recent turn_context (see plan/段9-Codex対応.md).
+    model: Optional[str] = None
+    effort: Optional[str] = None
 
     def __post_init__(self):
         if self.tools is None:

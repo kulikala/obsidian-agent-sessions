@@ -6,7 +6,8 @@ plugin's detail panel already expect) and `clean_text` (machine-inserted content
 like `<recommended_plugins>` wrappers gets stripped the same way `<system-reminder>`
 does for Claude). `last_command` is left `None` -- Codex's `/rename` and `/compact`
 are plugin-side concerns (T-96), not something this phase reads out of the
-transcript.
+transcript. `model`/`effort` come from the most recent `turn_context` (Codex has no
+statusLine to carry them the way Claude Code does -- see plan/段9-Codex対応.md).
 """
 import json
 from typing import Optional
@@ -33,6 +34,20 @@ def read_detail(path: str) -> Detail:
     except OSError:
         return d
     for line in lines:
+        if b'"turn_context"' in line and d.model is None:
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                rec = None
+            if isinstance(rec, dict) and rec.get('type') == 'turn_context':
+                payload = rec.get('payload') or {}
+                model = payload.get('model')
+                effort = payload.get('effort')
+                if isinstance(model, str) and model:
+                    d.model = model
+                if isinstance(effort, str) and effort:
+                    d.effort = effort
+            continue
         if b'"response_item"' not in line:
             continue
         try:
@@ -63,7 +78,9 @@ def read_detail(path: str) -> Detail:
             cleaned = clean_text(text)
             if cleaned:
                 d.last_user = cleaned
-        if d.last_user and d.last_assistant:
+        # keep scanning (bounded by TAIL_LIMIT) until model is found too, same
+        # convention as sessions.detail.read_detail's last_command
+        if d.last_user and d.last_assistant and d.model is not None:
             break
     return d
 

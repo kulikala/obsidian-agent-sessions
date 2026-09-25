@@ -208,17 +208,27 @@ def live_output() -> dict:
     return {'live': live, 'daemon': _daemon_list()}
 
 
+def _detail_dict(d) -> dict:
+    out = {'last_user': d.last_user, 'last_assistant': d.last_assistant,
+           'tools': d.tools, 'last_command': d.last_command}
+    # additive: only present when the agent adapter actually populates them (today,
+    # only agents.codex -- Claude Code carries model/effort via statusLine instead,
+    # see design.md §14), so an existing consumer reading just the four keys above
+    # sees no difference.
+    if d.model is not None:
+        out['model'] = d.model
+    if d.effort is not None:
+        out['effort'] = d.effort
+    return out
+
+
 def detail_output(session_id: str) -> dict:
     for name in agents.enabled_agents():
         adapter = _adapter(name)
         p = adapter.find_transcript(session_id)
         if p:
-            d = adapter.read_detail_for(p)
-            return {'last_user': d.last_user, 'last_assistant': d.last_assistant,
-                    'tools': d.tools, 'last_command': d.last_command}
-    d = claude_agent.read_detail_for(None)
-    return {'last_user': d.last_user, 'last_assistant': d.last_assistant, 'tools': d.tools,
-            'last_command': d.last_command}
+            return _detail_dict(adapter.read_detail_for(p))
+    return _detail_dict(claude_agent.read_detail_for(None))
 
 
 def usage_output(session_id: str, from_ts: Optional[float] = None,
