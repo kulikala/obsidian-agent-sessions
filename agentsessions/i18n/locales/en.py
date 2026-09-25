@@ -67,13 +67,15 @@ MESSAGES = {
     'cmd.cannot_start_daemon': 'cannot start daemon: {error} ({path})',
 
     # cmd_json.py
-    'cmd.json_usage': 'usage: agent-sessions json scan|live|detail|usage|stats ...',
+    'cmd.json_usage': 'usage: agent-sessions json scan|live|detail|usage|stats|resolve ...',
     'cmd.json_id_needs_value': '--only needs at least one ID',
     'cmd.json_detail_usage': 'usage: agent-sessions json detail ID',
     'cmd.json_usage_usage': 'usage: agent-sessions json usage ID [--from ISO] [--to ISO]',
     'cmd.json_bad_iso': 'bad ISO8601: {value}',
     'cmd.json_unknown_option': 'unknown option: {option}',
     'cmd.json_unknown_subcommand': 'unknown json subcommand: {sub}',
+    'cmd.json_resolve_usage': 'usage: agent-sessions json resolve AGENT --pid PID --since ISO_OR_EPOCH --cwd PATH',
+    'cmd.json_resolve_bad_pid': 'bad pid: {value}',
 
     # cmd_edit.py
     'cmd.edit_usage': 'usage: agent-sessions edit FILE',

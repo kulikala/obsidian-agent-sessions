@@ -81,5 +81,43 @@ def main(args: List[str]) -> int:
         _print(json_output.stats_output())
         return 0
 
+    if sub == 'resolve':
+        if not rest:
+            sys.stderr.write(i18n.t('cmd.json_resolve_usage') + '\n')
+            return 2
+        agent, opts = rest[0], rest[1:]
+        pid, since, cwd = None, None, None
+        i = 0
+        while i < len(opts):
+            opt = opts[i]
+            if opt in ('--pid', '--since', '--cwd') and i + 1 < len(opts):
+                value = opts[i + 1]
+                if opt == '--pid':
+                    try:
+                        pid = int(value)
+                    except ValueError:
+                        sys.stderr.write(i18n.t('cmd.json_resolve_bad_pid', value=value) + '\n')
+                        return 2
+                elif opt == '--since':
+                    try:
+                        since = float(value)   # epoch seconds
+                    except ValueError:
+                        try:
+                            since = _parse_iso(value)
+                        except ValueError:
+                            sys.stderr.write(i18n.t('cmd.json_bad_iso', value=value) + '\n')
+                            return 2
+                else:
+                    cwd = value
+                i += 2
+            else:
+                sys.stderr.write(i18n.t('cmd.json_unknown_option', option=opt) + '\n')
+                return 2
+        if pid is None or since is None or cwd is None:
+            sys.stderr.write(i18n.t('cmd.json_resolve_usage') + '\n')
+            return 2
+        _print(json_output.resolve_output(agent, pid, since, cwd))
+        return 0
+
     sys.stderr.write(i18n.t('cmd.json_unknown_subcommand', sub=sub) + '\n')
     return 2

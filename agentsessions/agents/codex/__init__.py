@@ -16,6 +16,7 @@ from ...sessions.detail import Detail
 from ...sessions.model import Session
 from . import detail as _detail
 from . import live as _live
+from . import resolve  # noqa: F401  (re-exported: agentsessions.agents.codex.resolve.resolve())
 from . import rollout
 from . import scan as _scan
 from . import stats  # noqa: F401  (re-exported: agentsessions.agents.codex.stats.windows())

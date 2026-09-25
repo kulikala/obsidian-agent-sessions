@@ -242,6 +242,22 @@ def usage_output(session_id: str, from_ts: Optional[float] = None,
     return claude_agent.summarize_usage([], from_ts=from_ts, to_ts=to_ts)
 
 
+def resolve_output(agent: str, pid: int, since: float, cwd: str) -> dict:
+    """Backs `json resolve <agent> --pid --since --cwd` -- see
+    `agentsessions.agents.codex.resolve`'s docstring for the contract (a
+    freshly-started daemon session's real id, for an agent like Codex that
+    can't be told what id to use up front). `{"thread": null, "transcript": null}`
+    for any agent that doesn't need this (i.e. every agent but Codex, which picks
+    its own id via `--session-id` at launch, per T-96)."""
+    if agent != 'codex':
+        return {'thread': None, 'transcript': None}
+    st = store.load(path=config.STORE_PATH)
+    already_linked = {v.get('thread') for v in st.sessions.values()
+                       if isinstance(v, dict) and isinstance(v.get('thread'), str)}
+    thread, transcript = codex_agent.resolve.resolve(pid, since, cwd, already_linked=already_linked)
+    return {'thread': thread, 'transcript': transcript}
+
+
 def stats_output() -> dict:
     # Same reason as `_store_dict`: pass the config paths at call time.
     result = stats.compute(now=time.time(), projects_dir=config.PROJECTS_DIR,
