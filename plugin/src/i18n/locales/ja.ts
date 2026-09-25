@@ -98,6 +98,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"settings.agents.detected.found": "検出: {path}",
 	"settings.agents.detected.foundWithVersion": "検出: {path}（{version}）",
 	"settings.agents.detected.notFound": "未検出。",
+	"settings.agents.detected.enable": "有効にする",
 	"settings.agentSessionsPath.name": "agent-sessions のパス",
 	"settings.agentSessionsPath.desc": "空欄時のデフォルト: ~/bin/agent-sessions",
 	"settings.editorHeight.name": "編集領域の高さ（%）",

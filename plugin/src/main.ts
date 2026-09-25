@@ -1294,6 +1294,19 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 							: t("settings.agents.detected.found", { path: found })
 						: t("settings.agents.detected.notFound");
 					pathSetting.descEl.createDiv({ cls: "agent-sessions-agent-detected", text });
+					// A user with settings already saved never runs `autoDetectAgentsOnFirstRun` — if
+					// "Detect again" now finds an agent that's still off (e.g. installed after that
+					// first run, or found only once the search order below covered a version manager),
+					// offer to flip it on right here rather than making them go find the toggle above.
+					if (found && !agentSettings.enabled) {
+						pathSetting.addButton((button) =>
+							button.setButtonText(t("settings.agents.detected.enable")).onClick(async () => {
+								agentSettings.enabled = true;
+								await this.plugin.saveSettings();
+								redraw();
+							})
+						);
+					}
 				}
 
 				new Setting(sectionEl)
