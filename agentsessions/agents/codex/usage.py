@@ -4,9 +4,16 @@
 Codex's `token_count` event (`event_msg.payload.type == 'token_count'`) carries a
 *running total* (`info.total_token_usage`), not a per-call delta the way Claude's
 `message.usage` is; this module diffs successive totals to recover per-call deltas,
-then buckets them into turns the same way `usage.turns.collect` does: split on each
-human-authored prompt, with any usage seen before the first prompt rolled into a
-single `before_first` turn.
+then buckets them into turns the same way `usage.turns.collect` does conceptually
+(split at each new turn, with any usage seen before the first split rolled into a
+single `before_first` turn) -- but the split point itself is `event_msg.task_started`,
+not a `response_item` role=user message: real data shows `task_started` firing
+*before* the turn's `response_item`s (including Codex's own injected context, which
+`agents.codex.rollout`/`detail` also avoid -- see `INJECTED_PREFIXES`), so splitting
+on `response_item` produced spurious extra turns whenever a turn had more than one
+role=user message (the common case: one injected, one real). `event_msg.user_message`
+(the literal typed text, filtered by `rollout.is_real_user_text`) fills in the
+already-open turn's `prompt` instead of starting a new one.
 
 Shape mirrors `usage.turns.Turn.to_dict()` field-for-field, so the plugin's usage
 panel can render either agent without special-casing every field, with one
@@ -83,20 +90,27 @@ def collect(path: str) -> List[dict]:
                 current_model = model
             continue
 
-        if t == 'response_item':
-            payload = rec.get('payload') or {}
-            if payload.get('type') == 'message' and payload.get('role') == 'user':
-                text = rollout.text_of(payload.get('content'))
-                if text.strip():
-                    current = _Turn(index=len(turns), ts=rollout.parse_ts(rec.get('timestamp')),
-                                     prompt=clean_text(text).strip()[:PROMPT_HEAD_LEN])
-                    turns.append(current)
-            continue
-
         if t != 'event_msg':
             continue
         payload = rec.get('payload') or {}
-        if payload.get('type') != 'token_count':
+        etype = payload.get('type')
+
+        if etype == 'task_started':
+            current = _Turn(index=len(turns), ts=rollout.parse_ts(rec.get('timestamp')), prompt='')
+            turns.append(current)
+            continue
+
+        if etype == 'user_message':
+            # Fills in the already-open turn's prompt; never starts a new turn
+            # (see module docstring) and never overwrites a prompt already set
+            # (the first real message in a turn wins, same as `read_head`).
+            if current is not None and not current.prompt:
+                msg = payload.get('message')
+                if isinstance(msg, str) and msg.strip() and rollout.is_real_user_text(msg):
+                    current.prompt = clean_text(msg).strip()[:PROMPT_HEAD_LEN]
+            continue
+
+        if etype != 'token_count':
             continue
         info = payload.get('info') or {}
         total = info.get('total_token_usage')
