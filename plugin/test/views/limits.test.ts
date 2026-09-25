@@ -6,6 +6,7 @@ import {
 	formatCountdown,
 	fromStatsWindow,
 	pickLatestLimits,
+	realWindows,
 	rollForwardWindow,
 	type RawLimitsFile,
 } from "../../src/views/limits";
@@ -122,6 +123,42 @@ describe("fromStatsWindow (T-103/T-104: a json stats StatsWindow, e.g. agents.co
 	it("carries a null used_percentage through as-is (a real case: some Codex accounts track no 5h/7d quota at all) rather than dropping the whole window", () => {
 		const w = statsWindow({ end: 12345, used_percentage: null });
 		expect(fromStatsWindow(w)).toEqual({ usedPercentage: null, resetsAt: 12345 });
+	});
+});
+
+describe("realWindows (T-104 addendum, re-verified against the exact reported fixture)", () => {
+	it("keeps only the real 30-day window when a free-plan Codex account tracks no 5h/7d quota at all", () => {
+		// The exact scenario from the crossed-message re-check: an account with `five_hour` and
+		// `seven_day` both present-but-unavailable (used_percentage: null), plus a real
+		// window_43200m (30-day) entry — the side panel should show one row, not three, and not zero.
+		const fiveHour = statsWindow({ minutes: 300, used_percentage: null });
+		const sevenDay = statsWindow({ minutes: 10080, used_percentage: null });
+		const thirtyDay = statsWindow({ minutes: 43200, used_percentage: 8, label_key: "window.30d" });
+		const windows = { five_hour: fiveHour, seven_day: sevenDay, window_43200m: thirtyDay };
+		expect(realWindows(windows)).toEqual([thirtyDay]);
+	});
+
+	it("keeps the usual 5h/7d pair when both are tracked (unchanged from before the addendum)", () => {
+		const fiveHour = statsWindow({ minutes: 300, used_percentage: 10 });
+		const sevenDay = statsWindow({ minutes: 10080, used_percentage: 20 });
+		expect(realWindows({ five_hour: fiveHour, seven_day: sevenDay })).toEqual([fiveHour, sevenDay]);
+	});
+
+	it("keeps every real window when there are more than two (5h/7d plus an extra)", () => {
+		const fiveHour = statsWindow({ minutes: 300, used_percentage: 10 });
+		const sevenDay = statsWindow({ minutes: 10080, used_percentage: 20 });
+		const thirtyDay = statsWindow({ minutes: 43200, used_percentage: 8 });
+		const windows = { seven_day: sevenDay, window_43200m: thirtyDay, five_hour: fiveHour };
+		expect(realWindows(windows)).toEqual([fiveHour, sevenDay, thirtyDay]);
+	});
+
+	it("is empty when nothing is tracked yet (both fixed windows null, no extra)", () => {
+		const windows = { five_hour: statsWindow({ used_percentage: null }), seven_day: statsWindow({ used_percentage: null }) };
+		expect(realWindows(windows)).toEqual([]);
+	});
+
+	it("is empty when windows itself is null (not fetched yet)", () => {
+		expect(realWindows(null)).toEqual([]);
 	});
 });
 

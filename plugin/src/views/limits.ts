@@ -43,6 +43,17 @@ export interface RateLimitWindow {
 export const FIVE_HOUR_SECONDS = 5 * 60 * 60;
 export const SEVEN_DAY_SECONDS = 7 * 24 * 60 * 60;
 
+/**
+ * A non-Claude agent's side-panel rows (T-104 addendum): every window it actually has a tracked
+ * percentage for, in length order — never the ones it doesn't track right now (`used_percentage
+ * === null`, e.g. a free-plan Codex account with no 5-hour/7-day quota at all, only a 30-day
+ * one — the always-present `five_hour`/`seven_day` placeholders are dropped here, leaving just
+ * the real `window_43200m`). Can be empty (nothing shown for that agent) if none are tracked yet.
+ */
+export function realWindows(windows: StatsWindows | null): StatsWindow[] {
+	return orderedWindows(windows).filter((w) => w.used_percentage !== null);
+}
+
 export interface LimitsInfo {
 	fiveHour: RateLimitWindow | null;
 	sevenDay: RateLimitWindow | null;
@@ -306,8 +317,7 @@ export class LimitsView {
 			// Only windows this agent actually has a tracked percentage for (T-104 addendum) —
 			// skips e.g. a null five_hour/seven_day pair entirely for an account whose only real
 			// window is a non-standard length, rather than showing a permanently dashed-out row.
-			const real = orderedWindows(this.statsWindows[agent] ?? null).filter((w) => w.used_percentage !== null);
-			for (const w of real) {
+			for (const w of realWindows(this.statsWindows[agent] ?? null)) {
 				const durationSeconds = w.minutes * 60;
 				this.renderAgentWindow(setIcon, wrapEl, agent, windowLabel(w.minutes), rollForwardWindow(fromStatsWindow(w), durationSeconds, now));
 			}
