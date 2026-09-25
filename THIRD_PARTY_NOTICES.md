@@ -20,7 +20,23 @@ Copyright (c) 2019, The xterm.js authors (https://github.com/xtermjs/xterm.js)
 
 Copyright (c) 2018, The xterm.js authors (https://github.com/xtermjs/xterm.js)
 
-## License text (MIT, applies to all four packages above)
+## lobehub/lobe-icons (Claude, Codex marks)
+
+`plugin/src/ui/icons.ts` bakes in the single-color (`currentColor`) SVG path data for two icons —
+`claude.svg` and `codex.svg` — taken from [lobehub/lobe-icons](https://github.com/lobehub/lobe-icons)
+(fetched from `packages/static-svg/icons/` on the `master` branch, T-102), used to mark which CLI
+agent a session belongs to. Not an npm dependency (nothing is installed or bundled by esbuild) —
+the path data is copied directly into the source file. Distributed under the MIT License; text
+below is copied from the repository's own `LICENSE` file.
+
+Copyright (c) 2023 LobeHub
+
+(License text: the same MIT text below.)
+
+"Claude" and "Codex" are trademarks of their respective owners (Anthropic and OpenAI); these
+icons are used here only to identify which CLI a session belongs to, not to imply endorsement.
+
+## License text (MIT, applies to everything above)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

@@ -1,8 +1,9 @@
-// The new-session, rename, and confirmation dialogs.
+// The new-session, rename, move-to-category, and confirmation dialogs.
 
-import { App, Modal, Setting } from "obsidian";
+import { App, Modal, Setting, setIcon } from "obsidian";
 import type AgentSessionsPlugin from "../main";
 import { renderCategoryChip } from "./chip";
+import { AGENT_ICON_ID } from "./icons";
 import { t, type MessageKey } from "../i18n";
 import { composeName, filterCategories, tokenizeNameInput } from "../sessions/name";
 import { AGENT_IDS, type AgentId } from "../settings";
@@ -12,6 +13,104 @@ const AGENT_NAME_KEY: Record<AgentId, MessageKey> = {
 	claude: "settings.agents.claude.name",
 	codex: "settings.agents.codex.name",
 };
+
+/** Gives a `Setting`'s control the dialog's full width instead of Obsidian's default
+ * shrink-to-fit, right-aligned control column (`agent-sessions-wide-setting`, T-102) — every
+ * text-input field in these dialogs uses this, not just the small controls (toggles, dropdowns)
+ * `Setting` is normally used for. */
+function makeWide(setting: Setting): Setting {
+	setting.settingEl.addClass("agent-sessions-wide-setting");
+	return setting;
+}
+
+interface CategorySuggest {
+	/** Opens/refreshes the dropdown for `query` (`filterCategories`). Closes it if nothing matches. */
+	openFor(query: string): void;
+	close(): void;
+	isOpen(): boolean;
+	/** No-op when closed. */
+	moveHighlight(delta: number): void;
+	/** Confirms the highlighted item (calls `onConfirm`), if any. Returns whether it did. */
+	confirmHighlighted(): boolean;
+}
+
+/**
+ * The category-suggestion dropdown: renders under `anchorEl` (which must be `position: relative`)
+ * as chip + label rows from `filterCategories`, arrow-key/mouse highlighting, and click-or-Enter
+ * confirmation via `onConfirm`. Shared by the composed name field (`buildComposedNameField`) and
+ * `MoveToCategoryModal` — the two callers differ only in what `onConfirm` does with the result
+ * (the former turns it into a chip; the latter just fills the input).
+ */
+function buildCategorySuggest(
+	anchorEl: HTMLElement,
+	categories: string[],
+	colorIndexFor: (category: string) => number,
+	onConfirm: (category: string) => void
+): CategorySuggest {
+	const suggestEl = anchorEl.createDiv({ cls: "agent-sessions-name-suggest" });
+	suggestEl.style.display = "none";
+	let items: string[] = [];
+	let itemEls: HTMLElement[] = [];
+	let highlighted = -1;
+
+	function applyHighlight(): void {
+		itemEls.forEach((el, i) => el.toggleClass("is-active", i === highlighted));
+	}
+
+	return {
+		openFor(query) {
+			items = filterCategories(categories, query);
+			itemEls = [];
+			suggestEl.empty();
+			if (items.length === 0) {
+				suggestEl.style.display = "none";
+				highlighted = -1;
+				return;
+			}
+			suggestEl.style.display = "";
+			for (const cat of items) {
+				const itemEl = suggestEl.createDiv({ cls: "agent-sessions-name-suggest-item" });
+				renderCategoryChip(itemEl, cat, colorIndexFor(cat));
+				itemEl.createSpan({ cls: "agent-sessions-name-suggest-item-label", text: cat });
+				// mousedown rather than click: needs to fire first, otherwise the input's blur
+				// fires first and closes the suggestions before the click registers.
+				itemEl.addEventListener("mousedown", (evt) => {
+					evt.preventDefault();
+					onConfirm(cat);
+				});
+				itemEl.addEventListener("mouseenter", () => {
+					highlighted = itemEls.indexOf(itemEl);
+					applyHighlight();
+				});
+				itemEls.push(itemEl);
+			}
+			highlighted = 0;
+			applyHighlight();
+		},
+		close() {
+			suggestEl.empty();
+			suggestEl.style.display = "none";
+			items = [];
+			itemEls = [];
+			highlighted = -1;
+		},
+		isOpen: () => items.length > 0,
+		moveHighlight(delta) {
+			if (items.length === 0) {
+				return;
+			}
+			highlighted = (highlighted + delta + items.length) % items.length;
+			applyHighlight();
+		},
+		confirmHighlighted() {
+			if (highlighted < 0 || highlighted >= items.length) {
+				return false;
+			}
+			onConfirm(items[highlighted]);
+			return true;
+		},
+	};
+}
 
 interface ComposedNameField {
 	getValue(): { category: string; name: string };
@@ -24,9 +123,10 @@ interface ComposedNameField {
  * (detected by `tokenizeNameInput`) turns the part before it into a chip, and typing continues
  * into what's left (the name). Backspace with an empty name, or clicking the chip, turns the
  * chip back into editable text. While typing a category (before it becomes a chip), shows
- * suggestions from existing categories (confirm with arrow keys + Enter/Tab, or a click).
- * Confirming the whole field only happens via the dialog's own button (Enter in this field
- * doesn't confirm it — Enter while a suggestion is highlighted confirms the suggestion instead).
+ * suggestions from existing categories (`buildCategorySuggest` — confirm with arrow keys +
+ * Enter/Tab, or a click). Confirming the whole field only happens via the dialog's own button
+ * (Enter in this field doesn't confirm it — Enter while a suggestion is highlighted confirms the
+ * suggestion instead).
  */
 function buildComposedNameField(
 	contentEl: HTMLElement,
@@ -34,17 +134,12 @@ function buildComposedNameField(
 	colorIndexFor: (category: string) => number,
 	initial: { category: string; name: string }
 ): ComposedNameField {
-	const setting = new Setting(contentEl).setName(t("modal.newSession.nameField"));
+	const setting = makeWide(new Setting(contentEl).setName(t("modal.newSession.nameField")));
 	const boxEl = setting.controlEl.createDiv({ cls: "agent-sessions-name-input" });
 	const inputEl = boxEl.createEl("input", { type: "text", cls: "agent-sessions-name-input-field" });
-	const suggestEl = boxEl.createDiv({ cls: "agent-sessions-name-suggest" });
-	suggestEl.style.display = "none";
 
 	let category = initial.category.trim();
 	let chipEl: HTMLElement | null = null;
-	let suggestItems: string[] = [];
-	let suggestEls: HTMLElement[] = [];
-	let highlighted = -1;
 
 	function renderChip(): void {
 		chipEl?.remove();
@@ -67,58 +162,7 @@ function buildComposedNameField(
 		renderChip();
 		inputEl.focus();
 		inputEl.setSelectionRange(restored.length, restored.length);
-		openSuggestFor(restored);
-	}
-
-	function closeSuggest(): void {
-		suggestEl.empty();
-		suggestEl.style.display = "none";
-		suggestItems = [];
-		suggestEls = [];
-		highlighted = -1;
-	}
-
-	function applyHighlight(): void {
-		suggestEls.forEach((el, i) => el.toggleClass("is-active", i === highlighted));
-	}
-
-	function moveHighlight(delta: number): void {
-		if (suggestItems.length === 0) {
-			return;
-		}
-		highlighted = (highlighted + delta + suggestItems.length) % suggestItems.length;
-		applyHighlight();
-	}
-
-	function openSuggestFor(query: string): void {
-		const items = filterCategories(categories, query);
-		suggestItems = items;
-		suggestEls = [];
-		suggestEl.empty();
-		if (items.length === 0) {
-			suggestEl.style.display = "none";
-			highlighted = -1;
-			return;
-		}
-		suggestEl.style.display = "";
-		for (const cat of items) {
-			const itemEl = suggestEl.createDiv({ cls: "agent-sessions-name-suggest-item" });
-			renderCategoryChip(itemEl, cat, colorIndexFor(cat));
-			itemEl.createSpan({ cls: "agent-sessions-name-suggest-item-label", text: cat });
-			// mousedown rather than click: needs to fire first, otherwise the input's blur fires
-			// first and closes the suggestions before the click registers.
-			itemEl.addEventListener("mousedown", (evt) => {
-				evt.preventDefault();
-				confirmCategory(cat);
-			});
-			itemEl.addEventListener("mouseenter", () => {
-				highlighted = suggestEls.indexOf(itemEl);
-				applyHighlight();
-			});
-			suggestEls.push(itemEl);
-		}
-		highlighted = 0;
-		applyHighlight();
+		suggest.openFor(restored);
 	}
 
 	/** Confirming a suggestion (click, Enter, or Tab): clears the input field right when it's
@@ -126,10 +170,12 @@ function buildComposedNameField(
 	function confirmCategory(cat: string): void {
 		category = cat;
 		inputEl.value = "";
-		closeSuggest();
+		suggest.close();
 		renderChip();
 		inputEl.focus();
 	}
+
+	const suggest = buildCategorySuggest(boxEl, categories, colorIndexFor, confirmCategory);
 
 	inputEl.addEventListener("input", () => {
 		if (category) {
@@ -144,33 +190,33 @@ function buildComposedNameField(
 			// characters in place would make the behavior confusing.
 			category = token.category;
 			inputEl.value = token.rest;
-			closeSuggest();
+			suggest.close();
 			renderChip();
 			return;
 		}
-		openSuggestFor(inputEl.value);
+		suggest.openFor(inputEl.value);
 	});
 
 	inputEl.addEventListener("keydown", (evt) => {
-		if (!category && suggestItems.length > 0) {
+		if (!category && suggest.isOpen()) {
 			if (evt.key === "ArrowDown") {
 				evt.preventDefault();
-				moveHighlight(1);
+				suggest.moveHighlight(1);
 				return;
 			}
 			if (evt.key === "ArrowUp") {
 				evt.preventDefault();
-				moveHighlight(-1);
+				suggest.moveHighlight(-1);
 				return;
 			}
-			if ((evt.key === "Enter" || evt.key === "Tab") && highlighted >= 0) {
+			if (evt.key === "Enter" || evt.key === "Tab") {
 				evt.preventDefault();
-				confirmCategory(suggestItems[highlighted]);
+				suggest.confirmHighlighted();
 				return;
 			}
 			if (evt.key === "Escape") {
 				evt.preventDefault();
-				closeSuggest();
+				suggest.close();
 				return;
 			}
 		}
@@ -192,7 +238,7 @@ function buildComposedNameField(
 	});
 
 	inputEl.addEventListener("blur", () => {
-		window.setTimeout(() => closeSuggest(), 0);
+		window.setTimeout(() => suggest.close(), 0);
 	});
 
 	inputEl.value = initial.name;
@@ -228,18 +274,26 @@ export class NewSessionModal extends Modal {
 	onOpen(): void {
 		this.setTitle(t("modal.newSession.title"));
 		if (this.enabledAgents.length > 1) {
-			new Setting(this.contentEl).setName(t("modal.newSession.agentField")).addDropdown((dropdown) => {
-				const options: Record<string, string> = {};
-				for (const id of this.enabledAgents) {
-					options[id] = t(AGENT_NAME_KEY[id]);
+			const setting = new Setting(this.contentEl).setName(t("modal.newSession.agentField"));
+			const pickerEl = setting.controlEl.createDiv({ cls: "agent-sessions-agent-picker" });
+			const buttons = new Map<AgentId, HTMLElement>();
+			const select = (id: AgentId) => {
+				this.agent = id;
+				for (const [otherId, el] of buttons) {
+					el.toggleClass("is-active", otherId === id);
 				}
-				dropdown
-					.addOptions(options)
-					.setValue(this.agent)
-					.onChange((value) => {
-						this.agent = value as AgentId;
-					});
-			});
+			};
+			for (const id of this.enabledAgents) {
+				const btn = pickerEl.createEl("button", { cls: "agent-sessions-agent-picker-btn", type: "button" });
+				const icon = AGENT_ICON_ID[id];
+				if (icon) {
+					setIcon(btn.createSpan({ cls: "agent-sessions-agent-picker-icon" }), icon);
+				}
+				btn.createSpan({ text: t(AGENT_NAME_KEY[id]) });
+				btn.addEventListener("click", () => select(id));
+				buttons.set(id, btn);
+			}
+			select(this.agent);
 		}
 		this.field = buildComposedNameField(
 			this.contentEl,
@@ -308,6 +362,102 @@ export class RenameSessionModal extends Modal {
 	private submit(): void {
 		const { category, name } = this.field.getValue();
 		const value = composeName(category, name);
+		if (value) {
+			this.onSubmit(value);
+		}
+		this.close();
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+}
+
+/**
+ * Move to category: a single input for the category only — the session's own label (the part
+ * after "Category: ", or the row's auto-derived label if it hasn't been named yet —
+ * `categorizableLabel`) is kept as-is and never shown for editing here (use "Rename" for that).
+ * Confirming with an empty category removes it, leaving just the label. Same suggestion dropdown
+ * as the composed name field (`buildCategorySuggest`), opened on focus or click (not only while
+ * typing, since there's no chip-vs-typing state to gate it on here) and narrowed as you type.
+ * Enter with nothing highlighted just confirms the field's current, possibly freehand, text as a
+ * new category. The caller (`rows.ts`'s `RowActions.moveToCategory`) is expected not to open this
+ * at all when `categorizableLabel(row)` is empty — there's nothing to attach a category to yet.
+ */
+export class MoveToCategoryModal extends Modal {
+	private inputEl!: HTMLInputElement;
+
+	constructor(
+		private plugin: AgentSessionsPlugin,
+		private currentCategory: string,
+		private label: string,
+		private onSubmit: (name: string) => void
+	) {
+		super(plugin.app);
+	}
+
+	onOpen(): void {
+		this.setTitle(t("modal.moveToCategory.title"));
+		const setting = makeWide(new Setting(this.contentEl).setName(t("modal.moveToCategory.categoryField")));
+		const boxEl = setting.controlEl.createDiv({ cls: "agent-sessions-name-input" });
+		const inputEl = boxEl.createEl("input", { type: "text", cls: "agent-sessions-name-input-field" });
+		this.inputEl = inputEl;
+		inputEl.value = this.currentCategory;
+
+		const categories = this.plugin.index.categories();
+		const colorIndexFor = (c: string) => this.plugin.index.categoryColorIndex(c);
+		const suggest = buildCategorySuggest(boxEl, categories, colorIndexFor, (cat) => {
+			inputEl.value = cat;
+			suggest.close();
+			inputEl.focus();
+		});
+
+		inputEl.addEventListener("focus", () => suggest.openFor(inputEl.value));
+		inputEl.addEventListener("click", () => suggest.openFor(inputEl.value));
+		inputEl.addEventListener("input", () => suggest.openFor(inputEl.value));
+		inputEl.addEventListener("keydown", (evt) => {
+			if (suggest.isOpen()) {
+				if (evt.key === "ArrowDown") {
+					evt.preventDefault();
+					suggest.moveHighlight(1);
+					return;
+				}
+				if (evt.key === "ArrowUp") {
+					evt.preventDefault();
+					suggest.moveHighlight(-1);
+					return;
+				}
+				if (evt.key === "Escape") {
+					evt.preventDefault();
+					suggest.close();
+					return;
+				}
+			}
+			if (evt.key === "Enter") {
+				evt.preventDefault();
+				if (suggest.isOpen() && suggest.confirmHighlighted()) {
+					return;
+				}
+				this.submit();
+			}
+		});
+		inputEl.addEventListener("blur", () => {
+			window.setTimeout(() => suggest.close(), 0);
+		});
+
+		new Setting(this.contentEl)
+			.addButton((button) => button.setButtonText(t("action.cancel")).onClick(() => this.close()))
+			.addButton((button) =>
+				button
+					.setButtonText(t("action.move"))
+					.setCta()
+					.onClick(() => this.submit())
+			);
+		window.setTimeout(() => inputEl.focus(), 0);
+	}
+
+	private submit(): void {
+		const value = composeName(this.inputEl.value, this.label);
 		if (value) {
 			this.onSubmit(value);
 		}

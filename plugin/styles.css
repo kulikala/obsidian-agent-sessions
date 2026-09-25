@@ -910,6 +910,24 @@
 	font-size: var(--font-ui-smaller);
 }
 
+.agent-sessions-badge-agent {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-4-1);
+}
+
+.agent-sessions-badge-agent-icon {
+	display: inline-flex;
+	width: 12px;
+	height: 12px;
+	color: var(--text-muted);
+}
+
+.agent-sessions-badge-agent-icon svg {
+	width: 100%;
+	height: 100%;
+}
+
 .agent-sessions-badge-rc-dot {
 	color: var(--text-faint);
 }
@@ -1314,6 +1332,63 @@
 }
 
 /* ---- Category/name dialog: a chip plus an <input> joined into a single input box ---- */
+
+/* A `Setting` whose control needs the dialog's full width rather than Obsidian's default
+   shrink-to-fit, right-aligned control column (T-102) — stacks label above control, and lets
+   the control stretch to the row's full width instead of floating right within a narrow area. */
+.agent-sessions-wide-setting {
+	flex-direction: column;
+	align-items: stretch;
+}
+
+.agent-sessions-wide-setting .setting-item-info {
+	margin-right: 0;
+}
+
+.agent-sessions-wide-setting .setting-item-control {
+	width: 100%;
+	justify-content: flex-start;
+}
+
+/* The new-session dialog's agent picker (only shown with 2+ agents enabled) — icon+label
+   buttons rather than a native <select>, since an <option> can't hold an icon (T-102). */
+.agent-sessions-agent-picker {
+	display: flex;
+	gap: var(--size-4-1);
+}
+
+.agent-sessions-agent-picker-btn {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	padding: var(--size-4-1) var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background-color: var(--background-primary);
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.agent-sessions-agent-picker-btn:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.agent-sessions-agent-picker-btn.is-active {
+	border-color: var(--interactive-accent);
+	color: var(--text-normal);
+	background-color: var(--background-modifier-hover);
+}
+
+.agent-sessions-agent-picker-icon {
+	display: inline-flex;
+	width: 14px;
+	height: 14px;
+}
+
+.agent-sessions-agent-picker-icon svg {
+	width: 100%;
+	height: 100%;
+}
 
 .agent-sessions-name-input {
 	position: relative;

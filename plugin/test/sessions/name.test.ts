@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { setLang } from "../../src/i18n";
-import { composeName, filterCategories, listCategories, sessionDisplayName, tokenizeNameInput } from "../../src/sessions/name";
+import {
+	categorizableLabel,
+	composeName,
+	filterCategories,
+	listCategories,
+	sessionDisplayName,
+	tokenizeNameInput,
+} from "../../src/sessions/name";
 import { splitName } from "../../src/sessions/tree";
 
 describe("composeName", () => {
@@ -115,6 +122,34 @@ describe("filterCategories", () => {
 
 	it("returns an empty array when nothing matches", () => {
 		expect(filterCategories(["RIM", "ZERO"], "no-match")).toEqual([]);
+	});
+
+	it("ranks a prefix match ahead of a substring-only match", () => {
+		// "Timing" starts with "tim"; "Optimize" only contains it.
+		expect(filterCategories(["Optimize", "Timing"], "tim")).toEqual(["Timing", "Optimize"]);
+	});
+
+	it("keeps each group's own relative order otherwise", () => {
+		expect(filterCategories(["b-tim", "a-tim", "Timing2", "Timing1"], "tim")).toEqual(["Timing2", "Timing1", "b-tim", "a-tim"]);
+	});
+});
+
+describe("categorizableLabel", () => {
+	it("uses the name's own label (after the category) when the session has been named", () => {
+		expect(categorizableLabel({ name: "スキル開発: セッション管理", label: "ignored" })).toBe("セッション管理");
+	});
+
+	it("uses the name as-is when it has no category prefix", () => {
+		expect(categorizableLabel({ name: "セッション管理", label: "ignored" })).toBe("セッション管理");
+	});
+
+	it("falls back to the row's auto-derived label when there's no name yet", () => {
+		expect(categorizableLabel({ name: null, label: "最初のプロンプトの冒頭" })).toBe("最初のプロンプトの冒頭");
+	});
+
+	it("is empty when there's neither a name nor a label (nothing to categorize)", () => {
+		expect(categorizableLabel({ name: null, label: null })).toBe("");
+		expect(categorizableLabel({ name: "", label: "" })).toBe("");
 	});
 });
 

@@ -10,6 +10,7 @@ import { splitName } from "../sessions/tree";
 import type { Detail, UsageResult, UsageTotal } from "../types";
 import { formatK } from "../usage/usage";
 import { AGENT_NAME_KEY } from "./rows";
+import { AGENT_ICON_ID } from "../ui/icons";
 
 export interface DetailContext {
 	row: Row;
@@ -123,7 +124,13 @@ function renderBadges(
 ): void {
 	const row = container.createDiv({ cls: "agent-sessions-detail-badges" });
 	const agentNameKey = AGENT_NAME_KEY[agent];
-	row.createSpan({ cls: "agent-sessions-badge", text: agentNameKey ? t(agentNameKey) : agent });
+	const agentBadge = row.createSpan({ cls: "agent-sessions-badge agent-sessions-badge-agent" });
+	const agentIcon = AGENT_ICON_ID[agent];
+	if (agentIcon) {
+		const { setIcon } = require("obsidian") as typeof import("obsidian");
+		setIcon(agentBadge.createSpan({ cls: "agent-sessions-badge-agent-icon" }), agentIcon);
+	}
+	agentBadge.createSpan({ text: agentNameKey ? t(agentNameKey) : agent });
 	// `statusInfo` (Claude's own live statusLine data) wins when present; `detail`'s most-recent-turn
 	// model/effort is the fallback for an agent with no statusLine (Codex) — see `types.ts`'s `Detail`.
 	row.createSpan({ cls: "agent-sessions-badge", text: statusInfo?.model ?? detail?.model ?? t("common.default") });

@@ -13,6 +13,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"action.rescan": "再走査",
 	"action.openSettings": "設定を開く",
 	"action.rename": "名前を変更",
+	"action.moveToCategory": "カテゴリに移動…",
+	"action.move": "移動",
 	"action.compact": "セッションを圧縮",
 	"action.archive": "アーカイブ",
 	"action.unarchive": "アーカイブ解除",
@@ -125,6 +127,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"modal.newSession.nameField": "名前",
 	"modal.newSession.agentField": "エージェント",
 	"modal.renameSession.title": "名前を変更",
+	"modal.moveToCategory.title": "カテゴリに移動",
+	"modal.moveToCategory.categoryField": "カテゴリ",
 
 	// ---- Side panel (views/side.ts) ----
 	"section.openTabs": "開いているタブ",

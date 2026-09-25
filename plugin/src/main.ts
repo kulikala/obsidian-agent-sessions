@@ -36,7 +36,8 @@ import { getLang, languageOptions, readObsidianLang, resolveLang, setLang, t, ty
 import { applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./terminal/keybindings";
 import { reconcileSubmitKey, sendSequence } from "./terminal/keys";
 import { buildAtToken, selectionLineRange } from "./terminal/links";
-import { ConfirmModal, NewSessionModal, RenameSessionModal } from "./ui/modals";
+import { ConfirmModal, MoveToCategoryModal, NewSessionModal, RenameSessionModal } from "./ui/modals";
+import { registerAgentIcons } from "./ui/icons";
 import { sessionDisplayName } from "./sessions/name";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./sessions/open-session";
 import {
@@ -152,6 +153,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	async onload(): Promise<void> {
+		registerAgentIcons();
 		await this.loadSettings();
 		await this.autoDetectAgentsOnFirstRun();
 		this.applyLanguage();

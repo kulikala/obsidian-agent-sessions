@@ -77,11 +77,39 @@ export function tokenizeNameInput(text: string): NameInputToken | null {
 	return null;
 }
 
-/** Suggestions while typing a category: filters `categories` by case-insensitive substring match (returns everything if `query` is empty). */
+/**
+ * Suggestions while typing a category: case-insensitive prefix matches first (in their original
+ * order), then case-insensitive substring matches that aren't already a prefix match (also in
+ * their original order). Returns everything, unfiltered, if `query` is empty.
+ */
 export function filterCategories(categories: string[], query: string): string[] {
 	const q = query.trim().toLowerCase();
 	if (!q) {
 		return categories;
 	}
-	return categories.filter((c) => c.toLowerCase().includes(q));
+	const prefix: string[] = [];
+	const substring: string[] = [];
+	for (const c of categories) {
+		const lower = c.toLowerCase();
+		if (lower.startsWith(q)) {
+			prefix.push(c);
+		} else if (lower.includes(q)) {
+			substring.push(c);
+		}
+	}
+	return [...prefix, ...substring];
+}
+
+/**
+ * The label "Move to category" attaches a category prefix to: the name's own label if the
+ * session has already been named (`splitName`'s second element), otherwise the row's
+ * auto-derived label (the first prompt, truncated) — never the "Untitled <id>" fallback shown in
+ * the UI, which isn't real content to categorize. Empty when there's nothing yet to attach a
+ * category to (the caller disables the action in that case rather than inventing a label).
+ */
+export function categorizableLabel(row: { name: string | null; label: string | null }): string {
+	if (row.name) {
+		return splitName(row.name)[1];
+	}
+	return row.label ?? "";
 }

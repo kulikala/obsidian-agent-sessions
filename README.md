@@ -61,7 +61,7 @@ Once the plugin has started at least once, the `agent-sessions` CLI can be run f
 | Session Manager | The default view for a new tab. A session tree (grouped by category, plus an "Other" group and an archive), and a collapsible/resizable analytics panel below it: 5‑hour/7‑day usage cards, a weekly-pace projection, and a per-category cost bar. Opening it never starts a session. |
 | Terminal tab | One session (Claude Code or Codex) per tab. Header actions: insert the current note as `@path`, jump to the previous/next prompt or the last response. `Cmd +`/`Cmd -`/`Cmd 0` (macOS) or `Ctrl+Shift+=`/`Ctrl+Shift+-`/`Ctrl+Shift+0` (other platforms) change the tab's font size. On non-macOS, `Ctrl+Shift+C`/`Ctrl+Shift+V` copy the selection and paste, `Ctrl+Shift+W` closes the tab, and `Ctrl+Shift+P` opens the command palette; plain `Ctrl+<key>` combos (`Ctrl+C`, `Ctrl+G`, `Ctrl+W`, `Ctrl+P`, …) always reach the agent, not Obsidian. The submit-key setting and Enter interception apply to a Claude Code tab only — a Codex tab's own keymap is left untouched. Paths printed in the output are clickable if they resolve inside the vault. |
 | Ctrl+G (built-in editor) | Opens a split editing pane under the terminal for the file Claude Code would otherwise hand to `$VISUAL`. Supports `@`-file completion, autosave, and native paste/IME/undo. "Send" submits immediately for prompt edits; Esc returns to the input without sending. |
-| Row menu (⋯ / right-click) | Rename, compress (`/compact`), view session analysis, archive/unarchive, end session, copy ID. |
+| Row menu (⋯ / right-click) | Rename, move to category (a single field, with a dropdown of existing categories and free-form entry for a new one — disabled until the session has a name or a first prompt to attach a category to), compress (`/compact`), view session analysis, archive/unarchive, end session, copy ID. |
 | Session analysis | From the row menu: cost, tokens, turn count, and duration cards; input/output/tool-use bars; a turn-by-turn table. Click rows to select a range; copy the result as Markdown. |
 
 ### Session states
@@ -70,7 +70,7 @@ The terminal tab, the side panel rows, and the manager rows all share the same i
 
 These are further grouped into the same buckets Claude's own app filters sessions by — needs input, needs review, running, done — with matching icons and colors for each, plus an archived bucket. The Session Manager's toolbar has a status-filter menu for the same six buckets (all / needs input / needs review / running / done / archived).
 
-A small icon next to the state mark shows which agent a session belongs to (Claude Code or Codex) — a plain icon, not a brand logo.
+A small icon next to the state mark shows which agent a session belongs to (Claude Code or Codex) — each agent's own mark (single-color, matching the rest of the UI), not a colored brand logo.
 
 ## Settings
 

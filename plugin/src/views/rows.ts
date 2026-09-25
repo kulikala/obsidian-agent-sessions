@@ -1,9 +1,11 @@
 // Row rendering, selection, and the row menu — shared by the side panel and the manager. The detail pane is views/detail.ts.
 
 import { renderCategoryChip } from "../ui/chip";
+import { AGENT_ICON_ID } from "../ui/icons";
 import type { Row } from "../sessions/index";
 import { t, type MessageKey } from "../i18n";
 import type AgentSessionsPlugin from "../main";
+import { categorizableLabel } from "../sessions/name";
 import {
 	resolveRowStatus,
 	STATUS_GROUP_ICON,
@@ -16,6 +18,7 @@ import { splitName } from "../sessions/tree";
 export interface RowActions {
 	openSession(id: string): void;
 	rename(id: string, currentName: string): void;
+	moveToCategory(row: Row): void;
 	compact(id: string): void;
 	toggleArchive(row: Row): void;
 	endSession(id: string): void;
@@ -87,12 +90,9 @@ export function rowStatusMark(container: HTMLElement, plugin: AgentSessionsPlugi
 	return mark;
 }
 
-/** The icon distinguishing which agent a session belongs to — deliberately generic lucide icons,
- * not brand logos. */
-export const AGENT_ICON: Record<string, string> = {
-	claude: "sparkles",
-	codex: "square-code",
-};
+/** The icon distinguishing which agent a session belongs to — Claude and Codex's own marks
+ * (`ui/icons.ts`, T-102), registered once via `registerAgentIcons()` (`main.ts`'s `onload`). */
+export const AGENT_ICON: Record<string, string> = AGENT_ICON_ID;
 
 /** The agent's display-name key (`settings.agents.<id>.name` — the same proper names used in
  * Settings' "Agents" section, so the two stay consistent). */
@@ -229,8 +229,9 @@ export class RelativeTimeTicker {
 	}
 }
 
-/** The row menu (rename, compact session, archive, end session, session analytics, copy ID).
- * `manager.ts`'s table opens the same menu — shared by both the `⋯` button and right-click. */
+/** The row menu (rename, move to category, compact session, archive, end session, session
+ * analytics, copy ID). `manager.ts`'s table opens the same menu — shared by both the `⋯` button
+ * and right-click. */
 export function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): void {
 	// See `rowStatusMark`'s comment on why `obsidian` is required lazily here.
 	const { Menu } = require("obsidian") as typeof import("obsidian");
@@ -241,6 +242,16 @@ export function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): voi
 			.setIcon("pencil")
 			.onClick(() => actions.rename(row.id, row.name ?? ""))
 	);
+	menu.addItem((item) => {
+		item
+			.setTitle(t("action.moveToCategory"))
+			.setIcon("folder-input")
+			.onClick(() => actions.moveToCategory(row));
+		// Nothing to attach a category to yet — see `categorizableLabel`.
+		if (!categorizableLabel(row)) {
+			item.setDisabled(true);
+		}
+	});
 	const lastPrompt = actions.lastUserPrompt?.(row.id);
 	const alreadyCompacted = lastPrompt != null && lastPrompt.trim() === "/compact";
 	menu.addItem((item) => {
@@ -391,6 +402,16 @@ export function createRowActions(
 			// pure functions in tests would drag in `obsidian` transitively through this closure.
 			const { RenameSessionModal } = require("../ui/modals") as typeof import("../ui/modals");
 			new RenameSessionModal(plugin, currentName, (name) => void plugin.renameSession(id, name)).open();
+		},
+		moveToCategory: (row) => {
+			const label = categorizableLabel(row);
+			if (!label) {
+				return;
+			}
+			// See `rename`'s comment on why `../ui/modals` is required lazily here.
+			const { MoveToCategoryModal } = require("../ui/modals") as typeof import("../ui/modals");
+			const [category] = row.name ? splitName(row.name) : [""];
+			new MoveToCategoryModal(plugin, category ?? "", label, (name) => void plugin.renameSession(row.id, name)).open();
 		},
 		compact: (id) => void plugin.compactSession(id),
 		toggleArchive: (row) => {

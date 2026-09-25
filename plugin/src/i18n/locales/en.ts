@@ -12,6 +12,8 @@ export const en = {
 	"action.rescan": "Rescan",
 	"action.openSettings": "Open settings",
 	"action.rename": "Rename",
+	"action.moveToCategory": "Move to category…",
+	"action.move": "Move",
 	"action.compact": "Compact session",
 	"action.archive": "Archive",
 	"action.unarchive": "Remove from archive",
@@ -124,6 +126,8 @@ export const en = {
 	"modal.newSession.nameField": "Name",
 	"modal.newSession.agentField": "Agent",
 	"modal.renameSession.title": "Rename",
+	"modal.moveToCategory.title": "Move to category",
+	"modal.moveToCategory.categoryField": "Category",
 
 	// ---- Side panel (views/side.ts) ----
 	"section.openTabs": "Open tabs",
