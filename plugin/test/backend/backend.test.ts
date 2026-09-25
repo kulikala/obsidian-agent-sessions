@@ -5,6 +5,7 @@ import {
 	commonBinDirs,
 	defaultLoginShell,
 	envWithVault,
+	mergePath,
 	setAgentEnv,
 	sortVersionsDesc,
 	withBinDirOnPath,
@@ -197,5 +198,35 @@ describe("withBinDirOnPath (a version-manager-resolved binary needs its own dir 
 		const result = withBinDirOnPath(input, "/opt/homebrew/bin/claude");
 		expect(input).toEqual({ PATH: "/usr/bin" });
 		expect(result).not.toBe(input);
+	});
+});
+
+describe("mergePath (T-100: the interactive shell's PATH merged onto the login shell's)", () => {
+	it("keeps every login entry, in order, before any interactive-only entry", () => {
+		expect(mergePath("/usr/bin:/bin", "/opt/homebrew/bin:/usr/bin")).toBe("/usr/bin:/bin:/opt/homebrew/bin");
+	});
+
+	it("appends interactive-only entries in their own order", () => {
+		expect(mergePath("/usr/bin", "/a/bin:/b/bin")).toBe("/usr/bin:/a/bin:/b/bin");
+	});
+
+	it("drops duplicates, keeping only the first (login-side) occurrence", () => {
+		expect(mergePath("/usr/bin:/opt/bin", "/opt/bin:/usr/bin:/new/bin")).toBe("/usr/bin:/opt/bin:/new/bin");
+	});
+
+	it("an empty login PATH is just the interactive one", () => {
+		expect(mergePath("", "/a/bin:/b/bin")).toBe("/a/bin:/b/bin");
+	});
+
+	it("an empty interactive PATH (probe failed/timed out) is just the login one, unchanged", () => {
+		expect(mergePath("/usr/bin:/bin", "")).toBe("/usr/bin:/bin");
+	});
+
+	it("both empty is empty", () => {
+		expect(mergePath("", "")).toBe("");
+	});
+
+	it("drops empty segments from either side (a stray leading/trailing/doubled delimiter)", () => {
+		expect(mergePath("/usr/bin::/bin", ":/a/bin:")).toBe("/usr/bin:/bin:/a/bin");
 	});
 });

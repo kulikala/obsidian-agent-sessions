@@ -117,7 +117,7 @@ Agent CLIs other than Claude Code and Codex (opencode, agy, …) are a future di
 
 ### R-U Uninstall
 
-- R-U1 `uninstall.sh <vault>` removes only what this project added: its own hook entries and `statusLine` in `~/.claude/settings.json` (backed up first), its own two submit-key entries in `~/.claude/keybindings.json` (only if the submit key was changed away from Enter — narrower than the plugin's own cleanup, R-T5b; not yet widened to match, T-98), the daemon (stopped cleanly first), and its own symlinks (`~/bin/agent-sessions`, `~/bin/agent-sessions-code`, `<vault>/.obsidian/plugins/agent-sessions`). Every other tool's hooks, `statusLine`, and keybindings entries are left untouched. Running it again when nothing is left to remove is safe and reports as much.
+- R-U1 `uninstall.sh <vault>` removes only what this project added: its own hook entries and `statusLine` in `~/.claude/settings.json` (backed up first), its own submit-key entries in `~/.claude/keybindings.json` (the same six-key `OWNED_KEYS` set the plugin's own cleanup uses, R-T5b — only those still holding their canonical value), the daemon (stopped cleanly first), and its own symlinks (`~/bin/agent-sessions`, `~/bin/agent-sessions-code`, `<vault>/.obsidian/plugins/agent-sessions`). Every other tool's hooks, `statusLine`, and keybindings entries are left untouched. Running it again when nothing is left to remove is safe and reports as much.
 - R-U2 `--force` skips the confirmation prompt that otherwise appears when sessions are still running.
 - R-U3 `--purge` additionally deletes the daemon's runtime directory (`~/.agents/sessions/`) and the vault's session bookkeeping (`<vault>/.agents/sessions/`); without it, both are left in place.
 

@@ -76,6 +76,10 @@ A small icon next to the state mark shows which agent a session belongs to (Clau
 
 Font family and size, padding (comfortable/compact/none), submit key, recent-sessions count, idle notifications, agents (Claude Code/Codex — enabled, path, environment variables), path to `agent-sessions`, terminal scrollback, built-in editor height, display language (auto/Japanese/English), and the saved heights of the side panel's details pane and the manager's analytics panel.
 
+## Troubleshooting
+
+- **A Claude Code hook fails with something like `node: not found`** (often another plugin's own hook script) — node is likely installed through a version manager (mise, nvm, asdf, volta) whose shell integration only loads in an interactive shell (`.zshrc`/`.bashrc`), not the login-but-non-interactive shell a session's environment is normally built from. The plugin also probes an interactive shell's `PATH` and merges it in (`docs/design.md`'s §4.2), so this should self-correct on the next session; if it doesn't, check that `$SHELL -i -c 'echo $PATH'` actually includes node's directory from a regular terminal.
+
 ## CLI
 
 ```sh

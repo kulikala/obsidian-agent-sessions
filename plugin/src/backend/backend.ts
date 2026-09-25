@@ -186,10 +186,38 @@ function parseEnvOutput(stdout: string): Record<string, string> {
 let cachedLoginEnv: Record<string, string> | null = null;
 
 /**
+ * Merges two `PATH`-shaped, delimiter-joined strings: every entry of `login`, in order, then
+ * every entry of `interactive` not already present, in order. Drops empty entries. Pure.
+ */
+export function mergePath(login: string, interactive: string): string {
+	const seen = new Set<string>();
+	const merged: string[] = [];
+	for (const dir of [...login.split(delimiter), ...interactive.split(delimiter)]) {
+		if (!dir || seen.has(dir)) {
+			continue;
+		}
+		seen.add(dir);
+		merged.push(dir);
+	}
+	return merged.join(delimiter);
+}
+
+/**
  * The login shell's environment (`PATH`, `LANG`, `HOME`, `USER`, `TMPDIR`,
  * `CLAUDE_CONFIG_DIR`). Obsidian launched from the Dock has a sparse environment, so this fills
  * out the `env` passed to the daemon's `start`. `$SHELL -l -c env` is run once and cached.
  * `isMac` (default `true`) picks the fallback shell when `$SHELL` isn't set (`defaultLoginShell`).
+ *
+ * `PATH` also gets whatever an *interactive* shell (`$SHELL -i -c 'echo $PATH'`, the same
+ * `execInteractive` probe `locateBinary` uses — marker-wrapped, 3-second timeout) adds on top,
+ * merged in with `mergePath` (login entries first, then any new ones from the interactive shell).
+ * A tool installed by a version manager (mise, nvm, …) whose shell integration is wired into
+ * `.zshrc`/`.bashrc` rather than a profile file doesn't reach a login-but-non-interactive `PATH`
+ * at all — without this, not just this plugin's own `command -v` lookups but *the launched
+ * session itself* (and anything it shells out to, like another Claude Code plugin's own hook
+ * script) can fail to find node/whatever the version manager manages. If the interactive probe
+ * fails or times out, `PATH` is just the login shell's own, unchanged — this never blocks a
+ * session from starting.
  */
 export async function loginEnv(isMac = true): Promise<Record<string, string>> {
 	if (cachedLoginEnv) {
@@ -203,6 +231,10 @@ export async function loginEnv(isMac = true): Promise<Record<string, string>> {
 		if (all[key] !== undefined) {
 			picked[key] = all[key];
 		}
+	}
+	const interactivePath = await execInteractive(shell, "echo $PATH");
+	if (interactivePath) {
+		picked.PATH = mergePath(picked.PATH ?? "", interactivePath);
 	}
 	cachedLoginEnv = picked;
 	return picked;

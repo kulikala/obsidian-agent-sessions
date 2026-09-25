@@ -23,6 +23,7 @@ import {
 	loginEnv,
 	resolve,
 	resolveAgentBinary,
+	resetLoginEnvCache,
 	resolveAgentSessionsPath,
 	scan,
 	setAgentEnv,
@@ -1326,6 +1327,10 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 				button.setButtonText(t("settings.agents.detect.name")).onClick(async () => {
 					button.setDisabled(true);
 					try {
+						// Also re-probes the interactive-shell PATH a session launches with
+						// (`loginEnv`'s own cache) — otherwise "Detect again" could find a binary
+						// while a session started right after still launches with the stale PATH.
+						resetLoginEnvCache();
 						detected = await detectAgents(Platform.isMacOS);
 						versions = {};
 						redraw();
