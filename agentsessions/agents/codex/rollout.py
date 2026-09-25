@@ -235,6 +235,36 @@ def read_last_activity(path: str) -> Optional[float]:
     return None
 
 
+def read_last_turn_context(path: str) -> Tuple[Optional[str], Optional[str]]:
+    """`(model, effort)` from the rollout's most recent `turn_context` (T-107 --
+    the session manager wants these for Codex rows the same way it already has
+    them for Claude, via statusLine). `effort` falls back to
+    `collaboration_mode.settings.reasoning_effort` when the top-level `effort`
+    field is absent -- an older rollout's `turn_context` carries the setting
+    only there (both were seen together in real local data with the same
+    value, so this is the same information, just nested differently across
+    versions). `(None, None)` if the rollout has no `turn_context` at all."""
+    for line in iter_tail_lines(path, TAIL_CHUNK, TAIL_LIMIT):
+        if b'"turn_context"' not in line:
+            continue
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(d, dict) or d.get('type') != 'turn_context':
+            continue
+        payload = d.get('payload') or {}
+        model = payload.get('model')
+        model = model if isinstance(model, str) and model else None
+        effort = payload.get('effort')
+        if not (isinstance(effort, str) and effort):
+            settings = ((payload.get('collaboration_mode') or {}).get('settings')) or {}
+            effort = settings.get('reasoning_effort')
+        effort = effort if isinstance(effort, str) and effort else None
+        return model, effort
+    return None, None
+
+
 def iter_rate_limits_tail(path: str) -> Iterator[Tuple[dict, Optional[float]]]:
     """Yields `(rate_limits, event_ts)` for each `event_msg.token_count` found
     while walking `path`'s tail, most recent first. Used by `agents.codex.stats`

@@ -15,7 +15,7 @@ from agentsessions.agents.codex import names as names_mod
 scan = importlib.import_module('agentsessions.agents.codex.scan')
 from tests.agents.codex_helpers import (
     assistant_message, event_user_message, item_completed_user_message, rollout_path,
-    session_meta, turn_context, user_message, write_rollout,
+    session_meta, turn_context, turn_context_old_format, user_message, write_rollout,
 )
 
 ID1 = '01000000-0000-0000-0000-000000000001'
@@ -291,6 +291,93 @@ class TestCodexNewerCliVersion(unittest.TestCase):
         conn.close()
         result = scan.scan([p], home=self.home)
         self.assertEqual(result[ID1].first_prompt, 'rollout-derived text')
+
+
+class TestCodexModelEffort(unittest.TestCase):
+    """T-107: the session manager wants model/effort for Codex rows, the same
+    way it already has them for Claude (via statusLine)."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.home = self.tmp.name
+        self._names_cache_patch = mock.patch.object(
+            config, 'CODEX_NAMES_CACHE_PATH', os.path.join(self.home, 'codex-names-cache.json'))
+        self._names_cache_patch.start()
+        self.addCleanup(self._names_cache_patch.stop)
+
+    def test_model_and_effort_come_from_the_last_turn_context(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            turn_context(model='gpt-5.6-luna', effort='low', ts='2026-09-24T01:30:30Z'),
+            event_user_message('first', '2026-09-24T01:30:31Z'),
+            turn_context(model='gpt-5.6-sol', effort='high', ts='2026-09-24T01:31:00Z'),
+            event_user_message('second', '2026-09-24T01:31:01Z'),
+        ])
+        result = scan.scan([p], home=self.home)
+        self.assertEqual(result[ID1].model, 'gpt-5.6-sol')
+        self.assertEqual(result[ID1].effort, 'high')
+
+    def test_older_rollout_falls_back_to_collaboration_mode_reasoning_effort(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            turn_context_old_format(model='gpt-5.6-luna', reasoning_effort='medium'),
+            event_user_message('hi', '2026-09-24T01:30:31Z'),
+        ])
+        result = scan.scan([p], home=self.home)
+        self.assertEqual(result[ID1].model, 'gpt-5.6-luna')
+        self.assertEqual(result[ID1].effort, 'medium')
+
+    def test_no_turn_context_leaves_both_none(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            event_user_message('hi', '2026-09-24T01:30:31Z'),
+        ])
+        result = scan.scan([p], home=self.home)
+        self.assertIsNone(result[ID1].model)
+        self.assertIsNone(result[ID1].effort)
+
+    def test_model_effort_round_trip_through_cache(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            turn_context(model='gpt-5.6-luna', effort='low'),
+            event_user_message('hi', '2026-09-24T01:30:31Z'),
+        ])
+        st = os.stat(p)
+        old_mtime = st.st_mtime - 100
+        os.utime(p, (old_mtime, old_mtime))
+        cache = {}
+        first = scan.scan([p], cache=cache, home=self.home)
+        self.assertEqual(first[ID1].model, 'gpt-5.6-luna')
+        self.assertEqual(cache[p]['model'], 'gpt-5.6-luna')
+        self.assertEqual(cache[p]['effort'], 'low')
+
+        # second call: cache hit, no re-read, same values returned from the cache
+        second = scan.scan([p], cache=cache, home=self.home)
+        self.assertEqual(second[ID1].model, 'gpt-5.6-luna')
+        self.assertEqual(second[ID1].effort, 'low')
+
+    def test_stale_schema_version_forces_model_effort_to_be_reread(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            turn_context(model='gpt-5.6-sol', effort='high'),
+            event_user_message('hi', '2026-09-24T01:30:31Z'),
+        ])
+        st = os.stat(p)
+        old_mtime = st.st_mtime - 100
+        os.utime(p, (old_mtime, old_mtime))
+        st = os.stat(p)
+        cache = {p: {'mtime': st.st_mtime, 'size': st.st_size,
+                     'schema_version': scan.SCAN_SCHEMA_VERSION - 1,
+                     'head': {'cwd': '/work/one', 'prompt': 'hi', 'child': False, 'source': 'cli'},
+                     'last_activity': 12345.0}}   # pre-T-107 entry: no model/effort keys at all
+        result = scan.scan([p], cache=cache, home=self.home)
+        self.assertEqual(result[ID1].model, 'gpt-5.6-sol')
+        self.assertEqual(result[ID1].effort, 'high')
 
 
 if __name__ == '__main__':

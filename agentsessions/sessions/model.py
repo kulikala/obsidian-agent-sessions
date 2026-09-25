@@ -14,6 +14,11 @@ class Session:
     first_prompt: str = ''
     child: bool = False      # session started by a sub-agent (headless)
     agent: str = 'claude'    # which agent adapter produced this (see agentsessions.agents)
+    # T-107: Codex only (agents/codex/scan.py, from the rollout's last turn_context) --
+    # Claude Code's own model/effort come from statusLine instead, not scan (see
+    # cli/json_output.py's _session_dict for why scan rows never carry them for claude).
+    model: Optional[str] = None
+    effort: Optional[str] = None
 
 
 @dataclass

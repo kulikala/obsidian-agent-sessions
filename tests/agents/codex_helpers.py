@@ -38,6 +38,15 @@ def turn_context(model: str = 'gpt-5.6-terra', effort: str = 'medium',
             'payload': {'model': model, 'effort': effort}}
 
 
+def turn_context_old_format(model: str = 'gpt-5.6-terra', reasoning_effort: str = 'medium',
+                             ts: str = '2026-09-24T01:30:30.100Z') -> dict:
+    """An older rollout's `turn_context` -- no top-level `effort`, only nested
+    under `collaboration_mode.settings.reasoning_effort` (T-107)."""
+    return {'timestamp': ts, 'type': 'turn_context',
+            'payload': {'model': model,
+                        'collaboration_mode': {'settings': {'reasoning_effort': reasoning_effort}}}}
+
+
 def user_message(text: str, ts: str) -> dict:
     """A `response_item` role=user message -- Codex's own reconstructed prompt
     for the model, which real data shows mixes in injected context (AGENTS.md

@@ -30,7 +30,11 @@ from .rollout import Head, RACY_WINDOW
 # (some Codex CLI versions, e.g. 0.156.1, have neither user_message events nor
 # a cleanly-recoverable response_item -- this is the only source they do have),
 # and a filtered response_item is now used as a last resort instead of never.
-SCAN_SCHEMA_VERSION = 3
+# 4 (T-107): the cache entry also carries model/effort now (rollout.read_last_turn_context) --
+# an old entry has neither key, which the cache-hit branch below would
+# otherwise read back as (None, None) forever, indistinguishable from a
+# rollout that genuinely has no turn_context.
+SCAN_SCHEMA_VERSION = 4
 
 
 def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
@@ -56,7 +60,7 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
     "Other" like any other nameless session."""
     home = home if home is not None else rollout.codex_home()
     now = time.time()
-    heads: Dict[str, tuple] = {}   # sid -> (Head, last_activity, path)
+    heads: Dict[str, tuple] = {}   # sid -> (Head, last_activity, model, effort, path)
     for p in paths:
         sid = rollout.session_id_of(p)
         if not sid:
@@ -71,9 +75,12 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
                 h = Head(cwd=head_d.get('cwd', ''), prompt=head_d.get('prompt', ''),
                          child=bool(head_d.get('child')), source=head_d.get('source', ''))
                 last_activity = cached.get('last_activity')
+                model = cached.get('model')
+                effort = cached.get('effort')
             else:
                 last_activity = rollout.read_last_activity(p)
                 h = rollout.read_head(p)
+                model, effort = rollout.read_last_turn_context(p)
                 if cache is not None:
                     cache[p] = {
                         'mtime': st.st_mtime,
@@ -81,19 +88,22 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
                         'schema_version': SCAN_SCHEMA_VERSION,
                         'head': {'cwd': h.cwd, 'prompt': h.prompt, 'child': h.child, 'source': h.source},
                         'last_activity': last_activity,
+                        'model': model,
+                        'effort': effort,
                     }
         except OSError:
             continue
-        heads[sid] = (h, last_activity, st.st_mtime, p)
+        heads[sid] = (h, last_activity, model, effort, st.st_mtime, p)
 
     thread_info = _names.lookup_thread_info(home, list(heads.keys()))
 
     out: Dict[str, Session] = {}
-    for sid, (h, last_activity, file_mtime, p) in heads.items():
+    for sid, (h, last_activity, model, effort, file_mtime, p) in heads.items():
         info = thread_info.get(sid)
         name = info.name if info else None
         first_prompt = (info.title if info and info.title else None) or h.prompt
         mtime = last_activity or file_mtime
         out[sid] = Session(id=sid, name=name, cwd=h.cwd, mtime=mtime, path=p,
-                            first_prompt=first_prompt, child=h.child, agent='codex')
+                            first_prompt=first_prompt, child=h.child, agent='codex',
+                            model=model, effort=effort)
     return out

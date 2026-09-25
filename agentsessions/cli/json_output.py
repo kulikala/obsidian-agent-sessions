@@ -50,7 +50,7 @@ def _session_dict(s: Session) -> dict:
     else:
         group = None
         label = s.first_prompt[:OTHER_LABEL_LEN] or s.id[:8]
-    return {
+    out = {
         'id': s.id,
         'agent': s.agent,
         'name': s.name,
@@ -62,6 +62,15 @@ def _session_dict(s: Session) -> dict:
         'child': s.child,
         'transcript': s.path,
     }
+    # T-107: additive, Codex only for now -- Claude Code's model/effort come from
+    # statusLine (real-time, already surfaced separately), not scan; adding a
+    # transcript-derived copy here would risk showing something stale or
+    # inconsistent with what statusLine already reports for the same session.
+    if s.model is not None:
+        out['model'] = s.model
+    if s.effort is not None:
+        out['effort'] = s.effort
+    return out
 
 
 def _store_dict() -> dict:
