@@ -12,8 +12,15 @@ content that had nothing to do with this project (comments, blank-line
 spacing, key order) just because *something* in the file changed. A line
 either ends with the marker (ours -- drop it entirely) or it doesn't (never
 touched, byte-for-byte) -- nothing else about the file is inferred or
-tidied up (an orphaned, now-empty section header is left exactly as it is,
-matching the plugin's own "only the marked line" writing contract).
+tidied up. No special-casing for a table header line is needed either way,
+confirmed with lnx-ts: when the plugin creates a *new* table solely to hold
+its own keys (e.g. `[tui.keymap.composer]`), it marks the header line too, so
+it's simply another line ending with the marker and gets removed along with
+its keys; when it only adds a key to a table that already existed (e.g. the
+user's or Codex's own `[keymap]`), the header is never marked and is always
+left exactly as it is, even if every key under it happened to be ours --
+this project reading "not marked" as "not ours" is exactly the same rule
+either way.
 """
 import os
 import time

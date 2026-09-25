@@ -49,8 +49,10 @@ class TestComputeRemoval(unittest.TestCase):
 
     def test_leaves_an_orphaned_section_header_alone(self):
         # Per the contract (T-109): line-based only, nothing inferred about
-        # emptied sections -- an orphaned [keymap] header is left exactly as
-        # it is, not cleaned up.
+        # emptied sections -- if the plugin only added keys to a table that
+        # already existed (e.g. the user's or Codex's own [keymap]), the
+        # header line itself never gets the marker, so it's always left
+        # exactly as it is, even if every key under it was ours.
         text = (
             '[keymap]\n'
             'submit = "enter"  # managed by Agent Sessions\n'
@@ -62,6 +64,22 @@ class TestComputeRemoval(unittest.TestCase):
         new_text, changed = config_toml.compute_removal(text)
         self.assertTrue(changed)
         self.assertEqual(new_text, '[keymap]\n\n[tui]\nstatus_line_use_colors = true\n')
+
+    def test_a_marked_header_for_a_table_the_plugin_created_is_removed_too(self):
+        # Confirmed with lnx-ts: when the plugin creates a *new* table solely
+        # to hold its own keys (e.g. [tui.keymap.composer]), it marks the
+        # header line itself too -- so removal here needs no special-casing
+        # at all, the header is just another line ending with the marker.
+        text = (
+            '[tui.keymap.composer]  # managed by Agent Sessions\n'
+            'submit = "enter"  # managed by Agent Sessions\n'
+            '\n'
+            '[tui]\n'
+            'status_line_use_colors = true\n'
+        )
+        new_text, changed = config_toml.compute_removal(text)
+        self.assertTrue(changed)
+        self.assertEqual(new_text, '\n[tui]\nstatus_line_use_colors = true\n')
 
     def test_leaves_other_keys_in_the_same_section(self):
         text = (
