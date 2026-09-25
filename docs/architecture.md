@@ -209,11 +209,12 @@ This one function backs the tab's icon/color/motion, the side panel's and manage
 | Subpackage | Responsibility |
 |---|---|
 | `i18n/` | The same kind of message table as the plugin's, for strings a human reads outside the plugin (TUI, CLI, statusLine, `json` output's display labels) |
-| `cli/` | Entry point and per-subcommand argument parsing (`attach`, `daemon`, `edit`, `hook`, `json`, `setup`, `status`) |
-| `daemon/` | The PTY-holding daemon: the wire-protocol frame format, the server (`select` loop, PTY lifecycle), and the raw-mode attach client used by `agent-sessions attach` |
-| `sessions/` | Discovering and describing sessions: transcript scanning and name extraction, the scan cache, last-user/assistant-text and tool detection, the running-sessions ledger, and `sessions.json` (folded groups, archive, category colors) with its mkdir-based lock |
-| `usage/` | Token/cost aggregation: per-session turn accounting, 5-hour/7-day window stats, and the per-model price table |
-| `claude/` | Integration with Claude Code's own config: the `hook`/`status` entry points, and reconciling hooks/`statusLine`/`keybindings.json` in `setup` |
+| `cli/` | Entry point and per-subcommand argument parsing (`attach`, `daemon`, `edit`, `hook`, `json`, `setup`, `status`); `cli/json_output.py` is also where the agent adapters below are looped over and merged |
+| `daemon/` | The PTY-holding daemon: the wire-protocol frame format, the server (`select` loop, PTY lifecycle), and the raw-mode attach client used by `agent-sessions attach`. Agent-agnostic — it launches whatever `argv` it's given (`claude …` or `codex …`), so multi-agent support needed no changes here |
+| `agents/` | One adapter per supported coding agent (`claude`, `codex`; see design.md §3.3), each with the same small surface (`scan`, `live_sessions`, `read_detail_for`, `collect_usage`, …). `claude/` wraps `sessions/`+`usage/` below unchanged; `codex/` is a new, independent implementation reading Codex's own rollout files and (read-only) sqlite database |
+| `sessions/` | Discovering and describing Claude Code sessions specifically: transcript scanning and name extraction, the scan cache, last-user/assistant-text and tool detection, the running-sessions ledger, and `sessions.json` (folded groups, archive, category colors) with its mkdir-based lock. `scan.py`'s cache shape and tail-reading helpers (`iter_tail_lines`, `RACY_WINDOW`) are reused by `agents/codex/` rather than duplicated |
+| `usage/` | Token/cost aggregation for Claude Code: per-session turn accounting, 5-hour/7-day window stats, and the per-model price table (`pricing.py`, which also holds Codex's OpenAI price table, since one price table is simpler than two) |
+| `claude/` | Integration with Claude Code's own config: the `hook`/`status` entry points, and reconciling hooks/`statusLine`/`keybindings.json` in `setup`. Not to be confused with `agents/claude/` (above) — this one is Claude Code-specific tooling, unrelated to scanning transcripts as one of several supported agents |
 | `tui/` | The terminal UI (`agent-sessions` with no subcommand): select-and-launch only, nothing else |
 
 `config.py` (path constants, vault resolution) and `__init__.py` sit directly under `agentsessions/`.

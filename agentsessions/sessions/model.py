@@ -13,6 +13,7 @@ class Session:
     path: str
     first_prompt: str = ''
     child: bool = False      # session started by a sub-agent (headless)
+    agent: str = 'claude'    # which agent adapter produced this (see agentsessions.agents)
 
 
 @dataclass
