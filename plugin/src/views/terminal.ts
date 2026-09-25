@@ -678,13 +678,16 @@ export class TerminalView extends ItemView {
 	/**
 	 * When the submit key is pressed: writes the submit sequence and records an instruction
 	 * marker for jump. This is the only place an instruction marker gets recorded (not from
-	 * `onData`). Claude tabs use the configured submit key's own sequence (`submitSequence`,
-	 * possibly `\x1b\r` when `settings.submitKey !== "enter"` and keybindings.json maps plain
-	 * Enter to a newline instead); every other agent's keymap isn't touched, so plain `\r` is
+	 * `onData`). Claude and Codex tabs both use the configured submit key's own sequence
+	 * (`submitSequence`, possibly `\x1b\r` when `settings.submitKey !== "enter"` — for Claude,
+	 * `keybindings.json` maps plain Enter to a newline instead; for Codex, `config.toml`'s
+	 * `composer.submit`/`editor.insert_newline` do the same, always via the fixed `alt-enter`
+	 * byte sequence regardless of *which* non-`enter` choice is configured — T-108,
+	 * `terminal/codex-config.ts`). Every other agent's keymap isn't touched, so plain `\r` is
 	 * always "submit" for them.
 	 */
 	private sendSubmit(): void {
-		const bytes = this.agent === "claude" ? submitSequence(this.plugin.settings) : "\r";
+		const bytes = this.agent === "claude" || this.agent === "codex" ? submitSequence(this.plugin.settings) : "\r";
 		this.sendInput(Buffer.from(bytes, "binary"));
 		this.marks.markInstruction();
 	}
@@ -942,12 +945,17 @@ export class TerminalView extends ItemView {
 			return true;
 		}
 		// Intercept every Enter combination and send the submit or newline sequence ourselves —
-		// Claude tabs only. This whole mechanism exists because Claude Code's own keybindings.json
-		// can be rewritten (`terminal/keybindings.ts`) to make Enter mean "newline" instead of
-		// "submit", which only makes sense paired with that rewrite. Codex's keymap isn't touched
-		// (its own default Enter/newline handling is unconfirmed — see plan/段9-Codex対応.md), so
-		// its tabs get plain passthrough: every keystroke, Enter included, goes straight to the PTY.
-		if (this.agent === "claude") {
+		// Claude and Codex tabs (T-108). This whole mechanism exists because both agents' own
+		// config can be rewritten (`terminal/keybindings.ts` for Claude, `terminal/codex-config.ts`
+		// for Codex) to make Enter mean "newline" instead of "submit", which only makes sense
+		// paired with that rewrite — Claude's `keybindings.json` maps plain Enter straight to
+		// `chat:newline`; Codex's `config.toml` always claims the fixed `alt-enter` key for
+		// `composer.submit`/narrows `editor.insert_newline` regardless of which of the 4
+		// non-`enter` choices is configured, so `sendSequence`'s byte mapping (`\r`/`\x1b\r`) is
+		// identical for both agents — only the underlying config file differs. Every other agent's
+		// keymap isn't touched, so its tabs get plain passthrough: every keystroke, Enter
+		// included, goes straight to the PTY.
+		if (this.agent === "claude" || this.agent === "codex") {
 			const submitKey = this.plugin.settings.submitKey;
 			const enterAction = resolveEnterAction(classifyEnter(ev), submitKey);
 			if (enterAction !== "passthrough") {

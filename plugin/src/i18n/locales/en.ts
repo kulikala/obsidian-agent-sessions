@@ -79,6 +79,7 @@ export const en = {
 	"notice.matchedKeybindings": "Matched keybindings.json",
 	"notice.keybindingsWritten": "Updated keybindings.json",
 	"notice.keybindingsUnchanged": "keybindings.json already matched — nothing to write",
+	"notice.codexConfigWritten": "Updated Codex's config.toml",
 	"notice.markdownCopied": "Copied the Markdown",
 	"error.agentMissing": "{name} was not found",
 
@@ -120,6 +121,8 @@ export const en = {
 	"settings.submitKey.currentSubmit": "Current keybindings.json Chat enter: default (unset, or chat:submit)",
 	"confirm.writeKeybindings.message":
 		"This writes to Claude Code's keybindings.json to make Enter insert a newline. It also affects claude started from other terminal apps.",
+	"confirm.writeKeybindings.messageWithCodex":
+		"This writes to Claude Code's keybindings.json, and to Codex's config.toml, to make Enter insert a newline for both. It also affects claude/codex started from other terminal apps.",
 	"settings.submitKeyMismatch.name": "Doesn't match keybindings.json",
 	"settings.submitKeyMismatch.desc": "Doesn't match Claude Code's keybindings.json",
 
@@ -279,6 +282,11 @@ export const en = {
 	// ---- terminal/keybindings.ts ----
 	"error.keybindingsUnreadable": "Can't read {path}. You'll need to fix it by hand",
 	"warning.manualFix": "You'll need to fix it by hand ({keys} still has an unexpected value)",
+
+	// ---- terminal/codex-config.ts ----
+	"error.codexConfigUnreadable": "Can't read {path}. You'll need to fix it by hand",
+	"error.codexConfigMalformed": "{path} doesn't look like valid TOML. Leaving it alone — you'll need to fix it by hand",
+	"warning.codexConfigManualFix": "You'll need to fix it by hand ({keys} already has a value that wasn't set by this plugin)",
 
 	// ---- sessions/store.ts ----
 	"error.lockFailed": "Couldn't get the lock: {path}",

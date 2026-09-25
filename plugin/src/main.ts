@@ -33,6 +33,7 @@ import { DaemonClient, defaultSockPath, ensureDaemon } from "./backend/daemon-cl
 import { EditServer, editReplyFor, submitsAfterEdit, type EditReply, type EditRequest } from "./backend/edit-server";
 import { SessionIndex } from "./sessions/index";
 import { getLang, languageOptions, readObsidianLang, resolveLang, setLang, t, type MessageKey } from "./i18n";
+import { applyCodexConfig, defaultCodexConfigPath, type ApplyCodexConfigResult } from "./terminal/codex-config";
 import { applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./terminal/keybindings";
 import { reconcileSubmitKey, sendSequence } from "./terminal/keys";
 import { buildAtToken, selectionLineRange } from "./terminal/links";
@@ -368,6 +369,30 @@ export default class AgentSessionsPlugin extends Plugin {
 	/** Where `keybindings.json` lives. Also used by `AgentSessionsSettingTab`. */
 	keybindingsPath(): string {
 		return defaultKeybindingsPath(homedir(), process.env.CLAUDE_CONFIG_DIR);
+	}
+
+	/** Where Codex's own `config.toml` lives (T-108) — the same `CODEX_HOME` resolution priority
+	 * as the Python side (`agentEnvFor`/`agentsessions/agents/codex/rollout.py`'s `codex_home()`):
+	 * this plugin's own "Codex environment variables" setting first, then the system env var,
+	 * then `~/.codex`. Also used by `AgentSessionsSettingTab`. */
+	codexConfigPath(): string {
+		const codexHome = parseEnvLines(this.settings.agents.codex.env).CODEX_HOME || process.env.CODEX_HOME;
+		return defaultCodexConfigPath(homedir(), codexHome);
+	}
+
+	/**
+	 * Syncs `~/.codex/config.toml` with the current `submitKey` setting and the `status_line`
+	 * default (T-108, `applyCodexConfig`) — called whenever the submit-key setting changes
+	 * (`AgentSessionsSettingTab`'s dropdown, same trigger as Claude's own `applySubmitKey`) and
+	 * once when Codex is first enabled (so `status_line` gets its one chance to apply even if the
+	 * submit key is still the default `enter`, which writes nothing keymap-related). `null` — no
+	 * read, no write, nothing — when Codex isn't enabled at all.
+	 */
+	syncCodexConfig(): ApplyCodexConfigResult | null {
+		if (!this.settings.agents.codex.enabled) {
+			return null;
+		}
+		return applyCodexConfig(this.codexConfigPath(), this.settings.submitKey);
 	}
 
 	/**
@@ -812,10 +837,12 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 	}
 
-	/** Stash (Claude only) → command as bracketed paste → submit sequence. */
+	/** Stash (Claude only) → command as bracketed paste → submit sequence (Claude and Codex, T-108
+	 * — same reasoning as `views/terminal.ts`'s `sendSubmit()`; every other agent's keymap isn't
+	 * touched, so plain `\r` is always "submit" for it). */
 	private commandBytes(text: string, agent: AgentId): Buffer {
 		const stash = agent === "claude" ? STASH : "";
-		const submit = agent === "claude" ? submitSequence(this.settings) : "\r";
+		const submit = agent === "claude" || agent === "codex" ? submitSequence(this.settings) : "\r";
 		return Buffer.from(stash + PASTE_BEGIN + text + PASTE_END + submit, "utf8");
 	}
 
@@ -1280,6 +1307,19 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 							}
 							agentSettings.enabled = value;
 							await this.plugin.saveSettings();
+							// T-108: Codex's config.toml gets its first sync right when it's
+							// enabled (mainly for the status_line default — the submit-key
+							// keymap lines only matter once submitKey is already non-"enter",
+							// which normally wouldn't happen before Codex itself was ever
+							// enabled, but syncCodexConfig() covers that case too either way).
+							if (id === "codex" && value) {
+								const codexResult = this.plugin.syncCodexConfig();
+								if (codexResult?.warning) {
+									new Notice(codexResult.warning);
+								} else if (codexResult?.status === "written") {
+									new Notice(t("notice.codexConfigWritten"));
+								}
+							}
 						})
 					);
 
@@ -1418,6 +1458,14 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			} else if (result.status === "unchanged") {
 				new Notice(t("notice.keybindingsUnchanged"));
 			}
+			// T-108: keeps Codex's own config.toml in step with the same setting — a no-op
+			// (`null`) when Codex isn't enabled at all.
+			const codexResult = this.plugin.syncCodexConfig();
+			if (codexResult?.warning) {
+				new Notice(codexResult.warning);
+			} else if (codexResult?.status === "written") {
+				new Notice(t("notice.codexConfigWritten"));
+			}
 			this.display();
 		};
 
@@ -1439,9 +1487,10 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 					return;
 				}
 				if (next !== "enter") {
-					new ConfirmModal(this.app, t("confirm.writeKeybindings.message"), t("action.write"), () =>
-						applyAndSave(next)
-					).open();
+					const message = this.plugin.settings.agents.codex.enabled
+						? t("confirm.writeKeybindings.messageWithCodex")
+						: t("confirm.writeKeybindings.message");
+					new ConfirmModal(this.app, message, t("action.write"), () => applyAndSave(next)).open();
 					// Revert the dropdown's appearance until confirmed (display() rebuilds it once applied).
 					dropdown.setValue(current);
 				} else {

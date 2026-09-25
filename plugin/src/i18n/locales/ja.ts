@@ -80,6 +80,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"notice.matchedKeybindings": "keybindings.json に合わせました",
 	"notice.keybindingsWritten": "keybindings.json を書き換えました",
 	"notice.keybindingsUnchanged": "keybindings.json は既にこの内容でした（書き換えなし）",
+	"notice.codexConfigWritten": "Codex の config.toml を書き換えました",
 	"notice.markdownCopied": "Markdown をコピーしました",
 	"error.agentMissing": "{name} が見つからない",
 
@@ -121,6 +122,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"settings.submitKey.currentSubmit": "現在の keybindings.json の Chat の enter：既定（未設定、または chat:submit）",
 	"confirm.writeKeybindings.message":
 		"Enter を改行にするため、Claude Code の keybindings.json に書きます。他のターミナルアプリで起動した claude にも効きます",
+	"confirm.writeKeybindings.messageWithCodex":
+		"Enter を改行にするため、Claude Code の keybindings.json と、Codex の config.toml の両方に書きます。他のターミナルアプリで起動した claude／codex にも効きます",
 	"settings.submitKeyMismatch.name": "keybindings.json と食い違っています",
 	"settings.submitKeyMismatch.desc": "Claude Code の keybindings.json と一致していません",
 
@@ -280,6 +283,11 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	// ---- terminal/keybindings.ts ----
 	"error.keybindingsUnreadable": "{path} が読めません。手で直す必要があります",
 	"warning.manualFix": "手で直す必要があります（{keys} が想定と違う値のまま残っています）",
+
+	// ---- terminal/codex-config.ts ----
+	"error.codexConfigUnreadable": "{path} が読めません。手で直す必要があります",
+	"error.codexConfigMalformed": "{path} が正しい TOML に見えません。そのままにしました。手で直す必要があります",
+	"warning.codexConfigManualFix": "手で直す必要があります（{keys} に、このプラグインが設定したのではない値が既に入っています）",
 
 	// ---- sessions/store.ts ----
 	"error.lockFailed": "ロックが取れない: {path}",
