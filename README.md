@@ -139,11 +139,13 @@ Add `plugin/src/i18n/locales/<code>.ts` (a `Partial<Record<MessageKey, string>>`
 ### Release (maintainers)
 
 ```sh
-cd plugin && npm version patch   # or minor / major; updates plugin/manifest.json, the root manifest.json, and versions.json
-git push && git push --tags
+cd plugin && npm version minor --no-git-tag-version   # or patch / major; updates plugin/package.json, plugin/manifest.json, the root manifest.json, and versions.json
+cd .. && git commit -am "Release X.Y.Z"
+git tag -a X.Y.Z -m "Agent Sessions X.Y.Z"   # the bare version, no "v" prefix: it must equal manifest.json's version
+git push origin main X.Y.Z
 ```
 
-`plugin/.npmrc` sets `tag-version-prefix=""`, so the tag `npm version` creates is the bare version number (e.g. `0.1.1`, not `v0.1.1`) — exactly matching `manifest.json`'s `version`, which is what Obsidian's release tooling expects.
+`npm version` runs inside `plugin/`, which is not the repository root, so it updates the files but does not commit or tag; the commit and tag are made by hand as above.
 
 Pushing the tag runs `.github/workflows/release.yml`, which builds the plugin and attaches `main.js`, `manifest.json`, and `styles.css` to a draft GitHub Release. Review the draft, then publish it.
 

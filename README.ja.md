@@ -142,13 +142,15 @@ python3 -W error -m unittest discover -s tests -t .   # Python（標準ライブ
 ### リリース（メンテナ向け）
 
 ```sh
-cd plugin && npm version patch   # minor / major も可。plugin/manifest.json・直下の manifest.json・versions.json を更新する
-git push && git push --tags
+cd plugin && npm version minor --no-git-tag-version   # patch / major も可。plugin/package.json・plugin/manifest.json・直下の manifest.json・versions.json を更新する
+cd .. && git commit -am "Release X.Y.Z"
+git tag -a X.Y.Z -m "Agent Sessions X.Y.Z"   # 「v」を付けない素の版番号。manifest.json の version と完全に一致させる
+git push origin main X.Y.Z
 ```
 
-`plugin/.npmrc` で `tag-version-prefix=""` を設定してあるので、`npm version` が打つタグは素のバージョン番号（`v0.1.1` ではなく `0.1.1`）——`manifest.json` の `version` と完全に一致する。Obsidian のリリース側のツールが期待する形。
+`npm version` はリポジトリの直下ではない `plugin/` で動くため、ファイルは更新するがコミットとタグは作らない。コミットとタグは上のとおり手で作る。
 
-タグを push すると `.github/workflows/release.yml` が走り、プラグインをビルドして `main.js`・`manifest.json`・`styles.css` を GitHub Release の draft に添付する。draft の内容を確認してから公開する。
+タグを push すると `.github/workflows/release.yml` が走り、プラグインをビルドして `main.js`・`manifest.json`・`styles.css` を GitHub Release の下書きに添付する。下書きの内容を確かめてから公開する。
 
 ## ライセンス
 
