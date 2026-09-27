@@ -334,11 +334,22 @@ export class SideView extends ItemView {
 		this.renderSection(this.listEl, t("section.running"), list.running, actions);
 		this.renderSection(this.listEl, t("section.recent"), list.recent, actions);
 		if (list.openTabs.length === 0 && list.running.length === 0 && list.recent.length === 0) {
-			this.renderEmptyState(this.listEl);
+			if (!this.plugin.index.loaded) {
+				this.renderLoadingState(this.listEl);
+			} else {
+				this.renderEmptyState(this.listEl);
+			}
 		}
 		if (!this.hovering) {
 			this.showDefaultDetail(list);
 		}
+	}
+
+	/** Shown instead of the empty state until the first full scan has finished. */
+	private renderLoadingState(container: HTMLElement): void {
+		const box = container.createDiv({ cls: "agent-sessions-empty agent-sessions-loading" });
+		box.createDiv({ cls: "agent-sessions-empty-wordmark", text: "Agent Sessions" });
+		box.createDiv({ cls: "agent-sessions-empty-desc", text: t("side.loading") });
 	}
 
 	/**

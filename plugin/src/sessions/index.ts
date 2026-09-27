@@ -102,6 +102,10 @@ export class SessionIndex extends EventEmitter {
 	/** Just-compacted markers. */
 	readonly compactedTracker: CompactedTracker;
 
+	/** Whether the first full scan has finished (successfully or not). Until then an empty
+	 * `sessions` means "not read yet", not "no sessions" — the side panel shows a loading state. */
+	loaded = false;
+
 	private openTabIds = new Set<string>();
 	/** Category name → palette slot (a copy of `sessions.json`'s `categoryColors`). */
 	private categoryColors: Record<string, number> = {};
@@ -251,7 +255,14 @@ export class SessionIndex extends EventEmitter {
 			result = await this.deps.scan(only);
 		} catch (err) {
 			this.emit("scanError", messageOf(err));
+			if (!only && !this.loaded) {
+				this.loaded = true;
+				this.emit("change");
+			}
 			return;
+		}
+		if (!only) {
+			this.loaded = true;
 		}
 		this.applyScanResult(result, only);
 		this.syncCategoryColors();

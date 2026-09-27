@@ -142,6 +142,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"section.openTabs": "開いているタブ",
 	"section.running": "起動中",
 	"section.recent": "最近",
+	"side.loading": "セッションを読み込んでいます…",
 	"empty.desc": "まだセッションがありません。下のボタンで {agents} を起動すると、ここに並びます。",
 	"empty.noAgentEnabled": "設定で {agents} を有効にしてください。",
 	"empty.noAgentFound": "{agents} の実行ファイルが見つかりません。設定でパスを確認してください。",

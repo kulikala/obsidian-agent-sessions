@@ -118,6 +118,18 @@ describe("SessionIndex", () => {
 		rmSync(dir, { recursive: true, force: true });
 	});
 
+	it("is not loaded until the first full scan finishes, even if it fails", async () => {
+		scanImpl = async () => {
+			throw new Error("boom");
+		};
+		const index = new SessionIndex(deps);
+		expect(index.loaded).toBe(false);
+		await index.rescan(["a"]);
+		expect(index.loaded).toBe(false);
+		await index.scan();
+		expect(index.loaded).toBe(true);
+	});
+
 	it("fills the sessions map on scan", async () => {
 		scanImpl = async () => ({
 			sessions: [scanSession({ id: "a", name: "RIM: Meeting" })],

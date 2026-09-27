@@ -141,6 +141,7 @@ export const en = {
 	"section.openTabs": "Open tabs",
 	"section.running": "Running",
 	"section.recent": "Recent",
+	"side.loading": "Loading sessions…",
 	"empty.desc": "No sessions yet. Start {agents} with the button below and it will show up here.",
 	"empty.noAgentEnabled": "Enable {agents} in settings to get started.",
 	"empty.noAgentFound": "Couldn't find the executable for {agents}. Check the path in settings.",
