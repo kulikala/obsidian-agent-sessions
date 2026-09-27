@@ -618,7 +618,7 @@ export class ManagerView extends ItemView {
 
 		if (pace.kind === "unknown" || pace.kind === "too-early") {
 			lineEl.addClass("is-muted");
-			lineEl.setText(t("stats.pace.tooEarly"));
+			lineEl.setText(t(pace.kind === "unknown" ? "stats.pace.unknown" : "stats.pace.tooEarly"));
 			if (pace.kind === "too-early") {
 				setTooltip(lineEl, tooltipText(pace.elapsedPct, w.used_percentage));
 			}
