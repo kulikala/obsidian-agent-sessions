@@ -7,6 +7,7 @@ import {
 	submitKeyButtonLabel,
 	submitKeyStatuslineSymbol,
 	SUBMIT_KEY_SYMBOLS,
+	terminalClaimsKey,
 	type KeyLike,
 } from "../../src/terminal/keys";
 import { SUBMIT_KEYS, type SubmitKey } from "../../src/settings";
@@ -165,5 +166,26 @@ describe("classifyCtrlKeyNonMac (non-macOS Ctrl-key shortcuts)", () => {
 		for (const k of ["c", "d", "g", "r", "o", "s", "l", "t", "w", "p"]) {
 			expect(classifyCtrlKeyNonMac(key({ key: k, ctrlKey: true }))).toBe("terminal");
 		}
+	});
+});
+
+describe("terminalClaimsKey", () => {
+	it("claims plain Ctrl combinations on non-macOS so Obsidian's hotkeys don't take them", () => {
+		expect(terminalClaimsKey(key({ key: "g", ctrlKey: true }), false)).toBe(true);
+		expect(terminalClaimsKey(key({ key: "p", ctrlKey: true }), false)).toBe(true);
+		expect(terminalClaimsKey(key({ key: "Enter", ctrlKey: true }), false)).toBe(true);
+		expect(terminalClaimsKey(key({ key: "C", ctrlKey: true, shiftKey: true }), false)).toBe(true);
+	});
+
+	it("leaves Obsidian's own Ctrl keys and non-Ctrl keys alone", () => {
+		expect(terminalClaimsKey(key({ key: "Tab", ctrlKey: true }), false)).toBe(false);
+		expect(terminalClaimsKey(key({ key: ",", ctrlKey: true }), false)).toBe(false);
+		expect(terminalClaimsKey(key({ key: "k", ctrlKey: true, shiftKey: true }), false)).toBe(false);
+		expect(terminalClaimsKey(key({ key: "g" }), false)).toBe(false);
+		expect(terminalClaimsKey(key({ key: "g", ctrlKey: true, altKey: true }), false)).toBe(false);
+	});
+
+	it("claims nothing on macOS", () => {
+		expect(terminalClaimsKey(key({ key: "g", ctrlKey: true }), true)).toBe(false);
 	});
 });

@@ -5,6 +5,7 @@ import {
 	ItemView,
 	Notice,
 	Platform,
+	Scope,
 	setIcon,
 	setTooltip,
 	type Menu,
@@ -20,7 +21,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { AGENT_BIN_NAME, BackendError, buildAgentArgv, loginEnv, resolveAgentBinary, withBinDirOnPath } from "../backend/backend";
 import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../backend/daemon-client";
 import { t } from "../i18n";
-import { classifyCtrlKeyNonMac, classifyEnter, resolveEnterAction, sendSequence } from "../terminal/keys";
+import { classifyCtrlKeyNonMac, classifyEnter, resolveEnterAction, sendSequence, terminalClaimsKey } from "../terminal/keys";
 import { buildAtToken, selectionLineRange, VaultLinkProvider } from "../terminal/links";
 import { submitSequence } from "../main";
 import type AgentSessionsPlugin from "../main";
@@ -282,6 +283,15 @@ export class TerminalView extends ItemView {
 		this.terminal.loadAddon(new Unicode11Addon());
 		this.terminal.unicode.activeVersion = "11";
 		this.terminal.attachCustomKeyEventHandler((ev) => this.handleKey(ev));
+		// Obsidian's hotkeys run first (capture phase on the window), so Ctrl combinations the
+		// terminal needs are claimed through this view's scope while the terminal has focus.
+		this.scope = new Scope(this.app.scope);
+		this.scope.register(null, null, (ev) => {
+			if (this.pendingEdit || !this.termEl.contains(activeDocument.activeElement)) {
+				return undefined;
+			}
+			return terminalClaimsKey(ev, Platform.isMacOS) ? true : undefined;
+		});
 		// While the editor pane is open, don't forward anything to the PTY — including IME-confirmed characters and paste.
 		const onData = this.terminal.onData((data) => {
 			if (this.pendingEdit) {

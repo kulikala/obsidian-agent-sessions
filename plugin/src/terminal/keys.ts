@@ -215,3 +215,20 @@ export function classifyCtrlKeyNonMac(ev: KeyLike): CtrlKeyRole {
 	}
 	return "terminal"; // Includes Ctrl+W/Ctrl+P, which claude's input line may use.
 }
+
+/**
+ * Whether a keydown in a focused terminal is claimed ahead of Obsidian's own hotkeys. Obsidian
+ * matches hotkeys in a capture-phase `keydown` listener on the window, so a plain Ctrl
+ * combination bound to a command there (Ctrl+G opens the graph view by default) never reaches
+ * xterm's handler. The terminal view's `Scope` answers `true` for these keys, which ends the
+ * lookup before the app's hotkeys are consulted and leaves the event untouched for xterm.
+ * Only non-macOS is affected (on macOS, Obsidian's modifier is Cmd). Keys whose role is
+ * `obsidian` (Ctrl+Tab, Ctrl+,, other Ctrl+Shift combinations) are left to Obsidian.
+ */
+export function terminalClaimsKey(ev: KeyLike, isMacOS: boolean): boolean {
+	if (isMacOS) {
+		return false;
+	}
+	const role = classifyCtrlKeyNonMac(ev);
+	return role !== "passthrough" && role !== "obsidian";
+}

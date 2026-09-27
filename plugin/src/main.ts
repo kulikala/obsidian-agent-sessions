@@ -190,7 +190,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		});
 		this.opener = new SessionOpener<WorkspaceLeaf>(this.app.workspace);
 
-		this.register(this.index.registry.onIdle((id) => this.notifyIdle(id)));
+		this.register(this.index.registry.onIdle((id) => void this.notifyIdle(id)));
 
 		// Remember the last-frontmost Markdown view (the target for `@` insertion).
 		this.registerEvent(
@@ -1094,14 +1094,23 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	// ---- Notifications and cleanup -----------------------------------------------------
 
-	/** On `busy|shell → idle`, notifies if that tab isn't in front or Obsidian isn't the active window. */
-	private notifyIdle(id: string): void {
+	/**
+	 * On `busy|shell → idle`, notifies if that tab isn't in front or Obsidian isn't the active
+	 * window. The idle transition usually lands before the periodic scan has picked up the
+	 * session's first prompt, so a session with neither a name nor a label yet is rescanned
+	 * first — otherwise the notice would show the agent's placeholder name.
+	 */
+	private async notifyIdle(id: string): Promise<void> {
 		if (!this.settings.notifyOnIdle || this.headless.has(id)) {
 			return;
 		}
 		const front = this.app.workspace.getActiveViewOfType(TerminalView);
 		if (front?.sessionId === id && document.hasFocus()) {
 			return;
+		}
+		const known = this.index.sessions.get(id);
+		if (!known?.name && (!known?.label || known.label === id)) {
+			await this.index.rescan([id]);
 		}
 		const row = this.index.sessions.get(id);
 		const name = sessionDisplayName({ name: row?.name, label: row?.label, agent: row?.agent ?? "claude", id });
