@@ -43,7 +43,7 @@ Run and manage [Claude Code](https://claude.com/claude-code), [Codex](https://gi
   - writes `~/.agents/sessions/` (the daemon's socket, logs, status snapshots, caches);
   - installing the program writes it to a folder in your home directory (see [Installation](#installation)); the install and `install.sh` add hooks and a `statusLine` to `~/.claude/settings.json` (backed up first); changing the submit-key setting writes `~/.claude/keybindings.json`;
   - with Codex enabled, adds its submit-key keymap and a default `[tui].status_line` to `~/.codex/config.toml` (backed up first; each line it adds is marked, and `agent-sessions setup --remove` takes exactly those out);
-  - with OpenCode enabled, writes a status plugin, `~/.config/opencode/plugins/agent-sessions.js` (or under `$XDG_CONFIG_HOME`), and the plugin writes one status file per session under `~/.agents/sessions/opencode/`. The plugin file starts with a marker line; only a file carrying it is ever overwritten, and Remove (Settings → agent-sessions program) or `agent-sessions setup --remove` deletes it;
+  - with OpenCode enabled, writes a status plugin, `~/.config/opencode/plugins/agent-sessions.js` (or under `$XDG_CONFIG_HOME`), and the plugin writes one status file per session under `~/.agents/sessions/opencode/`. The plugin file starts with a marker line; only a file carrying it is ever overwritten, and Remove (Settings → agent-sessions program) or `agent-sessions setup --remove` deletes it, as does turning OpenCode off in the plugin's settings; the installer's dialog lists this file when OpenCode is enabled, and a routine update of the program only refreshes a plugin file that is already there;
   - the built-in editor edits the temporary file the agent hands to `$VISUAL` (`$EDITOR` for OpenCode).
 - **Sessions not listed.** OpenCode sub-agent sessions and sessions started by `opencode run` are not listed.
 - **Lists the vault's files** only to complete `@` file paths in the built-in editor.
@@ -122,7 +122,7 @@ agent-sessions attach ID       # attach from a terminal (Ctrl+\ to detach)
 agent-sessions daemon [--detach]
 agent-sessions json scan|live|detail ID|usage ID [--from ISO --to ISO]|stats
 agent-sessions setup [--dry-run]
-agent-sessions setup --opencode   # install OpenCode's status plugin only
+agent-sessions setup --opencode   # install OpenCode's status plugin only (--remove-opencode: remove just that file)
 ```
 
 `agent-sessions json` is the machine-readable interface the plugin itself uses (`scan`, `live`, `detail`, `usage`, `stats`); `hook` and `status` back the Claude Code hooks and `statusLine` described above; `edit` is the receiving end of the built-in editor.
