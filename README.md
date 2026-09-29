@@ -2,13 +2,13 @@
 
 # Agent Sessions
 
-Run and manage [Claude Code](https://claude.com/claude-code) and [Codex](https://github.com/openai/codex) sessions as terminal tabs inside [Obsidian](https://obsidian.md), with a session list, a usage dashboard, and a daemon that keeps sessions alive when you close a tab or quit Obsidian.
+Run and manage [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex), and [OpenCode](https://opencode.ai) sessions as terminal tabs inside [Obsidian](https://obsidian.md), with a session list, a usage dashboard, and a daemon that keeps sessions alive when you close a tab or quit Obsidian.
 
 ![A Claude Code session in a terminal tab, with the side panel listing open, running, and recent Claude Code and Codex sessions](docs/images/overview.png)
 
 ## Features
 
-- **Multi-agent** — Claude Code and Codex sessions, mixed freely in the same list, sorted and filtered together. Auto-detected on first run; enable either or both, with per-agent path and environment-variable settings. Choosing "New session" with both enabled asks which one to start.
+- **Multi-agent** — Claude Code, Codex, and OpenCode sessions, mixed freely in the same list, sorted and filtered together. Auto-detected on first run; enable any of them, with per-agent path and environment-variable settings. Choosing "New session" with more than one enabled asks which one to start. OpenCode can also be started through `ollama launch opencode` to use a local model.
 - **Terminal tabs** — one session per Obsidian tab, backed by a real PTY (xterm.js). Close the tab or quit Obsidian and the session keeps running; reopen it and the last screen is replayed.
 - **Side panel** — a right-sidebar list of open tabs, running sessions, and recent sessions, plus a details pane and a 5‑hour/7‑day rate‑limit view with a live countdown.
 - **Session Manager** — a full session tree grouped by category, a sortable table (last activity, model, effort, 5h/7d cost, folder), and a usage-analytics panel: 5‑hour/7‑day stat cards, a weekly-pace projection ("on track" vs. "will run out at ‑‑"), and a per-category cost breakdown — split into a section per enabled agent when more than one is enabled.
@@ -31,19 +31,21 @@ Run and manage [Claude Code](https://claude.com/claude-code) and [Codex](https:/
 | **OS** | macOS — tested. Linux, including Linux Obsidian running under WSLg on Windows — supported (the terminal keybindings and the Python side both have platform branches for it, exercised in CI and in Linux containers by hand), but not yet verified on a real Obsidian install end to end. Windows (native) — not supported: the daemon depends on `pty`, `fcntl`, and `termios`, Unix-only standard-library modules with no Windows equivalent, and a native Windows build of Obsidian has no PTY to hold open; running the Linux build of Obsidian under WSLg avoids this entirely. On native Windows the plugin loads but stays inactive, saying why. |
 | **Obsidian** | Desktop only (`isDesktopOnly`, since the plugin spawns processes and opens Unix sockets — neither is available to a mobile or web build), version 1.8.7 or later (`minAppVersion`). |
 | **Python** | 3.9+, standard library only. macOS: the Command Line Tools' `python3` (`xcode-select --install`), python.org, or Homebrew; Linux: your distribution's `python3`. |
-| **Claude Code and/or Codex** | At least one of the two, either on your `PATH` or pointed to from the plugin's Agents settings (auto-detected on first run). Claude Code: the plugin relies on its hooks (`Stop`, `SessionEnd`, `SessionStart` with matcher `compact`, `UserPromptSubmit`), its `statusLine`, and — only if you change the submit-key setting away from the default — its `keybindings.json`. Codex: no hooks/statusLine equivalent is used yet; hands-on verification is still pending (see [`docs/design.md`](docs/design.md) §7.7, §25). |
+| **Claude Code, Codex, and/or OpenCode** | At least one of the three, either on your `PATH` or pointed to from the plugin's Agents settings (auto-detected on first run). Claude Code: the plugin relies on its hooks (`Stop`, `SessionEnd`, `SessionStart` with matcher `compact`, `UserPromptSubmit`), its `statusLine`, and — only if you change the submit-key setting away from the default — its `keybindings.json`. Codex: no hooks/statusLine equivalent is used yet; hands-on verification is still pending (see [`docs/design.md`](docs/design.md) §7.7, §25). OpenCode: sessions are read from its SQLite database, and busy/idle/waiting comes from a small OpenCode plugin the program installs when OpenCode is enabled. To start a session through `ollama launch opencode`, [Ollama](https://ollama.com) has to be installed as well. |
 | **Node.js / npm** | Only if you are building the plugin from source (see [Development](#development)); CI builds with Node.js 20. |
 
 ## Disclosures
 
-- **No network use by the plugin.** It talks only to its own daemon, over a Unix socket on this machine. Claude Code and Codex, which it launches, connect to their own services under your own accounts.
-- **Runs local programs.** The plugin runs the `agent-sessions` program with your Python (it ships inside the plugin as readable source and is written out only when you click Install), starts the Claude Code / Codex CLIs you have installed, and reads your login shell's environment so they find the same `PATH` as in a terminal. It never downloads code.
+- **No network use by the plugin.** It talks only to its own daemon, over a Unix socket on this machine. Claude Code, Codex, and OpenCode, which it launches, connect to their own services under your own accounts.
+- **Runs local programs.** The plugin runs the `agent-sessions` program with your Python (it ships inside the plugin as readable source and is written out only when you click Install), starts the Claude Code / Codex / OpenCode CLIs (or `ollama launch opencode`) you have installed, and reads your login shell's environment so they find the same `PATH` as in a terminal. It never downloads code.
 - **Reads and writes files outside the vault**, because that is where the agents and the program keep their state:
-  - reads Claude Code's `~/.claude/projects/`, `~/.claude/sessions/`, and `~/.claude/settings.json`, and Codex's `~/.codex/` (or `$CODEX_HOME`), to list sessions and compute usage;
+  - reads Claude Code's `~/.claude/projects/`, `~/.claude/sessions/`, and `~/.claude/settings.json`, Codex's `~/.codex/` (or `$CODEX_HOME`), and OpenCode's database `~/.local/share/opencode/opencode.db` (or under `$XDG_DATA_HOME`; opened read-only), to list sessions and compute usage;
   - writes `~/.agents/sessions/` (the daemon's socket, logs, status snapshots, caches);
   - installing the program writes it to a folder in your home directory (see [Installation](#installation)); the install and `install.sh` add hooks and a `statusLine` to `~/.claude/settings.json` (backed up first); changing the submit-key setting writes `~/.claude/keybindings.json`;
   - with Codex enabled, adds its submit-key keymap and a default `[tui].status_line` to `~/.codex/config.toml` (backed up first; each line it adds is marked, and `agent-sessions setup --remove` takes exactly those out);
-  - the built-in editor edits the temporary file Claude Code hands to `$VISUAL`.
+  - with OpenCode enabled, writes a status plugin, `~/.config/opencode/plugins/agent-sessions.js` (or under `$XDG_CONFIG_HOME`), and the plugin writes one status file per session under `~/.agents/sessions/opencode/`. The plugin file starts with a marker line; only a file carrying it is ever overwritten, and Remove (Settings → agent-sessions program) or `agent-sessions setup --remove` deletes it;
+  - the built-in editor edits the temporary file the agent hands to `$VISUAL` (`$EDITOR` for OpenCode).
+- **Sessions not listed.** OpenCode sub-agent sessions and sessions started by `opencode run` are not listed.
 - **Lists the vault's files** only to complete `@` file paths in the built-in editor.
 - **Uses the clipboard** only when you ask: copying a session ID or an analysis table, and Ctrl+Shift+C / Ctrl+Shift+V in a terminal tab (Linux keybindings).
 - **No accounts, payments, ads, or telemetry** of its own. Everything is open source under the MIT license.
@@ -90,7 +92,7 @@ Once the plugin has started at least once, the `agent-sessions` CLI can be run f
 |---|---|
 | Side panel (right sidebar) | New session, open the Session Manager, settings. A list split into *open tabs*, *running* (attached to the daemon but no tab), and *recent*; each row shows a state icon, a category chip, and the name. With no sessions at all yet, shows a "New session" button instead (or a link to settings, if no agent is available). A details pane (model, effort, connection status, context usage, total tokens/cost, last prompt/response). A rate-limit view with a 5‑hour/7‑day pair of bars and a countdown to reset for each enabled agent. |
 | Session Manager | The default view for a new tab. A session tree (grouped by category, plus an "Other" group and an archive), and a collapsible/resizable analytics panel below it: 5‑hour/7‑day usage cards, a weekly-pace projection, and a per-category cost bar — one section per enabled agent when more than one is enabled. Opening it never starts a session. |
-| Terminal tab | One session (Claude Code or Codex) per tab. Header actions: insert the current note as `@path`, jump to the previous/next prompt or the last response. `Cmd +`/`Cmd -`/`Cmd 0` (macOS) or `Ctrl+Shift+=`/`Ctrl+Shift+-`/`Ctrl+Shift+0` (other platforms) change the tab's font size. On non-macOS, `Ctrl+Shift+C`/`Ctrl+Shift+V` copy the selection and paste, `Ctrl+Shift+W` closes the tab, and `Ctrl+Shift+P` opens the command palette; plain `Ctrl+<key>` combos (`Ctrl+C`, `Ctrl+G`, `Ctrl+W`, `Ctrl+P`, …) always reach the agent, not Obsidian. The submit-key setting and Enter interception apply to a Claude Code tab only — a Codex tab's own keymap is left untouched. Paths printed in the output are clickable if they resolve inside the vault. |
+| Terminal tab | One session (Claude Code, Codex, or OpenCode) per tab. Header actions: insert the current note as `@path`, jump to the previous/next prompt or the last response. `Cmd +`/`Cmd -`/`Cmd 0` (macOS) or `Ctrl+Shift+=`/`Ctrl+Shift+-`/`Ctrl+Shift+0` (other platforms) change the tab's font size. On non-macOS, `Ctrl+Shift+C`/`Ctrl+Shift+V` copy the selection and paste, `Ctrl+Shift+W` closes the tab, and `Ctrl+Shift+P` opens the command palette; plain `Ctrl+<key>` combos (`Ctrl+C`, `Ctrl+G`, `Ctrl+W`, `Ctrl+P`, …) always reach the agent, not Obsidian. The submit-key setting and Enter interception apply to every tab: Claude Code's and Codex's own keymaps are adjusted to match (see Disclosures), while OpenCode's is left untouched — the chosen submit key sends Enter and every other Enter combination sends a newline. Paths printed in the output are clickable if they resolve inside the vault. |
 | Ctrl+G (built-in editor) | Opens a split editing pane under the terminal for the file Claude Code would otherwise hand to `$VISUAL`. Supports `@`-file completion, autosave, and native paste/IME/undo. "Send" submits immediately for prompt edits; Esc returns to the input without sending. |
 | Row menu (⋯ / right-click) | Rename, move to category (a single field, with a dropdown of existing categories and free-form entry for a new one — disabled until the session has a name or a first prompt to attach a category to), compress (`/compact`), view session analysis, archive/unarchive, end session, copy ID. |
 | Session analysis | From the row menu: cost, tokens, turn count, and duration cards; input/output/tool-use bars; a turn-by-turn table. Click rows to select a range; copy the result as Markdown. |
@@ -101,11 +103,11 @@ The terminal tab, the side panel rows, and the manager rows all share the same i
 
 These are further grouped into the same buckets Claude's own app filters sessions by — needs input, needs review, running, done — with matching icons and colors for each, plus an archived bucket. The Session Manager's toolbar has a status-filter menu for the same six buckets (all / needs input / needs review / running / done / archived).
 
-A small icon next to the state mark shows which agent a session belongs to (Claude Code or Codex) — each agent's own mark (single-color, matching the rest of the UI), not a colored brand logo.
+A small icon next to the state mark shows which agent a session belongs to (Claude Code, Codex, or OpenCode) — each agent's own mark (single-color, matching the rest of the UI), not a colored brand logo.
 
 ## Settings
 
-Font family and size, padding (comfortable/compact/none), submit key, recent-sessions count, idle notifications, agents (Claude Code/Codex — enabled, path, environment variables), path to `agent-sessions`, terminal scrollback, built-in editor height, display language (auto/Japanese/English), and the saved heights of the side panel's details pane and the manager's analytics panel.
+Font family and size, padding (comfortable/compact/none), submit key, recent-sessions count, idle notifications, agents (Claude Code/Codex/OpenCode — enabled, path, environment variables; for OpenCode also whether to start it directly or through `ollama launch opencode`, and the Ollama model to use, chosen from `ollama list` or typed in), path to `agent-sessions`, terminal scrollback, built-in editor height, display language (auto/Japanese/English), and the saved heights of the side panel's details pane and the manager's analytics panel.
 
 ## Troubleshooting
 
@@ -120,13 +122,14 @@ agent-sessions attach ID       # attach from a terminal (Ctrl+\ to detach)
 agent-sessions daemon [--detach]
 agent-sessions json scan|live|detail ID|usage ID [--from ISO --to ISO]|stats
 agent-sessions setup [--dry-run]
+agent-sessions setup --opencode   # install OpenCode's status plugin only
 ```
 
 `agent-sessions json` is the machine-readable interface the plugin itself uses (`scan`, `live`, `detail`, `usage`, `stats`); `hook` and `status` back the Claude Code hooks and `statusLine` described above; `edit` is the receiving end of the built-in editor.
 
 ## How it works
 
-A small daemon (`agent-sessions daemon`, started on demand by the plugin) holds each Claude Code session's PTY over a Unix domain socket, so a session keeps running when no tab is attached to it. The plugin talks to the daemon directly for terminal I/O, and shells out to `agent-sessions json …` for everything else (scanning transcripts, computing usage and cost, building the session tree) — that logic lives entirely in Python so the plugin and the CLI/TUI see the same data.
+A small daemon (`agent-sessions daemon`, started on demand by the plugin) holds each session's PTY over a Unix domain socket, so a session keeps running when no tab is attached to it. The plugin talks to the daemon directly for terminal I/O, and shells out to `agent-sessions json …` for everything else (scanning transcripts, computing usage and cost, building the session tree) — that logic lives entirely in Python so the plugin and the CLI/TUI see the same data.
 
 Session bookkeeping (folded groups, archive, category colors) lives in `<vault>/.agents/sessions/sessions.json`; daemon and runtime state (socket, logs, status snapshots, caches) live under `~/.agents/sessions/`. Claude Code's own files (`~/.claude/projects/*/*.jsonl`, `~/.claude/sessions/*.json`) are only ever read, never written.
 
@@ -134,7 +137,7 @@ See [`docs/design.md`](docs/design.md) for the full design and [`docs/requiremen
 
 ## Uninstall
 
-If you installed the program from the plugin, remove it under **Settings → agent-sessions program → Remove** first: that stops the daemon (ending running sessions), takes its hooks and `statusLine` out of `~/.claude/settings.json` and its lines out of `~/.codex/config.toml`, and deletes its folder. Then disable and remove **Agent Sessions** from Obsidian's Community plugins.
+If you installed the program from the plugin, remove it under **Settings → agent-sessions program → Remove** first: that stops the daemon (ending running sessions), takes its hooks and `statusLine` out of `~/.claude/settings.json`, its lines out of `~/.codex/config.toml`, and its status plugin out of `~/.config/opencode/plugins/`, and deletes its folder. Then disable and remove **Agent Sessions** from Obsidian's Community plugins.
 
 If you installed from a clone:
 
