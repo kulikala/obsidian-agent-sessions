@@ -18,9 +18,9 @@ describe("formatRelativeTime", () => {
 
 	const now = 1_700_000_000;
 
-	it("shows 'just now' under a minute", () => {
-		expect(formatRelativeTime(now - 30, now)).toBe("just now");
-		expect(formatRelativeTime(now, now)).toBe("just now");
+	it("shows 'Just now' under a minute", () => {
+		expect(formatRelativeTime(now - 30, now)).toBe("Just now");
+		expect(formatRelativeTime(now, now)).toBe("Just now");
 	});
 
 	it("shows 'N min ago' under an hour", () => {
@@ -33,9 +33,9 @@ describe("formatRelativeTime", () => {
 		expect(formatRelativeTime(now - 23 * 3600, now)).toBe("23 h ago");
 	});
 
-	it("shows 'yesterday' under two days", () => {
-		expect(formatRelativeTime(now - 86400, now)).toBe("yesterday");
-		expect(formatRelativeTime(now - 2 * 86400 + 1, now)).toBe("yesterday");
+	it("shows 'Yesterday' under two days", () => {
+		expect(formatRelativeTime(now - 86400, now)).toBe("Yesterday");
+		expect(formatRelativeTime(now - 2 * 86400 + 1, now)).toBe("Yesterday");
 	});
 
 	it("shows 'N d ago' under a week", () => {
@@ -57,8 +57,8 @@ describe("formatRelativeTime", () => {
 		expect(formatRelativeTime(aWeekEarlier, nowInJan)).toBe("2025/12/27");
 	});
 
-	it("clamps a future timestamp to 'just now' rather than a negative duration", () => {
-		expect(formatRelativeTime(now + 1000, now)).toBe("just now");
+	it("clamps a future timestamp to 'Just now' rather than a negative duration", () => {
+		expect(formatRelativeTime(now + 1000, now)).toBe("Just now");
 	});
 
 	it("returns an empty string for a falsy epoch (no last_activity yet)", () => {
@@ -75,7 +75,7 @@ describe("formatRelativeTime", () => {
 	});
 
 	it("defaults `now` to the current time when omitted", () => {
-		expect(formatRelativeTime(Date.now() / 1000)).toBe("just now");
+		expect(formatRelativeTime(Date.now() / 1000)).toBe("Just now");
 	});
 });
 
@@ -96,7 +96,7 @@ describe("RelativeTimeTicker", () => {
 	it("updates every tracked element's text once a minute, to the current formatRelativeTime", () => {
 		const ticker = new RelativeTimeTicker();
 		const el = fakeEl();
-		const epoch = Date.now() / 1000 - 30; // "just now" at track time
+		const epoch = Date.now() / 1000 - 30; // "Just now" at track time
 		ticker.track(el as unknown as HTMLElement, epoch);
 		ticker.start();
 

@@ -38,8 +38,9 @@ import { applyCodexConfig, defaultCodexConfigPath, type ApplyCodexConfigResult }
 import { applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./terminal/keybindings";
 import { reconcileSubmitKey, sendSequence } from "./terminal/keys";
 import { buildAtToken, selectionLineRange } from "./terminal/links";
-import { ConfirmModal, MoveToCategoryModal, NewSessionModal, RenameSessionModal } from "./ui/modals";
-import { AGENT_ICON_ID, registerAgentIcons } from "./ui/icons";
+import { ConfirmModal, NewSessionModal } from "./ui/modals";
+import { AGENT_ICON_ID } from "./ui/icons";
+import { registerAgentIcons } from "./ui/register-icons";
 import { sessionDisplayName } from "./sessions/name";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./sessions/open-session";
 import {
@@ -111,7 +112,7 @@ function messageOf(err: unknown): string {
 }
 
 function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+	return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 /**
@@ -142,7 +143,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	/** The socket that receives `agent-sessions edit` requests. */
 	private editServer = new EditServer();
 	/** Debounce for cleaning up exited sessions. */
-	private cleanupExitedTimer: ReturnType<typeof setTimeout> | null = null;
+	private cleanupExitedTimer: number | null = null;
 	/** The last-frontmost Markdown view. `activeEditor` is null while the terminal has focus, so this is tracked separately. */
 	private lastMarkdown: MarkdownView | null = null;
 	/** Sessions started headless (in the background). Excluded from `notifyIdle`. */
@@ -281,13 +282,16 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.stopIndex = null;
 		this.index.dispose();
 		if (this.cleanupExitedTimer) {
-			clearTimeout(this.cleanupExitedTimer);
+			window.clearTimeout(this.cleanupExitedTimer);
 			this.cleanupExitedTimer = null;
 		}
 	}
 
 	async loadSettings(): Promise<void> {
-		const raw = await this.loadData();
+		// `loadData()` is typed `Promise<any>` (Obsidian's own data store has no schema) — `raw` is
+		// kept `unknown` here rather than `any` so `mergeSettings` (which already takes `unknown`)
+		// stays the only place that has to make sense of its shape.
+		const raw: unknown = await this.loadData();
 		this.settings = mergeSettings(raw, Platform.isMacOS);
 		this.needsAgentDetection = !(raw && typeof raw === "object" && "agents" in raw);
 	}
@@ -568,7 +572,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		const { workspace } = this.app;
 		const existing = workspace.getLeavesOfType(VIEW_TYPE_SIDE)[0];
 		if (existing) {
-			workspace.revealLeaf(existing);
+			await workspace.revealLeaf(existing);
 			return;
 		}
 		const leaf = workspace.getRightLeaf(false);
@@ -576,7 +580,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			return;
 		}
 		await leaf.setViewState({ type: VIEW_TYPE_SIDE, active: true });
-		workspace.revealLeaf(leaf);
+		await workspace.revealLeaf(leaf);
 	}
 
 	// ---- Session actions. `updateStore`'s `StoreLockError` is turned into a `Notice` here. --------
@@ -924,10 +928,10 @@ export default class AgentSessionsPlugin extends Plugin {
 				throw new Error(t("error.replyWaitFailed"));
 			}
 			client.writeInput(this.commandBytes("/exit", agent));
-			const timeout = new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), WAIT_EXIT_MS));
+			const timeout = new Promise<"timeout">((resolve) => window.setTimeout(() => resolve("timeout"), WAIT_EXIT_MS));
 			if ((await Promise.race([exited, timeout])) === "timeout") {
 				await client.kill(id).catch(() => undefined);
-				await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 3000))]);
+				await Promise.race([exited, new Promise((resolve) => window.setTimeout(resolve, 3000))]);
 			}
 			await client.detach().catch(() => undefined);
 			await client.forget(id).catch(() => undefined);
@@ -1120,9 +1124,9 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	private scheduleCleanupExited(): void {
 		if (this.cleanupExitedTimer) {
-			clearTimeout(this.cleanupExitedTimer);
+			window.clearTimeout(this.cleanupExitedTimer);
 		}
-		this.cleanupExitedTimer = setTimeout(() => {
+		this.cleanupExitedTimer = window.setTimeout(() => {
 			this.cleanupExitedTimer = null;
 			void this.cleanupExited();
 		}, 500);

@@ -35,7 +35,11 @@ function str(value: unknown): string | null {
 function readStatus(statusDir: string, id: string): StatusInfo | null {
 	let raw: RawStatus;
 	try {
-		raw = JSON.parse(fs.readFileSync(path.join(statusDir, `${id}.json`), "utf8"));
+		const parsed: unknown = JSON.parse(fs.readFileSync(path.join(statusDir, `${id}.json`), "utf8"));
+		if (!parsed || typeof parsed !== "object") {
+			return null;
+		}
+		raw = parsed;
 	} catch {
 		return null;
 	}

@@ -45,7 +45,7 @@ export const en = {
 
 	// ---- Generic ----
 	"common.default": "Default",
-	"common.none": "(none)",
+	"common.none": "(None)",
 	"common.unknown": "Unknown",
 	"common.listSep": ", ",
 	"common.newSession.claude": "New Claude Code session",
@@ -67,7 +67,7 @@ export const en = {
 	"error.attachFailed": "attach failed: {error}",
 	"error.sessionNotFound": "Session not found",
 	"error.startFailed": "start failed: {error}",
-	"error.claudeStartWaitFailed": "Timed out waiting for claude to start",
+	"error.claudeStartWaitFailed": "Timed out waiting for Claude to start",
 	"error.replyWaitFailed": "Timed out waiting for a reply",
 	"confirm.endSession.message": "End this session?",
 	"notice.endFailed": "Failed to end: {error}",
@@ -147,10 +147,10 @@ export const en = {
 	"empty.noAgentFound": "Couldn't find the executable for {agents}. Check the path in settings.",
 
 	// ---- Row relative time (views/rows.ts's formatRelativeTime, side panel only) ----
-	"time.justNow": "just now",
+	"time.justNow": "Just now",
 	"time.minutesAgo": "{n} min ago",
 	"time.hoursAgo": "{n} h ago",
-	"time.yesterday": "yesterday",
+	"time.yesterday": "Yesterday",
 	"time.daysAgo": "{n} d ago",
 
 	// ---- Attention markers (side panel badges, manager section headings) ----
@@ -267,8 +267,8 @@ export const en = {
 	"usage.col.input": "Input",
 	"usage.col.output": "Output",
 	"usage.col.cost": "Cost",
-	"usage.emptyPrompt": "(empty)",
-	"usage.beforeFirstPrompt": "(before first prompt)",
+	"usage.emptyPrompt": "(Empty)",
+	"usage.beforeFirstPrompt": "(Before first prompt)",
 	"usage.whole": "Whole",
 	"usage.rangePending": "#{from}– (click the end row)",
 	"usage.range": "#{from}–#{to}",

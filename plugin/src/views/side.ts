@@ -18,13 +18,14 @@ import {
 	enabledAgentsText,
 	nextFrontId,
 	RelativeTimeTicker,
-	renderRow,
 	RowSelection,
 	type RowActions,
 } from "./rows";
+import { renderRow } from "./rows-render";
 import { computeSideList, leafIdsOf } from "./side-list";
-import { renderDetail, type DetailContext } from "./detail";
-import { LimitsView } from "./limits";
+import type { DetailContext } from "./detail";
+import { renderDetail } from "./detail-render";
+import { LimitsView } from "./limits-render";
 
 export const VIEW_TYPE_SIDE = "agent-sessions-side";
 
@@ -69,7 +70,7 @@ export class SideView extends ItemView {
 	/** The nav's three buttons (their tooltips are redrawn when the language changes). */
 	private navButtons: { newSession?: HTMLElement; manager?: HTMLElement; more?: HTMLElement } = {};
 	/** Debounce timer for `terminal-status`. */
-	private statusRenderTimer: ReturnType<typeof setTimeout> | null = null;
+	private statusRenderTimer: number | null = null;
 	/** Row time elements, re-rendered in place once a minute (shared with `ManagerView`). */
 	private timeTicker = new RelativeTimeTicker();
 
@@ -106,7 +107,7 @@ export class SideView extends ItemView {
 		this.register(() => this.limitsView.dispose());
 		this.register(() => {
 			if (this.statusRenderTimer) {
-				clearTimeout(this.statusRenderTimer);
+				window.clearTimeout(this.statusRenderTimer);
 			}
 		});
 		this.timeTicker.start();
@@ -128,7 +129,7 @@ export class SideView extends ItemView {
 		if (this.statusRenderTimer) {
 			return;
 		}
-		this.statusRenderTimer = setTimeout(() => {
+		this.statusRenderTimer = window.setTimeout(() => {
 			this.statusRenderTimer = null;
 			this.render();
 		}, TERMINAL_STATUS_DEBOUNCE_MS);

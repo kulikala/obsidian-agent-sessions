@@ -83,13 +83,17 @@ function normalizeColor(el: HTMLElement, raw: string): string {
 	if (!value) {
 		return "";
 	}
-	const probe = el.ownerDocument.createElement("span");
-	probe.style.color = value;
-	if (!probe.style.color) {
-		return "";
-	}
-	el.appendChild(probe);
+	// Appended into `el` right away (rather than only once validated) so `createSpan` can do the
+	// appending itself — reading its computed `color` needs it in the document either way (for
+	// `el`'s own cascade/custom properties to apply), and an invalid/empty value is removed in
+	// `finally` before anything ever paints, so this is no different from the old
+	// validate-then-append order.
+	const probe = el.createSpan();
 	try {
+		probe.style.color = value;
+		if (!probe.style.color) {
+			return "";
+		}
 		return getComputedStyle(probe).color;
 	} finally {
 		probe.remove();

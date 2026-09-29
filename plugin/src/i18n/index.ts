@@ -72,6 +72,10 @@ export function resolveLang(setting: LanguageSetting, obsidianLang: string | nul
  * Obsidian's language setting. `null` in environments without `window.localStorage`, or where
  * it can't be read (tests, etc). This is what gets passed to `resolveLang` (`resolveLang`
  * itself is a pure function that only looks at the values it's given).
+ *
+ * Reads `localStorage` directly rather than Obsidian's own `getLanguage()` — that API needs
+ * Obsidian 1.8.7, and this plugin's `minAppVersion` is 1.7.2 (`obsidianmd/no-unsupported-api`).
+ * Revisit once the floor is raised past 1.8.7.
  */
 export function readObsidianLang(): string | null {
 	try {

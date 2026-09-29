@@ -54,7 +54,7 @@ function buildCategorySuggest(
 	onConfirm: (category: string) => void
 ): CategorySuggest {
 	const suggestEl = document.body.createDiv({ cls: "agent-sessions-name-suggest" });
-	suggestEl.style.display = "none";
+	suggestEl.hide();
 	let items: string[] = [];
 	let itemEls: HTMLElement[] = [];
 	let highlighted = -1;
@@ -79,12 +79,12 @@ function buildCategorySuggest(
 			itemEls = [];
 			suggestEl.empty();
 			if (items.length === 0) {
-				suggestEl.style.display = "none";
+				suggestEl.hide();
 				highlighted = -1;
 				return;
 			}
 			position();
-			suggestEl.style.display = "";
+			suggestEl.show();
 			for (const cat of items) {
 				const itemEl = suggestEl.createDiv({ cls: "agent-sessions-name-suggest-item" });
 				// T-112: just the chip (its own text already shows the category name in full) —
@@ -108,7 +108,7 @@ function buildCategorySuggest(
 		},
 		close() {
 			suggestEl.empty();
-			suggestEl.style.display = "none";
+			suggestEl.hide();
 			items = [];
 			itemEls = [];
 			highlighted = -1;
@@ -174,9 +174,10 @@ function beginEditChip(
 	colorIndexFor: (category: string) => number,
 	onDone: (result: string | null) => void
 ): ChipEditHandle {
-	const editEl = document.createElement("input");
-	editEl.type = "text";
-	editEl.className = "agent-sessions-name-input-field agent-sessions-name-chip-edit";
+	// Created via `boxEl.createEl` (appends as `boxEl`'s last child) rather than at `chipEl`'s own
+	// position — `replaceWith` below moves it to exactly that position regardless of where it
+	// started, so the end result is identical.
+	const editEl = boxEl.createEl("input", { type: "text", cls: "agent-sessions-name-input-field agent-sessions-name-chip-edit" });
 	editEl.value = currentCategory;
 	editEl.size = Math.max(4, currentCategory.length + 2);
 	chipEl.replaceWith(editEl);

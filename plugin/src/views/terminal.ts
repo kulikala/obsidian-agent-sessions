@@ -119,7 +119,7 @@ export class TerminalView extends ItemView {
 	private opened = false;
 	private closed = false;
 	private lastSize = { width: 0, height: 0 };
-	private resizeTimer: ReturnType<typeof setTimeout> | null = null;
+	private resizeTimer: number | null = null;
 
 	private client: DaemonClient | null = null;
 	private attaching = false;
@@ -372,7 +372,7 @@ export class TerminalView extends ItemView {
 		this.closed = true;
 		this.cancelEditor();
 		if (this.resizeTimer) {
-			clearTimeout(this.resizeTimer);
+			window.clearTimeout(this.resizeTimer);
 			this.resizeTimer = null;
 		}
 		this.disconnect();
@@ -460,9 +460,9 @@ export class TerminalView extends ItemView {
 
 	private scheduleFit(): void {
 		if (this.resizeTimer) {
-			clearTimeout(this.resizeTimer);
+			window.clearTimeout(this.resizeTimer);
 		}
-		this.resizeTimer = setTimeout(() => {
+		this.resizeTimer = window.setTimeout(() => {
 			this.resizeTimer = null;
 			this.fitNow();
 		}, RESIZE_DEBOUNCE_MS);
@@ -492,7 +492,10 @@ export class TerminalView extends ItemView {
 			webgl.onContextLoss(() => webgl.dispose());
 			this.terminal.loadAddon(webgl);
 		} catch (err) {
-			console.log("agent-sessions: WebGL unavailable, falling back to canvas", err);
+			// A real (if non-fatal) degradation — canvas rendering works but is slower — so this is
+			// worth a `warn`, not silence; `console.log` itself isn't allowed (Obsidian's plugin
+			// guidelines: only warn/error/debug).
+			console.warn("agent-sessions: WebGL unavailable, falling back to canvas", err);
 		}
 		this.applyTheme();
 	}
@@ -897,7 +900,11 @@ export class TerminalView extends ItemView {
 	 * right/down). "Compact session" is disabled based on `index.getCachedDetail`'s
 	 * `last_command` (synchronous — stays enabled if not yet fetched, and `compactSession` itself checks again).
 	 */
-	onPaneMenu(menu: Menu, source: "more-options" | "tab-header" | string): void {
+	// Matches `ItemView.onPaneMenu`'s own signature (obsidian.d.ts) — the `"more-options" |
+	// "tab-header"` literals are structurally redundant next to `string` (any string is already
+	// assignable), but they're kept, via the `string & {}` idiom, purely as an autocomplete/docs
+	// hint for the two values Obsidian actually passes today.
+	onPaneMenu(menu: Menu, source: "more-options" | "tab-header" | (string & {})): void {
 		super.onPaneMenu(menu, source);
 		const id = this.id;
 		const lastCommand = this.plugin.index.getCachedDetail(id)?.last_command ?? null;

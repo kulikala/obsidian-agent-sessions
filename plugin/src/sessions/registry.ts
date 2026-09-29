@@ -57,7 +57,11 @@ function readEntries(sessionsDir: string): Map<string, RegistryEntry> {
 	for (const name of names) {
 		let raw: RawSessionRecord;
 		try {
-			raw = JSON.parse(fs.readFileSync(path.join(sessionsDir, name), "utf8"));
+			const parsed: unknown = JSON.parse(fs.readFileSync(path.join(sessionsDir, name), "utf8"));
+			if (!parsed || typeof parsed !== "object") {
+				continue;
+			}
+			raw = parsed;
 		} catch {
 			continue;
 		}

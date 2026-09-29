@@ -173,7 +173,7 @@ function mergeAnalysisFolded(data: unknown): Record<AgentId, boolean> {
 	const saved = data as Record<string, unknown>;
 	for (const id of AGENT_IDS) {
 		if (typeof saved[id] === "boolean") {
-			result[id] = saved[id] as boolean;
+			result[id] = saved[id];
 		}
 	}
 	return result;
@@ -221,5 +221,5 @@ export function mergeSettings(data: unknown, isMac = true): AgentSessionsSetting
 		delete saved.lastNewSessionAgent;
 	}
 	const defaults = isMac ? DEFAULT_SETTINGS : { ...DEFAULT_SETTINGS, fontFamily: defaultFontFamily(false) };
-	return Object.assign({}, defaults, saved) as AgentSessionsSettings;
+	return Object.assign({}, defaults, saved);
 }

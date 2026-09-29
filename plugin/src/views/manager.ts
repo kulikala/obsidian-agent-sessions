@@ -19,15 +19,14 @@ import {
 	resolveRowStatus,
 	STATUS_GROUP_ICON,
 	TERMINAL_STATUS_ICON,
-	type ManagerStatusFilter,
 } from "../sessions/terminal-status";
-import { VIEW_TYPE_TERMINAL } from "../sessions/open-session";
 import { loadStore } from "../sessions/store";
 import { sessionDisplayName } from "../sessions/name";
 import { buildManagerTree } from "../sessions/tree";
 import type { StatsResult, StatsWindow } from "../types";
 import { formatK, formatNumber } from "../usage/usage";
-import { formatCost, renderDetail, type DetailContext } from "./detail";
+import { formatCost, type DetailContext } from "./detail";
+import { renderDetail } from "./detail-render";
 import { formatCountdown, realWindows } from "./limits";
 import {
 	ARCHIVED_GROUP,
@@ -60,18 +59,16 @@ import {
 	formatRelativeTime,
 	formatTime,
 	RelativeTimeTicker,
-	renderAgentMark,
 	renderCategoryChip,
 	rowLabel,
-	rowStatusMark,
-	showRowMenu,
 	type RowActions,
 } from "./rows";
+import { renderAgentMark, rowStatusMark, showRowMenu } from "./rows-render";
+import { TerminalView } from "./terminal";
 
 const STATS_FETCH_INTERVAL_MS = 60000;
 const STATS_TICK_INTERVAL_MS = 1000;
 
-const COLUMN_COUNT = 7;
 /** The number of top categories shown in the per-category horizontal bar. */
 const CATEGORY_BAR_TOP_N = 8;
 /** `terminal-status` fires on every busy/idle change, so redraws are batched at this interval. */
@@ -95,8 +92,8 @@ export class ManagerView extends ItemView {
 	private showArchived = false;
 	private sortKey: SortKey = "updated";
 	private statsResult: StatsResult | null = null;
-	private statsFetchTimer: ReturnType<typeof setInterval> | null = null;
-	private statsTickTimer: ReturnType<typeof setInterval> | null = null;
+	private statsFetchTimer: number | null = null;
+	private statsTickTimer: number | null = null;
 	private rows: ManagerRow[] = [];
 	private rowEls: HTMLTableRowElement[] = [];
 	private cursor = -1;
@@ -135,7 +132,7 @@ export class ManagerView extends ItemView {
 	private agentCaretEls: Partial<Record<AgentId, HTMLElement>> = {};
 	private agentSummaryEls: Partial<Record<AgentId, HTMLElement>> = {};
 	/** Debounce timer for `terminal-status`. */
-	private statusRenderTimer: ReturnType<typeof setTimeout> | null = null;
+	private statusRenderTimer: number | null = null;
 	/** The bottom analytics area (the usage bar plus the per-category bar). Clicking its heading
 	 * folds it, and its handle resizes it — both are saved to `plugin.settings`. */
 	private analysisEl!: HTMLElement;
@@ -185,12 +182,12 @@ export class ManagerView extends ItemView {
 		this.registerEvent(this.plugin.events.on("settings-changed", () => this.refreshLanguage()));
 		this.registerEvent(this.plugin.events.on("terminal-status", () => this.scheduleStatusRender()));
 
-		this.statsFetchTimer = setInterval(() => void this.refreshStats(), STATS_FETCH_INTERVAL_MS);
-		this.statsTickTimer = setInterval(() => this.renderStatsBar(), STATS_TICK_INTERVAL_MS);
+		this.statsFetchTimer = window.setInterval(() => void this.refreshStats(), STATS_FETCH_INTERVAL_MS);
+		this.statsTickTimer = window.setInterval(() => this.renderStatsBar(), STATS_TICK_INTERVAL_MS);
 		this.register(() => {
-			if (this.statsFetchTimer) clearInterval(this.statsFetchTimer);
-			if (this.statsTickTimer) clearInterval(this.statsTickTimer);
-			if (this.statusRenderTimer) clearTimeout(this.statusRenderTimer);
+			if (this.statsFetchTimer) window.clearInterval(this.statsFetchTimer);
+			if (this.statsTickTimer) window.clearInterval(this.statsTickTimer);
+			if (this.statusRenderTimer) window.clearTimeout(this.statusRenderTimer);
 		});
 		this.timeTicker.start();
 		this.register(() => this.timeTicker.stop());
@@ -206,7 +203,7 @@ export class ManagerView extends ItemView {
 		if (this.statusRenderTimer) {
 			return;
 		}
-		this.statusRenderTimer = setTimeout(() => {
+		this.statusRenderTimer = window.setTimeout(() => {
 			this.statusRenderTimer = null;
 			this.render();
 		}, TERMINAL_STATUS_DEBOUNCE_MS);
@@ -261,11 +258,11 @@ export class ManagerView extends ItemView {
 	}
 
 	private onActiveLeafChange(): void {
-		const activeLeaf = this.app.workspace.activeLeaf;
-		const state = activeLeaf?.view.getViewType() === VIEW_TYPE_TERMINAL ? activeLeaf.getViewState().state : undefined;
-		const id = typeof state?.id === "string" ? state.id : undefined;
-		if (id) {
-			this.frontId = id;
+		// `getActiveViewOfType` instead of the deprecated `workspace.activeLeaf` (same pattern
+		// `side.ts` already uses for the same purpose).
+		const view = this.app.workspace.getActiveViewOfType(TerminalView);
+		if (view) {
+			this.frontId = view.sessionId;
 			this.refreshDetail();
 		}
 	}
