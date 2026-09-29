@@ -18,10 +18,10 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { AGENT_BIN_NAME, BackendError, buildAgentArgv, loginEnv, resolveAgentBinary, withBinDirOnPath } from "../backend/backend";
+import { AGENT_BIN_NAME, BackendError, loginEnv, resolveAgentBinary, withBinDirOnPath } from "../backend/backend";
 import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../backend/daemon-client";
 import { t } from "../i18n";
-import { classifyCtrlKeyNonMac, classifyEnter, resolveEnterAction, sendSequence, terminalClaimsKey } from "../terminal/keys";
+import { agentSendSequence, classifyCtrlKeyNonMac, classifyEnter, resolveEnterAction, terminalClaimsKey } from "../terminal/keys";
 import { buildAtToken, selectionLineRange, VaultLinkProvider } from "../terminal/links";
 import { submitSequence } from "../main";
 import type AgentSessionsPlugin from "../main";
@@ -63,7 +63,9 @@ const PADDING_PX: Record<Padding, number> = { comfortable: 12, compact: 4, none:
 const RESIZE_DEBOUNCE_MS = 50;
 /** An `exit` within this long after `start` is treated as a startup failure. */
 const EARLY_EXIT_MS = 3000;
-const RESUME_FAILURE_PATTERNS = ["No conversation found", "not found"];
+/** What each agent prints when the id to resume doesn't exist (Claude Code: "No conversation
+ * found…"; OpenCode: "Error: Session not found: <id>"; "not found" alone covers Codex's). */
+const RESUME_FAILURE_PATTERNS = ["No conversation found", "Session not found", "not found"];
 const FONT_SIZE_MIN = 6;
 const FONT_SIZE_MAX = 40;
 /** Min/max for the editor pane's height (%). Acts as a ceiling — the terminal's minimum row count takes priority. */
@@ -580,7 +582,8 @@ export class TerminalView extends ItemView {
 		const agent = asAgentId(this.agent);
 		const agentSettings = this.plugin.settings.agents[agent];
 		const bin = await resolveAgentBinary(agent, agentSettings.path, Platform.isMacOS);
-		// `VISUAL` is for the built-in editor; `EDITOR` is left alone. `AGENT_SESSIONS_VAULT` is
+		// `VISUAL` is for the built-in editor (`EDITOR` too for OpenCode, which reads only that —
+		// `editorEnv`); otherwise `EDITOR` is left alone. `AGENT_SESSIONS_VAULT` is
 		// here so claude's own hooks/statusLine (agent-sessions hook/status) don't lose track of
 		// the vault — the daemon just passes `env` straight through to execvpe, so without this
 		// it wouldn't work in an environment that has it in neither `env` nor vault.json. The
@@ -591,23 +594,23 @@ export class TerminalView extends ItemView {
 		const env = withBinDirOnPath(
 			{
 				...(await loginEnv(Platform.isMacOS)),
-				VISUAL: this.plugin.visualPath(),
+				...this.plugin.editorEnv(agent),
 				AGENT_SESSIONS_VAULT: this.plugin.vaultPath(),
 				...parseEnvLines(agentSettings.env),
 			},
 			bin
 		);
-		const argv = buildAgentArgv(agent, bin, this.id, fresh);
+		const argv = await this.plugin.launchArgv(agent, bin, this.id, fresh);
 		const cwd = this.cwd || this.plugin.vaultPath();
 		// A resume-relaunch (not `fresh`) of an already-linked non-Claude session means the daemon
 		// itself restarted — the PTY `daemonId` used to point at is gone, and the daemon has no
 		// rename op, so this can't just re-`start` under the old `daemonId`. Mint a fresh one and
-		// re-link `sessions.json`'s `sessions[id].daemon` to it (`linkCodexSession`) so out-of-tab
+		// re-link `sessions.json`'s `sessions[id].daemon` to it (`linkAgentSession`) so out-of-tab
 		// lookups (`main.ts`'s `daemonIdFor`) keep finding this PTY. Claude never takes this branch
 		// — its `id` IS the daemon id, permanently, by construction (`buildAgentArgv`).
 		if (agent !== "claude" && !fresh && this.linked) {
 			this.daemonId = crypto.randomUUID();
-			this.plugin.linkCodexSession(this.id, cwd, this.daemonId);
+			this.plugin.linkAgentSession(agent, this.id, cwd, this.daemonId);
 		}
 		const res = await client.start({
 			id: this.daemonId,
@@ -642,7 +645,7 @@ export class TerminalView extends ItemView {
 
 	/**
 	 * Swaps this tab's own id from the daemon-tracked placeholder to `newId` (the real, permanent
-	 * id — a Codex thread id, once `main.ts`'s `resolveCodexSession` learns it). `daemonId` is left
+	 * id — a Codex thread id, once `main.ts`'s `resolveAgentSession` learns it). `daemonId` is left
 	 * untouched: the daemon has no rename op, so every daemon-protocol call keeps addressing the
 	 * same PTY by the id `start` was originally called with, for its whole life. From this point on,
 	 * `id` (row matching, `sendCommand` route ①, the saved workspace layout) is the real id
@@ -696,11 +699,11 @@ export class TerminalView extends ItemView {
 	 * `keybindings.json` maps plain Enter to a newline instead; for Codex, `config.toml`'s
 	 * `composer.submit`/`editor.insert_newline` do the same, always via the fixed `alt-enter`
 	 * byte sequence regardless of *which* non-`enter` choice is configured — T-108,
-	 * `terminal/codex-config.ts`). Every other agent's keymap isn't touched, so plain `\r` is
-	 * always "submit" for them.
+	 * `terminal/codex-config.ts`). OpenCode's keymap isn't touched, so plain `\r` is always
+	 * "submit" for it (`agentSendSequence`).
 	 */
 	private sendSubmit(): void {
-		const bytes = this.agent === "claude" || this.agent === "codex" ? submitSequence(this.plugin.settings) : "\r";
+		const bytes = submitSequence(this.plugin.settings, asAgentId(this.agent));
 		this.sendInput(Buffer.from(bytes, "binary"));
 		this.marks.markInstruction();
 	}
@@ -962,31 +965,29 @@ export class TerminalView extends ItemView {
 			return true;
 		}
 		// Intercept every Enter combination and send the submit or newline sequence ourselves —
-		// Claude and Codex tabs (T-108). This whole mechanism exists because both agents' own
-		// config can be rewritten (`terminal/keybindings.ts` for Claude, `terminal/codex-config.ts`
-		// for Codex) to make Enter mean "newline" instead of "submit", which only makes sense
-		// paired with that rewrite — Claude's `keybindings.json` maps plain Enter straight to
-		// `chat:newline`; Codex's `config.toml` always claims the fixed `alt-enter` key for
-		// `composer.submit`/narrows `editor.insert_newline` regardless of which of the 4
+		// every agent's tabs. For Claude and Codex (T-108) this pairs with a rewrite of the
+		// agent's own config (`terminal/keybindings.ts`, `terminal/codex-config.ts`) that makes
+		// Enter mean "newline" instead of "submit": Claude's `keybindings.json` maps plain Enter
+		// straight to `chat:newline`; Codex's `config.toml` always claims the fixed `alt-enter` key
+		// for `composer.submit`/narrows `editor.insert_newline` regardless of which of the 4
 		// non-`enter` choices is configured, so `sendSequence`'s byte mapping (`\r`/`\x1b\r`) is
-		// identical for both agents — only the underlying config file differs. Every other agent's
-		// keymap isn't touched, so its tabs get plain passthrough: every keystroke, Enter
-		// included, goes straight to the PTY.
-		if (this.agent === "claude" || this.agent === "codex") {
-			const submitKey = this.plugin.settings.submitKey;
-			const enterAction = resolveEnterAction(classifyEnter(ev), submitKey);
-			if (enterAction !== "passthrough") {
-				ev.preventDefault();
-				ev.stopPropagation();
-				if (ev.type === "keydown") {
-					if (enterAction === "submit") {
-						this.sendSubmit();
-					} else {
-						this.sendInput(Buffer.from(sendSequence("newline", submitKey), "binary"));
-					}
+		// identical for both agents. OpenCode's config isn't touched: it submits on `\r` and takes
+		// `\n` (Ctrl+J) as newline, so the chosen submit key sends `\r` and every other Enter
+		// combination sends `\n` (`agentSendSequence`).
+		const agent = asAgentId(this.agent);
+		const submitKey = this.plugin.settings.submitKey;
+		const enterAction = resolveEnterAction(classifyEnter(ev), submitKey);
+		if (enterAction !== "passthrough") {
+			ev.preventDefault();
+			ev.stopPropagation();
+			if (ev.type === "keydown") {
+				if (enterAction === "submit") {
+					this.sendSubmit();
+				} else {
+					this.sendInput(Buffer.from(agentSendSequence(agent, "newline", submitKey), "binary"));
 				}
-				return false;
 			}
+			return false;
 		}
 		if (ev.metaKey && !ev.ctrlKey && !ev.altKey) {
 			if (ev.key === "+" || ev.key === "=" || ev.key === "-" || ev.key === "0") {

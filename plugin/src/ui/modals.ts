@@ -13,6 +13,7 @@ import { computeSuggestPosition } from "./suggest-position";
 const AGENT_NAME_KEY: Record<AgentId, MessageKey> = {
 	claude: "settings.agents.claude.name",
 	codex: "settings.agents.codex.name",
+	opencode: "settings.agents.opencode.name",
 };
 
 /** Gives a `Setting`'s control the dialog's full width instead of Obsidian's default

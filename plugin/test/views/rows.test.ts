@@ -175,6 +175,18 @@ describe("enabledAgentsText (T-106 addendum: empty.desc's {agents})", () => {
 		expect(enabledAgentsText(["claude", "codex"])).toBe("Claude Code か Codex");
 	});
 
+	it("joins three agents as a list (comma-separated, 'or' before the last)", () => {
+		setLang("en");
+		expect(enabledAgentsText(["claude", "codex", "opencode"])).toBe("Claude Code, Codex, or OpenCode");
+		setLang("ja");
+		expect(enabledAgentsText(["claude", "codex", "opencode"])).toBe("Claude Code、Codex、OpenCode のいずれか");
+	});
+
+	it("names OpenCode", () => {
+		setLang("en");
+		expect(enabledAgentsText(["opencode"])).toBe("OpenCode");
+	});
+
 	it("returns an empty string for an empty list (callers use a different fallback then)", () => {
 		expect(enabledAgentsText([])).toBe("");
 	});

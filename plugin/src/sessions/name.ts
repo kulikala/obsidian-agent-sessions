@@ -21,14 +21,15 @@ export interface DisplayNameInput {
 const NEW_SESSION_KEY: Record<ReturnType<typeof asAgentId>, MessageKey> = {
 	claude: "common.newSession.claude",
 	codex: "common.newSession.codex",
+	opencode: "common.newSession.opencode",
 };
 
 /**
  * The display name shown wherever a session needs one — tab title, side panel row, manager row,
  * detail pane, notifications, row menu, archive entries (T-106): `name` (`/rename`, or Claude
- * Code's/Codex's own title) if there is one, otherwise `label` (the auto-derived name — usually
- * the first prompt, truncated) if that's real content, otherwise "New Claude Code session"/
- * "New Codex session" (by agent). The session's own `id` is never shown as its name — a `label`
+ * Code's/Codex's/OpenCode's own title) if there is one, otherwise `label` (the auto-derived name —
+ * usually the first prompt, truncated) if that's real content, otherwise "New Claude Code
+ * session"/"New Codex session"/"New OpenCode session" (by agent). The session's own `id` is never shown as its name — a `label`
  * that happens to equal `id` (Python couldn't extract anything real from this session, so it
  * fell back to the id itself) is treated the same as an empty one, not real content.
  */

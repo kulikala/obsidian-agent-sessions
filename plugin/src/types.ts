@@ -30,15 +30,18 @@ export interface ArchivedSession {
 }
 
 /** One entry in `sessions.json`'s `sessions` — the plugin's record of a session it started.
- * `daemon`: only for a Codex session (no flag lets the caller assign a new session's own id —
- * see `backend.ts`'s `buildAgentArgv`) — the daemon-tracked placeholder id the tab actually
- * started under, once `json resolve codex` has learned this entry's key is the real thread id
- * (design.md §3.3). Absent for Claude (and for a Codex session not yet resolved), where the
- * daemon id and this entry's own key are simply the same id. */
+ * `daemon`: only for a Codex or OpenCode session (no flag lets the caller assign a new session's
+ * own id — see `backend.ts`'s `buildAgentArgv`) — the daemon-tracked placeholder id the tab
+ * actually started under, once `json resolve <agent>` has learned this entry's key is the real
+ * thread id (design.md §3.3). Absent for Claude (and for a session not yet resolved), where the
+ * daemon id and this entry's own key are simply the same id.
+ * `name`: only for OpenCode, which has no `/rename` — the name the user gave, overlaid on the
+ * row (`sessions/index.ts`'s `rowFromScan`). */
 export interface StoreSessionEntry {
 	agent: string;
 	cwd: string;
 	daemon?: string;
+	name?: string;
 }
 
 /** The contents of `sessions.json`. */

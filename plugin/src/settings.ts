@@ -28,20 +28,26 @@ export function defaultFontFamily(isMac: boolean): string {
 	return isMac ? FONT_FAMILY_MAC : FONT_FAMILY_NON_MAC;
 }
 
-/** The CLI-agent adapters the plugin knows how to launch. Codex is `enabled: false` by default —
+/** The CLI-agent adapters the plugin knows how to launch. Codex and OpenCode are `enabled: false` by default —
  * `defaultAgentSettings()` is only what a saved-settings shape falls back to when nothing better
  * is known; `main.ts`'s first-run auto-detect is what actually decides what's enabled the very
  * first time (see its module comment). */
-export type AgentId = "claude" | "codex";
+export type AgentId = "claude" | "codex" | "opencode";
 
-export const AGENT_IDS: readonly AgentId[] = ["claude", "codex"];
+export const AGENT_IDS: readonly AgentId[] = ["claude", "codex", "opencode"];
 
 /** Narrows a `Row`/tab's `agent` (`string`, since it round-trips through JSON with no runtime
  * validation) to a known `AgentId`, falling back to `claude` for anything else — a future/unknown
  * agent id degrades to the original single-agent behavior rather than failing to launch at all. */
 export function asAgentId(agent: string): AgentId {
-	return agent === "codex" ? "codex" : "claude";
+	return agent === "codex" || agent === "opencode" ? agent : "claude";
 }
+
+/** How OpenCode gets started: straight (`opencode`) or through `ollama launch opencode`, which
+ * injects an Ollama provider for the chosen local model. */
+export type OpencodeLaunchVia = "opencode" | "ollama";
+
+export const OPENCODE_LAUNCH_VIA: readonly OpencodeLaunchVia[] = ["opencode", "ollama"];
 
 export interface AgentSettings {
 	enabled: boolean;
@@ -51,6 +57,11 @@ export interface AgentSettings {
 	 * Codex's `CODEX_HOME` specifically, also into the environment `json …` calls get — see
 	 * `backend.ts`'s `setAgentEnv`). Blank lines and lines starting with `#` are ignored. */
 	env: string;
+	/** OpenCode only: how to start it. Absent for other agents. */
+	launchVia?: OpencodeLaunchVia;
+	/** OpenCode only: the model handed to `ollama launch opencode --model` when `launchVia` is
+	 * `ollama`. Empty means unset (starting is refused rather than letting ollama open its picker). */
+	ollamaModel?: string;
 }
 
 /** Parses an `AgentSettings.env` value (`KEY=VALUE` per line) into a plain object. Blank lines
@@ -76,12 +87,13 @@ function defaultAgentSettings(): Record<AgentId, AgentSettings> {
 	return {
 		claude: { enabled: true, path: "", env: "" },
 		codex: { enabled: false, path: "", env: "" },
+		opencode: { enabled: false, path: "", env: "", launchVia: "opencode", ollamaModel: "" },
 	};
 }
 
 /** Every agent unfolded by default. */
 function defaultAnalysisFolded(): Record<AgentId, boolean> {
-	return { claude: false, codex: false };
+	return { claude: false, codex: false, opencode: false };
 }
 
 export interface AgentSessionsSettings {
@@ -158,6 +170,12 @@ function mergeAgentSettings(data: unknown): Record<AgentId, AgentSettings> {
 			path: typeof e.path === "string" ? e.path : defaults[id].path,
 			env: typeof e.env === "string" ? e.env : defaults[id].env,
 		};
+		if (id === "opencode") {
+			result[id].launchVia = OPENCODE_LAUNCH_VIA.includes(e.launchVia as OpencodeLaunchVia)
+				? (e.launchVia as OpencodeLaunchVia)
+				: "opencode";
+			result[id].ollamaModel = typeof e.ollamaModel === "string" ? e.ollamaModel.trim() : "";
+		}
 	}
 	return result;
 }

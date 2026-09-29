@@ -2,7 +2,7 @@
 // Pure functions with no dependency on xterm or obsidian. Used by `views/terminal.ts`'s
 // `handleKey` and by `views/editor-pane.ts`.
 
-import type { SubmitKey } from "../settings";
+import type { AgentId, SubmitKey } from "../settings";
 
 /** Only the parts of a keyboard event that classification needs (so tests don't need to construct a real `KeyboardEvent`). */
 export interface KeyLike {
@@ -71,6 +71,18 @@ export function sendSequence(action: "submit" | "newline", submitKey: SubmitKey)
 		return swapped ? "\x1b\r" : "\r";
 	}
 	return swapped ? "\r" : "\x1b\r";
+}
+
+/**
+ * `sendSequence` per agent. OpenCode submits on plain Enter (`\r`) and takes Ctrl+J (`\n`) as
+ * newline, and no config is written for it — so whichever Enter combination the user chose as
+ * "submit" sends `\r`, and every other Enter combination sends `\n`, whatever the setting is.
+ */
+export function agentSendSequence(agent: AgentId, action: "submit" | "newline", submitKey: SubmitKey): string {
+	if (agent === "opencode") {
+		return action === "submit" ? "\r" : "\n";
+	}
+	return sendSequence(action, submitKey);
 }
 
 /**

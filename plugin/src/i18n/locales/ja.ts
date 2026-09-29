@@ -57,6 +57,9 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"common.newSession.claude": "新規 Claude Code セッション",
 	"common.newSession.codex": "新規 Codex セッション",
 	"common.agentsEither": "{a} か {b}",
+	"common.agentsSeparator": "、",
+	"common.agentsEitherLast": "{head}、{last} のいずれか",
+	"common.newSession.opencode": "新規 OpenCode セッション",
 
 	// ---- Notices and errors (main.ts, terminal.ts) ----
 	"notice.noActiveNote": "開いているノートがありません",
@@ -73,7 +76,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"error.attachFailed": "attach に失敗: {error}",
 	"error.sessionNotFound": "セッションが見つかりません",
 	"error.startFailed": "start に失敗: {error}",
-	"error.claudeStartWaitFailed": "claude の起動を待てませんでした",
+	"error.agentStartWaitFailed": "{name} の起動を待てませんでした",
+	"error.ollamaModelMissing": "ollama 経由で OpenCode を起動するには、設定のエージェント > OpenCode で Ollama のモデルを選んでください。",
 	"error.replyWaitFailed": "応答を待てませんでした",
 	"confirm.endSession.message": "このセッションを終了しますか？",
 	"notice.endFailed": "終了に失敗しました: {error}",
@@ -86,6 +90,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"notice.keybindingsWritten": "Claude Code の送信キーの設定を更新しました",
 	"notice.keybindingsUnchanged": "Claude Code の送信キーの設定は、すでにこの内容です",
 	"notice.codexConfigWritten": "Codex の送信キーの設定を更新しました",
+	"notice.opencodePluginInstalled": "OpenCode のステータス用プラグインを入れました",
+	"notice.opencodeSetupFailed": "OpenCode のステータス用プラグインを入れられませんでした：{error}",
 	"notice.markdownCopied": "Markdown をコピーしました",
 	"error.agentMissing": "{name} が見つからない",
 
@@ -105,6 +111,15 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"settings.agents.desc": "Agent Sessions から起動するエージェントを選びます。",
 	"settings.agents.claude.name": "Claude Code",
 	"settings.agents.codex.name": "Codex",
+	"settings.agents.opencode.name": "OpenCode",
+	"settings.agents.launchVia.name": "起動方法",
+	"settings.agents.launchVia.desc": "OpenCode をそのまま起動するか、ローカルモデルを使うために「ollama launch opencode」経由で起動するかを選びます。",
+	"settings.agents.launchVia.opencode": "opencode",
+	"settings.agents.launchVia.ollama": "ollama launch opencode",
+	"settings.agents.ollamaModel.name": "Ollama のモデル",
+	"settings.agents.ollamaModel.desc": "「ollama launch opencode --model」に渡すモデル。「ollama list」の一覧から選ぶか、名前を直接入力します。",
+	"settings.agents.ollamaModel.pick": "ollama list から選ぶ…",
+	"settings.agents.ollamaModel.placeholder": "例：gpt-oss:20b",
 	"settings.agents.path.name": "実行ファイル",
 	"settings.agents.path.desc": "空欄のままにすると、自動で探します。",
 	"settings.agents.env.name": "環境変数",
@@ -132,6 +147,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 		"Enter を改行にするため、Claude Code の設定（~/.claude/keybindings.json）を書き換えます。Obsidian の外で使う claude にも反映され、そこでは Alt（Option）+Enter が送信になります。",
 	"confirm.writeKeybindings.messageWithCodex":
 		"Enter を改行にするため、Claude Code（~/.claude/keybindings.json）と Codex（~/.codex/config.toml）の設定を書き換えます。Obsidian の外で使う claude・codex にも反映され、そこでは Alt（Option）+Enter が送信になります。",
+	"confirm.writeKeybindings.opencodeNote":
+		"OpenCode の設定は書き換えませんが、Obsidian のタブでは同じキーが OpenCode にも使われます。",
 	"settings.submitKeyMismatch.name": "Claude Code の設定と一致していません",
 	"settings.submitKeyMismatch.desc": "keybindings.json の内容が、この送信キーと食い違っています。",
 
@@ -166,6 +183,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"install.hooks": "Claude Code",
 	"install.hooksValue": "~/.claude/settings.json にフックとステータスラインを追加します（バックアップを残します）",
 	"install.hooksSkipped": "変更しません（エージェントの設定で Claude Code がオフです）",
+	"install.opencode": "OpenCode",
+	"install.opencodeValue": "~/.config/opencode/plugins/ にステータス用のプラグインを追加します",
 	"install.running": "インストールしています…",
 	"install.done": "agent-sessions を {dir} にインストールしました。",
 	"install.failed": "agent-sessions をインストールできませんでした: {error}",
@@ -177,7 +196,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"install.reason.characters": "パスに空白やシェルが誤解する文字が含まれています",
 	"install.reason.inVault": "この vault の中です",
 	"install.reason.notWritable": "書き込めません",
-	"uninstall.confirm": "{dir} から agent-sessions を削除しますか？ 動いているセッションは終了し、Claude Code のフックとステータスラインも取り除かれます。",
+	"uninstall.confirm": "{dir} から agent-sessions を削除しますか？ 動いているセッションは終了し、Claude Code のフックとステータスライン、OpenCode のステータス用プラグインも取り除かれます。",
 	"uninstall.done": "agent-sessions を削除しました。",
 	"uninstall.failed": "agent-sessions を削除できませんでした: {error}",
 

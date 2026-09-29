@@ -135,7 +135,7 @@ export class RowSelection {
 	}
 }
 
-/** The icon distinguishing which agent a session belongs to — Claude and Codex's own marks
+/** The icon distinguishing which agent a session belongs to — each agent's own mark
  * (`ui/icons.ts`, T-102), registered once via `registerAgentIcons()` (`main.ts`'s `onload`). */
 export const AGENT_ICON: Record<string, string> = AGENT_ICON_ID;
 
@@ -144,6 +144,7 @@ export const AGENT_ICON: Record<string, string> = AGENT_ICON_ID;
 export const AGENT_NAME_KEY: Record<string, MessageKey> = {
 	claude: "settings.agents.claude.name",
 	codex: "settings.agents.codex.name",
+	opencode: "settings.agents.opencode.name",
 };
 
 export function displayName(row: Row): string {
@@ -153,16 +154,22 @@ export function displayName(row: Row): string {
 /**
  * Names a set of agents for a sentence like "Start {agents} with the button below" (T-106
  * addendum's `empty.desc`, and the settings-fallback messages next to it): "Claude Code",
- * "Codex", or "Claude Code or Codex" (`common.agentsEither`) depending on how many are given.
- * Only handles the pair known today (`ids.length <= 2` in practice, via `AGENT_IDS`) — a third
- * agent would need `common.agentsEither` generalized to a real list join, not attempted here.
+ * "Codex", "Claude Code or Codex" (`common.agentsEither`), or "Claude Code, Codex, or OpenCode"
+ * (`common.agentsSeparator` between all but the last, `common.agentsEitherLast` before it),
+ * depending on how many are given.
  */
 export function enabledAgentsText(ids: readonly string[]): string {
 	const names = ids.map((id) => t(AGENT_NAME_KEY[id] ?? AGENT_NAME_KEY.claude));
 	if (names.length <= 1) {
 		return names[0] ?? "";
 	}
-	return t("common.agentsEither", { a: names[0], b: names[1] });
+	if (names.length === 2) {
+		return t("common.agentsEither", { a: names[0], b: names[1] });
+	}
+	return t("common.agentsEitherLast", {
+		head: names.slice(0, -1).join(t("common.agentsSeparator")),
+		last: names[names.length - 1],
+	});
 }
 
 /** `row`'s category (the part of the name before `': '`, same split as `tree.ts`'s `splitName`). `null` if there isn't one. */

@@ -3,6 +3,7 @@ import {
 	classifyCtrlKeyNonMac,
 	classifyEnter,
 	resolveEnterAction,
+	agentSendSequence,
 	sendSequence,
 	submitKeyButtonLabel,
 	submitKeyStatuslineSymbol,
@@ -79,6 +80,28 @@ describe("resolveEnterAction × sendSequence (5 submit keys × 5 keypresses)", (
 			expect(resolveEnterAction(classifyEnter(key({ isComposing: true })), submitKey)).toBe("passthrough");
 			expect(resolveEnterAction(classifyEnter(key({ keyCode: 229, metaKey: true })), submitKey)).toBe("passthrough");
 			expect(resolveEnterAction(classifyEnter(key({ key: "a" })), submitKey)).toBe("passthrough");
+		}
+	});
+});
+
+describe("resolveEnterAction × agentSendSequence for OpenCode (submit key → \\r, every other Enter → \\n)", () => {
+	for (const submitKey of SUBMIT_KEYS) {
+		for (const press of SUBMIT_KEYS) {
+			const expected = press === submitKey ? "submit" : "newline";
+			it(`submit key ${submitKey}, press ${press} → ${expected}`, () => {
+				const action = resolveEnterAction(classifyEnter(PRESSES[press]), submitKey);
+				expect(action).toBe(expected);
+				expect(agentSendSequence("opencode", action as "submit" | "newline", submitKey)).toBe(
+					expected === "submit" ? "\r" : "\n"
+				);
+			});
+		}
+	}
+
+	it("the other agents keep sendSequence's mapping", () => {
+		for (const agent of ["claude", "codex"] as const) {
+			expect(agentSendSequence(agent, "newline", "enter")).toBe("\x1b\r");
+			expect(agentSendSequence(agent, "submit", "alt+enter")).toBe("\x1b\r");
 		}
 	});
 });

@@ -19,6 +19,7 @@ describe("DEFAULT_SETTINGS", () => {
 			agents: {
 				claude: { enabled: true, path: "", env: "" },
 				codex: { enabled: false, path: "", env: "" },
+				opencode: { enabled: false, path: "", env: "", launchVia: "opencode", ollamaModel: "" },
 			},
 			lastNewSessionAgent: "claude",
 			agentSessionsPath: "",
@@ -29,7 +30,7 @@ describe("DEFAULT_SETTINGS", () => {
 			language: "auto",
 			managerAnalysisHeight: 240,
 			managerAnalysisCollapsed: false,
-			managerAnalysisFolded: { claude: false, codex: false },
+			managerAnalysisFolded: { claude: false, codex: false, opencode: false },
 			managerStatusFilter: "all",
 		});
 	});
@@ -66,6 +67,7 @@ describe("mergeSettings (agents)", () => {
 		expect(merged.agents.claude.path).toBe("/usr/local/bin/claude");
 		expect(merged.agents.claude.enabled).toBe(true);
 		expect(merged.agents.codex).toEqual({ enabled: false, path: "", env: "" });
+		expect(merged.agents.opencode).toEqual({ enabled: false, path: "", env: "", launchVia: "opencode", ollamaModel: "" });
 		expect(merged).not.toHaveProperty("claudePath");
 	});
 
@@ -82,6 +84,7 @@ describe("mergeSettings (agents)", () => {
 		const saved = {
 			claude: { enabled: false, path: "/x/claude", env: "FOO=1" },
 			codex: { enabled: true, path: "/x/codex", env: "CODEX_HOME=/x" },
+			opencode: { enabled: true, path: "/x/opencode", env: "", launchVia: "ollama", ollamaModel: "gpt-oss:20b" },
 		};
 		expect(mergeSettings({ agents: saved }).agents).toEqual(saved);
 	});
@@ -100,8 +103,25 @@ describe("mergeSettings (agents)", () => {
 		expect(mergeSettings({ agents: "nope" }).agents).toEqual(DEFAULT_SETTINGS.agents);
 	});
 
+	it("normalises OpenCode's launch settings: an unknown launchVia falls back, the model is trimmed", () => {
+		const merged = mergeSettings({
+			agents: { opencode: { enabled: true, path: "", env: "", launchVia: "docker", ollamaModel: "  gpt-oss:20b " } },
+		});
+		expect(merged.agents.opencode.launchVia).toBe("opencode");
+		expect(merged.agents.opencode.ollamaModel).toBe("gpt-oss:20b");
+		const bad = mergeSettings({ agents: { opencode: { enabled: true, launchVia: 7, ollamaModel: 3 } } });
+		expect(bad.agents.opencode).toEqual({ enabled: true, path: "", env: "", launchVia: "opencode", ollamaModel: "" });
+	});
+
+	it("doesn't add launch settings to the other agents", () => {
+		const merged = mergeSettings({ agents: { claude: { launchVia: "ollama" } } });
+		expect(merged.agents.claude).not.toHaveProperty("launchVia");
+		expect(merged.agents.codex).not.toHaveProperty("ollamaModel");
+	});
+
 	it("keeps a valid lastNewSessionAgent", () => {
 		expect(mergeSettings({ lastNewSessionAgent: "codex" }).lastNewSessionAgent).toBe("codex");
+		expect(mergeSettings({ lastNewSessionAgent: "opencode" }).lastNewSessionAgent).toBe("opencode");
 	});
 
 	it("drops an unrecognized lastNewSessionAgent, falling back to the default (claude)", () => {
@@ -114,6 +134,7 @@ describe("mergeSettings (managerAnalysisFolded, T-104 additional feature)", () =
 		expect(mergeSettings({ managerAnalysisFolded: { claude: true, codex: false } }).managerAnalysisFolded).toEqual({
 			claude: true,
 			codex: false,
+			opencode: false,
 		});
 	});
 
@@ -121,6 +142,7 @@ describe("mergeSettings (managerAnalysisFolded, T-104 additional feature)", () =
 		expect(mergeSettings({ managerAnalysisFolded: { claude: "yes" } }).managerAnalysisFolded).toEqual({
 			claude: false,
 			codex: false,
+			opencode: false,
 		});
 	});
 
@@ -128,11 +150,12 @@ describe("mergeSettings (managerAnalysisFolded, T-104 additional feature)", () =
 		expect(mergeSettings({ managerAnalysisFolded: "nope" }).managerAnalysisFolded).toEqual({
 			claude: false,
 			codex: false,
+			opencode: false,
 		});
 	});
 
 	it("defaults to unfolded when there's no saved data at all", () => {
-		expect(mergeSettings(null).managerAnalysisFolded).toEqual({ claude: false, codex: false });
+		expect(mergeSettings(null).managerAnalysisFolded).toEqual({ claude: false, codex: false, opencode: false });
 	});
 });
 
@@ -166,6 +189,7 @@ describe("asAgentId", () => {
 	it("passes through known agent ids", () => {
 		expect(asAgentId("claude")).toBe("claude");
 		expect(asAgentId("codex")).toBe("codex");
+		expect(asAgentId("opencode")).toBe("opencode");
 	});
 
 	it("falls back to claude for anything else", () => {

@@ -56,6 +56,9 @@ export const en = {
 	"common.newSession.claude": "New Claude Code session",
 	"common.newSession.codex": "New Codex session",
 	"common.agentsEither": "{a} or {b}",
+	"common.agentsSeparator": ", ",
+	"common.agentsEitherLast": "{head}, or {last}",
+	"common.newSession.opencode": "New OpenCode session",
 
 	// ---- Notices and errors (main.ts, terminal.ts) ----
 	"notice.noActiveNote": "No note is open",
@@ -72,7 +75,8 @@ export const en = {
 	"error.attachFailed": "attach failed: {error}",
 	"error.sessionNotFound": "Session not found",
 	"error.startFailed": "start failed: {error}",
-	"error.claudeStartWaitFailed": "Timed out waiting for Claude to start",
+	"error.agentStartWaitFailed": "Timed out waiting for {name} to start",
+	"error.ollamaModelMissing": "Choose an Ollama model under Settings > Agents > OpenCode before starting OpenCode through ollama.",
 	"error.replyWaitFailed": "Timed out waiting for a reply",
 	"confirm.endSession.message": "End this session?",
 	"notice.endFailed": "Failed to end: {error}",
@@ -85,6 +89,8 @@ export const en = {
 	"notice.keybindingsWritten": "Updated Claude Code's submit key setting",
 	"notice.keybindingsUnchanged": "Claude Code's submit key setting is already up to date",
 	"notice.codexConfigWritten": "Updated Codex's submit key setting",
+	"notice.opencodePluginInstalled": "Installed OpenCode's status plugin",
+	"notice.opencodeSetupFailed": "Couldn't install OpenCode's status plugin: {error}",
 	"notice.markdownCopied": "Copied the Markdown",
 	"error.agentMissing": "{name} was not found",
 
@@ -104,6 +110,15 @@ export const en = {
 	"settings.agents.desc": "Choose which agents Agent Sessions can launch.",
 	"settings.agents.claude.name": "Claude Code",
 	"settings.agents.codex.name": "Codex",
+	"settings.agents.opencode.name": "OpenCode",
+	"settings.agents.launchVia.name": "Launch with",
+	"settings.agents.launchVia.desc": "Start OpenCode directly, or through “ollama launch opencode” to use a local model.",
+	"settings.agents.launchVia.opencode": "opencode",
+	"settings.agents.launchVia.ollama": "ollama launch opencode",
+	"settings.agents.ollamaModel.name": "Ollama model",
+	"settings.agents.ollamaModel.desc": "Passed to “ollama launch opencode --model”. Pick one from “ollama list”, or type a name.",
+	"settings.agents.ollamaModel.pick": "Choose from ollama list…",
+	"settings.agents.ollamaModel.placeholder": "e.g. gpt-oss:20b",
 	"settings.agents.path.name": "Executable",
 	"settings.agents.path.desc": "Leave empty to find it automatically.",
 	"settings.agents.env.name": "Environment variables",
@@ -131,6 +146,8 @@ export const en = {
 		"To make Enter insert a newline, this updates Claude Code's settings (~/.claude/keybindings.json). The change also applies to claude outside Obsidian, where Alt (Option)+Enter sends.",
 	"confirm.writeKeybindings.messageWithCodex":
 		"To make Enter insert a newline, this updates the settings of Claude Code (~/.claude/keybindings.json) and Codex (~/.codex/config.toml). The change also applies to claude and codex outside Obsidian, where Alt (Option)+Enter sends.",
+	"confirm.writeKeybindings.opencodeNote":
+		" OpenCode's own settings aren't changed; in Obsidian's tabs the same key applies to it too.",
 	"settings.submitKeyMismatch.name": "Doesn't match Claude Code's settings",
 	"settings.submitKeyMismatch.desc": "keybindings.json doesn't match this submit key.",
 
@@ -165,6 +182,8 @@ export const en = {
 	"install.hooks": "Claude Code",
 	"install.hooksValue": "Adds hooks and a status line to ~/.claude/settings.json (a backup is kept)",
 	"install.hooksSkipped": "Left unchanged (Claude Code is turned off in the agent settings)",
+	"install.opencode": "OpenCode",
+	"install.opencodeValue": "Adds a status plugin to ~/.config/opencode/plugins/",
 	"install.running": "Installing…",
 	"install.done": "agent-sessions installed in {dir}.",
 	"install.failed": "Couldn't install agent-sessions: {error}",
@@ -176,7 +195,7 @@ export const en = {
 	"install.reason.characters": "The path has spaces or characters a shell would misread",
 	"install.reason.inVault": "It's inside this vault",
 	"install.reason.notWritable": "It can't be written to",
-	"uninstall.confirm": "Remove agent-sessions from {dir}? Running sessions end, and its Claude Code hooks and status line are removed.",
+	"uninstall.confirm": "Remove agent-sessions from {dir}? Running sessions end, and its Claude Code hooks and status line, and OpenCode's status plugin, are removed.",
 	"uninstall.done": "agent-sessions removed.",
 	"uninstall.failed": "Couldn't remove agent-sessions: {error}",
 

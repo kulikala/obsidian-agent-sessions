@@ -3,6 +3,7 @@ import {
 	agentEnvFor,
 	buildAgentArgv,
 	commonBinDirs,
+	parseOllamaList,
 	defaultLoginShell,
 	envWithVault,
 	mergePath,
@@ -58,9 +59,10 @@ describe("agentEnvFor", () => {
 			agents: {
 				claude: { enabled: true, path: "", env: "" },
 				codex: { enabled: true, path: "", env: "" },
+				opencode: { enabled: true, path: "", env: "" },
 			},
 		};
-		expect(agentEnvFor(settings).AGENT_SESSIONS_AGENTS).toBe("claude,codex");
+		expect(agentEnvFor(settings).AGENT_SESSIONS_AGENTS).toBe("claude,codex,opencode");
 	});
 
 	it("lists only the enabled agents", () => {
@@ -68,6 +70,7 @@ describe("agentEnvFor", () => {
 			agents: {
 				claude: { enabled: true, path: "", env: "" },
 				codex: { enabled: false, path: "", env: "" },
+				opencode: { enabled: false, path: "", env: "" },
 			},
 		};
 		expect(agentEnvFor(settings).AGENT_SESSIONS_AGENTS).toBe("claude");
@@ -103,6 +106,51 @@ describe("buildAgentArgv", () => {
 
 	it("codex resume: the resume subcommand, plain (not a flag)", () => {
 		expect(buildAgentArgv("codex", "/bin/codex", "abc-123", false)).toEqual(["/bin/codex", "resume", "abc-123"]);
+	});
+
+	it("opencode fresh: no id-related flag at all (opencode assigns its own session id)", () => {
+		expect(buildAgentArgv("opencode", "/bin/opencode", "abc-123", true)).toEqual(["/bin/opencode"]);
+	});
+
+	it("opencode resume: --session <id>", () => {
+		expect(buildAgentArgv("opencode", "/bin/opencode", "ses_abc", false)).toEqual(["/bin/opencode", "--session", "ses_abc"]);
+	});
+
+	it("opencode via ollama, fresh: ollama launch opencode --model M -y --", () => {
+		expect(
+			buildAgentArgv("opencode", "/bin/opencode", "x", true, { ollamaBin: "/bin/ollama", model: "gpt-oss:20b" })
+		).toEqual(["/bin/ollama", "launch", "opencode", "--model", "gpt-oss:20b", "-y", "--"]);
+	});
+
+	it("opencode via ollama, resume: --session goes after the -- separator", () => {
+		expect(
+			buildAgentArgv("opencode", "/bin/opencode", "ses_abc", false, { ollamaBin: "/bin/ollama", model: "gpt-oss:20b" })
+		).toEqual(["/bin/ollama", "launch", "opencode", "--model", "gpt-oss:20b", "-y", "--", "--session", "ses_abc"]);
+	});
+
+	it("ignores the ollama launch for the other agents", () => {
+		expect(buildAgentArgv("claude", "/bin/claude", "abc", true, { ollamaBin: "/bin/ollama", model: "m" })).toEqual([
+			"/bin/claude",
+			"--session-id",
+			"abc",
+		]);
+	});
+});
+
+describe("parseOllamaList", () => {
+	it("takes the first column of each row after the header", () => {
+		const out = [
+			"NAME                 ID              SIZE      MODIFIED",
+			"gpt-oss:20b          aa11bb22cc33    13 GB     2 weeks ago",
+			"gemma4:e4b-mlx-bf16  dd44ee55ff66    16 GB     3 days ago",
+			"",
+		].join("\n");
+		expect(parseOllamaList(out)).toEqual(["gpt-oss:20b", "gemma4:e4b-mlx-bf16"]);
+	});
+
+	it("is empty for empty or header-only output", () => {
+		expect(parseOllamaList("")).toEqual([]);
+		expect(parseOllamaList("NAME  ID  SIZE  MODIFIED\n")).toEqual([]);
 	});
 });
 
@@ -172,9 +220,9 @@ describe("commonBinDirs (search order: mise shims/installs, asdf, volta, nvm, th
 		expect(commonBinDirs({ ...base, isMac: false })).not.toContain("/opt/homebrew/bin");
 	});
 
-	it("ends with ~/.local/bin, the homebrew/usr-local pair, then npm's prefix if given", () => {
+	it("ends with ~/.local/bin, ~/.opencode/bin, the homebrew/usr-local pair, then npm's prefix if given", () => {
 		const dirs = commonBinDirs({ ...base, npmPrefix: "/opt/custom-npm" });
-		expect(dirs.slice(-4)).toEqual(["/Users/kaz/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "/opt/custom-npm/bin"]);
+		expect(dirs.slice(-5)).toEqual(["/Users/kaz/.local/bin", "/Users/kaz/.opencode/bin", "/opt/homebrew/bin", "/usr/local/bin", "/opt/custom-npm/bin"]);
 	});
 
 	it("omits npm's prefix dir entirely when npmPrefix is empty", () => {

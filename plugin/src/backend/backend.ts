@@ -242,7 +242,7 @@ export function resetLoginEnvCache(): void {
 
 /** Each agent's executable basename — `command -v <name>`, and the last path segment checked
  * against in `commonBinDirs`' common install locations. */
-export const AGENT_BIN_NAME: Record<AgentId, string> = { claude: "claude", codex: "codex" };
+export const AGENT_BIN_NAME: Record<AgentId, string> = { claude: "claude", codex: "codex", opencode: "opencode" };
 
 /** How long the interactive-shell probe (`execInteractive`) is allowed to run before being killed
  * — guards against a hung/blocking rc file. */
@@ -346,6 +346,8 @@ export function commonBinDirs(input: CommonBinDirsInput): string[] {
 		dirs.push(join(home, ".nvm", "versions", "node", v, "bin"));
 	}
 	dirs.push(join(home, ".local", "bin"));
+	// OpenCode's own install script puts the binary here.
+	dirs.push(join(home, ".opencode", "bin"));
 	if (isMac) {
 		dirs.push("/opt/homebrew/bin");
 	}
@@ -472,13 +474,61 @@ export async function agentVersion(bin: string): Promise<string | null> {
  * The argv for starting/resuming `agent`'s CLI in a PTY. `fresh` picks new-session vs
  * resume-by-id. Codex has no equivalent of Claude's `--session-id` — there's no way for the
  * caller to assign a new session's id; Codex decides its own new thread's id once it starts (see
- * plan/段9-Codex対応.md) — so a fresh Codex launch takes no id-related flag at all, just the bin.
+ * plan/段9-Codex対応.md) — so a fresh Codex launch takes no id-related flag at all, just the bin. OpenCode is the same
+ * (`opencode` / `opencode --session <id>`); with `opencodeLaunch` it goes through
+ * `ollama launch opencode --model <M> -y -- …` instead.
  */
-export function buildAgentArgv(agent: AgentId, bin: string, id: string, fresh: boolean): string[] {
+export function buildAgentArgv(
+	agent: AgentId,
+	bin: string,
+	id: string,
+	fresh: boolean,
+	opencodeLaunch?: OpencodeLaunch,
+): string[] {
 	if (agent === "codex") {
 		return fresh ? [bin] : [bin, "resume", id];
 	}
+	if (agent === "opencode") {
+		// OpenCode can't be told a new session's id either (like Codex): a fresh launch takes no
+		// id flag; a resume passes `--session <id>`.
+		const tail = fresh ? [] : ["--session", id];
+		if (opencodeLaunch) {
+			return [opencodeLaunch.ollamaBin, "launch", "opencode", "--model", opencodeLaunch.model, "-y", "--", ...tail];
+		}
+		return [bin, ...tail];
+	}
 	return fresh ? [bin, "--session-id", id] : [bin, "--resume", id];
+}
+
+/** OpenCode started through `ollama launch opencode`: the ollama binary and the (non-empty) model. */
+export interface OpencodeLaunch {
+	ollamaBin: string;
+	model: string;
+}
+
+/**
+ * `ollama list`'s model names (first column, header row dropped). `[]` if ollama is missing,
+ * stopped, or prints nothing — best-effort, feeds the settings dropdown only.
+ */
+export async function listOllamaModels(ollamaBin: string): Promise<string[]> {
+	try {
+		const { stdout } = await execFileText(ollamaBin, ["list"], process.env, 8000);
+		return parseOllamaList(stdout);
+	} catch {
+		return [];
+	}
+}
+
+/** Parses `ollama list` output: a header line (`NAME  ID  SIZE  MODIFIED`), then one model per line. */
+export function parseOllamaList(output: string): string[] {
+	const names: string[] = [];
+	for (const line of output.split("\n").slice(1)) {
+		const name = line.trim().split(/\s+/)[0];
+		if (name) {
+			names.push(name);
+		}
+	}
+	return names;
 }
 
 /**

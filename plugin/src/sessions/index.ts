@@ -52,8 +52,12 @@ function delay(ms: number): Promise<void> {
 
 function rowFromScan(s: ScanSession, openTabIds: Set<string>, store: Store): Row {
 	const archivedEntry = store.archived.find((a) => a.id === s.id);
+	// OpenCode has no `/rename`: a name the user gave is kept in `sessions.json` and wins over the
+	// title OpenCode itself generated.
+	const storedName = s.agent === "opencode" ? store.sessions[s.id]?.name : undefined;
 	return {
 		...s,
+		...(storedName ? { name: storedName } : {}),
 		status: null,
 		waitingFor: null,
 		compacted: false,

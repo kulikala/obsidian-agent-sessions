@@ -212,12 +212,14 @@ describe("sessionDisplayName (T-106: name → label → agent-name fallback, nev
 	it("falls back to the agent's 'New ... session' text when there's neither a name nor a label", () => {
 		expect(sessionDisplayName({ name: null, label: null, agent: "claude", id: "x" })).toBe("New Claude Code session");
 		expect(sessionDisplayName({ name: null, label: undefined, agent: "codex", id: "x" })).toBe("New Codex session");
+		expect(sessionDisplayName({ name: null, label: null, agent: "opencode", id: "x" })).toBe("New OpenCode session");
 	});
 
 	it("in Japanese, the agent fallback is localized", () => {
 		setLang("ja");
 		expect(sessionDisplayName({ name: null, label: null, agent: "claude", id: "x" })).toBe("新規 Claude Code セッション");
 		expect(sessionDisplayName({ name: null, label: null, agent: "codex", id: "x" })).toBe("新規 Codex セッション");
+		expect(sessionDisplayName({ name: null, label: null, agent: "opencode", id: "x" })).toBe("新規 OpenCode セッション");
 	});
 
 	it("an unrecognized agent id falls back to Claude's text (asAgentId's own default)", () => {

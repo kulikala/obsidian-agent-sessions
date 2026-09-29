@@ -278,6 +278,27 @@ describe("SessionIndex", () => {
 		expect(index.sessions.get("b")?.archived).toBe(false);
 	});
 
+	it("overlays an OpenCode session's name from sessions.json onto the scanned row (OpenCode has no /rename)", async () => {
+		updateStore(deps.storePath, (s) => {
+			s.sessions["ses_1"] = { agent: "opencode", cwd: "/v", name: "My name" };
+			s.sessions["c1"] = { agent: "claude", cwd: "/v", name: "ignored for claude" };
+		});
+		scanImpl = async () => ({
+			sessions: [
+				scanSession({ id: "ses_1", agent: "opencode", name: "Generated title" }),
+				scanSession({ id: "ses_2", agent: "opencode", name: "Other title" }),
+				scanSession({ id: "c1", agent: "claude", name: "Claude's own" }),
+			],
+			store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+		});
+		const index = new SessionIndex(deps);
+		await index.scan();
+
+		expect(index.sessions.get("ses_1")?.name).toBe("My name");
+		expect(index.sessions.get("ses_2")?.name).toBe("Other title");
+		expect(index.sessions.get("c1")?.name).toBe("Claude's own");
+	});
+
 	it("getDetail caches its result", async () => {
 		const index = new SessionIndex(deps);
 		await index.getDetail("a");
