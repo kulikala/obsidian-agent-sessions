@@ -973,6 +973,11 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * — same reasoning as `views/terminal.ts`'s `sendSubmit()`; every other agent's keymap isn't
 	 * touched, so plain `\r` is always "submit" for it). */
 	private commandBytes(text: string, agent: AgentId): Buffer {
+		// A bare command (`/compact`) leaves the slash-command completion list open, and that list
+		// swallows a rebound submit key (meta+Enter); a trailing space closes it first.
+		if (!text.includes(" ")) {
+			text += " ";
+		}
 		const stash = agent === "claude" ? STASH : "";
 		const submit = agent === "claude" || agent === "codex" ? submitSequence(this.settings) : "\r";
 		return Buffer.from(stash + PASTE_BEGIN + text + PASTE_END + submit, "utf8");

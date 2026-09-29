@@ -436,31 +436,40 @@ export class SideView extends ItemView {
 		}
 	}
 
-	/** The small "needs input N" / "unread M" badge. Clicking it opens the first asking session
-	 * (or the first waiting one if there's no asking session). */
+	/** The small "needs input N" / "needs review M" badge. Clicking a count highlights those
+	 * sessions' rows in the list (scrolling the first into view) without opening anything. */
 	private renderAttentionBadge(container: HTMLElement, attention: AttentionCounts): void {
 		const badge = container.createSpan({ cls: "agent-sessions-attention-badge" });
-		if (attention.asking > 0) {
-			badge.createSpan({
-				cls: "agent-sessions-attention-badge-item is-asking",
-				text: t("attention.asking", { count: attention.asking }),
+		const item = (kind: "asking" | "waiting", text: string, ids: string[]): void => {
+			const el = badge.createSpan({ cls: `agent-sessions-attention-badge-item is-${kind}`, text });
+			this.registerDomEvent(el, "click", (evt) => {
+				evt.stopPropagation();
+				this.highlightRows(ids, kind);
 			});
+		};
+		if (attention.asking > 0) {
+			item("asking", t("attention.asking", { count: attention.asking }), attention.askingIds);
 		}
 		if (attention.waiting > 0) {
-			badge.createSpan({
-				cls: "agent-sessions-attention-badge-item is-waiting",
-				text: t("attention.waiting", { count: attention.waiting }),
-			});
+			item("waiting", t("attention.waiting", { count: attention.waiting }), attention.waitingIds);
 		}
-		const jumpToId = attention.jumpToId;
-		if (jumpToId) {
-			badge.addClass("is-clickable");
-			this.registerDomEvent(badge, "click", (evt) => {
-				evt.stopPropagation();
-				const row = this.plugin.index.sessions.get(jumpToId);
-				void this.plugin.openSession(jumpToId, { agent: row?.agent ?? "claude", cwd: row?.cwd ?? "" });
-			});
+	}
+
+	/** Plays the highlight animation on the rows of `ids` (restarting it if it's already
+	 * playing) and scrolls the first of them into view. */
+	private highlightRows(ids: string[], kind: "asking" | "waiting"): void {
+		const wanted = new Set(ids);
+		const rows = Array.from(this.listEl.querySelectorAll<HTMLElement>(".agent-sessions-row")).filter(
+			(el) => el.dataset.sessionId !== undefined && wanted.has(el.dataset.sessionId)
+		);
+		const cls = `is-highlight-${kind}`;
+		for (const el of rows) {
+			el.removeClass("is-highlight-asking", "is-highlight-waiting");
+			void el.offsetWidth; // restart the animation
+			el.addClass(cls);
+			el.addEventListener("animationend", () => el.removeClass(cls), { once: true });
 		}
+		rows[0]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 	}
 
 	// ---- Detail pane -----------------------------------------------------------------

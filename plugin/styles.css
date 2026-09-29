@@ -839,8 +839,8 @@
 	cursor: default;
 }
 
-/* The "Needs input N" / "Unread M" badge next to the "Open tabs" heading. The caller doesn't
-   create it at all when the count is 0. Clicking opens the first asking session (or waiting, if none is asking). */
+/* The "Needs input N" / "Needs review M" badge next to the "Open tabs" heading. The caller doesn't
+   create it at all when the count is 0. Clicking a count highlights those sessions' rows. */
 .agent-sessions-attention-badge {
 	display: inline-flex;
 	align-items: center;
@@ -848,11 +848,8 @@
 	margin-left: auto;
 }
 
-.agent-sessions-attention-badge.is-clickable {
-	cursor: pointer;
-}
-
 .agent-sessions-attention-badge-item {
+	cursor: pointer;
 	padding: 0 var(--size-4-1);
 	border-radius: var(--radius-s);
 	font-size: var(--font-ui-smaller);
@@ -872,6 +869,33 @@
 
 .agent-sessions-group-header {
 	cursor: pointer;
+}
+
+/* A row picked out by clicking the attention badge flashes the badge's color twice (an inset
+   shadow, so it tints over the row's own background instead of replacing it). */
+@keyframes agent-sessions-highlight {
+	0%,
+	50%,
+	100% {
+		box-shadow: none;
+	}
+	25%,
+	75% {
+		box-shadow: inset 0 0 0 100vmax var(--agent-sessions-highlight);
+	}
+}
+
+.agent-sessions-row.is-highlight-asking,
+.agent-sessions-row.is-highlight-waiting {
+	animation: agent-sessions-highlight 1.2s ease-in-out;
+}
+
+.agent-sessions-row.is-highlight-asking {
+	--agent-sessions-highlight: hsl(320 70% 50% / 0.35);
+}
+
+.agent-sessions-row.is-highlight-waiting {
+	--agent-sessions-highlight: hsl(30 80% 50% / 0.3);
 }
 
 .agent-sessions-group-count {

@@ -14,33 +14,27 @@ export interface AttentionCounts {
 	/** Sessions in the `needs-review` group (waiting or just-compacted). Named `waiting` for
 	 * historical reasons — it's the badge's second count, "needs review". */
 	waiting: number;
-	/** The session a click should open: the first asking one, or failing that the first waiting one. `null` if neither exists. */
-	jumpToId: string | null;
+	/** The needs-input sessions' ids, in list order — what clicking the first count highlights. */
+	askingIds: string[];
+	/** The needs-review sessions' ids, in list order — what clicking the second count highlights. */
+	waitingIds: string[];
 }
 
-/** Counts needs-input/needs-review sessions among `rows`, and picks a jump target (needs-input
- * takes priority). Backs the side panel's badge. Archived rows never count (`statusGroup` always
+/** Counts needs-input/needs-review sessions among `rows`, and collects their ids. Backs the side
+ * panel's badge. Archived rows never count (`statusGroup` always
  * classifies them as `archived`, not `needs-input`/`needs-review`). */
 export function attentionCounts(source: TerminalStatusSource, rows: Row[]): AttentionCounts {
-	let asking = 0;
-	let waiting = 0;
-	let firstAskingId: string | null = null;
-	let firstWaitingId: string | null = null;
+	const askingIds: string[] = [];
+	const waitingIds: string[] = [];
 	for (const row of rows) {
 		const group = statusGroup(resolveRowStatus(source, row), row.archived);
 		if (group === "needs-input") {
-			asking++;
-			if (firstAskingId === null) {
-				firstAskingId = row.id;
-			}
+			askingIds.push(row.id);
 		} else if (group === "needs-review") {
-			waiting++;
-			if (firstWaitingId === null) {
-				firstWaitingId = row.id;
-			}
+			waitingIds.push(row.id);
 		}
 	}
-	return { asking, waiting, jumpToId: firstAskingId ?? firstWaitingId };
+	return { asking: askingIds.length, waiting: waitingIds.length, askingIds, waitingIds };
 }
 
 /** `asking` = needs-input, `waiting` = needs-review (kept as the original two names — see `AttentionCounts`). */

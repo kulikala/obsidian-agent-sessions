@@ -42,28 +42,17 @@ describe("attentionCounts", () => {
 		expect(counts.waiting).toBe(2);
 	});
 
-	it("is 0 for both and jumpToId is null when neither is present", () => {
+	it("is 0 for both, with no ids, when neither is present", () => {
 		const rows = [row({ id: "a" }), row({ id: "b" })];
 		const counts = attentionCounts(source({ a: "idle", b: "working" }), rows);
-		expect(counts).toEqual({ asking: 0, waiting: 0, jumpToId: null });
+		expect(counts).toEqual({ asking: 0, waiting: 0, askingIds: [], waitingIds: [] });
 	});
 
-	it("prefers asking for jumpToId (even when waiting appears first in the list)", () => {
-		const rows = [row({ id: "a" }), row({ id: "b" })];
-		const counts = attentionCounts(source({ a: "waiting", b: "asking" }), rows);
-		expect(counts.jumpToId).toBe("b");
-	});
-
-	it("falls back to the first waiting entry when there is no asking", () => {
-		const rows = [row({ id: "a" }), row({ id: "b" })];
-		const counts = attentionCounts(source({ a: "idle", b: "waiting" }), rows);
-		expect(counts.jumpToId).toBe("b");
-	});
-
-	it("uses only the first match as jumpToId when multiple rows share the same state", () => {
-		const rows = [row({ id: "a" }), row({ id: "b" })];
-		const counts = attentionCounts(source({ a: "asking", b: "asking" }), rows);
-		expect(counts.jumpToId).toBe("a");
+	it("collects each group's ids in list order", () => {
+		const rows = [row({ id: "a" }), row({ id: "b" }), row({ id: "c" }), row({ id: "d" })];
+		const counts = attentionCounts(source({ a: "waiting", b: "asking", c: "compacted", d: "asking" }), rows);
+		expect(counts.askingIds).toEqual(["b", "d"]);
+		expect(counts.waitingIds).toEqual(["a", "c"]);
 	});
 
 	it("counts compacted as waiting too (both are the needs-review group)", () => {
@@ -75,7 +64,7 @@ describe("attentionCounts", () => {
 	it("never counts an archived row, regardless of its status", () => {
 		const rows = [row({ id: "a", archived: true })];
 		const counts = attentionCounts(source({ a: "asking" }), rows);
-		expect(counts).toEqual({ asking: 0, waiting: 0, jumpToId: null });
+		expect(counts).toEqual({ asking: 0, waiting: 0, askingIds: [], waitingIds: [] });
 	});
 });
 

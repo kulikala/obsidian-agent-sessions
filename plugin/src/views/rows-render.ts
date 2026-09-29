@@ -131,6 +131,7 @@ export function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): voi
 /** Renders one row: `status-marker  name  time  ▣  ⋯`. `⋯` is always shown. */
 export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptions): HTMLElement {
 	const el = container.createDiv({ cls: "agent-sessions-row" });
+	el.dataset.sessionId = row.id;
 	if (opts.front) {
 		el.addClass("is-front");
 	}
