@@ -98,6 +98,27 @@ class TestLive(OpencodeCase):
         with mock.patch.object(live, '_opencode_pids', return_value=[4242]):
             self.assertEqual(opencode.live_sessions(scanned)[S1].status, 'idle')
 
+    def test_without_a_scan_the_recent_sessions_come_from_one_cheap_query(self):
+        self._unfinished(int(time.time() * 1000))
+        with mock.patch.object(live, '_opencode_pids', return_value=[4242]), \
+                mock.patch.object(opencode, 'scan', side_effect=AssertionError('no scan')), \
+                mock.patch.object(opencode._scan, 'eligible_sessions', side_effect=AssertionError('no scan')):
+            out = opencode.live_sessions()
+        self.assertEqual((out[S1].status, out[S1].pid), ('busy', 4242))
+
+    def test_cheap_query_skips_old_and_sub_agent_sessions(self):
+        path = make_db(self.tmp)
+        now = int(time.time() * 1000)
+        with Fixture(path) as f:
+            f.session(S1, updated=now - 3_600_000)
+            f.user(S1, 'q', now - 3_600_100)
+            f.assistant(S1, '', now - 3_600_000, completed=False)
+            f.session(S2, updated=now, parent_id=S1)
+            f.user(S2, 'q', now - 100)
+            f.assistant(S2, '', now, completed=False)
+        with mock.patch.object(live, '_opencode_pids', return_value=[4242]):
+            self.assertEqual(opencode.live_sessions(), {})
+
 
 if __name__ == '__main__':
     unittest.main()

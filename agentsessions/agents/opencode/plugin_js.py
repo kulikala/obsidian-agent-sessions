@@ -10,6 +10,8 @@ The plugin runs inside the `opencode` process and writes one status file per
 session, `~/.agents/sessions/opencode/<ses_id>.json`:
 `{"status": "busy"|"idle"|"waiting", "waiting_for": "permission"|"question"|"",
 "pid": process.pid, "cwd", "updated_at"}` (seconds), atomically (tmp + rename).
+A top-level session gets its file (status `idle`) when it is created, so the file
+is there from launch, before any prompt.
 `agents/opencode/live.py` reads them; a dead `pid` marks a file stale.
 Event names are the ones OpenCode's SDK types declare; `permission.asked` /
 `permission.updated` and both spellings of a session id location are handled
@@ -93,6 +95,14 @@ function handle(event, directory) {
 			if (info.parentID && typeof info.id === "string") {
 				children.add(info.id);
 				remove(info.id);
+			} else if (event.type === "session.created") {
+				// A top-level session exists from launch: publish it (idle, this process's pid) so
+				// the app can tie the session to its process before the first prompt.
+				update(info.id, info.directory || directory, (s) => {
+					if (!s.base) {
+						s.base = "idle";
+					}
+				});
 			}
 			break;
 		}

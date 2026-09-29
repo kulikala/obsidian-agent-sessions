@@ -43,7 +43,7 @@ def read_detail_for(path: Optional[str]) -> Detail:
     return _detail.read_detail_for(path)
 
 
-def live_sessions(sessions: Dict[str, Session]) -> Dict[str, _live.Live]:
+def live_sessions(sessions: Optional[Dict[str, Session]] = None) -> Dict[str, _live.Live]:
     return _live.live_sessions(sessions)
 
 

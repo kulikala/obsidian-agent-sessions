@@ -89,6 +89,11 @@ class TestOpencodeJson(unittest.TestCase):
                                            'pid': os.getpid(), 'updated_at': 42.0,
                                            'waiting_for': 'permission'})
 
+    def test_live_does_not_scan_opencode_sessions(self):
+        with mock.patch.object(jsonout.opencode_agent, 'scan', side_effect=AssertionError('no scan')), \
+                mock.patch.object(jsonout.opencode_agent, 'list_transcripts', side_effect=AssertionError('no scan')):
+            self.assertEqual(jsonout.live_output()['live'], {})
+
     def test_resolve(self):
         got = jsonout.resolve_output('opencode', 0, 2.0, '/work/b')
         self.assertEqual(got, {'thread': S2, 'transcript': 'opencode:' + S2})

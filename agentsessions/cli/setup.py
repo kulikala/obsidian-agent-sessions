@@ -13,7 +13,11 @@ def main(args: List[str]) -> int:
     remove = '--remove' in args
     # `--opencode` installs only the OpenCode plugin: Claude Code's settings are
     # left alone, since OpenCode can be enabled without Claude Code.
-    opencode_only = '--opencode' in args and not remove
+    # `--remove-opencode` removes only that plugin file (OpenCode switched off in the plugin),
+    # `--update-only` refreshes it when it exists and never creates it.
+    remove_opencode = '--remove-opencode' in args and not remove
+    opencode_only = '--opencode' in args and not remove and not remove_opencode
+    update_only = '--update-only' in args
 
     settings_path = claude_setup.DEFAULT_SETTINGS_PATH
     if '--settings' in args:
@@ -56,9 +60,18 @@ def main(args: List[str]) -> int:
         opencode_path = args[i + 1]
 
     changes: List[str]
+    # The last line `--opencode` / `--remove-opencode` print: `opencode-plugin: <status>`
+    # (installed | updated | unchanged | foreign | absent | failed | removed), for a caller to read.
+    opencode_status = None
+    exit_code = 0
     try:
         if opencode_only:
-            changes = opencode_setup.install(opencode_path, dry_run=dry_run)
+            opencode_status, changes = opencode_setup.apply(opencode_path, dry_run=dry_run, update_only=update_only)
+            if opencode_status == opencode_setup.FAILED:
+                exit_code = 1
+        elif remove_opencode:
+            changes = opencode_setup.remove(opencode_path, dry_run=dry_run)
+            opencode_status = 'removed' if changes else opencode_setup.ABSENT
         elif remove:
             # Removes only our own hooks/statusLine from settings.json, only our
             # own two submit-key entries from keybindings.json, and only our own
@@ -90,4 +103,6 @@ def main(args: List[str]) -> int:
             sys.stdout.write(i18n.t('cmd.dry_run_note') + '\n')
     else:
         sys.stdout.write(i18n.t('cmd.no_changes') + '\n')
-    return 0
+    if opencode_status:
+        sys.stdout.write('opencode-plugin: %s\n' % opencode_status)
+    return exit_code

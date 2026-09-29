@@ -110,6 +110,55 @@ class TestSetupCommand(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertFalse(os.path.exists(self.plugin))
 
+    def test_the_status_line_tells_what_happened(self):
+        self.assertEqual(self._run('--opencode')[1].splitlines()[-1], 'opencode-plugin: installed')
+        self.assertEqual(self._run('--opencode')[1].splitlines()[-1], 'opencode-plugin: unchanged')
+        with open(self.plugin, 'w', encoding='utf-8') as f:
+            f.write(plugin_js.MARKER + ' (older version)\n')
+        self.assertEqual(self._run('--opencode')[1].splitlines()[-1], 'opencode-plugin: updated')
+        with open(self.plugin, 'w', encoding='utf-8') as f:
+            f.write('export const Mine = async () => ({})\n')
+        rc, out = self._run('--opencode')
+        self.assertEqual((rc, out.splitlines()[-1]), (0, 'opencode-plugin: foreign'))
+
+    def test_update_only_never_creates_the_file(self):
+        rc, out = self._run('--opencode', '--update-only')
+        self.assertEqual((rc, out.splitlines()[-1]), (0, 'opencode-plugin: absent'))
+        self.assertFalse(os.path.exists(self.plugin))
+        self._run('--opencode')
+        with open(self.plugin, 'w', encoding='utf-8') as f:
+            f.write(plugin_js.MARKER + ' (older version)\n')
+        rc, out = self._run('--opencode', '--update-only')
+        self.assertEqual(out.splitlines()[-1], 'opencode-plugin: updated')
+        with open(self.plugin, encoding='utf-8') as f:
+            self.assertEqual(f.read(), plugin_js.PLUGIN_JS)
+
+    def test_an_unwritable_folder_is_reported_not_raised(self):
+        with mock.patch('os.makedirs', side_effect=PermissionError('denied')):
+            rc, out = self._run('--opencode')
+        self.assertEqual(rc, 1)
+        self.assertIn('denied', out)
+        self.assertEqual(out.splitlines()[-1], 'opencode-plugin: failed')
+
+    def test_remove_opencode_removes_only_the_plugin(self):
+        self._run('--opencode')
+        with open(self.settings, 'w') as f:
+            f.write('{"hooks": {}}')
+        before = open(self.settings).read()
+        rc, out = self._run('--remove-opencode')
+        self.assertEqual(rc, 0)
+        self.assertFalse(os.path.exists(self.plugin))
+        self.assertEqual(out.splitlines()[-1], 'opencode-plugin: removed')
+        self.assertEqual(open(self.settings).read(), before)
+        self.assertEqual(self._run('--remove-opencode')[1].splitlines()[-1], 'opencode-plugin: absent')
+
+    def test_remove_opencode_leaves_a_foreign_file(self):
+        os.makedirs(os.path.dirname(self.plugin))
+        with open(self.plugin, 'w') as f:
+            f.write('export const Mine = async () => ({})\n')
+        self._run('--remove-opencode')
+        self.assertTrue(os.path.exists(self.plugin))
+
     def test_explicit_plugin_path(self):
         target = os.path.join(self.tmp, 'elsewhere.js')
         rc, _ = self._run('--opencode', '--opencode-plugin', target)
@@ -167,6 +216,19 @@ if (process.argv[4] === "dump") {
 
     def status(self, sid, status_type):
         return {'type': 'session.status', 'properties': {'sessionID': sid, 'status': {'type': status_type}}}
+
+    def test_a_created_top_level_session_gets_an_idle_file_with_the_pid(self):
+        ev = [{'type': 'session.created', 'properties': {'info': {'id': 'ses_a', 'directory': '/work/here'}}}]
+        d = self._files_after(ev)['ses_a.json']
+        self.assertEqual((d['status'], d['waiting_for'], d['cwd']), ('idle', '', '/work/here'))
+        self.assertIsInstance(d['pid'], int)
+        # a later busy is not undone by another created/updated for the same session
+        ev += [self.status('ses_a', 'busy'), {'type': 'session.updated', 'properties': {'info': {'id': 'ses_a'}}}]
+        self.assertEqual(self._files_after(ev)['ses_a.json']['status'], 'busy')
+
+    def test_created_sub_agent_sessions_get_no_file(self):
+        ev = [{'type': 'session.created', 'properties': {'info': {'id': 'ses_kid', 'parentID': 'ses_a'}}}]
+        self.assertEqual(self._files_after(ev), {})
 
     def test_busy_then_idle(self):
         files = self._files_after([self.status('ses_a', 'busy')])

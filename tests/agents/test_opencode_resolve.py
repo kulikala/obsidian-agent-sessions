@@ -28,12 +28,29 @@ class TestResolve(OpencodeCase):
         os.unlink(self.path)
         self.assertEqual(self._resolve(), (None, None))
 
-    def test_newest_matching_session_wins(self):
+    def test_the_one_matching_session_is_found(self):
+        with Fixture(self.path) as f:
+            f.session(S1, directory='/work/x', created=6_000)
+            f.session(S3, directory='/work/other', created=10_000)
+        self.assertEqual(self._resolve(), (S1, 'opencode:' + S1))
+
+    def test_more_than_one_candidate_is_ambiguous_and_resolves_to_nothing(self):
         with Fixture(self.path) as f:
             f.session(S1, directory='/work/x', created=6_000)
             f.session(S2, directory='/work/x', created=9_000)
-            f.session(S3, directory='/work/other', created=10_000)
+        self.assertEqual(self._resolve(), (None, None))
+        # once one of them is linked (to another tab), the other is unambiguous
+        self.assertEqual(self._resolve(already={S1}), (S2, 'opencode:' + S2))
+
+    def test_opencode_run_sessions_are_skipped(self):
+        deny_question = [{'permission': 'question', 'pattern': '*', 'action': 'deny'}]
+        with Fixture(self.path) as f:
+            f.session(S1, directory='/work/x', created=6_000, permission=deny_question)
+            f.session(S2, directory='/work/x', created=9_000)
         self.assertEqual(self._resolve(), (S2, 'opencode:' + S2))
+        with Fixture(self.path) as f:
+            f.conn.execute('DELETE FROM session WHERE id = ?', (S2,))
+        self.assertEqual(self._resolve(), (None, None))
 
     def test_session_row_without_messages_counts(self):
         with Fixture(self.path) as f:

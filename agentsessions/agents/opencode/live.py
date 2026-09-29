@@ -121,20 +121,34 @@ def _in_progress(d: '_db.Db', session_id: str) -> bool:
     return not (data.get('time') or {}).get('completed') and not data.get('finish')
 
 
-def live_sessions(sessions: Dict[str, Session], status_dir: Optional[str] = None,
+def _recent_sessions(d: '_db.Db', now: float) -> Dict[str, Session]:
+    """The top-level sessions updated within `FALLBACK_WINDOW`, from one indexed
+    query (id and time only) instead of a full scan of every listed session."""
+    where = ['time_updated > ?']
+    if 'parent_id' in d.columns('session'):
+        where.append('parent_id IS NULL')
+    rows = d.query('SELECT id, time_updated FROM session WHERE %s' % ' AND '.join(where),
+                   (int((now - FALLBACK_WINDOW) * 1000),))
+    return {r['id']: Session(id=r['id'], name=None, cwd='', mtime=(r['time_updated'] or 0) / 1000.0,
+                             path=_db.pseudo_path(r['id']), agent='opencode') for r in rows}
+
+
+def live_sessions(sessions: Optional[Dict[str, Session]] = None, status_dir: Optional[str] = None,
                   path: Optional[str] = None, now: Optional[float] = None) -> Dict[str, Live]:
     """`{ses_id: Live}`: the plugin's status files first, then the database
-    fallback for sessions (from `agents.opencode.scan`) without one."""
+    fallback for sessions without one. `sessions` (from `agents.opencode.scan`)
+    names the candidates; without it they come from a cheap recent-activity
+    query, which is all `json live` needs."""
     out = read_status_files(status_dir)
     now = time.time() if now is None else now
-    recent = [s for sid, s in sessions.items()
-              if sid not in out and now - s.mtime <= FALLBACK_WINDOW]
-    if not recent:
-        return out
     d = _db.open_db(path)
     if d is None:
         return out
     try:
+        if sessions is None:
+            sessions = _recent_sessions(d, now)
+        recent = [s for sid, s in sessions.items()
+                  if sid not in out and now - s.mtime <= FALLBACK_WINDOW]
         candidates = [s for s in recent if _in_progress(d, s.id)]
     finally:
         d.close()

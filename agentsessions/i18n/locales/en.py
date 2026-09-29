@@ -60,6 +60,7 @@ MESSAGES = {
     'setup.opencode_updated': 'opencode plugin: updated {path}',
     'setup.opencode_removed': 'opencode plugin: removed {path}',
     'setup.opencode_foreign': 'opencode plugin: {path} exists and is not ours; left as is',
+    'setup.opencode_failed': 'opencode plugin: could not change {path}: {error}',
 
     # cmd_setup.py
     'cmd.needs_value': '{flag} needs a value',

@@ -236,11 +236,14 @@ def live_output() -> dict:
         adapter = _adapter(name)
         if name == 'claude':
             live_map = adapter.live_sessions()
+        elif name == 'opencode':
+            # Status files first; the database fallback needs only ids and update
+            # times, which a single query gives -- no scan of every session.
+            live_map = adapter.live_sessions()
         else:
-            # Codex and OpenCode have no ledger of their own -- they need a scan
-            # (path/cwd per id) to know what to check. Reuses the shared,
-            # persistent scan-cache, so this doesn't cost more than `json scan`
-            # already would.
+            # Codex has no ledger of its own -- it needs a scan (path/cwd per id)
+            # to know what to check. Reuses the shared, persistent scan-cache, so
+            # this doesn't cost more than `json scan` already would.
             c = cache.load(path=cache_path)
             scanned = adapter.scan(adapter.list_transcripts(), cache=c)
             cache.save(c, path=cache_path)

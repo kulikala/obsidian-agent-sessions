@@ -52,6 +52,7 @@ MESSAGES = {
     'setup.opencode_updated': 'opencode プラグイン: {path} を更新した',
     'setup.opencode_removed': 'opencode プラグイン: {path} を取り除いた',
     'setup.opencode_foreign': 'opencode プラグイン: {path} は自分のものではないので、そのままにした',
+    'setup.opencode_failed': 'opencode プラグイン: {path} を変更できなかった: {error}',
 
     'cmd.needs_value': '{flag} には値が要ります',
     'cmd.no_changes': '変更なし',

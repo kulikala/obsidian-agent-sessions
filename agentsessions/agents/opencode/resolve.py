@@ -9,11 +9,14 @@ here -- possibly repeatedly, the row appears when the TUI has started -- what
 Two strategies, in order:
 1. **Status file**: the plugin's status file whose `pid` is `pid` or one of its
    descendants (the PTY child may be a wrapper around the real process) --
-   exact, but the file only exists after the first status event.
-2. **Database**: the newest top-level session with `directory == cwd`,
+   exact. The plugin writes it when the session is created (at TUI launch).
+2. **Database**: the top-level, interactive session with `directory == cwd`,
    `time_created >= since` (epoch seconds) that isn't in `already_linked`.
    The session row is created at TUI launch, before any message, so no user
-   message is required.
+   message is required. `opencode run` sessions (`db.is_non_interactive`) are
+   skipped, and with more than one candidate nothing is returned: guessing
+   could tie a tab to another tab's session. The caller polls again, by which
+   time strategy 1 has the file.
 """
 from typing import Optional, Set, Tuple
 
@@ -42,11 +45,13 @@ def resolve(pid: int, since: float, cwd: str, already_linked: Optional[Set[str]]
         where = ['directory = ?', 'time_created >= ?']
         if 'parent_id' in have:
             where.append('parent_id IS NULL')
-        rows = d.query('SELECT id FROM session WHERE %s ORDER BY time_created DESC, id DESC' % ' AND '.join(where),
+        rows = d.query('SELECT %s FROM session WHERE %s ORDER BY time_created DESC, id DESC'
+                       % (d.select_columns('session', ('id', 'permission')), ' AND '.join(where)),
                        (cwd, int(since * 1000)))
-        for r in rows:
-            if r['id'] not in already_linked:
-                return r['id'], _db.pseudo_path(r['id'])
+        candidates = [r['id'] for r in rows
+                      if r['id'] not in already_linked and not _db.is_non_interactive(r['permission'])]
+        if len(candidates) == 1:
+            return candidates[0], _db.pseudo_path(candidates[0])
         return None, None
     finally:
         d.close()
