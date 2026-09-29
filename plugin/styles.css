@@ -1054,8 +1054,11 @@
 /* Always shown. */
 .agent-sessions-row-menu-btn {
 	flex: 0 0 auto;
+	display: inline-flex;
+	align-items: center;
 	padding: 0 var(--size-4-1);
 	color: var(--text-muted);
+	--icon-size: var(--icon-xs);
 }
 
 .agent-sessions-row-menu-btn:hover {

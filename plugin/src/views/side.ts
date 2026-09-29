@@ -2,6 +2,7 @@
 // areas' heights can be adjusted via a drag handle between them (saved to `settings.sideDetailHeight`).
 
 import { ItemView, Menu, Notice, Platform, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
+import { moreIconId } from "../ui/icons";
 import type AgentSessionsPlugin from "../main";
 import { attentionCounts, type AttentionCounts } from "../sessions/attention";
 import { resolveAgentBinary, usage } from "../backend/backend";
@@ -165,7 +166,7 @@ export class SideView extends ItemView {
 		this.navButtons.manager = this.iconButton(navEl, "layout-grid", t("action.sessionManager"), () =>
 			void this.plugin.openManagerTab()
 		);
-		const moreBtn = this.iconButton(navEl, "more-horizontal", t("action.more"), (evt) => this.showMoreMenu(evt));
+		const moreBtn = this.iconButton(navEl, moreIconId(Platform.isMacOS), t("action.more"), (evt) => this.showMoreMenu(evt));
 		moreBtn.addClass("agent-sessions-nav-more");
 		this.navButtons.more = moreBtn;
 	}

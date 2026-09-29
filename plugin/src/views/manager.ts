@@ -3,7 +3,7 @@
 // time formatting, the `⋯` row menu) is reused from `rows.ts` — the last-updated column shows
 // the same relative time as the side panel, re-rendered on the same shared ticker.
 
-import { ItemView, Menu, Notice, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
+import { ItemView, Menu, Notice, Platform, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
 import type AgentSessionsPlugin from "../main";
 import { urgencyByGroupKey, type GroupUrgency } from "../sessions/attention";
 import type { Row } from "../sessions/index";
@@ -11,7 +11,7 @@ import { stats, usage } from "../backend/backend";
 import { paletteHueDeg } from "../sessions/category";
 import { t } from "../i18n";
 import { NewSessionModal } from "../ui/modals";
-import { AGENT_ICON_ID } from "../ui/icons";
+import { AGENT_ICON_ID, moreIconId } from "../ui/icons";
 import { AGENT_IDS, type AgentId } from "../settings";
 import {
 	managerStatusFilterLabelKey,
@@ -797,7 +797,7 @@ export class ManagerView extends ItemView {
 		);
 		this.applyStatusFilterButtonState();
 
-		const moreBtn = this.iconButton(toolbarEl, "more-horizontal", t("action.more"), (evt) => this.showMoreMenu(evt));
+		const moreBtn = this.iconButton(toolbarEl, moreIconId(Platform.isMacOS), t("action.more"), (evt) => this.showMoreMenu(evt));
 		moreBtn.addClass("agent-sessions-nav-more");
 	}
 
@@ -1010,7 +1010,8 @@ export class ManagerView extends ItemView {
 		tr.createEl("td", { cls: "agent-sessions-manager-col-folder", text: row.folder });
 
 		const menuTd = tr.createEl("td", { cls: "agent-sessions-manager-col-menu" });
-		const menuBtn = menuTd.createSpan({ cls: "agent-sessions-row-menu-btn", text: "⋯" });
+		const menuBtn = menuTd.createSpan({ cls: "agent-sessions-row-menu-btn" });
+		setIcon(menuBtn, moreIconId(Platform.isMacOS));
 		menuBtn.addEventListener("click", (evt) => {
 			evt.stopPropagation();
 			this.selectIndex(index);

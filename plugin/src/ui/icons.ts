@@ -31,3 +31,9 @@ export const AGENT_ICON_ID: Record<string, string> = {
 	codex: CODEX_ICON_ID,
 	opencode: OPENCODE_ICON_ID,
 };
+
+/** The "more" menu icon: a horizontal ellipsis on macOS, a vertical one elsewhere — Obsidian's own
+ * convention for its view-header menus on each platform. */
+export function moreIconId(isMac: boolean): string {
+	return isMac ? "more-horizontal" : "more-vertical";
+}

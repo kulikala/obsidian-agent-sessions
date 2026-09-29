@@ -7,7 +7,8 @@
 // only its `rename`/`moveToCategory` closures ever touch `obsidian`, so those stay lazily
 // required — see the comment there).
 
-import { setIcon, setTooltip, Menu } from "obsidian";
+import { Platform, setIcon, setTooltip, Menu } from "obsidian";
+import { moreIconId } from "../ui/icons";
 import { renderCategoryChip } from "../ui/chip";
 import type { Row } from "../sessions/index";
 import { t } from "../i18n";
@@ -165,7 +166,8 @@ export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptio
 		el.createSpan({ cls: "agent-sessions-row-tab-mark", text: "▣" });
 	}
 
-	const menuBtn = el.createSpan({ cls: "agent-sessions-row-menu-btn", text: "⋯" });
+	const menuBtn = el.createSpan({ cls: "agent-sessions-row-menu-btn" });
+	setIcon(menuBtn, moreIconId(Platform.isMacOS));
 	menuBtn.addEventListener("click", (evt) => {
 		evt.stopPropagation();
 		opts.selection.select(el, menuBtn);
