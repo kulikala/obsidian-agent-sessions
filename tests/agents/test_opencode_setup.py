@@ -5,7 +5,7 @@ import shutil
 import subprocess
 import tempfile
 import unittest
-from contextlib import redirect_stdout
+from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
 from agentsessions.agents.opencode import plugin_js
@@ -134,10 +134,11 @@ class TestSetupCommand(unittest.TestCase):
             self.assertEqual(f.read(), plugin_js.PLUGIN_JS)
 
     def test_an_unwritable_folder_is_reported_not_raised(self):
-        with mock.patch('os.makedirs', side_effect=PermissionError('denied')):
+        err = io.StringIO()
+        with mock.patch('os.makedirs', side_effect=PermissionError('denied')), redirect_stderr(err):
             rc, out = self._run('--opencode')
         self.assertEqual(rc, 1)
-        self.assertIn('denied', out)
+        self.assertIn('denied', err.getvalue())
         self.assertEqual(out.splitlines()[-1], 'opencode-plugin: failed')
 
     def test_remove_opencode_removes_only_the_plugin(self):

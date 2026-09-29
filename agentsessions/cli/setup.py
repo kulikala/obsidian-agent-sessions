@@ -97,8 +97,10 @@ def main(args: List[str]) -> int:
         return 1
 
     if changes:
+        # A failure goes to stderr, where a caller (the plugin) reads the reason from.
+        out = sys.stderr if exit_code else sys.stdout
         for c in changes:
-            sys.stdout.write(c + '\n')
+            out.write(c + '\n')
         if dry_run:
             sys.stdout.write(i18n.t('cmd.dry_run_note') + '\n')
     else:
