@@ -12,6 +12,7 @@ import { prepareFuzzySearch, type App, type TFile } from "obsidian";
 import { applyCompletion, findAtQuery, relPathFor, type AtQuery } from "../terminal/at-complete";
 import { SaveDebouncer } from "../terminal/autosave";
 import { t } from "../i18n";
+import { indentEdit } from "../terminal/indent";
 import { classifyEnter, submitKeyButtonLabel } from "../terminal/keys";
 import type { SubmitKey } from "../settings";
 
@@ -242,7 +243,8 @@ export class EditorPane {
 	/**
 	 * The submit key sends; any other Enter combination inserts a newline; `Esc` goes back to
 	 * the prompt (closing suggestions first if they're open). While suggestions are open,
-	 * unmodified Enter/Tab confirms the selection and ↑/↓ moves it. Does nothing during an IME
+	 * unmodified Enter/Tab confirms the selection and ↑/↓ moves it. Otherwise Tab / Shift+Tab
+	 * indent / outdent by two spaces (instead of moving focus). Does nothing during an IME
 	 * composition (`isComposing`/`keyCode 229`). Every other key is left to the textarea's
 	 * native behavior, with only propagation stopped so it doesn't reach Obsidian's hotkeys
 	 * (Cmd+V/C/X/Z/A keep their default behavior).
@@ -271,6 +273,11 @@ export class EditorPane {
 				return;
 			}
 		}
+		if (ev.key === "Tab" && !ev.altKey && !ev.ctrlKey && !ev.metaKey) {
+			ev.preventDefault();
+			this.indent(ev.shiftKey);
+			return;
+		}
 		const cls = classifyEnter(ev);
 		if (cls === this.deps.submitKey) {
 			ev.preventDefault();
@@ -287,6 +294,24 @@ export class EditorPane {
 			ev.preventDefault();
 			this.returnToInput();
 		}
+	}
+
+	/** Tab / Shift+Tab: replaces the affected lines through `insertText`, so it's one undo step. */
+	private indent(outdent: boolean): void {
+		const textarea = this.textarea;
+		if (!textarea) {
+			return;
+		}
+		const edit = indentEdit(textarea.value, textarea.selectionStart, textarea.selectionEnd, outdent);
+		if (!edit) {
+			return;
+		}
+		textarea.setSelectionRange(edit.from, edit.to);
+		if (!document.execCommand("insertText", false, edit.text)) {
+			textarea.setRangeText(edit.text, edit.from, edit.to);
+		}
+		textarea.setSelectionRange(edit.selectionStart, edit.selectionEnd);
+		this.onChanged();
 	}
 
 	/** Inserts a newline at the cursor. Using `insertText` keeps it in the undo history. */
