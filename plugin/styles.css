@@ -2319,3 +2319,21 @@
 .agent-sessions-agents-desc {
 	margin-bottom: var(--size-4-3);
 }
+
+/* ---- Install dialog ---- */
+.agent-sessions-install-plan {
+	padding-left: 1.2em;
+}
+.agent-sessions-install-plan li {
+	margin-bottom: 0.4em;
+	overflow-wrap: anywhere;
+}
+.agent-sessions-install-label {
+	display: inline-block;
+	min-width: 7em;
+	color: var(--text-muted);
+}
+.agent-sessions-install-status {
+	color: var(--text-muted);
+	min-height: 1.5em;
+}

@@ -28,40 +28,44 @@ Run and manage [Claude Code](https://claude.com/claude-code) and [Codex](https:/
 
 | | |
 |---|---|
-| **OS** | macOS — tested. Linux, including Linux Obsidian running under WSLg on Windows — supported (the terminal keybindings and the Python side both have platform branches for it, exercised in CI and in Linux containers by hand), but not yet verified on a real Obsidian install end to end. Windows (native) — not supported: the daemon depends on `pty`, `fcntl`, and `termios`, Unix-only standard-library modules with no Windows equivalent, and a native Windows build of Obsidian has no PTY to hold open; running the Linux build of Obsidian under WSLg avoids this entirely. |
+| **OS** | macOS — tested. Linux, including Linux Obsidian running under WSLg on Windows — supported (the terminal keybindings and the Python side both have platform branches for it, exercised in CI and in Linux containers by hand), but not yet verified on a real Obsidian install end to end. Windows (native) — not supported: the daemon depends on `pty`, `fcntl`, and `termios`, Unix-only standard-library modules with no Windows equivalent, and a native Windows build of Obsidian has no PTY to hold open; running the Linux build of Obsidian under WSLg avoids this entirely. On native Windows the plugin loads but stays inactive, saying why. |
 | **Obsidian** | Desktop only (`isDesktopOnly`, since the plugin spawns processes and opens Unix sockets — neither is available to a mobile or web build), version 1.7.2 or later (`minAppVersion`). |
-| **Python** | 3.9+, standard library only, found via `$PATH` (`python3`). |
+| **Python** | 3.9+, standard library only. macOS: the Command Line Tools' `python3` (`xcode-select --install`), python.org, or Homebrew; Linux: your distribution's `python3`. |
 | **Claude Code and/or Codex** | At least one of the two, either on your `PATH` or pointed to from the plugin's Agents settings (auto-detected on first run). Claude Code: the plugin relies on its hooks (`Stop`, `SessionEnd`, `SessionStart` with matcher `compact`, `UserPromptSubmit`), its `statusLine`, and — only if you change the submit-key setting away from the default — its `keybindings.json`. Codex: no hooks/statusLine equivalent is used yet; hands-on verification is still pending (see [`docs/design.md`](docs/design.md) §7.7, §25). |
 | **Node.js / npm** | Only if you are building the plugin from source (see [Development](#development)); CI builds with Node.js 20. |
 
 ## Disclosures
 
 - **No network use by the plugin.** It talks only to its own daemon, over a Unix socket on this machine. Claude Code and Codex, which it launches, connect to their own services under your own accounts.
-- **Runs local programs.** The plugin starts the `agent-sessions` program (Python) and the Claude Code / Codex CLIs you have installed, and reads your login shell's environment so they find the same `PATH` as in a terminal.
+- **Runs local programs.** The plugin runs the `agent-sessions` program with your Python (it ships inside the plugin as readable source and is written out only when you click Install), starts the Claude Code / Codex CLIs you have installed, and reads your login shell's environment so they find the same `PATH` as in a terminal. It never downloads code.
 - **Reads and writes files outside the vault**, because that is where the agents and the program keep their state:
   - reads Claude Code's `~/.claude/projects/`, `~/.claude/sessions/`, and `~/.claude/settings.json`, and Codex's `~/.codex/` (or `$CODEX_HOME`), to list sessions and compute usage;
   - writes `~/.agents/sessions/` (the daemon's socket, logs, status snapshots, caches);
-  - `install.sh` / `agent-sessions setup` add hooks and a `statusLine` to `~/.claude/settings.json` (backed up first); changing the submit-key setting writes `~/.claude/keybindings.json`;
+  - installing the program writes it to a folder in your home directory (see [Installation](#installation)); the install and `install.sh` add hooks and a `statusLine` to `~/.claude/settings.json` (backed up first); changing the submit-key setting writes `~/.claude/keybindings.json`;
   - with Codex enabled, adds its submit-key keymap and a default `[tui].status_line` to `~/.codex/config.toml` (backed up first; each line it adds is marked, and `agent-sessions setup --remove` takes exactly those out);
   - the built-in editor edits the temporary file Claude Code hands to `$VISUAL`.
 - **No accounts, payments, ads, or telemetry** of its own. Everything is open source under the MIT license.
 
 ## Installation
 
-The plugin drives a small Python program, `agent-sessions`, which holds the sessions and reads the agents' transcripts. Obsidian's plugin browser installs only the plugin itself, so the program is installed once from this repository.
+The plugin drives a small Python program, `agent-sessions`, which holds the sessions and reads the agents' transcripts. It is bundled with the plugin as plain source and installed with one click; Python 3.9 or later has to be on the machine already (see [Supported environments](#supported-environments)).
 
 1. In Obsidian, open **Settings → Community plugins → Browse**, search for **Agent Sessions**, then install and enable it.
-2. Install the `agent-sessions` program:
+2. Open the side panel (the **Agent Sessions** ribbon icon) and click **Install agent-sessions**. The dialog shows, before anything is written, where the program will go, which Python will run it, and the change to Claude Code's settings; **Install** does the rest.
 
-   ```sh
-   git clone https://github.com/kulikala/obsidian-agent-sessions.git
-   cd obsidian-agent-sessions
-   ./scripts/install.sh
-   ```
+Where it goes: the first usable folder of `$XDG_DATA_HOME/agent-sessions`, `~/.local/share/agent-sessions`, and `~/.agents/sessions/app` — skipping any path with spaces or shell-special characters (it ends up in a hook command and in `$VISUAL`), inside the vault, or not writable. The Python is the one your login shell finds as `python3`, else `/opt/homebrew/bin`, `/usr/local/bin`, or `/usr/bin` (on macOS only once the Command Line Tools are installed, so the stub's installer pop-up never appears). Updating the plugin updates the program too; **Settings → agent-sessions program** reinstalls or removes it.
 
-   Keep the clone: `~/bin/agent-sessions` is a link into it, and `git pull` updates the program.
+### From a clone
 
-To install the plugin from source instead, build it and give `install.sh` your vault, which also links this clone's `plugin/` into the vault (enable **Agent Sessions** under Community plugins afterwards):
+For the `agent-sessions` command in your own terminal (the TUI, scripting), or to run the program straight from a checkout, install it from this repository instead — the plugin uses `~/bin/agent-sessions` whenever it exists:
+
+```sh
+git clone https://github.com/kulikala/obsidian-agent-sessions.git
+cd obsidian-agent-sessions
+./scripts/install.sh
+```
+
+To install the plugin itself from source too, build it and give `install.sh` your vault, which also links this clone's `plugin/` into the vault (enable **Agent Sessions** under Community plugins afterwards):
 
 ```sh
 (cd plugin && npm install && npm run build)
@@ -128,12 +132,14 @@ See [`docs/design.md`](docs/design.md) for the full design and [`docs/requiremen
 
 ## Uninstall
 
+If you installed the program from the plugin, remove it under **Settings → agent-sessions program → Remove** first: that stops the daemon (ending running sessions), takes its hooks and `statusLine` out of `~/.claude/settings.json` and its lines out of `~/.codex/config.toml`, and deletes its folder. Then disable and remove **Agent Sessions** from Obsidian's Community plugins.
+
+If you installed from a clone:
+
 ```sh
 "<path to this repo>/scripts/uninstall.sh"            # plugin installed from Community plugins
 "<path to this repo>/scripts/uninstall.sh" "<vault>"  # plugin installed from source
 ```
-
-Also disable and remove **Agent Sessions** from Obsidian's Community plugins.
 
 `uninstall.sh` stops the daemon (asking for confirmation first if any session is still
 running — pass `--force` to skip that), removes the hooks and `statusLine` it added to

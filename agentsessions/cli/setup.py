@@ -27,6 +27,14 @@ def main(args: List[str]) -> int:
             return 1
         keybindings_path = args[i + 1]
 
+    launcher = claude_setup.DEFAULT_LAUNCHER
+    if '--command' in args:
+        i = args.index('--command')
+        if i + 1 >= len(args):
+            sys.stderr.write(i18n.t('cmd.needs_value', flag='--command') + '\n')
+            return 1
+        launcher = args[i + 1]
+
     config_toml_path = config_toml.DEFAULT_CONFIG_TOML_PATH
     if '--config-toml' in args:
         i = args.index('--config-toml')
@@ -55,7 +63,7 @@ def main(args: List[str]) -> int:
             if ct_message:
                 changes.append(ct_message)
         else:
-            changes, _ = claude_setup.run(settings_path, dry_run=dry_run)
+            changes, _ = claude_setup.run(settings_path, dry_run=dry_run, launcher=launcher)
     except claude_setup.SettingsUnreadable as e:
         sys.stderr.write(i18n.t('cmd.settings_unreadable', path=settings_path, error=e) + '\n')
         return 1

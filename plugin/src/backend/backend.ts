@@ -22,11 +22,6 @@ export function defaultLoginShell(isMac: boolean): string {
 	return isMac ? "/bin/zsh" : "/bin/sh";
 }
 
-/** The default when the `agentSessionsPath` setting is empty. */
-export function resolveAgentSessionsPath(configured: string): string {
-	return configured || join(homedir(), "bin", "agent-sessions");
-}
-
 function firstLine(text: string): string {
 	const line = text.split("\n").find((l) => l.trim().length > 0);
 	return (line ?? text).trim();
@@ -419,6 +414,17 @@ async function locateBinary(bin: string, isMac: boolean): Promise<string | null>
 	}
 	const dirs = commonBinDirs(await gatherCommonBinDirsInput(shell, isMac));
 	return dirs.map((dir) => join(dir, bin)).find(isExecutable) ?? null;
+}
+
+/** `locateBinary` for any program (e.g. `python3`), not only an agent's CLI. */
+export function locateProgram(bin: string, isMac: boolean): Promise<string | null> {
+	return locateBinary(bin, isMac);
+}
+
+/** Runs `cmd` and resolves with its stdout (rejects on a non-zero exit, like `execFileText`). */
+export async function runProgram(cmd: string, args: string[], timeoutMs = 60000): Promise<string> {
+	const { stdout } = await execFileText(cmd, args, process.env, timeoutMs);
+	return stdout;
 }
 
 /**

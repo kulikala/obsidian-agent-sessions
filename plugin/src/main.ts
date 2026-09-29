@@ -11,8 +11,10 @@ import {
 	WorkspaceLeaf,
 	type FileSystemAdapter,
 } from "obsidian";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
+import { BACKEND_FILES, BACKEND_VERSION } from "virtual:agent-sessions-backend";
 import {
 	agentEnvFor,
 	agentVersion,
@@ -25,11 +27,26 @@ import {
 	resolve,
 	resolveAgentBinary,
 	resetLoginEnvCache,
-	resolveAgentSessionsPath,
+	locateProgram,
+	runProgram,
 	scan,
 	setAgentEnv,
 	withBinDirOnPath,
 } from "./backend/backend";
+import {
+	chooseInstallDir,
+	findInstalled,
+	findPython,
+	hookLauncher,
+	installCandidates,
+	isSupportedPlatform,
+	launcherPath,
+	removeBundle,
+	writeBundle,
+	type InstallDirChoice,
+	type InstallInfo,
+	type PythonInfo,
+} from "./backend/bundle";
 import { DaemonClient, defaultSockPath, ensureDaemon } from "./backend/daemon-client";
 import { EditServer, editReplyFor, submitsAfterEdit, type EditReply, type EditRequest } from "./backend/edit-server";
 import { SessionIndex } from "./sessions/index";
@@ -66,8 +83,9 @@ import {
 	type TerminalStatus,
 } from "./sessions/terminal-status";
 import { claudeSettingsPath, readFullscreenTui } from "./terminal/tui-mode";
-import type { ArchivedSession, DaemonSession } from "./types";
+import type { ArchivedSession, DaemonSession, Detail, LiveResult, ScanResult } from "./types";
 import { writeUiState } from "./backend/ui-state";
+import { InstallBackendModal } from "./ui/install-modal";
 import { UsageModal } from "./usage/usage-modal";
 import { writeVaultState } from "./backend/vault-state";
 import { ManagerView, VIEW_TYPE_MANAGER } from "./views/manager";
@@ -77,6 +95,13 @@ import { TerminalView } from "./views/terminal";
 export { VIEW_TYPE_SIDE, VIEW_TYPE_MANAGER, VIEW_TYPE_TERMINAL };
 
 const RUNTIME_DIR = join(homedir(), ".agents", "sessions");
+/** Where `install.sh` links the program; used when present, ahead of an install made from inside the plugin. */
+const LINKED_AGENT_SESSIONS = join(homedir(), "bin", "agent-sessions");
+/** What the index sees while the program isn't installed: nothing, rather than a failed call
+ * (and a "scan failed" notice) every minute. */
+const EMPTY_SCAN: ScanResult = { sessions: [], store: { folded: [], archived: [], pendingRenames: {}, sessions: {} } };
+const EMPTY_LIVE: LiveResult = { live: {}, daemon: { running: false, sessions: [] } };
+const EMPTY_DETAIL: Detail = { last_user: null, last_assistant: null, last_command: null, tools: [] };
 /** The settings tab's per-agent heading (an autonym-like proper name, not translated — same idea
  * as `i18n/index.ts`'s locale self-names). */
 const AGENT_DISPLAY_NAME_KEY: Record<AgentId, MessageKey> = {
@@ -139,6 +164,10 @@ export default class AgentSessionsPlugin extends Plugin {
 	/** True for exactly one `onload`: saved data had no `agents` object at all (pre-T-96, or a
 	 * genuinely first run) — `onload` runs `detectAgents` once and applies the result. */
 	private needsAgentDetection = false;
+	/** The copy of the program installed from inside the plugin, if any (`installBackend`). */
+	bundled: InstallInfo | null = null;
+	/** `false` on a platform `onload` stops early on (nothing to tear down in `onunload`). */
+	private started = false;
 	private opener!: SessionOpener<WorkspaceLeaf>;
 	/** The socket that receives `agent-sessions edit` requests. */
 	private editServer = new EditServer();
@@ -156,8 +185,19 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	async onload(): Promise<void> {
-		registerAgentIcons();
 		await this.loadSettings();
+		if (!isSupportedPlatform(process.platform, Platform.isMobile)) {
+			// Windows (native) and mobile: nothing below can work there, so nothing is started —
+			// just a note on why, in a notice now and in this plugin's settings tab.
+			this.applyLanguage();
+			new Notice(t("notice.unsupportedPlatform"), 10000);
+			this.addSettingTab(new UnsupportedSettingTab(this.app, this));
+			return;
+		}
+		this.started = true;
+		registerAgentIcons();
+		this.bundled = findInstalled(installCandidates(homedir(), process.env));
+		this.refreshBundledBackend();
 		await this.autoDetectAgentsOnFirstRun();
 		this.applyLanguage();
 		this.refreshTuiMode();
@@ -177,9 +217,10 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 
 		this.index = new SessionIndex({
-			scan: (only) => scan(this.agentSessionsPath(), this.vaultPath(), only),
-			live: () => live(this.agentSessionsPath(), this.vaultPath()),
-			detail: (id) => detail(this.agentSessionsPath(), this.vaultPath(), id),
+			scan: (only) => (this.backendAvailable() ? scan(this.agentSessionsPath(), this.vaultPath(), only) : Promise.resolve(EMPTY_SCAN)),
+			live: () => (this.backendAvailable() ? live(this.agentSessionsPath(), this.vaultPath()) : Promise.resolve(EMPTY_LIVE)),
+			detail: (id) =>
+				this.backendAvailable() ? detail(this.agentSessionsPath(), this.vaultPath(), id) : Promise.resolve(EMPTY_DETAIL),
 			storePath: this.storePath(),
 			eventsLogPath: join(RUNTIME_DIR, "events.log"),
 			sessionsDir: join(homedir(), ".claude", "sessions"),
@@ -272,6 +313,9 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	onunload(): void {
+		if (!this.started) {
+			return;
+		}
 		// Resolve any in-progress edit with `cancel` (writing the original content back), then close the socket.
 		for (const view of this.terminalViews()) {
 			view.cancelEditor();
@@ -488,13 +532,9 @@ export default class AgentSessionsPlugin extends Plugin {
 		return join(RUNTIME_DIR, "plugin.sock");
 	}
 
-	/**
-	 * The `VISUAL` value put into `start`'s `env`: `~/bin/agent-sessions-code` if the
-	 * `agentSessionsPath` setting is empty, otherwise `agent-sessions-code` next to it.
-	 */
+	/** The `VISUAL` value put into `start`'s `env`: `agent-sessions-code`, next to the program in use. */
 	visualPath(): string {
-		const configured = this.settings.agentSessionsPath;
-		return configured ? join(dirname(configured), "agent-sessions-code") : join(homedir(), "bin", "agent-sessions-code");
+		return join(dirname(this.agentSessionsPath()), "agent-sessions-code");
 	}
 
 	/**
@@ -535,8 +575,94 @@ export default class AgentSessionsPlugin extends Plugin {
 			});
 	}
 
+	/**
+	 * The `agent-sessions` program in use: the path set in settings if any; otherwise the `~/bin`
+	 * link `install.sh` makes, if present; otherwise the copy installed from inside the plugin
+	 * (`installBackend`). With none of them, still the `~/bin` path (for error messages).
+	 */
 	agentSessionsPath(): string {
-		return resolveAgentSessionsPath(this.settings.agentSessionsPath);
+		if (this.settings.agentSessionsPath) {
+			return this.settings.agentSessionsPath;
+		}
+		if (!existsSync(LINKED_AGENT_SESSIONS) && this.bundled) {
+			return launcherPath(this.bundled.dir);
+		}
+		return LINKED_AGENT_SESSIONS;
+	}
+
+	/** Whether the program `agentSessionsPath` names exists — `false` means it still needs installing. */
+	backendAvailable(): boolean {
+		return existsSync(this.agentSessionsPath());
+	}
+
+	/**
+	 * Brings an install made from inside the plugin up to the version bundled with this build.
+	 * Runs on every load, so updating the plugin updates the program with it. Keeps the Python
+	 * it was installed with while that still exists; otherwise leaves it for the user to
+	 * reinstall (settings), since picking a different interpreter silently could surprise them.
+	 */
+	private refreshBundledBackend(): void {
+		const info = this.bundled;
+		if (!info || info.version === BACKEND_VERSION || !existsSync(info.python)) {
+			return;
+		}
+		try {
+			this.bundled = writeBundle(info.dir, BACKEND_FILES, BACKEND_VERSION, info.python);
+		} catch (err) {
+			console.warn("agent-sessions: couldn't update the installed program", err);
+		}
+	}
+
+	/** What an install would use, for the install dialog to show before anything is written. */
+	async planBackendInstall(): Promise<{ python: PythonInfo | null; location: InstallDirChoice }> {
+		const isMac = Platform.isMacOS;
+		const python = await findPython(isMac, {
+			locate: () => locateProgram("python3", isMac),
+			run: (bin, args) => runProgram(bin, args, 15000),
+			exists: (path) => existsSync(path),
+		});
+		const location = chooseInstallDir(installCandidates(homedir(), process.env), this.vaultPath());
+		return { python, location };
+	}
+
+	/**
+	 * Writes the bundled program into `dir`, running under `python`, and — with Claude Code
+	 * enabled — points Claude Code's hooks and statusLine at it (`agent-sessions setup`, which
+	 * backs `settings.json` up first). Then rescans, so the side panel comes to life.
+	 */
+	async installBackend(python: PythonInfo, dir: string): Promise<void> {
+		this.bundled = writeBundle(dir, BACKEND_FILES, BACKEND_VERSION, python.path);
+		const launcher = launcherPath(dir);
+		if (this.settings.agents.claude.enabled) {
+			await runProgram(launcher, ["setup", "--command", hookLauncher(dir, homedir())]);
+		}
+		this.syncVaultState();
+		await this.index.rescan();
+	}
+
+	/**
+	 * Undoes `installBackend`: stops the daemon (ending any running session), removes its
+	 * Claude Code hooks/statusLine and the Codex config lines it manages (`setup --remove`), then
+	 * deletes the files.
+	 */
+	async uninstallBackend(): Promise<void> {
+		const info = this.bundled;
+		if (!info) {
+			return;
+		}
+		const launcher = launcherPath(info.dir);
+		await runProgram(launcher, ["daemon", "--stop"]).catch(() => undefined);
+		await runProgram(launcher, ["setup", "--remove"]).catch((err) => {
+			console.warn("agent-sessions: setup --remove failed", err);
+		});
+		removeBundle(info.dir);
+		this.bundled = null;
+		await this.index.rescan();
+	}
+
+	/** Opens the install dialog (side panel's empty state, settings); `onDone` runs after a successful install. */
+	openInstallBackend(onDone?: () => void): void {
+		new InstallBackendModal(this.app, this, onDone).open();
 	}
 
 	vaultPath(): string {
@@ -1176,6 +1302,14 @@ export default class AgentSessionsPlugin extends Plugin {
 }
 
 /** The plugin's settings tab. */
+/** The whole settings tab on a platform this plugin can't run on. */
+class UnsupportedSettingTab extends PluginSettingTab {
+	display(): void {
+		this.containerEl.empty();
+		this.containerEl.createEl("p", { text: t("notice.unsupportedPlatform") });
+	}
+}
+
 class AgentSessionsSettingTab extends PluginSettingTab {
 	plugin: AgentSessionsPlugin;
 
@@ -1265,6 +1399,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 					await this.plugin.saveSettings();
 				})
 			);
+
+		this.renderBackendSetting(containerEl);
 
 		new Setting(containerEl)
 			.setName(t("settings.agentSessionsPath.name"))
@@ -1448,6 +1584,53 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 
 	/** Language: auto / Japanese / English. Changing it calls `setLang` → `saveSettings()`
 	 * (each view, and this tab itself, redraws on `settings-changed`). */
+	/**
+	 * The `agent-sessions` program: which one is in use, and the install / reinstall / remove
+	 * buttons for the copy installed from inside the plugin. A program set in the path field
+	 * below, or linked into `~/bin` by `install.sh`, is only reported — the plugin didn't put it
+	 * there, so it doesn't offer to replace or remove it.
+	 */
+	private renderBackendSetting(containerEl: HTMLElement): void {
+		const plugin = this.plugin;
+		const setting = new Setting(containerEl).setName(t("settings.backend.name"));
+		const bundled = plugin.bundled;
+		const inUse = plugin.agentSessionsPath();
+		if (!plugin.backendAvailable()) {
+			setting.setDesc(t("settings.backend.missing"));
+			setting.addButton((button) =>
+				button
+					.setButtonText(t("action.installBackend"))
+					.setCta()
+					.onClick(() => plugin.openInstallBackend(() => this.display()))
+			);
+			return;
+		}
+		if (!bundled || inUse !== launcherPath(bundled.dir)) {
+			setting.setDesc(t("settings.backend.external", { path: inUse }));
+			return;
+		}
+		setting.setDesc(t("settings.backend.bundled", { dir: bundled.dir, python: bundled.python }));
+		setting.addButton((button) =>
+			button.setButtonText(t("action.reinstall")).onClick(() => plugin.openInstallBackend(() => this.display()))
+		);
+		setting.addButton((button) =>
+			button
+				.setButtonText(t("action.uninstallBackend"))
+				.setWarning()
+				.onClick(() => {
+					new ConfirmModal(this.app, t("uninstall.confirm", { dir: bundled.dir }), t("action.uninstallBackend"), () => {
+						void plugin.uninstallBackend().then(
+							() => {
+								new Notice(t("uninstall.done"));
+								this.display();
+							},
+							(err: unknown) => new Notice(t("uninstall.failed", { error: String(err) }))
+						);
+					}).open();
+				})
+		);
+	}
+
 	private renderLanguageSetting(containerEl: HTMLElement): void {
 		new Setting(containerEl)
 			.setName(t("settings.language.name"))

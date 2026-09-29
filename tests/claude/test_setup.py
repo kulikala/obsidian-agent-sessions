@@ -370,3 +370,61 @@ class TestBackupPreservesOriginalText(SetupTestBase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestLauncher(SetupTestBase):
+    """`run(launcher=…)`: the hooks and statusLine name whichever launcher installed them,
+    and every command of ours is recognized whatever launcher it names."""
+
+    PLUGIN = '$HOME/.local/share/agent-sessions/bin/agent-sessions'
+
+    def _commands(self, settings, event):
+        return [h['command'] for e in settings['hooks'].get(event, []) for h in e['hooks']]
+
+    def test_run_with_a_launcher_points_hooks_and_status_line_at_it(self):
+        _, new_settings = setup.run(self.path, launcher=self.PLUGIN)
+        for event, _matcher in setup._HOOK_EVENTS:
+            self.assertEqual(self._commands(new_settings, event), ['"%s" hook' % self.PLUGIN])
+        self.assertEqual(new_settings['statusLine']['command'], '"%s" status' % self.PLUGIN)
+
+    def test_switching_launchers_moves_the_existing_entries_instead_of_adding(self):
+        setup.run(self.path)
+        changes, new_settings = setup.run(self.path, launcher=self.PLUGIN)
+        self.assertEqual(len(changes), len(setup._HOOK_EVENTS) + 1)
+        for event, _matcher in setup._HOOK_EVENTS:
+            self.assertEqual(self._commands(new_settings, event), ['"%s" hook' % self.PLUGIN])
+        self.assertEqual(new_settings['statusLine']['command'], '"%s" status' % self.PLUGIN)
+
+    def test_second_run_with_the_same_launcher_reports_no_changes(self):
+        setup.run(self.path, launcher=self.PLUGIN)
+        changes, _ = setup.run(self.path, launcher=self.PLUGIN)
+        self.assertEqual(changes, [])
+
+    def test_remove_takes_out_ours_whichever_launcher_it_names(self):
+        self._write({
+            'statusLine': {'type': 'command', 'command': '"%s" status' % self.PLUGIN},
+            'hooks': {
+                'Stop': [
+                    {'matcher': '.*', 'hooks': [
+                        {'type': 'command', 'command': '"%s" hook' % self.PLUGIN},
+                        {'type': 'command', 'command': '"$HOME/bin/agent-sessions" hook'},
+                        {'type': 'command', 'command': '"$HOME/bin/other-tool" hook'},
+                    ]},
+                ],
+            },
+        })
+        setup.run_remove(self.path)
+        after = self._read()
+        self.assertNotIn('statusLine', after)
+        self.assertEqual(self._commands(after, 'Stop'), ['"$HOME/bin/other-tool" hook'])
+
+    def test_another_tools_status_line_is_never_replaced(self):
+        self._write({'statusLine': {'type': 'command', 'command': 'npx ccstatusline'}})
+        _, new_settings = setup.run(self.path, launcher=self.PLUGIN)
+        self.assertEqual(new_settings['statusLine']['command'], 'npx ccstatusline')
+
+    def test_cmd_setup_passes_command_through(self):
+        from agentsessions.cli import setup as cmd_setup
+        rc = cmd_setup.main(['setup', '--settings', self.path, '--command', self.PLUGIN])
+        self.assertEqual(rc, 0)
+        self.assertEqual(self._read()['statusLine']['command'], '"%s" status' % self.PLUGIN)

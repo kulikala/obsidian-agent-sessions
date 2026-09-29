@@ -28,40 +28,44 @@
 
 | | |
 |---|---|
-| **OS** | macOS——動作確認済み。Linux（WSLg 上の Linux 版 Obsidian を含む）——対応（ターミナルのキー割当と Python 側の両方にプラットフォーム分岐を持ち、CI と手動での Linux コンテナ検証を通している）が、実機の Obsidian での通しの動作確認はまだ済んでいない。Windows（ネイティブ）——非対応：デーモンは `pty`・`fcntl`・`termios`（Windows に相当するもののない Unix 専用の標準ライブラリ）に依存しており、Windows ネイティブ版の Obsidian には保持すべき PTY 自体が存在しない。WSLg 等で Linux 版の Obsidian を動かせばこの制約を回避できる。 |
+| **OS** | macOS——動作確認済み。Linux（WSLg 上の Linux 版 Obsidian を含む）——対応（ターミナルのキー割当と Python 側の両方にプラットフォーム分岐を持ち、CI と手動での Linux コンテナ検証を通している）が、実機の Obsidian での通しの動作確認はまだ済んでいない。Windows（ネイティブ）——非対応：デーモンは `pty`・`fcntl`・`termios`（Windows に相当するもののない Unix 専用の標準ライブラリ）に依存しており、Windows ネイティブ版の Obsidian には保持すべき PTY 自体が存在しない。WSLg 等で Linux 版の Obsidian を動かせばこの制約を回避できる。Windows ネイティブ版ではプラグインは読み込まれるが、理由を示すだけで何も起動しない。 |
 | **Obsidian** | デスクトップ版のみ（`isDesktopOnly`。プロセスの起動と Unix ソケットを使うため——どちらもモバイル版・Web 版では使えない）、バージョン 1.7.2 以降（`minAppVersion`）。 |
-| **Python** | 3.9 以降、標準ライブラリのみ。`$PATH`（`python3`）から見つける。 |
+| **Python** | 3.9 以降、標準ライブラリのみ。macOS：Command Line Tools の `python3`（`xcode-select --install`）・python.org・Homebrew のいずれか。Linux：ディストリビューションの `python3`。 |
 | **Claude Code／Codex（いずれか一方以上）** | どちらか一方、または両方をインストール済みで、`PATH` にあるか、プラグインの「エージェント」設定でパスを指定する（初回起動時に自動検出）。Claude Code：本プラグインは Claude Code のフック（`Stop`・`SessionEnd`・`SessionStart`（matcher `compact`）・`UserPromptSubmit`）と `statusLine`、そして送信キーの設定を既定から変えた場合のみ `keybindings.json` に依存する。Codex：hooks／statusLine 相当はまだ使っていない。実機での確認はまだ済んでいない（[`docs/design.md`](docs/design.md) §7.7・§25 参照）。 |
 | **Node.js／npm** | ソースからプラグインをビルドする場合のみ必要（[開発](#開発)を参照）。CI では Node.js 20 でビルドしている。 |
 
 ## 開示事項
 
 - **プラグイン自身はネットワークを使わない。** 通信するのは、同じマシン上の自分のデーモンとだけ（Unix ソケット）。プラグインが起動する Claude Code・Codex は、利用者自身のアカウントでそれぞれのサービスに接続する。
-- **ローカルのプログラムを起動する。** `agent-sessions`（Python）と、インストール済みの Claude Code・Codex の CLI を起動する。ターミナルと同じ `PATH` で動くよう、ログインシェルの環境変数を読む。
+- **ローカルのプログラムを起動する。** `agent-sessions` を利用者の Python で動かす（プラグインに読めるソースとして同梱され、インストールを押したときにだけ書き出す）。インストール済みの Claude Code・Codex の CLI を起動し、ターミナルと同じ `PATH` で動くよう、ログインシェルの環境変数を読む。コードをダウンロードすることは無い。
 - **vault の外のファイルを読み書きする。** エージェントと `agent-sessions` が状態をそこに置くため：
   - セッション一覧と使用量のために、Claude Code の `~/.claude/projects/`・`~/.claude/sessions/`・`~/.claude/settings.json` と、Codex の `~/.codex/`（または `$CODEX_HOME`）を読む。
   - `~/.agents/sessions/`（デーモンのソケット・ログ・状態のスナップショット・キャッシュ）に書く。
-  - `install.sh`／`agent-sessions setup` が `~/.claude/settings.json` にフックと `statusLine` を足す（先にバックアップを残す）。送信キーの設定を変えると `~/.claude/keybindings.json` に書く。
+  - プログラムのインストールで、ホームフォルダ内のフォルダに書き出す（[インストール](#インストール)を参照）。インストールと `install.sh` は `~/.claude/settings.json` にフックと `statusLine` を足す（先にバックアップを残す）。送信キーの設定を変えると `~/.claude/keybindings.json` に書く。
   - Codex を有効にしている場合、`~/.codex/config.toml` に送信キーのキーマップと既定の `[tui].status_line` を足す（先にバックアップを残す。足した行には印が付き、`agent-sessions setup --remove` はその行だけを取り除く）。
   - 内蔵エディタは、Claude Code が `$VISUAL` に渡す一時ファイルを編集する。
 - **独自のアカウント・支払い・広告・テレメトリは無い。** すべて MIT ライセンスのオープンソース。
 
 ## インストール
 
-プラグインは、セッションを保持しエージェントの記録を読む小さな Python プログラム `agent-sessions` を使って動く。Obsidian のプラグインブラウザが入れるのはプラグイン本体だけなので、プログラムはこのリポジトリから一度だけ入れる。
+プラグインは、セッションを保持しエージェントの記録を読む小さな Python プログラム `agent-sessions` を使って動く。プログラムは読めるソースのままプラグインに同梱されており、ワンクリックで入る。Python 3.9 以降はあらかじめ入っている必要がある（[対応環境](#対応環境)を参照）。
 
 1. Obsidian の **設定 → コミュニティプラグイン → 閲覧** で **Agent Sessions** を探し、インストールして有効にする。
-2. `agent-sessions` プログラムを入れる：
+2. サイドパネル（リボンの **Agent Sessions** アイコン）を開き、**agent-sessions をインストール** を押す。何かを書き込む前に、置き場所・動かす Python・Claude Code の設定への変更が確認画面に出る。**インストール** を押せば残りは済む。
 
-   ```sh
-   git clone https://github.com/kulikala/obsidian-agent-sessions.git
-   cd obsidian-agent-sessions
-   ./scripts/install.sh
-   ```
+置き場所は、`$XDG_DATA_HOME/agent-sessions`・`~/.local/share/agent-sessions`・`~/.agents/sessions/app` のうち最初に使えるもの。空白やシェルの特殊文字を含むパス（フックのコマンドと `$VISUAL` に入るため）、vault の中、書き込めない場所は飛ばす。Python は、ログインシェルが `python3` として見つけるもの、無ければ `/opt/homebrew/bin`・`/usr/local/bin`・`/usr/bin` の順に探す（macOS の `/usr/bin` は Command Line Tools が入っている場合だけ使い、仮の入口のインストール画面を出さない）。プラグインを更新するとプログラムも更新される。入れ直し・削除は **設定 → agent-sessions プログラム** から。
 
-   clone は残しておく——`~/bin/agent-sessions` はその中へのリンクで、`git pull` でプログラムが更新される。
+### clone から入れる
 
-プラグインもソースから入れる場合は、ビルドしてから `install.sh` に vault を渡す。この clone の `plugin/` も vault にリンクされる（その後、「コミュニティプラグイン」で **Agent Sessions** を有効にする）：
+自分のターミナルで `agent-sessions` コマンド（TUI・スクリプト）を使う場合や、チェックアウトからそのまま動かす場合は、このリポジトリから入れる——`~/bin/agent-sessions` があれば、プラグインは常にそちらを使う：
+
+```sh
+git clone https://github.com/kulikala/obsidian-agent-sessions.git
+cd obsidian-agent-sessions
+./scripts/install.sh
+```
+
+プラグイン本体もソースから入れる場合は、ビルドしてから `install.sh` に vault を渡す。この clone の `plugin/` も vault にリンクされる（その後、「コミュニティプラグイン」で **Agent Sessions** を有効にする）：
 
 ```sh
 (cd plugin && npm install && npm run build)
@@ -128,12 +132,14 @@ agent-sessions setup [--dry-run]
 
 ## アンインストール
 
+プラグインからプログラムを入れた場合は、先に **設定 → agent-sessions プログラム → 削除** を押す。デーモンを止め（動いているセッションは終了する）、`~/.claude/settings.json` のフックと `statusLine`、`~/.codex/config.toml` の管理行を取り除き、フォルダを消す。その後、「コミュニティプラグイン」で **Agent Sessions** を無効化・削除する。
+
+clone から入れた場合：
+
 ```sh
 "<このリポジトリのパス>/scripts/uninstall.sh"            # コミュニティプラグインから入れた場合
 "<このリポジトリのパス>/scripts/uninstall.sh" "<vault>"  # ソースから入れた場合
 ```
-
-これに加えて、Obsidian の「コミュニティプラグイン」で **Agent Sessions** を無効化・削除する。
 
 `uninstall.sh` は、デーモンを止め（動いているセッションが残っていれば確認を求める——飛ばすには
 `--force`）、`~/.claude/settings.json` から自分が足したフックと `statusLine` を取り除き

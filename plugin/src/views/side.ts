@@ -367,6 +367,15 @@ export class SideView extends ItemView {
 	private renderEmptyState(container: HTMLElement): void {
 		const box = container.createDiv({ cls: "agent-sessions-empty" });
 		box.createDiv({ cls: "agent-sessions-empty-wordmark", text: "Agent Sessions" });
+		if (!this.plugin.backendAvailable()) {
+			// First run: the program behind every session isn't installed yet.
+			box.createDiv({ cls: "agent-sessions-empty-desc", text: t("empty.noBackend") });
+			const btn = box
+				.createDiv({ cls: "agent-sessions-empty-action" })
+				.createEl("button", { cls: "mod-cta", text: t("action.installBackend") });
+			this.registerDomEvent(btn, "click", () => this.plugin.openInstallBackend());
+			return;
+		}
 		const enabledAgents = AGENT_IDS.filter((id) => this.plugin.settings.agents[id].enabled);
 		// The description names whichever agents the button below will actually launch. With
 		// none enabled yet, it names both instead (of `AGENT_IDS`) so the sentence still reads as
