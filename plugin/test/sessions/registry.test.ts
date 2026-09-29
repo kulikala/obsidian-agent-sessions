@@ -1,7 +1,7 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Registry } from "../../src/sessions/registry";
 
 const DEAD_PID = 999999;
@@ -164,5 +164,91 @@ describe("Registry", () => {
 		registry.refresh();
 
 		expect(calls).toBe(2);
+	});
+
+	describe("OpenCode status files", () => {
+		let ocDir: string;
+
+		beforeEach(() => {
+			ocDir = join(dir, "opencode");
+			mkdirSync(ocDir);
+		});
+
+		function writeOc(id: string, data: Record<string, unknown>): void {
+			writeFileSync(join(ocDir, `${id}.json`), JSON.stringify(data), "utf8");
+		}
+
+		it("keys entries by the file name and maps status, waiting_for, pid and updated_at", () => {
+			writeOc("ses_a", { status: "waiting", waiting_for: "permission", pid: process.pid, updated_at: 12.5 });
+			writeOc("ses_b", { status: "idle", waiting_for: "", pid: process.pid, updated_at: 3 });
+
+			const registry = new Registry(dir, 200, ocDir);
+
+			expect(registry.get("ses_a")).toEqual({
+				status: "waiting",
+				waitingFor: "permission",
+				pid: process.pid,
+				rc: false,
+				updatedAt: 12500,
+			});
+			expect(registry.get("ses_b")?.status).toBe("idle");
+			expect(registry.get("ses_b")?.waitingFor).toBeUndefined();
+		});
+
+		it("ignores dead pids, unknown statuses, hidden and broken files", () => {
+			writeOc("ses_dead", { status: "busy", pid: DEAD_PID });
+			writeOc("ses_odd", { status: "exploding", pid: process.pid });
+			writeOc(".hidden", { status: "busy", pid: process.pid });
+			writeFileSync(join(ocDir, "ses_broken.json"), "{nope", "utf8");
+			writeOc("ses_ok", { status: "busy", pid: process.pid });
+
+			const registry = new Registry(dir, 200, ocDir);
+
+			expect([...registry.all().keys()]).toEqual(["ses_ok"]);
+		});
+
+		it("keeps Claude's entries next to OpenCode's and reads nothing without the directory argument", () => {
+			writeSession(dir, "c.json", { pid: process.pid, sessionId: "claude-id", status: "idle" });
+			writeOc("ses_a", { status: "busy", pid: process.pid });
+
+			expect([...new Registry(dir, 200, ocDir).all().keys()].sort()).toEqual(["claude-id", "ses_a"]);
+			expect([...new Registry(dir).all().keys()]).toEqual(["claude-id"]);
+		});
+
+		it("fires onBusy / onIdle and resolves waitFor for an OpenCode session", async () => {
+			writeOc("ses_a", { status: "idle", pid: process.pid });
+			const registry = new Registry(dir, 200, ocDir);
+			const events: string[] = [];
+			registry.onBusy((id) => events.push(`busy:${id}`));
+			registry.onIdle((id) => events.push(`idle:${id}`));
+			await expect(registry.waitFor("ses_a", "idle", 1000)).resolves.toBe(true);
+
+			writeOc("ses_a", { status: "busy", pid: process.pid });
+			registry.refresh();
+			writeOc("ses_a", { status: "idle", pid: process.pid });
+			registry.refresh();
+
+			expect(events).toEqual(["busy:ses_a", "idle:ses_a"]);
+		});
+
+		it("watch() sees a file written after it started, even when the folder didn't exist yet", async () => {
+			rmSync(ocDir, { recursive: true, force: true });
+			const registry = new Registry(dir, 20, ocDir);
+			const stop = registry.watch();
+			try {
+				expect(existsSync(ocDir)).toBe(true);
+				// FSEvents needs a moment to start delivering, so the file is rewritten until it is seen.
+				let n = 0;
+				await vi.waitFor(
+					() => {
+						writeOc("ses_new", { status: "busy", pid: process.pid, updated_at: n++ });
+						expect(registry.get("ses_new")?.status).toBe("busy");
+					},
+					{ timeout: 5000, interval: 100 }
+				);
+			} finally {
+				stop();
+			}
+		});
 	});
 });

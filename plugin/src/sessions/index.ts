@@ -34,6 +34,8 @@ export interface SessionIndexDeps {
 	storePath: string;
 	eventsLogPath: string;
 	sessionsDir: string;
+	/** OpenCode's status-file folder (`~/.agents/sessions/opencode`); omitted = OpenCode isn't tracked. */
+	opencodeDir?: string;
 	statusDir: string;
 	/** Where the just-compacted marker files live. */
 	compactedDir: string;
@@ -126,7 +128,7 @@ export class SessionIndex extends EventEmitter {
 
 	constructor(private deps: SessionIndexDeps) {
 		super();
-		this.registry = new Registry(deps.sessionsDir);
+		this.registry = new Registry(deps.sessionsDir, undefined, deps.opencodeDir ?? null);
 		this.statusline = new StatusLine(deps.statusDir);
 		this.compactedTracker = new CompactedTracker(deps.compactedDir);
 		this.registryUnsubscribe = this.registry.onChange(() => {

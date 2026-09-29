@@ -1,4 +1,5 @@
-// Watches `~/.claude/sessions/<pid>.json` (status, pid, rc).
+// Watches `~/.claude/sessions/<pid>.json` (status, pid, rc) and, when given a second directory,
+// OpenCode's `~/.agents/sessions/opencode/<ses_id>.json` (see `readOpencodeEntries`).
 //
 // Each file is a single process's record (`pid, sessionId, cwd, startedAt, procStart,
 // version, kind, entrypoint, name, nameSource, updatedAt, status, statusUpdatedAt,
@@ -87,25 +88,81 @@ function readEntries(sessionsDir: string): Map<string, RegistryEntry> {
 	return out;
 }
 
+/**
+ * OpenCode's status files, one per session, written by the plugin `agent-sessions setup
+ * --opencode` installs (`agentsessions/agents/opencode/plugin_js.py`):
+ * `{status: busy|idle|waiting, waiting_for: "permission"|"question"|"", pid, cwd, updated_at}`
+ * (seconds). The id is the file name. The pid is the OpenCode process, so a dead one is a
+ * stale file and is ignored.
+ */
+function readOpencodeEntries(dir: string): Map<string, RegistryEntry> {
+	const out = new Map<string, RegistryEntry>();
+	let names: string[];
+	try {
+		names = fs.readdirSync(dir).filter((n) => n.endsWith(".json") && !n.startsWith("."));
+	} catch {
+		return out;
+	}
+	for (const name of names) {
+		let raw: { pid?: unknown; status?: unknown; waiting_for?: unknown; updated_at?: unknown };
+		try {
+			const parsed: unknown = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8"));
+			if (!parsed || typeof parsed !== "object") {
+				continue;
+			}
+			raw = parsed;
+		} catch {
+			continue;
+		}
+		if (typeof raw.pid !== "number" || !isAlive(raw.pid)) {
+			continue;
+		}
+		if (raw.status !== "busy" && raw.status !== "idle" && raw.status !== "waiting") {
+			continue;
+		}
+		out.set(name.slice(0, -".json".length), {
+			status: raw.status,
+			pid: raw.pid,
+			rc: false,
+			updatedAt: typeof raw.updated_at === "number" ? raw.updated_at * 1000 : 0,
+			waitingFor: typeof raw.waiting_for === "string" && raw.waiting_for ? raw.waiting_for : undefined,
+		});
+	}
+	return out;
+}
+
 function isBusyLike(status: string): boolean {
 	return status === "busy" || status === "shell";
 }
 
 /**
- * Holds the ledger read from `~/.claude/sessions`. Reads synchronously once at construction;
- * `fs.watch` doesn't start until `watch()` is called (tests call `refresh()` directly instead).
+ * Holds the ledger read from `~/.claude/sessions`, plus OpenCode's status files when
+ * `opencodeDir` is given (their ids are `ses_…`, so they never collide with Claude's). Reads
+ * synchronously once at construction; `fs.watch` doesn't start until `watch()` is called (tests
+ * call `refresh()` directly instead).
  */
 export class Registry extends EventEmitter {
 	private entries: Map<string, RegistryEntry>;
-	private watcher: fs.FSWatcher | null = null;
+	private watchers: fs.FSWatcher[] = [];
 	private debounceTimer: number | null = null;
 
 	constructor(
 		private sessionsDir: string,
-		private debounceMs = 200
+		private debounceMs = 200,
+		private opencodeDir: string | null = null
 	) {
 		super();
-		this.entries = readEntries(sessionsDir);
+		this.entries = this.read();
+	}
+
+	private read(): Map<string, RegistryEntry> {
+		const entries = readEntries(this.sessionsDir);
+		if (this.opencodeDir) {
+			for (const [id, entry] of readOpencodeEntries(this.opencodeDir)) {
+				entries.set(id, entry);
+			}
+		}
+		return entries;
 	}
 
 	get(id: string): RegistryEntry | null {
@@ -172,7 +229,7 @@ export class Registry extends EventEmitter {
 
 	/** Re-reads the directory. Can also be called by hand for environments where `fs.watch` doesn't work. */
 	refresh(): void {
-		const next = readEntries(this.sessionsDir);
+		const next = this.read();
 		const prev = this.entries;
 		this.entries = next;
 		for (const [id, entry] of next) {
@@ -189,14 +246,27 @@ export class Registry extends EventEmitter {
 
 	/** Starts `fs.watch` (200ms debounce). Returns a function to stop it. */
 	watch(): () => void {
-		if (!this.watcher) {
-			try {
-				this.watcher = fs.watch(this.sessionsDir, () => this.scheduleRefresh());
-			} catch {
-				this.watcher = null;
+		if (this.watchers.length === 0) {
+			this.watchDir(this.sessionsDir);
+			if (this.opencodeDir) {
+				// The plugin creates this folder on its first write; watching needs it to exist.
+				try {
+					fs.mkdirSync(this.opencodeDir, { recursive: true });
+				} catch {
+					// Watching it fails below, and OpenCode stays unwatched.
+				}
+				this.watchDir(this.opencodeDir);
 			}
 		}
 		return () => this.stopWatch();
+	}
+
+	private watchDir(dir: string): void {
+		try {
+			this.watchers.push(fs.watch(dir, () => this.scheduleRefresh()));
+		} catch {
+			// A folder that can't be watched just isn't watched.
+		}
 	}
 
 	private scheduleRefresh(): void {
@@ -210,8 +280,10 @@ export class Registry extends EventEmitter {
 	}
 
 	private stopWatch(): void {
-		this.watcher?.close();
-		this.watcher = null;
+		for (const watcher of this.watchers) {
+			watcher.close();
+		}
+		this.watchers = [];
 		if (this.debounceTimer) {
 			window.clearTimeout(this.debounceTimer);
 			this.debounceTimer = null;

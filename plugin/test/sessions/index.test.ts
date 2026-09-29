@@ -332,6 +332,25 @@ describe("SessionIndex", () => {
 		expect(detailCalls).toEqual(["a", "a"]);
 	});
 
+	it("gives an OpenCode row the status, waiting reason and pid from its status file", async () => {
+		const opencodeDir = join(dir, "opencode");
+		mkdirSync(opencodeDir, { recursive: true });
+		writeFileSync(
+			join(opencodeDir, "ses_x.json"),
+			JSON.stringify({ status: "waiting", waiting_for: "permission", pid: process.pid, updated_at: 1 }),
+			"utf8"
+		);
+		scanImpl = async () => ({
+			sessions: [scanSession({ id: "ses_x", agent: "opencode" })],
+			store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+		});
+		const index = new SessionIndex({ ...deps, opencodeDir });
+		await index.scan();
+
+		const row = index.sessions.get("ses_x");
+		expect([row?.status, row?.waitingFor, row?.pid]).toEqual(["waiting", "permission", process.pid]);
+	});
+
 	describe("waitForName (explicitly polled because /rename never goes busy and never hits events.log)", () => {
 		it("returns true without calling rescan when the name already matches", async () => {
 			scanImpl = async () => ({
