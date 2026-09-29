@@ -34,26 +34,45 @@
 | **Claude Code／Codex（いずれか一方以上）** | どちらか一方、または両方をインストール済みで、`PATH` にあるか、プラグインの「エージェント」設定でパスを指定する（初回起動時に自動検出）。Claude Code：本プラグインは Claude Code のフック（`Stop`・`SessionEnd`・`SessionStart`（matcher `compact`）・`UserPromptSubmit`）と `statusLine`、そして送信キーの設定を既定から変えた場合のみ `keybindings.json` に依存する。Codex：hooks／statusLine 相当はまだ使っていない。実機での確認はまだ済んでいない（[`docs/design.md`](docs/design.md) §7.7・§25 参照）。 |
 | **Node.js／npm** | ソースからプラグインをビルドする場合のみ必要（[開発](#開発)を参照）。CI では Node.js 20 でビルドしている。 |
 
+## 開示事項
+
+- **プラグイン自身はネットワークを使わない。** 通信するのは、同じマシン上の自分のデーモンとだけ（Unix ソケット）。プラグインが起動する Claude Code・Codex は、利用者自身のアカウントでそれぞれのサービスに接続する。
+- **ローカルのプログラムを起動する。** `agent-sessions`（Python）と、インストール済みの Claude Code・Codex の CLI を起動する。ターミナルと同じ `PATH` で動くよう、ログインシェルの環境変数を読む。
+- **vault の外のファイルを読み書きする。** エージェントと `agent-sessions` が状態をそこに置くため：
+  - セッション一覧と使用量のために、Claude Code の `~/.claude/projects/`・`~/.claude/sessions/`・`~/.claude/settings.json` と、Codex の `~/.codex/`（または `$CODEX_HOME`）を読む。
+  - `~/.agents/sessions/`（デーモンのソケット・ログ・状態のスナップショット・キャッシュ）に書く。
+  - `install.sh`／`agent-sessions setup` が `~/.claude/settings.json` にフックと `statusLine` を足す（先にバックアップを残す）。送信キーの設定を変えると `~/.claude/keybindings.json` に書く。
+  - Codex を有効にしている場合、`~/.codex/config.toml` に送信キーのキーマップと既定の `[tui].status_line` を足す（先にバックアップを残す。足した行には印が付き、`agent-sessions setup --remove` はその行だけを取り除く）。
+  - 内蔵エディタは、Claude Code が `$VISUAL` に渡す一時ファイルを編集する。
+- **独自のアカウント・支払い・広告・テレメトリは無い。** すべて MIT ライセンスのオープンソース。
+
 ## インストール
 
-パッケージ化された配布物はまだ無いため、ローカルの clone から入れる。
+プラグインは、セッションを保持しエージェントの記録を読む小さな Python プログラム `agent-sessions` を使って動く。Obsidian のプラグインブラウザが入れるのはプラグイン本体だけなので、プログラムはこのリポジトリから一度だけ入れる。
+
+1. Obsidian の **設定 → コミュニティプラグイン → 閲覧** で **Agent Sessions** を探し、インストールして有効にする。
+2. `agent-sessions` プログラムを入れる：
+
+   ```sh
+   git clone https://github.com/kulikala/obsidian-agent-sessions.git
+   cd obsidian-agent-sessions
+   ./scripts/install.sh
+   ```
+
+   clone は残しておく——`~/bin/agent-sessions` はその中へのリンクで、`git pull` でプログラムが更新される。
+
+プラグインもソースから入れる場合は、ビルドしてから `install.sh` に vault を渡す。この clone の `plugin/` も vault にリンクされる（その後、「コミュニティプラグイン」で **Agent Sessions** を有効にする）：
 
 ```sh
-git clone https://github.com/kulikala/obsidian-agent-sessions.git
-cd obsidian-agent-sessions
 (cd plugin && npm install && npm run build)
-./scripts/install.sh /path/to/your/vault
+./scripts/install.sh /path/to/your/vault   # または AGENT_SESSIONS_VAULT=/path/to/your/vault ./scripts/install.sh
 ```
-
-vault のパスは必須——`install.sh` の第 1 引数として渡すか、環境変数 `AGENT_SESSIONS_VAULT` で指定する（`AGENT_SESSIONS_VAULT=/path/to/your/vault ./scripts/install.sh`）。
 
 `install.sh` が行うこと：
 
 - `bin/agent-sessions`・`bin/agent-sessions-code` を `~/bin` に symlink する。
-- `plugin/` を `<vault>/.obsidian/plugins/agent-sessions` に symlink する。
+- vault を渡した場合、`plugin/` を `<vault>/.obsidian/plugins/agent-sessions` に symlink する。
 - `agent-sessions setup` を実行する。これは **`~/.claude/settings.json` を書き換える**（先に `settings.json.bak-<時刻>` としてバックアップを残す）：`Stop`・`SessionEnd`・`SessionStart`（matcher `compact`）・`UserPromptSubmit` の各フックを `agent-sessions hook` に向けて追加・更新し、`statusLine` を `agent-sessions status` に設定する。自分が付けたと分かるエントリだけを触り、他のフックはそのまま残す。
-
-その後、Obsidian の「コミュニティプラグイン」で **Agent Sessions** を有効にする。
 
 **送信キー**の設定を既定（Enter）以外に変えると、Claude Code 自身のキー割当と揃えるため、プラグインは `~/.claude/keybindings.json`（`Chat` コンテキスト）にも書き込む——これは Obsidian の外で起動した Claude Code を含め、Claude Code 全体に効く（ただし、選んだキーが確実に働くのはこのプラグイン自身のターミナルタブだけで、他のターミナルアプリがそのキーを素の Enter と区別できるかはターミナル次第）。設定を元に戻すと、この設定のためにプラグインが管理している鍵が消える。
 
@@ -84,6 +103,7 @@ vault のパスは必須——`install.sh` の第 1 引数として渡すか、�
 
 ## トラブルシューティング
 
+- **「agent-sessions が見つからない」と出る** — プラグインは入っているが、`agent-sessions` プログラムが入っていない。[インストール](#インストール)の手順 2 を実行する。`~/bin` 以外に置く場合は、プラグインの設定でパスを指定する。
 - **Claude Code のフック（他のプラグイン自身のフックスクリプトなど）が `node: not found` のようなエラーで失敗する** — node が mise／nvm／asdf／volta などのバージョンマネージャー経由で入っており、そのシェル統合が対話シェル（`.zshrc`／`.bashrc`）でしか読み込まれない環境である可能性が高い。通常、セッションの起動環境は login-but-non-interactive なシェルから組み立てている。プラグインは対話シェルの `PATH` も探ってこれに合流させている（`docs/design.md` §4.2）ので、次のセッションからは直るはず。直らない場合は、普通のターミナルで `$SHELL -i -c 'echo $PATH'` に node のディレクトリが実際に含まれているか確認してほしい。
 
 ## CLI
@@ -109,7 +129,8 @@ agent-sessions setup [--dry-run]
 ## アンインストール
 
 ```sh
-"<このリポジトリのパス>/scripts/uninstall.sh" "<vault>"
+"<このリポジトリのパス>/scripts/uninstall.sh"            # コミュニティプラグインから入れた場合
+"<このリポジトリのパス>/scripts/uninstall.sh" "<vault>"  # ソースから入れた場合
 ```
 
 これに加えて、Obsidian の「コミュニティプラグイン」で **Agent Sessions** を無効化・削除する。
@@ -118,11 +139,11 @@ agent-sessions setup [--dry-run]
 `--force`）、`~/.claude/settings.json` から自分が足したフックと `statusLine` を取り除き
 （`install.sh` と同じやり方で先に backup を残す）、送信キーを Enter 以外に変えていた場合は
 `~/.claude/keybindings.json` の `Chat` に足した `enter`／`meta+enter` を取り除き、
-`~/bin/agent-sessions`・`~/bin/agent-sessions-code`・`<vault>/.obsidian/plugins/agent-sessions`
-の symlink を外す（symlink でなければ——手で置き換えている等——消さずに案内だけ出す）。他の
+`~/bin/agent-sessions`・`~/bin/agent-sessions-code` と、vault を渡した場合は
+`<vault>/.obsidian/plugins/agent-sessions` の symlink を外す（symlink でなければ——手で置き換えている等——消さずに案内だけ出す）。他の
 ツールのフック・`statusLine`・キーバインドには触れず、何度実行しても安全（冪等）。
 
-`--purge` を付けると `~/.agents/sessions/`（デーモンの実行時状態）と
+`--purge` を付けると `~/.agents/sessions/`（デーモンの実行時状態）と、vault を渡した場合は
 `<vault>/.agents/sessions/`（折畳・アーカイブ・カテゴリの色などのセッション管理情報）も消す。
 
 ## 開発

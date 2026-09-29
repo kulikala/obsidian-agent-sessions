@@ -34,26 +34,45 @@ Run and manage [Claude Code](https://claude.com/claude-code) and [Codex](https:/
 | **Claude Code and/or Codex** | At least one of the two, either on your `PATH` or pointed to from the plugin's Agents settings (auto-detected on first run). Claude Code: the plugin relies on its hooks (`Stop`, `SessionEnd`, `SessionStart` with matcher `compact`, `UserPromptSubmit`), its `statusLine`, and — only if you change the submit-key setting away from the default — its `keybindings.json`. Codex: no hooks/statusLine equivalent is used yet; hands-on verification is still pending (see [`docs/design.md`](docs/design.md) §7.7, §25). |
 | **Node.js / npm** | Only if you are building the plugin from source (see [Development](#development)); CI builds with Node.js 20. |
 
+## Disclosures
+
+- **No network use by the plugin.** It talks only to its own daemon, over a Unix socket on this machine. Claude Code and Codex, which it launches, connect to their own services under your own accounts.
+- **Runs local programs.** The plugin starts the `agent-sessions` program (Python) and the Claude Code / Codex CLIs you have installed, and reads your login shell's environment so they find the same `PATH` as in a terminal.
+- **Reads and writes files outside the vault**, because that is where the agents and the program keep their state:
+  - reads Claude Code's `~/.claude/projects/`, `~/.claude/sessions/`, and `~/.claude/settings.json`, and Codex's `~/.codex/` (or `$CODEX_HOME`), to list sessions and compute usage;
+  - writes `~/.agents/sessions/` (the daemon's socket, logs, status snapshots, caches);
+  - `install.sh` / `agent-sessions setup` add hooks and a `statusLine` to `~/.claude/settings.json` (backed up first); changing the submit-key setting writes `~/.claude/keybindings.json`;
+  - with Codex enabled, adds its submit-key keymap and a default `[tui].status_line` to `~/.codex/config.toml` (backed up first; each line it adds is marked, and `agent-sessions setup --remove` takes exactly those out);
+  - the built-in editor edits the temporary file Claude Code hands to `$VISUAL`.
+- **No accounts, payments, ads, or telemetry** of its own. Everything is open source under the MIT license.
+
 ## Installation
 
-There is no packaged release yet, so the plugin is installed from a local clone.
+The plugin drives a small Python program, `agent-sessions`, which holds the sessions and reads the agents' transcripts. Obsidian's plugin browser installs only the plugin itself, so the program is installed once from this repository.
+
+1. In Obsidian, open **Settings → Community plugins → Browse**, search for **Agent Sessions**, then install and enable it.
+2. Install the `agent-sessions` program:
+
+   ```sh
+   git clone https://github.com/kulikala/obsidian-agent-sessions.git
+   cd obsidian-agent-sessions
+   ./scripts/install.sh
+   ```
+
+   Keep the clone: `~/bin/agent-sessions` is a link into it, and `git pull` updates the program.
+
+To install the plugin from source instead, build it and give `install.sh` your vault, which also links this clone's `plugin/` into the vault (enable **Agent Sessions** under Community plugins afterwards):
 
 ```sh
-git clone https://github.com/kulikala/obsidian-agent-sessions.git
-cd obsidian-agent-sessions
 (cd plugin && npm install && npm run build)
-./scripts/install.sh /path/to/your/vault
+./scripts/install.sh /path/to/your/vault   # or AGENT_SESSIONS_VAULT=/path/to/your/vault ./scripts/install.sh
 ```
-
-The vault path is required — either as the first argument to `install.sh` or via the `AGENT_SESSIONS_VAULT` environment variable (`AGENT_SESSIONS_VAULT=/path/to/your/vault ./scripts/install.sh`).
 
 `install.sh`:
 
 - symlinks `bin/agent-sessions` and `bin/agent-sessions-code` into `~/bin`;
-- symlinks `plugin/` into `<vault>/.obsidian/plugins/agent-sessions`;
+- with a vault, symlinks `plugin/` into `<vault>/.obsidian/plugins/agent-sessions`;
 - runs `agent-sessions setup`, which **modifies `~/.claude/settings.json`** (a backup is written first, as `settings.json.bak-<timestamp>`): it adds or updates the `Stop`, `SessionEnd`, `SessionStart` (matcher `compact`), and `UserPromptSubmit` hooks to point at `agent-sessions hook`, and sets `statusLine` to `agent-sessions status`. It only ever touches entries it recognizes as its own; other hooks are left alone.
-
-Then enable **Agent Sessions** under Obsidian's Community plugins.
 
 Changing the **submit key** setting away from the default (Enter) additionally makes the plugin write to `~/.claude/keybindings.json` (the `Chat` context) so that Claude Code's own keybindings match — this affects Claude Code everywhere, including sessions started outside Obsidian (only this plugin's own terminal tabs are guaranteed to send the chosen key reliably, though; whether a terminal app elsewhere can even tell it apart from plain Enter depends on that terminal). Reverting the setting removes the keys the plugin manages for this setting.
 
@@ -84,6 +103,7 @@ Font family and size, padding (comfortable/compact/none), submit key, recent-ses
 
 ## Troubleshooting
 
+- **"agent-sessions was not found"** — the plugin is installed but the `agent-sessions` program isn't: run step 2 of [Installation](#installation). If you keep it somewhere other than `~/bin`, set its path under the plugin's settings.
 - **A Claude Code hook fails with something like `node: not found`** (often another plugin's own hook script) — node is likely installed through a version manager (mise, nvm, asdf, volta) whose shell integration only loads in an interactive shell (`.zshrc`/`.bashrc`), not the login-but-non-interactive shell a session's environment is normally built from. The plugin also probes an interactive shell's `PATH` and merges it in (`docs/design.md`'s §4.2), so this should self-correct on the next session; if it doesn't, check that `$SHELL -i -c 'echo $PATH'` actually includes node's directory from a regular terminal.
 
 ## CLI
@@ -109,7 +129,8 @@ See [`docs/design.md`](docs/design.md) for the full design and [`docs/requiremen
 ## Uninstall
 
 ```sh
-"<path to this repo>/scripts/uninstall.sh" "<vault>"
+"<path to this repo>/scripts/uninstall.sh"            # plugin installed from Community plugins
+"<path to this repo>/scripts/uninstall.sh" "<vault>"  # plugin installed from source
 ```
 
 Also disable and remove **Agent Sessions** from Obsidian's Community plugins.
@@ -119,13 +140,13 @@ running — pass `--force` to skip that), removes the hooks and `statusLine` it 
 `~/.claude/settings.json` (backing that file up first, the same way `install.sh` does),
 removes the `enter`/`meta+enter` entries it may have added under `Chat` in
 `~/.claude/keybindings.json` (only if you changed the submit key away from Enter), and
-removes the `~/bin/agent-sessions`, `~/bin/agent-sessions-code`, and
-`<vault>/.obsidian/plugins/agent-sessions` symlinks (a path that isn't actually a symlink
-is left in place with a note, in case you replaced it by hand). It leaves other tools'
+removes the `~/bin/agent-sessions` and `~/bin/agent-sessions-code` symlinks and, given a
+vault, `<vault>/.obsidian/plugins/agent-sessions` (a path that isn't actually a symlink is
+left in place with a note, in case you replaced it by hand). It leaves other tools'
 hooks, `statusLine`, and keybindings untouched, and is safe to run more than once.
 
-Pass `--purge` to also delete `~/.agents/sessions/` (daemon runtime state) and
-`<vault>/.agents/sessions/` (session bookkeeping: folded groups, archive, category colors).
+Pass `--purge` to also delete `~/.agents/sessions/` (daemon runtime state) and, given a
+vault, `<vault>/.agents/sessions/` (session bookkeeping: folded groups, archive, category colors).
 
 ## Development
 

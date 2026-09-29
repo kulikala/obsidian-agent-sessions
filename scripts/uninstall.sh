@@ -1,13 +1,14 @@
 #!/bin/sh
 # Removes agent-sessions from this machine: stops the daemon, removes only its own
 # entries from ~/.claude/settings.json and keybindings.json (agent-sessions
-# setup --remove), and removes the ~/bin and vault-plugins symlinks. The vault is
-# required, either as an argument or via the env var AGENT_SESSIONS_VAULT (same
-# convention as install.sh).
+# setup --remove), and removes the ~/bin symlinks. With a vault — as an argument or
+# via the env var AGENT_SESSIONS_VAULT (same convention as install.sh) — it also
+# removes that vault's plugin symlink; a plugin installed from Community plugins is
+# removed from Obsidian instead.
 #
 # --force  stop even if sessions are running, without asking for confirmation
-# --purge  also delete the runtime dir (~/.agents/sessions/) and the ledger
-#          (<vault>/.agents/sessions/)
+# --purge  also delete the runtime dir (~/.agents/sessions/) and, with a vault, the
+#          ledger (<vault>/.agents/sessions/)
 set -e
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 AS="$HERE/bin/agent-sessions"
@@ -26,11 +27,6 @@ for a in "$@"; do
       ;;
   esac
 done
-if [ -z "$VAULT" ]; then
-  echo "usage: $0 <vault path> [--force] [--purge]   (or set AGENT_SESSIONS_VAULT)" >&2
-  exit 1
-fi
-
 # 1. Stop the daemon. Ask for confirmation first if any session is still running,
 #    unless --force was given.
 n="$("$AS" daemon --running-count 2>/dev/null)" || n=0
@@ -62,12 +58,14 @@ for f in "$HOME/bin/agent-sessions" "$HOME/bin/agent-sessions-code"; do
   fi
 done
 
-plugin_link="$VAULT/.obsidian/plugins/agent-sessions"
-if [ -L "$plugin_link" ]; then
-  rm "$plugin_link"
-  echo "unlinked: $plugin_link"
-elif [ -e "$plugin_link" ]; then
-  echo "$plugin_link is not a symlink, so it was left in place (check it and remove it by hand)." >&2
+if [ -n "$VAULT" ]; then
+  plugin_link="$VAULT/.obsidian/plugins/agent-sessions"
+  if [ -L "$plugin_link" ]; then
+    rm "$plugin_link"
+    echo "unlinked: $plugin_link"
+  elif [ -e "$plugin_link" ]; then
+    echo "$plugin_link is not a symlink, so it was left in place (remove the plugin from Obsidian's Community plugins, or by hand)." >&2
+  fi
 fi
 
 # 4. Only with --purge, delete the runtime dir and the ledger.
@@ -75,8 +73,10 @@ if [ "$PURGE" -eq 1 ]; then
   runtime_dir="${AGENT_SESSIONS_RUNTIME_DIR:-$HOME/.agents/sessions}"
   rm -rf "$runtime_dir"
   echo "purged: $runtime_dir"
-  rm -rf "$VAULT/.agents/sessions"
-  echo "purged: $VAULT/.agents/sessions"
+  if [ -n "$VAULT" ]; then
+    rm -rf "$VAULT/.agents/sessions"
+    echo "purged: $VAULT/.agents/sessions"
+  fi
 fi
 
 echo "done"

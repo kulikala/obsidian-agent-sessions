@@ -3,7 +3,7 @@
 	"name": "Agent Sessions",
 	"version": "0.2.1",
 	"minAppVersion": "1.7.2",
-	"description": "Open and manage Claude Code sessions as terminal tabs in Obsidian.",
+	"description": "Run Claude Code and Codex sessions as terminal tabs, with a session list, usage analytics, and a daemon that keeps sessions running.",
 	"author": "Kaz Namba",
 	"authorUrl": "https://github.com/kulikala",
 	"isDesktopOnly": true
