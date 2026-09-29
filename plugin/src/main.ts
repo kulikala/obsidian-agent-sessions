@@ -1059,9 +1059,11 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * configured submit key for Claude and Codex, T-108 — same reasoning as `views/terminal.ts`'s
 	 * `sendSubmit()`; plain `\r` for OpenCode, whose keymap isn't touched). */
 	private commandBytes(text: string, agent: AgentId): Buffer {
-		// A bare command (`/compact`) leaves the slash-command completion list open, and that list
-		// swallows a rebound submit key (meta+Enter); a trailing space closes it first.
-		if (!text.includes(" ")) {
+		// Claude Code: a bare command (`/compact`) leaves the slash-command completion list open, and
+		// that list swallows a rebound submit key (meta+Enter); a trailing space closes it first.
+		// Not for OpenCode, whose list runs the highlighted command on Enter but sends `/compact `
+		// (with the space) to the model as plain text.
+		if (agent === "claude" && !text.includes(" ")) {
 			text += " ";
 		}
 		const stash = agent === "claude" ? STASH : "";
