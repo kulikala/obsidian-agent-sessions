@@ -81,13 +81,15 @@ class TestSetupCommand(unittest.TestCase):
         p.start()
         self.addCleanup(p.stop)
         self.plugin = os.path.join(self.tmp, 'xdg', 'opencode', 'plugins', 'agent-sessions.js')
+        self.backup = os.path.join(self.tmp, 'opencode-tui-backup.json')
 
     def _run(self, *args):
         out = io.StringIO()
         with redirect_stdout(out):
             rc = cmd_setup.main(list(args) + ['--settings', self.settings,
                                                  '--keybindings', os.path.join(self.tmp, 'kb.json'),
-                                                 '--config-toml', os.path.join(self.tmp, 'config.toml')])
+                                                 '--config-toml', os.path.join(self.tmp, 'config.toml'),
+                                                 '--opencode-tui-backup', self.backup])
         return rc, out.getvalue()
 
     def test_opencode_flag_installs_only_the_plugin(self):

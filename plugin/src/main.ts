@@ -67,6 +67,12 @@ import { getLang, languageOptions, resolveLang, setLang, t, type MessageKey } fr
 import { applyCodexConfig, defaultCodexConfigPath, type ApplyCodexConfigResult } from "./terminal/codex-config";
 import { applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./terminal/keybindings";
 import { agentSendSequence, reconcileSubmitKey } from "./terminal/keys";
+import {
+	BACKUP_FILENAME,
+	defaultOpencodeTuiPath,
+	syncOpencodeTui,
+	type OpencodeTuiResult,
+} from "./terminal/opencode-tui";
 import { buildAtToken, selectionLineRange } from "./terminal/links";
 import { ConfirmModal, NewSessionModal } from "./ui/modals";
 import { AGENT_ICON_ID } from "./ui/icons";
@@ -164,8 +170,8 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * The submit sequence. `\r` when `submitKey === 'enter'`; otherwise Enter has been swapped to
- * mean newline, so this is `\x1b\r` (meta+enter = submit). OpenCode's own keymap isn't touched,
- * so its submit is always `\r` (`agentSendSequence`). A pure function used by
+ * mean newline, so this is `\x1b\r` (meta+enter = submit); OpenCode's is `\n` then (its
+ * `tui.json` is set to match, `agentSendSequence`). A pure function used by
  * `views/terminal.ts`'s `sendSubmit()`, command sending, and the built-in editor's "send".
  */
 export function submitSequence(settings: AgentSessionsSettings, agent: AgentId = "claude"): string {
@@ -488,6 +494,36 @@ export default class AgentSessionsPlugin extends Plugin {
 		return applyCodexConfig(this.codexConfigPath(), this.settings.submitKey);
 	}
 
+	/** Where OpenCode's `tui.json` lives: the XDG_CONFIG_HOME OpenCode runs with (its own
+	 * "environment variables" setting, then the login shell's, then the system's), else `~/.config`. */
+	opencodeTuiPath(): string {
+		const xdg = agentEnvFor(this.settings, this.loginEnvVars).XDG_CONFIG_HOME || process.env.XDG_CONFIG_HOME;
+		return defaultOpencodeTuiPath(homedir(), xdg);
+	}
+
+	/**
+	 * Brings OpenCode's `tui.json` keybinds in line with the submit key: managed while OpenCode is
+	 * enabled and the key isn't Enter, restored to the user's own values otherwise
+	 * (`syncOpencodeTui`). Returns the result and shows the notices for it; call it wherever
+	 * `syncCodexConfig` is called, and when OpenCode is switched on or off.
+	 */
+	syncOpencodeTui(): OpencodeTuiResult {
+		const result = syncOpencodeTui(
+			this.opencodeTuiPath(),
+			join(RUNTIME_DIR, BACKUP_FILENAME),
+			this.settings.submitKey,
+			this.settings.agents.opencode.enabled
+		);
+		if (result.warning) {
+			new Notice(result.warning);
+		} else if (result.status === "written") {
+			new Notice(t("notice.opencodeTuiWritten"));
+		} else if (result.status === "restored") {
+			new Notice(t("notice.opencodeTuiRestored"));
+		}
+		return result;
+	}
+
 	/**
 	 * Reads `keybindings.json`'s `Chat` block and brings the `submitKey` setting in line with
 	 * it, without writing to `keybindings.json` itself. Returns `true` if it changed anything
@@ -691,6 +727,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			// an updated plugin file too — but only one that is already there; a silent refresh
 			// never creates it.
 			void this.installOpencodePlugin({ mode: "update-only" });
+			this.syncOpencodeTui();
 		} catch (err) {
 			console.warn("agent-sessions: couldn't update the installed program", err);
 		}
@@ -724,6 +761,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			// Reports its own outcome (a `Notice`) and never throws: a plugin folder that can't be
 			// written must not fail the rest of the install.
 			await this.installOpencodePlugin({ notify: true, program: launcher });
+			this.syncOpencodeTui();
 		}
 		this.syncVaultState();
 		await this.index.rescan();
@@ -764,8 +802,8 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	/**
 	 * Undoes `installBackend`: stops the daemon (ending any running session), removes its
-	 * Claude Code hooks/statusLine, the Codex config lines and OpenCode's status plugin it
-	 * manages (`setup --remove`), then deletes the files.
+	 * Claude Code hooks/statusLine, the Codex config lines, OpenCode's status plugin and
+	 * its tui.json keybinds it manages (`setup --remove`), then deletes the files.
 	 */
 	async uninstallBackend(): Promise<void> {
 		const info = this.bundled;
@@ -1113,8 +1151,9 @@ export default class AgentSessionsPlugin extends Plugin {
 	// Claude Code-specific, so skipped for any other agent, which may not treat Ctrl+S as
 	// harmless) → the command as bracketed paste (goes in as one block without opening `/`
 	// completion — a standard terminal convention, not Claude-specific, so kept for every agent)
-	// → the submit sequence (Claude's own configured submit key, or plain `\r` for any other
-	// agent, whose keymap isn't touched — see `terminal.ts`'s `sendSubmit`). The stashed draft
+	// → the submit sequence (the configured submit key's for Claude and Codex, see
+	// `terminal.ts`'s `sendSubmit`; always plain `\r` for OpenCode, which runs the highlighted
+	// popup command on it in either mode). The stashed draft
 	// isn't restored explicitly — Claude Code does that itself after the next submit ("Draft
 	// restored"); sending a restore here would just get it stashed again.
 	// ① A tab exists and is attached: write to that tab.
@@ -1163,17 +1202,19 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	/** Stash (Claude only) → command as bracketed paste → submit sequence (`submitSequence`: the
 	 * configured submit key for Claude and Codex, T-108 — same reasoning as `views/terminal.ts`'s
-	 * `sendSubmit()`; plain `\r` for OpenCode, whose keymap isn't touched). */
+	 * `sendSubmit()`; always `\r` for OpenCode, see below). */
 	private commandBytes(text: string, agent: AgentId): Buffer {
 		// Claude Code: a bare command (`/compact`) leaves the slash-command completion list open, and
 		// that list swallows a rebound submit key (meta+Enter); a trailing space closes it first.
-		// Not for OpenCode, whose list runs the highlighted command on Enter but sends `/compact `
+		// Not for OpenCode, whose list runs the highlighted command on `\r` but sends `/compact `
 		// (with the space) to the model as plain text.
 		if (agent === "claude" && !text.includes(" ")) {
 			text += " ";
 		}
 		const stash = agent === "claude" ? STASH : "";
-		const submit = submitSequence(this.settings, agent);
+		// OpenCode's slash popup answers to `\r` only (`\n` leaves it open), and `\r` runs the
+		// highlighted command whichever submit key is configured, so commands always end in `\r`.
+		const submit = agent === "opencode" ? "\r" : submitSequence(this.settings, agent);
 		return Buffer.from(stash + PASTE_BEGIN + text + PASTE_END + submit, "utf8");
 	}
 
@@ -1749,6 +1790,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 						// files for an agent nobody is tracking).
 						if (id === "opencode") {
 							void this.plugin.installOpencodePlugin({ mode: value ? "install" : "remove", notify: true });
+							// Its tui.json submit-key keybinds follow the same switch.
+							this.plugin.syncOpencodeTui();
 						}
 						redraw();
 					})
@@ -2035,6 +2078,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			} else if (codexResult?.status === "written") {
 				new Notice(t("notice.codexConfigWritten"));
 			}
+			// The same for OpenCode's tui.json (restores it when the key goes back to Enter).
+			this.plugin.syncOpencodeTui();
 			this.display();
 		};
 

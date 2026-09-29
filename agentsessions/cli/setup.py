@@ -3,6 +3,7 @@ from typing import List
 
 from .. import i18n
 from ..agents.opencode import setup as opencode_setup
+from ..agents.opencode import tui_config as opencode_tui
 from ..claude import keybindings
 from ..claude import setup as claude_setup
 from ..codex import config_toml
@@ -59,6 +60,14 @@ def main(args: List[str]) -> int:
             return 1
         opencode_path = args[i + 1]
 
+    opencode_backup = opencode_tui.default_backup_path()
+    if '--opencode-tui-backup' in args:
+        i = args.index('--opencode-tui-backup')
+        if i + 1 >= len(args):
+            sys.stderr.write(i18n.t('cmd.needs_value', flag='--opencode-tui-backup') + '\n')
+            return 1
+        opencode_backup = args[i + 1]
+
     changes: List[str]
     # The last line `--opencode` / `--remove-opencode` print: `opencode-plugin: <status>`
     # (installed | updated | unchanged | foreign | absent | failed | removed), for a caller to read.
@@ -72,6 +81,8 @@ def main(args: List[str]) -> int:
         elif remove_opencode:
             changes = opencode_setup.remove(opencode_path, dry_run=dry_run)
             opencode_status = 'removed' if changes else opencode_setup.ABSENT
+            # ... and gives back the submit-key keybinds the plugin set in OpenCode's tui.json.
+            changes.extend(opencode_tui.restore(opencode_backup, dry_run=dry_run))
         elif remove:
             # Removes only our own hooks/statusLine from settings.json, only our
             # own two submit-key entries from keybindings.json, and only our own
@@ -90,6 +101,7 @@ def main(args: List[str]) -> int:
             if ct_message:
                 changes.append(ct_message)
             changes.extend(opencode_setup.remove(opencode_path, dry_run=dry_run))
+            changes.extend(opencode_tui.restore(opencode_backup, dry_run=dry_run))
         else:
             changes, _ = claude_setup.run(settings_path, dry_run=dry_run, launcher=launcher)
     except claude_setup.SettingsUnreadable as e:

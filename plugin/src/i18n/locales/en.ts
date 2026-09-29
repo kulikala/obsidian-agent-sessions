@@ -89,6 +89,8 @@ export const en = {
 	"notice.keybindingsWritten": "Updated Claude Code's submit key setting",
 	"notice.keybindingsUnchanged": "Claude Code's submit key setting is already up to date",
 	"notice.codexConfigWritten": "Updated Codex's submit key setting",
+	"notice.opencodeTuiWritten": "Updated OpenCode's submit key setting",
+	"notice.opencodeTuiRestored": "Restored OpenCode's own key settings",
 	"notice.opencodePluginInstalled": "Installed OpenCode's status plugin",
 	"notice.opencodePluginUpdated": "Updated OpenCode's status plugin",
 	"notice.opencodePluginCurrent": "OpenCode's status plugin is already up to date",
@@ -151,7 +153,7 @@ export const en = {
 	"confirm.writeKeybindings.messageWithCodex":
 		"To make Enter insert a newline, this updates the settings of Claude Code (~/.claude/keybindings.json) and Codex (~/.codex/config.toml). The change also applies to claude and codex outside Obsidian, where Alt (Option)+Enter sends.",
 	"confirm.writeKeybindings.opencodeNote":
-		" OpenCode's own settings aren't changed; in Obsidian's tabs the same key applies to it too.",
+		" It also sets the submit and newline keys in OpenCode's tui.json (its other settings stay as they are); opencode outside Obsidian then submits with Ctrl+J. Your previous values come back when you return to Enter or remove Agent Sessions.",
 	"settings.submitKeyMismatch.name": "Doesn't match Claude Code's settings",
 	"settings.submitKeyMismatch.desc": "keybindings.json doesn't match this submit key.",
 
@@ -357,6 +359,8 @@ export const en = {
 
 	// ---- terminal/codex-config.ts ----
 	"error.codexConfigUnreadable": "Can't read {path}. Please fix it by hand.",
+	"error.opencodeTuiUnreadable": "Can't read or write {path}. Please fix it by hand.",
+	"error.opencodeTuiNotJson": "{path} isn't plain JSON (comments or trailing commas?), so it was left unchanged. OpenCode's submit key needs its \"keybinds\" set by hand.",
 	"error.codexConfigMalformed": "{path} isn't valid TOML, so it was left unchanged. Please fix it by hand.",
 	"warning.codexConfigManualFix": "{keys} already has a value you set yourself, so it was left unchanged.",
 

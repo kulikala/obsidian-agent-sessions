@@ -74,13 +74,18 @@ export function sendSequence(action: "submit" | "newline", submitKey: SubmitKey)
 }
 
 /**
- * `sendSequence` per agent. OpenCode submits on plain Enter (`\r`) and takes Ctrl+J (`\n`) as
- * newline, and no config is written for it — so whichever Enter combination the user chose as
- * "submit" sends `\r`, and every other Enter combination sends `\n`, whatever the setting is.
+ * `sendSequence` per agent. OpenCode's defaults submit on Return (`\r`) and take a linefeed
+ * (`\n`, Ctrl+J) as newline; with any other submit key `tui.json` is rewritten
+ * (`terminal/opencode-tui.ts`) so a linefeed submits and Return is a newline. Either way plain
+ * Enter stays `\r`, which popups and dialogs need.
  */
 export function agentSendSequence(agent: AgentId, action: "submit" | "newline", submitKey: SubmitKey): string {
 	if (agent === "opencode") {
-		return action === "submit" ? "\r" : "\n";
+		const swapped = submitKey !== "enter";
+		if (action === "submit") {
+			return swapped ? "\n" : "\r";
+		}
+		return swapped ? "\r" : "\n";
 	}
 	return sendSequence(action, submitKey);
 }

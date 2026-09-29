@@ -723,8 +723,8 @@ export class TerminalView extends ItemView {
 	 * `keybindings.json` maps plain Enter to a newline instead; for Codex, `config.toml`'s
 	 * `composer.submit`/`editor.insert_newline` do the same, always via the fixed `alt-enter`
 	 * byte sequence regardless of *which* non-`enter` choice is configured — T-108,
-	 * `terminal/codex-config.ts`). OpenCode's keymap isn't touched, so plain `\r` is always
-	 * "submit" for it (`agentSendSequence`).
+	 * `terminal/codex-config.ts`). OpenCode's `tui.json` is set to match (`terminal/opencode-tui.ts`): its submit is
+	 * `\r` with Enter and `\n` otherwise (`agentSendSequence`).
 	 */
 	private sendSubmit(): void {
 		const bytes = submitSequence(this.plugin.settings, asAgentId(this.agent));
@@ -994,9 +994,10 @@ export class TerminalView extends ItemView {
 		// straight to `chat:newline`; Codex's `config.toml` always claims the fixed `alt-enter` key
 		// for `composer.submit`/narrows `editor.insert_newline` regardless of which of the 4
 		// non-`enter` choices is configured, so `sendSequence`'s byte mapping (`\r`/`\x1b\r`) is
-		// identical for both agents. OpenCode's config isn't touched: it submits on `\r` and takes
-		// `\n` (Ctrl+J) as newline, so the chosen submit key sends `\r` and every other Enter
-		// combination sends `\n` (`agentSendSequence`).
+		// identical for both agents. OpenCode's `tui.json` (`terminal/opencode-tui.ts`) makes a
+		// linefeed submit and Return a newline when the key isn't Enter, so the chosen submit key
+		// sends `\n` and every other Enter combination `\r`; with Enter it is the reverse
+		// (`agentSendSequence`). Plain Enter is `\r` either way, which popups and dialogs need.
 		const agent = asAgentId(this.agent);
 		const submitKey = this.plugin.settings.submitKey;
 		const enterAction = resolveEnterAction(classifyEnter(ev), submitKey);

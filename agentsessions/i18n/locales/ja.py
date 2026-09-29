@@ -51,6 +51,9 @@ MESSAGES = {
     'setup.opencode_installed': 'opencode プラグイン: {path} を入れた',
     'setup.opencode_updated': 'opencode プラグイン: {path} を更新した',
     'setup.opencode_removed': 'opencode プラグイン: {path} を取り除いた',
+    'setup.opencode_tui_restored': 'opencode: {path} の送信キー設定を元に戻した',
+    'setup.opencode_tui_not_json': 'opencode: {path} は通常の JSON ではないため、書き換えなかった',
+    'setup.opencode_tui_failed': 'opencode: {path} を更新できなかった: {error}',
     'setup.opencode_foreign': 'opencode プラグイン: {path} は自分のものではないので、そのままにした',
     'setup.opencode_failed': 'opencode プラグイン: {path} を変更できなかった: {error}',
 

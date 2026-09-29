@@ -44,6 +44,7 @@
   - プログラムのインストールで、ホームフォルダ内のフォルダに書き出す（[インストール](#インストール)を参照）。インストールと `install.sh` は `~/.claude/settings.json` にフックと `statusLine` を足す（先にバックアップを残す）。送信キーの設定を変えると `~/.claude/keybindings.json` に書く。
   - Codex を有効にしている場合、`~/.codex/config.toml` に送信キーのキーマップと既定の `[tui].status_line` を足す（先にバックアップを残す。足した行には印が付き、`agent-sessions setup --remove` はその行だけを取り除く）。
   - OpenCode を有効にしている場合、ステータス用プラグイン `~/.config/opencode/plugins/agent-sessions.js`（`$XDG_CONFIG_HOME` 配下の場合もある）を書き、そのプラグインがセッションごとの状態ファイルを `~/.agents/sessions/opencode/` に書く。プラグインファイルの先頭には印の行があり、印のあるファイルだけを上書きする。「設定 → agent-sessions プログラム → 削除」または `agent-sessions setup --remove` で取り除かれ、設定で OpenCode を無効にしたときにも取り除かれる。OpenCode を有効にしているとき、インストールのダイアログにこのファイルが並び、プログラムの通常の更新は、すでにあるプラグインファイルを更新するだけで新しく作ることはない。
+  - OpenCode を有効にしていて送信キーが Enter 以外のとき、OpenCode の `~/.config/opencode/tui.json`（`$XDG_CONFIG_HOME` 配下の場合もある）の `keybinds.input_submit` と `keybinds.input_newline` を設定し、Return が改行になるようにする。ほかのキーは触らず、通常の JSON でないファイルは書き換えない。元の値は `~/.agents/sessions/opencode-tui-backup.json` に控え、送信キーを Enter に戻したとき・OpenCode を無効にしたとき・削除したときに元へ戻す（`agent-sessions setup --remove` も同じ）。
   - 内蔵エディタは、エージェントが `$VISUAL`（OpenCode は `$EDITOR`）に渡す一時ファイルを編集する。
 - **一覧に出さないセッション。** OpenCode のサブエージェントのセッションと、`opencode run` で始めたセッションは一覧に出さない。
 - **vault のファイル一覧を読む**のは、内蔵エディタで `@` のファイルパスを補完するときだけ。
@@ -122,7 +123,7 @@ agent-sessions attach ID       # 端末から attach（Ctrl+\ で detach）
 agent-sessions daemon [--detach]
 agent-sessions json scan|live|detail ID|usage ID [--from ISO --to ISO]|stats
 agent-sessions setup [--dry-run]
-agent-sessions setup --opencode   # OpenCode のステータス用プラグインだけを入れる（--remove-opencode でそのファイルだけを取り除く）
+agent-sessions setup --opencode   # OpenCode のステータス用プラグインだけを入れる（--remove-opencode でそのファイルを取り除き、tui.json の送信キー設定を元に戻す）
 ```
 
 `agent-sessions json` はプラグイン自身が使う機械可読の窓口（`scan`・`live`・`detail`・`usage`・`stats`）。`hook`・`status` は上記の Claude Code のフックと `statusLine` の受け口。`edit` は内蔵エディタの受け口。
@@ -137,7 +138,7 @@ agent-sessions setup --opencode   # OpenCode のステータス用プラグイ�
 
 ## アンインストール
 
-プラグインからプログラムを入れた場合は、先に **設定 → agent-sessions プログラム → 削除** を押す。デーモンを止め（動いているセッションは終了する）、`~/.claude/settings.json` のフックと `statusLine`、`~/.codex/config.toml` の管理行、`~/.config/opencode/plugins/` のステータス用プラグインを取り除き、フォルダを消す。その後、「コミュニティプラグイン」で **Agent Sessions** を無効化・削除する。
+プラグインからプログラムを入れた場合は、先に **設定 → agent-sessions プログラム → 削除** を押す。デーモンを止め（動いているセッションは終了する）、`~/.claude/settings.json` のフックと `statusLine`、`~/.codex/config.toml` の管理行、`~/.config/opencode/tui.json` に入れた送信キーの設定、`~/.config/opencode/plugins/` のステータス用プラグインを取り除き、フォルダを消す。その後、「コミュニティプラグイン」で **Agent Sessions** を無効化・削除する。
 
 clone から入れた場合：
 

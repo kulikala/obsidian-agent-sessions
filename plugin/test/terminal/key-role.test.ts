@@ -84,19 +84,27 @@ describe("resolveEnterAction × sendSequence (5 submit keys × 5 keypresses)", (
 	});
 });
 
-describe("resolveEnterAction × agentSendSequence for OpenCode (submit key → \\r, every other Enter → \\n)", () => {
+describe("resolveEnterAction × agentSendSequence for OpenCode (Enter submits with \\r and the rest are \\n; another submit key reverses that)", () => {
 	for (const submitKey of SUBMIT_KEYS) {
 		for (const press of SUBMIT_KEYS) {
 			const expected = press === submitKey ? "submit" : "newline";
 			it(`submit key ${submitKey}, press ${press} → ${expected}`, () => {
 				const action = resolveEnterAction(classifyEnter(PRESSES[press]), submitKey);
 				expect(action).toBe(expected);
-				expect(agentSendSequence("opencode", action as "submit" | "newline", submitKey)).toBe(
-					expected === "submit" ? "\r" : "\n"
-				);
+				// Enter submits with `\r` and the rest are `\n`; with another submit key it is reversed
+				// (tui.json is rewritten to match), so plain Enter is `\r` either way.
+				const byte = (submitKey === "enter") === (expected === "submit") ? "\r" : "\n";
+				expect(agentSendSequence("opencode", action as "submit" | "newline", submitKey)).toBe(byte);
 			});
 		}
 	}
+
+	it("plain Enter is always \\r for OpenCode (popups and dialogs need it)", () => {
+		for (const submitKey of ["enter", "shift+enter", "ctrl+enter", "alt+enter", "cmd+enter"] as const) {
+			const action = resolveEnterAction(classifyEnter(PRESSES["enter"]), submitKey);
+			expect(agentSendSequence("opencode", action as "submit" | "newline", submitKey)).toBe("\r");
+		}
+	});
 
 	it("the other agents keep sendSequence's mapping", () => {
 		for (const agent of ["claude", "codex"] as const) {

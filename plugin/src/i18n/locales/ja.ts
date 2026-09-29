@@ -89,6 +89,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"notice.matchedKeybindings": "keybindings.json に合わせました",
 	"notice.keybindingsWritten": "Claude Code の送信キーの設定を更新しました",
 	"notice.keybindingsUnchanged": "Claude Code の送信キーの設定は、すでにこの内容です",
+	"notice.opencodeTuiWritten": "OpenCode の送信キーの設定を更新しました",
+	"notice.opencodeTuiRestored": "OpenCode のキー設定を元に戻しました",
 	"notice.codexConfigWritten": "Codex の送信キーの設定を更新しました",
 	"notice.opencodePluginInstalled": "OpenCode のステータス用プラグインを入れました",
 	"notice.opencodePluginUpdated": "OpenCode のステータス用プラグインを更新しました",
@@ -152,7 +154,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"confirm.writeKeybindings.messageWithCodex":
 		"Enter を改行にするため、Claude Code（~/.claude/keybindings.json）と Codex（~/.codex/config.toml）の設定を書き換えます。Obsidian の外で使う claude・codex にも反映され、そこでは Alt（Option）+Enter が送信になります。",
 	"confirm.writeKeybindings.opencodeNote":
-		"OpenCode の設定は書き換えませんが、Obsidian のタブでは同じキーが OpenCode にも使われます。",
+		"あわせて OpenCode の tui.json の送信・改行キーも設定します（ほかの設定はそのまま）。Obsidian の外で使う opencode では Ctrl+J が送信になります。Enter に戻したとき、または Agent Sessions を取り除いたときに、元の値に戻ります。",
 	"settings.submitKeyMismatch.name": "Claude Code の設定と一致していません",
 	"settings.submitKeyMismatch.desc": "keybindings.json の内容が、この送信キーと食い違っています。",
 
@@ -358,6 +360,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 
 	// ---- terminal/codex-config.ts ----
 	"error.codexConfigUnreadable": "{path} を読めません。手で直してください。",
+	"error.opencodeTuiUnreadable": "{path} を読み書きできません。手で直してください。",
+	"error.opencodeTuiNotJson": "{path} が通常の JSON ではない（コメントや末尾のカンマ？）ため、書き換えませんでした。OpenCode の送信キーは \"keybinds\" を手で設定してください。",
 	"error.codexConfigMalformed": "{path} の書式が正しくないため、書き換えませんでした。手で直してください。",
 	"warning.codexConfigManualFix": "{keys} にはご自身で設定した値があるため、書き換えませんでした。",
 
