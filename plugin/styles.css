@@ -2372,3 +2372,9 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	color: var(--text-muted);
 	min-height: 1.5em;
 }
+
+/* Only OpenCode enabled: it has no usage windows, so its usage area draws nothing at all. */
+.agent-sessions-limits.is-empty,
+.agent-sessions-manager-analysis.is-empty {
+	display: none;
+}

@@ -12,7 +12,7 @@ import { paletteHueDeg } from "../sessions/category";
 import { t } from "../i18n";
 import { NewSessionModal } from "../ui/modals";
 import { AGENT_ICON_ID, moreIconId } from "../ui/icons";
-import { AGENT_IDS, type AgentId } from "../settings";
+import { agentsWithLimits, type AgentId } from "../settings";
 import {
 	managerStatusFilterLabelKey,
 	MANAGER_STATUS_FILTERS,
@@ -423,14 +423,15 @@ export class ManagerView extends ItemView {
 	 * by the whole-area header/fold (`buildAnalysisHeader`) — unchanged from before T-104 or T-113.
 	 */
 	private buildAnalysisSections(): void {
-		const enabled = AGENT_IDS.filter((id) => this.plugin.settings.agents[id].enabled);
-		this.analysisAgents = enabled.length > 0 ? enabled : ["claude"];
+		this.analysisAgents = agentsWithLimits(this.plugin.settings.agents);
 		this.statsBarEls = {};
 		this.categoryBarWrapEls = {};
 		this.agentSectionEls = {};
 		this.agentCaretEls = {};
 		this.agentSummaryEls = {};
 		this.analysisBodyEl.empty();
+		// Only OpenCode enabled: there are no usage windows to analyse, so the area is not drawn.
+		this.analysisEl.toggleClass("is-empty", this.analysisAgents.length === 0);
 		const split = this.analysisAgents.length > 1;
 		this.analysisEl.toggleClass("is-split", split);
 		this.analysisBodyEl.toggleClass("agent-sessions-manager-analysis-panels", split);

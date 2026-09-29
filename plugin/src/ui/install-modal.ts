@@ -66,6 +66,9 @@ export class InstallBackendModal extends Modal {
 			t("install.hooks"),
 			this.plugin.settings.agents.claude.enabled ? t("install.hooksValue") : t("install.hooksSkipped")
 		);
+		if (this.plugin.settings.agents.opencode.enabled) {
+			item(t("install.opencode"), t("install.opencodeValue"));
+		}
 		const status = contentEl.createEl("p", { cls: "agent-sessions-install-status" });
 		new Setting(contentEl)
 			.addButton((button) => button.setButtonText(t("action.cancel")).onClick(() => this.close()))

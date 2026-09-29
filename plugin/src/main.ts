@@ -10,6 +10,7 @@ import {
 	Setting,
 	setTooltip,
 	WorkspaceLeaf,
+	type DropdownComponent,
 	type FileSystemAdapter,
 } from "obsidian";
 import { existsSync } from "node:fs";
@@ -51,7 +52,16 @@ import {
 	type PythonInfo,
 } from "./backend/bundle";
 import { DaemonClient, defaultSockPath, ensureDaemon } from "./backend/daemon-client";
-import { EditServer, editReplyFor, submitsAfterEdit, type EditReply, type EditRequest } from "./backend/edit-server";
+import { waitUntilReady } from "./backend/headless-ready";
+import { OllamaModelCache } from "./backend/ollama-models";
+import {
+	OPENCODE_PLUGIN_NOTICE,
+	opencodePluginArgs,
+	parseOpencodePluginStatus,
+	type OpencodePluginMode,
+	type OpencodePluginStatus,
+} from "./backend/opencode-plugin";
+import { EditServer, editReplyFor, submitsAfterEdit, tabOwnsEditSession, type EditReply, type EditRequest } from "./backend/edit-server";
 import { SessionIndex } from "./sessions/index";
 import { getLang, languageOptions, resolveLang, setLang, t, type MessageKey } from "./i18n";
 import { applyCodexConfig, defaultCodexConfigPath, type ApplyCodexConfigResult } from "./terminal/codex-config";
@@ -62,6 +72,7 @@ import { ConfirmModal, NewSessionModal } from "./ui/modals";
 import { AGENT_ICON_ID } from "./ui/icons";
 import { registerAgentIcons } from "./ui/register-icons";
 import { sessionDisplayName } from "./sessions/name";
+import { renameRoute, sessionAgentOf } from "./sessions/rename";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./sessions/open-session";
 import {
 	AGENT_IDS,
@@ -128,6 +139,10 @@ const WAIT_IDLE_MS = 60000;
 const WAIT_BUSY_MS = 10000;
 /** Upper bound from a headless session's `/exit` to its `exit` event. */
 const WAIT_EXIT_MS = 30000;
+/** How long OpenCode's terminal must be quiet before a headless session with no status is taken as ready. */
+const OPENCODE_QUIET_MS = 2500;
+/** After a kill, how long to wait for the `exit` event before forgetting the session. */
+const WAIT_KILL_MS = 5000;
 /** Terminal size used when starting headless (no screen). */
 const HEADLESS_COLS = 120;
 const HEADLESS_ROWS = 40;
@@ -172,6 +187,9 @@ export default class AgentSessionsPlugin extends Plugin {
 	/** True for exactly one `onload`: saved data had no `agents` object at all (pre-T-96, or a
 	 * genuinely first run) — `onload` runs `detectAgents` once and applies the result. */
 	private needsAgentDetection = false;
+	/** The login shell's env (`loginEnv`), once read: `agentEnvFor`'s fallback for OpenCode's XDG_* variables. */
+	private loginEnvVars: Record<string, string> = {};
+	private loginEnvRequested = false;
 	/** The copy of the program installed from inside the plugin, if any (`installBackend`). */
 	bundled: InstallInfo | null = null;
 	/** `false` on a platform `onload` stops early on (nothing to tear down in `onunload`). */
@@ -183,6 +201,12 @@ export default class AgentSessionsPlugin extends Plugin {
 	private cleanupExitedTimer: number | null = null;
 	/** The last-frontmost Markdown view. `activeEditor` is null while the terminal has focus, so this is tracked separately. */
 	private lastMarkdown: MarkdownView | null = null;
+	/** OpenCode names given before the session has its real id (naming at creation, or Rename on a
+	 * tab still under its placeholder id), by placeholder id. `linkAgentSession` moves them into
+	 * `sessions.json`. */
+	private pendingNames = new Map<string, string>();
+	/** Placeholder ids of Codex/OpenCode sessions `resolveAgentSession` is still looking the real id for. */
+	private unresolvedIds = new Set<string>();
 	/** Sessions started headless (in the background). Excluded from `notifyIdle`. */
 	private headless = new Set<string>();
 	/** Whether Claude Code's `tui` is `fullscreen` (re-read at startup and on every `settings-changed`). */
@@ -232,6 +256,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			storePath: this.storePath(),
 			eventsLogPath: join(RUNTIME_DIR, "events.log"),
 			sessionsDir: join(homedir(), ".claude", "sessions"),
+			opencodeDir: join(RUNTIME_DIR, "opencode"),
 			statusDir: join(RUNTIME_DIR, "status"),
 			compactedDir: join(RUNTIME_DIR, "compacted"),
 		});
@@ -390,7 +415,18 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * agent-settings change gets picked up here too.
 	 */
 	private syncUiState(): void {
-		setAgentEnv(agentEnvFor(this.settings));
+		setAgentEnv(agentEnvFor(this.settings, this.loginEnvVars));
+		if (!this.loginEnvRequested) {
+			// The login shell's env is async; the first `json …` calls run without it, the next
+			// ones with it (`agentEnvFor` takes OpenCode's XDG_* from it).
+			this.loginEnvRequested = true;
+			void loginEnv(Platform.isMacOS)
+				.then((env) => {
+					this.loginEnvVars = env;
+					setAgentEnv(agentEnvFor(this.settings, env));
+				})
+				.catch(() => undefined);
+		}
 		const enabledAgents = AGENT_IDS.filter((id) => this.settings.agents[id].enabled);
 		try {
 			writeUiState(RUNTIME_DIR, this.settings.submitKey, getLang(), enabledAgents, Platform.isMacOS);
@@ -584,7 +620,11 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * side disconnects (`onAbort`), closes the editor pane without sending a reply.
 	 */
 	private handleEdit(req: EditRequest, reply: EditReply): void {
-		const view = this.findTerminalView(req.session);
+		// `req.session` is the daemon's id for the session, which is not the tab's own id once the
+		// tab is linked to its real thread id (Codex/OpenCode).
+		const view = this.terminalViews().find((v) =>
+			tabOwnsEditSession({ sessionId: v.sessionId, daemonId: v.daemonSessionId }, req.session)
+		);
 		if (!view) {
 			reply(false, "no-tab");
 			return;
@@ -648,8 +688,9 @@ export default class AgentSessionsPlugin extends Plugin {
 		try {
 			this.bundled = writeBundle(info.dir, BACKEND_FILES, BACKEND_VERSION, info.python);
 			// The status plugin's content ships inside the program, so an updated program means
-			// an updated plugin file too.
-			void this.installOpencodePlugin();
+			// an updated plugin file too — but only one that is already there; a silent refresh
+			// never creates it.
+			void this.installOpencodePlugin({ mode: "update-only" });
 		} catch (err) {
 			console.warn("agent-sessions: couldn't update the installed program", err);
 		}
@@ -680,30 +721,44 @@ export default class AgentSessionsPlugin extends Plugin {
 			await runProgram(launcher, ["setup", "--command", hookLauncher(dir, homedir())]);
 		}
 		if (this.settings.agents.opencode.enabled) {
-			await runProgram(launcher, ["setup", "--opencode"]);
+			// Reports its own outcome (a `Notice`) and never throws: a plugin folder that can't be
+			// written must not fail the rest of the install.
+			await this.installOpencodePlugin({ notify: true, program: launcher });
 		}
 		this.syncVaultState();
 		await this.index.rescan();
 	}
 
 	/**
-	 * Installs (or refreshes) OpenCode's status plugin file through the program (`setup --opencode`).
-	 * A no-op without an installed program or with OpenCode disabled; a failure is reported as a
-	 * `Notice` (`notify`) rather than thrown. Returns whether the plugin was installed.
+	 * Runs `setup` for OpenCode's status plugin file (`mode`: `install` writes or refreshes it,
+	 * `update-only` refreshes an existing one and never creates it, `remove` deletes our file and
+	 * nothing else) and returns what the program reports (`opencode-plugin: <status>`). `notify`
+	 * says what happened in a `Notice`; a failure is always reported that way, never thrown. `null`
+	 * when there was nothing to run (no installed program; `install`/`update-only` with OpenCode
+	 * disabled) or the run failed.
 	 */
-	async installOpencodePlugin(notify = false): Promise<boolean> {
-		if (!this.settings.agents.opencode.enabled || !this.backendAvailable()) {
-			return false;
+	async installOpencodePlugin(
+		opts: { mode?: OpencodePluginMode; notify?: boolean; program?: string } = {}
+	): Promise<OpencodePluginStatus | null> {
+		const mode = opts.mode ?? "install";
+		const program = opts.program ?? this.agentSessionsPath();
+		if ((mode !== "remove" && !this.settings.agents.opencode.enabled) || !existsSync(program)) {
+			return null;
 		}
 		try {
-			await runProgram(this.agentSessionsPath(), ["setup", "--opencode"]);
-			if (notify) {
-				new Notice(t("notice.opencodePluginInstalled"));
+			// The plugin folder is found through XDG_CONFIG_HOME, which must be the one OpenCode runs with.
+			const login = await loginEnv(Platform.isMacOS).catch((): Record<string, string> => ({}));
+			const env = { ...process.env, ...agentEnvFor(this.settings, login) };
+			const status = parseOpencodePluginStatus(await runProgram(program, opencodePluginArgs(mode), undefined, env));
+			const key = status ? OPENCODE_PLUGIN_NOTICE[status] : null;
+			if (opts.notify && key) {
+				new Notice(t(key));
 			}
-			return true;
+			return status;
 		} catch (err) {
-			new Notice(t("notice.opencodeSetupFailed", { error: messageOf(err) }));
-			return false;
+			const stderr = (err as { stderr?: string }).stderr?.trim();
+			new Notice(t("notice.opencodeSetupFailed", { error: stderr ? stderr.split("\n")[0] : messageOf(err) }));
+			return null;
 		}
 	}
 
@@ -794,9 +849,10 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * `resolveAgentSession` polls `json resolve <agent>` in
 	 * the background to learn the real thread id; once found, the tab's own `id` is swapped to it
 	 * (`TerminalView.relinkId`) and `sessions.json` links the two (design.md §3.3). Naming at
-	 * creation isn't attempted for a non-Claude agent — the `idle`/name-reflected waits below only
-	 * work through the registry/scan, which for a still-unresolved session are watching an id
-	 * nothing is filed under yet.
+	 * creation works through `/rename` for Claude only. An OpenCode name is kept in memory
+	 * (`pendingNames`, shown in the tab title) and written to `sessions.json` when
+	 * `linkAgentSession` learns the real id; Codex isn't supported yet (`/rename` needs an
+	 * `idle` and a scan to reflect it, and a still-unresolved session has neither).
 	 */
 	newSession(name?: string, agent: AgentId = this.settings.lastNewSessionAgent): void {
 		if (agent !== this.settings.lastNewSessionAgent) {
@@ -818,9 +874,14 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 		const opened = this.openSession(id, { agent, cwd, fresh: true });
 		if (agent !== "claude") {
-			void this.resolveAgentSession(agent, id, cwd);
+			this.trackNewAgentSession(agent, id, cwd);
 		}
 		if (!name) {
+			return;
+		}
+		if (agent === "opencode") {
+			// OpenCode has no `/rename`: the name waits here until the session has its real id.
+			this.pendingNames.set(id, name);
 			return;
 		}
 		if (agent !== "claude") {
@@ -841,6 +902,13 @@ export default class AgentSessionsPlugin extends Plugin {
 			});
 	}
 
+	/** Starts finding the real id of a new Codex/OpenCode session that runs under `placeholderId`
+	 * (`newSession`, and a tab's "Start fresh"). */
+	trackNewAgentSession(agent: AgentId, placeholderId: string, cwd: string): void {
+		this.unresolvedIds.add(placeholderId);
+		void this.resolveAgentSession(agent, placeholderId, cwd);
+	}
+
 	/**
 	 * For a freshly-started Codex/OpenCode session (`newSession`, no caller-assignable id — see
 	 * `buildAgentArgv`): finds the daemon-tracked `placeholderId` session's own pid, then polls
@@ -856,43 +924,47 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * matching, `sendCommand` route ①, and the saved workspace layout.
 	 */
 	private async resolveAgentSession(agent: AgentId, placeholderId: string, cwd: string): Promise<void> {
-		const since = Date.now() / 1000;
-		let client: DaemonClient;
 		try {
-			client = await ensureDaemon(this.sockPath(), this.agentSessionsPath());
-		} catch {
-			return;
-		}
-		try {
-			await client.hello("plugin");
-			let pid: number | null = null;
-			for (let i = 0; i < RESOLVE_PID_ATTEMPTS && pid === null; i++) {
-				if (!this.findTerminalView(placeholderId)) {
-					return;
-				}
-				const list = await client.list().catch(() => null);
-				const sessions = (list?.sessions as DaemonSession[] | undefined) ?? [];
-				pid = sessions.find((s) => s.id === placeholderId)?.pid ?? null;
-				if (pid === null) {
-					await sleep(RESOLVE_POLL_MS);
-				}
-			}
-			if (pid === null) {
+			const since = Date.now() / 1000;
+			let client: DaemonClient;
+			try {
+				client = await ensureDaemon(this.sockPath(), this.agentSessionsPath());
+			} catch {
 				return;
 			}
-			while (this.findTerminalView(placeholderId)) {
-				const { thread } = await resolve(this.agentSessionsPath(), this.vaultPath(), agent, pid, since, cwd).catch(
-					() => ({ thread: null, transcript: null })
-				);
-				if (thread) {
-					this.linkAgentSession(agent, thread, cwd, placeholderId);
-					this.relinkTerminalViews(placeholderId, thread);
+			try {
+				await client.hello("plugin");
+				let pid: number | null = null;
+				for (let i = 0; i < RESOLVE_PID_ATTEMPTS && pid === null; i++) {
+					if (!this.findTerminalView(placeholderId)) {
+						return;
+					}
+					const list = await client.list().catch(() => null);
+					const sessions = (list?.sessions as DaemonSession[] | undefined) ?? [];
+					pid = sessions.find((s) => s.id === placeholderId)?.pid ?? null;
+					if (pid === null) {
+						await sleep(RESOLVE_POLL_MS);
+					}
+				}
+				if (pid === null) {
 					return;
 				}
-				await sleep(RESOLVE_POLL_MS);
+				while (this.findTerminalView(placeholderId)) {
+					const { thread } = await resolve(this.agentSessionsPath(), this.vaultPath(), agent, pid, since, cwd).catch(
+						() => ({ thread: null, transcript: null })
+					);
+					if (thread) {
+						this.linkAgentSession(agent, thread, cwd, placeholderId);
+						this.relinkTerminalViews(placeholderId, thread);
+						return;
+					}
+					await sleep(RESOLVE_POLL_MS);
+				}
+			} finally {
+				client.close();
 			}
 		} finally {
-			client.close();
+			this.unresolvedIds.delete(placeholderId);
 		}
 	}
 
@@ -907,15 +979,28 @@ export default class AgentSessionsPlugin extends Plugin {
 	linkAgentSession(agent: AgentId, id: string, cwd: string, daemonId: string): void {
 		try {
 			updateStore(this.storePath(), (store) => {
-				// Keeps a name the user already gave (OpenCode stores it here — see `renameSession`).
-				const name = store.sessions[id]?.name;
+				// Keeps a name the user already gave (OpenCode stores it here — see `renameSession`),
+				// or the one given while the session was still under its placeholder id.
+				const name = this.pendingNames.get(daemonId) ?? store.sessions[id]?.name;
 				store.sessions[id] = { agent, cwd, daemon: daemonId, ...(name ? { name } : {}) };
 			});
 			this.index.refreshStore();
+			// The tab is about to be keyed by the real id; until its row exists (a session is listed
+			// once it has a user message) the title still shows the name.
+			const pending = this.pendingNames.get(daemonId);
+			if (pending !== undefined) {
+				this.pendingNames.delete(daemonId);
+				this.pendingNames.set(id, pending);
+			}
 			void this.index.rescan();
 		} catch (err) {
 			this.notifyLockError(err);
 		}
+	}
+
+	/** The name given to an OpenCode tab that has no row yet (`id` = the tab's current id), if any. */
+	pendingName(id: string): string | undefined {
+		return this.pendingNames.get(id);
 	}
 
 	/** Calls `TerminalView.relinkId(newId)` on every open tab currently at `oldId` (normally one,
@@ -950,10 +1035,31 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * name goes into `sessions.json` instead and the index overlays it on the row; nothing is
 	 * sent to the TUI. */
 	async renameSession(id: string, name: string): Promise<void> {
-		if (this.index.sessions.get(id)?.agent === "opencode") {
+		const view = this.findTerminalView(id);
+		let stored: string | undefined;
+		try {
+			stored = loadStore(this.storePath()).sessions[id]?.agent;
+		} catch {
+			stored = undefined;
+		}
+		const route = renameRoute(
+			sessionAgentOf({ tab: view?.sessionAgent, row: this.index.sessions.get(id)?.agent, stored }),
+			this.unresolvedIds.has(id)
+		);
+		if (route !== "command") {
+			// The tab title shows the name at once, also while the session has no row yet.
+			this.pendingNames.set(id, name);
+			view?.refreshTitle();
+			if (route === "pending") {
+				// Still under the placeholder id: `linkAgentSession` writes it once the id is known.
+				return;
+			}
 			try {
 				updateStore(this.storePath(), (store) => {
-					const entry = store.sessions[id] ?? { agent: "opencode", cwd: this.index.sessions.get(id)?.cwd ?? "" };
+					const entry = store.sessions[id] ?? {
+						agent: "opencode",
+						cwd: this.index.sessions.get(id)?.cwd ?? view?.getCwd() ?? "",
+					};
 					store.sessions[id] = { ...entry, name };
 				});
 			} catch (err) {
@@ -1108,6 +1214,23 @@ export default class AgentSessionsPlugin extends Plugin {
 				}
 			});
 		});
+		let lastOutputAt: number | null = null;
+		const noteOutput = (): void => {
+			lastOutputAt = Date.now();
+		};
+		client.on("data", noteOutput);
+		client.on("replay", noteOutput);
+		let started = false;
+		/** Ends the background process and forgets it — every way out of here but success. */
+		const tearDown = async (): Promise<void> => {
+			if (!started) {
+				return;
+			}
+			await client.kill(id).catch(() => undefined);
+			await Promise.race([exited, sleep(WAIT_KILL_MS)]);
+			await client.detach().catch(() => undefined);
+			await client.forget(id).catch(() => undefined);
+		};
 		try {
 			const agent = asAgentId(row.agent);
 			const agentSettings = this.settings.agents[agent];
@@ -1135,28 +1258,45 @@ export default class AgentSessionsPlugin extends Plugin {
 			if (!res.ok) {
 				throw new Error(t("error.startFailed", { error: res.error ?? "unknown" }));
 			}
+			started = true;
 			const attached = await client.attach(id, HEADLESS_COLS, HEADLESS_ROWS);
 			if (!attached.ok) {
 				throw new Error(t("error.attachFailed", { error: attached.error ?? "unknown" }));
 			}
 			const registry = this.index.registry;
-			if (!(await registry.waitFor(id, "idle", WAIT_IDLE_MS))) {
+			const ready = (timeoutMs: number): Promise<boolean> =>
+				agent === "opencode"
+					? waitUntilReady({
+							agent,
+							status: () => registry.get(id)?.status ?? null,
+							lastOutputAt: () => lastOutputAt,
+							now: () => Date.now(),
+							sleep,
+							timeoutMs,
+							quietMs: OPENCODE_QUIET_MS,
+							pollMs: 250,
+						})
+					: registry.waitFor(id, "idle", timeoutMs);
+			if (!(await ready(WAIT_IDLE_MS))) {
 				throw new Error(t("error.agentStartWaitFailed", { name: t(AGENT_DISPLAY_NAME_KEY[agent]) }));
 			}
 			client.writeInput(this.commandBytes(text, agent));
 			await registry.waitFor(id, "busy", WAIT_BUSY_MS);
-			if (!(await registry.waitFor(id, "idle", WAIT_IDLE_MS))) {
+			if (!(await ready(WAIT_IDLE_MS))) {
 				throw new Error(t("error.replyWaitFailed"));
 			}
 			client.writeInput(this.commandBytes("/exit", agent));
 			const timeout = new Promise<"timeout">((resolve) => window.setTimeout(() => resolve("timeout"), WAIT_EXIT_MS));
 			if ((await Promise.race([exited, timeout])) === "timeout") {
-				await client.kill(id).catch(() => undefined);
-				await Promise.race([exited, new Promise((resolve) => window.setTimeout(resolve, 3000))]);
+				await tearDown();
+			} else {
+				await client.detach().catch(() => undefined);
+				await client.forget(id).catch(() => undefined);
 			}
-			await client.detach().catch(() => undefined);
-			await client.forget(id).catch(() => undefined);
 			void this.index.rescan([id]);
+		} catch (err) {
+			await tearDown();
+			throw err;
 		} finally {
 			this.headless.delete(id);
 			notice.hide();
@@ -1411,10 +1551,17 @@ class UnsupportedSettingTab extends PluginSettingTab {
 
 class AgentSessionsSettingTab extends PluginSettingTab {
 	plugin: AgentSessionsPlugin;
+	/** `ollama list`'s model names for OpenCode's model dropdown. Lives as long as the tab is open
+	 * (`hide()` clears it), so redrawing the page never runs `ollama list` again. */
+	private ollamaModels = new OllamaModelCache();
 
 	constructor(app: import("obsidian").App, plugin: AgentSessionsPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
+	}
+
+	hide(): void {
+		this.ollamaModels.reset();
 	}
 
 	/**
@@ -1560,8 +1707,6 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		 * (`agentVersion` is a second, separate call — no reason to hold up showing the path on it). */
 		const versions: Partial<Record<AgentId, string | null>> = {};
 		const detecting: Partial<Record<AgentId, boolean>> = {};
-		/** `ollama list`'s model names for OpenCode's model dropdown; `null` until first loaded. */
-		const ollamaModels: { list: string[] | null } = { list: null };
 
 		const redraw = (): void => {
 			sectionEl.empty();
@@ -1599,9 +1744,11 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 							}
 						}
 						// OpenCode's status comes from a plugin file the program installs into
-						// OpenCode's own config folder — put it there right when it's enabled.
-						if (id === "opencode" && value) {
-							void this.plugin.installOpencodePlugin(true);
+						// OpenCode's own config folder — put it there right when it's enabled,
+						// and take it away again when it's disabled (it would keep writing status
+						// files for an agent nobody is tracking).
+						if (id === "opencode") {
+							void this.plugin.installOpencodePlugin({ mode: value ? "install" : "remove", notify: true });
 						}
 						redraw();
 					})
@@ -1634,7 +1781,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 					});
 
 				if (id === "opencode") {
-					this.renderOpencodeLaunch(bodyEl, agentSettings, ollamaModels);
+					this.renderOpencodeLaunch(bodyEl, agentSettings);
 				}
 
 				const resultSetting = new Setting(bodyEl);
@@ -1692,27 +1839,73 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		redraw();
 	}
 
-	/** Fills `target.list` from `ollama list` (once, unless `force`), then redraws. Best-effort:
-	 * no ollama binary or a stopped server leaves an empty list (free text still works). */
-	private async loadOllamaModels(target: { list: string[] | null }, redraw: () => void, force = false): Promise<void> {
-		if (target.list !== null && !force) {
-			return;
-		}
-		const ollamaBin = await locateProgram("ollama", Platform.isMacOS);
-		target.list = ollamaBin ? await listOllamaModels(ollamaBin) : [];
-		redraw();
-	}
-
 	/**
 	 * OpenCode's two launch settings: "Launch with" (`opencode` / `ollama launch opencode`) and,
-	 * for the latter, the Ollama model — a dropdown of `ollama list`'s models (loaded the first
-	 * time it's needed; picking one fills the text field) next to a free-text field.
+	 * for the latter, the Ollama model — a dropdown of `ollama list`'s models next to a free-text
+	 * field. The model list is loaded once per open settings tab (`ollamaModels`); it fills the
+	 * dropdown in place, so the text field keeps its focus and nothing else on the page is redrawn.
 	 */
-	private renderOpencodeLaunch(
-		bodyEl: HTMLElement,
-		agentSettings: AgentSettings,
-		ollamaModels: { list: string[] | null }
-	): void {
+	private renderOpencodeLaunch(bodyEl: HTMLElement, agentSettings: AgentSettings): void {
+		const modelEl = bodyEl.createDiv();
+		let fillPicker: (() => void) | null = null;
+		const loadNames = async (): Promise<string[]> => {
+			const ollamaBin = await locateProgram("ollama", Platform.isMacOS);
+			return ollamaBin ? await listOllamaModels(ollamaBin) : [];
+		};
+		const drawModel = (): void => {
+			modelEl.empty();
+			fillPicker = null;
+			if (agentSettings.launchVia !== "ollama") {
+				return;
+			}
+			let textEl: HTMLInputElement | null = null;
+			let picker: DropdownComponent | null = null;
+			new Setting(modelEl)
+				.setName(t("settings.agents.ollamaModel.name"))
+				.setDesc(t("settings.agents.ollamaModel.desc"))
+				.addDropdown((dropdown) => {
+					picker = dropdown;
+					dropdown.onChange(async (value) => {
+						if (!value) {
+							return;
+						}
+						agentSettings.ollamaModel = value;
+						if (textEl) {
+							textEl.value = value;
+						}
+						await this.plugin.saveSettings();
+					});
+				})
+				.addText((text) => {
+					textEl = text.inputEl;
+					text
+						.setPlaceholder(t("settings.agents.ollamaModel.placeholder"))
+						.setValue(agentSettings.ollamaModel ?? "")
+						.onChange(async (value) => {
+							agentSettings.ollamaModel = value.trim();
+							await this.plugin.saveSettings();
+						});
+				});
+			fillPicker = () => {
+				if (!picker) {
+					return;
+				}
+				const models = this.ollamaModels.list ?? [];
+				picker.selectEl.empty();
+				picker.addOption("", t("settings.agents.ollamaModel.pick"));
+				for (const name of models) {
+					picker.addOption(name, name);
+				}
+				picker.setValue(models.includes(agentSettings.ollamaModel ?? "") ? (agentSettings.ollamaModel ?? "") : "");
+			};
+			fillPicker();
+			void this.ollamaModels.ensure(loadNames, () => {
+				if (modelEl.isConnected) {
+					fillPicker?.();
+				}
+			});
+		};
+
 		new Setting(bodyEl)
 			.setName(t("settings.agents.launchVia.name"))
 			.setDesc(t("settings.agents.launchVia.desc"))
@@ -1723,48 +1916,12 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 				dropdown.setValue(agentSettings.launchVia ?? "opencode").onChange(async (value) => {
 					agentSettings.launchVia = value as OpencodeLaunchVia;
 					await this.plugin.saveSettings();
-					this.display();
+					drawModel();
 				});
 			});
-		if (agentSettings.launchVia !== "ollama") {
-			return;
-		}
-		if (ollamaModels.list === null) {
-			ollamaModels.list = [];
-			void this.loadOllamaModels(ollamaModels, () => this.display(), true);
-		}
-		const models = ollamaModels.list;
-		let textEl: HTMLInputElement | null = null;
-		new Setting(bodyEl)
-			.setName(t("settings.agents.ollamaModel.name"))
-			.setDesc(t("settings.agents.ollamaModel.desc"))
-			.addDropdown((dropdown) => {
-				dropdown.addOption("", t("settings.agents.ollamaModel.pick"));
-				for (const name of models) {
-					dropdown.addOption(name, name);
-				}
-				dropdown.setValue(models.includes(agentSettings.ollamaModel ?? "") ? (agentSettings.ollamaModel ?? "") : "");
-				dropdown.onChange(async (value) => {
-					if (!value) {
-						return;
-					}
-					agentSettings.ollamaModel = value;
-					if (textEl) {
-						textEl.value = value;
-					}
-					await this.plugin.saveSettings();
-				});
-			})
-			.addText((text) => {
-				textEl = text.inputEl;
-				text
-					.setPlaceholder(t("settings.agents.ollamaModel.placeholder"))
-					.setValue(agentSettings.ollamaModel ?? "")
-					.onChange(async (value) => {
-						agentSettings.ollamaModel = value.trim();
-						await this.plugin.saveSettings();
-					});
-			});
+		// The model row sits after the "Launch with" row, whatever order they were created in.
+		bodyEl.appendChild(modelEl);
+		drawModel();
 	}
 
 	/** Language: auto / Japanese / English. Changing it calls `setLang` → `saveSettings()`

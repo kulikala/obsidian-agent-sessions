@@ -8,7 +8,7 @@ import * as path from "node:path";
 import { setIcon, setTooltip } from "obsidian";
 import { t } from "../i18n";
 import { stats } from "../backend/backend";
-import { AGENT_IDS, type AgentId } from "../settings";
+import { agentsWithLimits, type AgentId } from "../settings";
 import type { StatsWindows } from "../types";
 import type AgentSessionsPlugin from "../main";
 import { AGENT_ICON_ID } from "../ui/icons";
@@ -108,8 +108,7 @@ export class LimitsView {
 	 * set might have changed (`side.ts` calls this alongside its own settings-changed handling).
 	 * A no-op (keeps existing containers and data) if the set is unchanged. */
 	refreshAgents(): void {
-		const enabled = AGENT_IDS.filter((id) => this.plugin.settings.agents[id].enabled);
-		const next = enabled.length > 0 ? enabled : (["claude"] as AgentId[]);
+		const next = agentsWithLimits(this.plugin.settings.agents);
 		if (next.length === this.agents.length && next.every((id, i) => id === this.agents[i])) {
 			return;
 		}
@@ -118,8 +117,9 @@ export class LimitsView {
 	}
 
 	private rebuildRows(): void {
-		const enabled = AGENT_IDS.filter((id) => this.plugin.settings.agents[id].enabled);
-		this.agents = enabled.length > 0 ? enabled : (["claude"] as AgentId[]);
+		this.agents = agentsWithLimits(this.plugin.settings.agents);
+		// Only OpenCode enabled: nothing to show, and no empty box either.
+		this.hostEl.toggleClass("is-empty", this.agents.length === 0);
 		this.hostEl.empty();
 		this.agentWrapEls = {};
 		for (const agent of this.agents) {

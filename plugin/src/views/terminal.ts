@@ -30,6 +30,7 @@ import { RenameSessionModal } from "../ui/modals";
 import { sessionDisplayName } from "../sessions/name";
 import { VIEW_TYPE_TERMINAL } from "../sessions/open-session";
 import { asAgentId, parseEnvLines, type Padding } from "../settings";
+import { isResumeFailure } from "../sessions/resume-failure";
 import { classifyCodexTitleStatus, type CodexTitleStatus } from "../sessions/codex-title-status";
 import {
 	ALL_TERMINAL_STATUSES,
@@ -63,9 +64,6 @@ const PADDING_PX: Record<Padding, number> = { comfortable: 12, compact: 4, none:
 const RESIZE_DEBOUNCE_MS = 50;
 /** An `exit` within this long after `start` is treated as a startup failure. */
 const EARLY_EXIT_MS = 3000;
-/** What each agent prints when the id to resume doesn't exist (Claude Code: "No conversation
- * found…"; OpenCode: "Error: Session not found: <id>"; "not found" alone covers Codex's). */
-const RESUME_FAILURE_PATTERNS = ["No conversation found", "Session not found", "not found"];
 const FONT_SIZE_MIN = 6;
 const FONT_SIZE_MAX = 40;
 /** Min/max for the editor pane's height (%). Acts as a ceiling — the terminal's minimum row count takes priority. */
@@ -203,6 +201,17 @@ export class TerminalView extends ItemView {
 	/** Used by the side panel and manager to find the target for renaming or compacting. */
 	get sessionId(): string {
 		return this.id;
+	}
+
+	/** The id the daemon tracks this tab's PTY under (`AGENT_SESSIONS_ID` in the agent's env) —
+	 * differs from `sessionId` once a Codex/OpenCode tab is linked to its real thread id. */
+	get daemonSessionId(): string {
+		return this.daemonId;
+	}
+
+	/** Redraws the title from the index (and a name not yet stored — `plugin.pendingName`). */
+	refreshTitle(): void {
+		this.refreshName();
 	}
 
 	/** Used by `main.ts`'s `sendCommand` (route ①, writing straight to an attached tab) to build
@@ -665,6 +674,21 @@ export class TerminalView extends ItemView {
 		this.plugin.refreshTerminalStatus(newId);
 	}
 
+	/** Swaps this tab to a fresh placeholder id and starts looking for the real one (`main.ts`'s
+	 * `trackNewAgentSession`) — the tab of a new Codex/OpenCode session after "Start fresh". */
+	private becomePlaceholder(): void {
+		const oldId = this.id;
+		const placeholder = crypto.randomUUID();
+		this.id = placeholder;
+		this.daemonId = placeholder;
+		this.linked = false;
+		this.refreshName();
+		this.app.workspace.requestSaveLayout();
+		this.plugin.refreshTerminalStatus(oldId);
+		this.plugin.trackNewAgentSession(asAgentId(this.agent), placeholder, this.getCwd());
+		this.updateIcon();
+	}
+
 	private disconnect(): void {
 		const client = this.client;
 		this.client = null;
@@ -753,8 +777,7 @@ export class TerminalView extends ItemView {
 			this.showExit({ kind: "agent-missing", message: t("error.agentMissing", { name: bin }) });
 			return;
 		}
-		const resumeFailed =
-			early && RESUME_FAILURE_PATTERNS.some((p) => this.earlyOutput.includes(p));
+		const resumeFailed = early && isResumeFailure(this.agent, this.earlyOutput);
 		this.showExit({ kind: "exited", code, resumeFailed });
 	}
 
@@ -1185,6 +1208,12 @@ export class TerminalView extends ItemView {
 			const client = this.client ?? (await this.openClient());
 			await client.forget(this.daemonId).catch(() => undefined);
 			this.terminal.reset();
+			if (fresh && this.agent !== "claude") {
+				// A brand-new Codex/OpenCode session has a different id from the one that failed to
+				// resume: back under a placeholder until `resolveAgentSession` learns the real one
+				// (started first, so its "created since" time precedes the launch).
+				this.becomePlaceholder();
+			}
 			await this.startSession(client, fresh);
 			await this.attachTo(client);
 		} catch (err) {
@@ -1220,7 +1249,7 @@ export class TerminalView extends ItemView {
 
 	private refreshName(): void {
 		const row = this.plugin.index.sessions.get(this.id);
-		const nextName = row?.name || "";
+		const nextName = row?.name || this.plugin.pendingName(this.id) || "";
 		const nextLabel = row?.label || "";
 		if (nextName !== this.displayName || nextLabel !== this.label) {
 			this.displayName = nextName;
