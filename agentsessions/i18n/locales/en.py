@@ -56,6 +56,10 @@ MESSAGES = {
     'setup.keybindings_broken': 'keybindings.json: malformed (fix it by hand): {path}',
     'setup.config_toml_removed': 'config.toml: removed managed lines: {path}',
     'setup.config_toml_unreadable': 'config.toml: could not read it: {error}',
+    'setup.opencode_installed': 'opencode plugin: installed {path}',
+    'setup.opencode_updated': 'opencode plugin: updated {path}',
+    'setup.opencode_removed': 'opencode plugin: removed {path}',
+    'setup.opencode_foreign': 'opencode plugin: {path} exists and is not ours; left as is',
 
     # cmd_setup.py
     'cmd.needs_value': '{flag} needs a value',

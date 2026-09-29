@@ -2,6 +2,7 @@ import sys
 from typing import List
 
 from .. import i18n
+from ..agents.opencode import setup as opencode_setup
 from ..claude import keybindings
 from ..claude import setup as claude_setup
 from ..codex import config_toml
@@ -10,6 +11,9 @@ from ..codex import config_toml
 def main(args: List[str]) -> int:
     dry_run = '--dry-run' in args
     remove = '--remove' in args
+    # `--opencode` installs only the OpenCode plugin: Claude Code's settings are
+    # left alone, since OpenCode can be enabled without Claude Code.
+    opencode_only = '--opencode' in args and not remove
 
     settings_path = claude_setup.DEFAULT_SETTINGS_PATH
     if '--settings' in args:
@@ -43,9 +47,19 @@ def main(args: List[str]) -> int:
             return 1
         config_toml_path = args[i + 1]
 
+    opencode_path = opencode_setup.default_plugin_path()
+    if '--opencode-plugin' in args:
+        i = args.index('--opencode-plugin')
+        if i + 1 >= len(args):
+            sys.stderr.write(i18n.t('cmd.needs_value', flag='--opencode-plugin') + '\n')
+            return 1
+        opencode_path = args[i + 1]
+
     changes: List[str]
     try:
-        if remove:
+        if opencode_only:
+            changes = opencode_setup.install(opencode_path, dry_run=dry_run)
+        elif remove:
             # Removes only our own hooks/statusLine from settings.json, only our
             # own two submit-key entries from keybindings.json, and only our own
             # marked lines from Codex's config.toml (T-109) -- leaving other
@@ -62,6 +76,7 @@ def main(args: List[str]) -> int:
             _ct_changed, ct_message = config_toml.remove_managed_lines(config_toml_path, dry_run=dry_run)
             if ct_message:
                 changes.append(ct_message)
+            changes.extend(opencode_setup.remove(opencode_path, dry_run=dry_run))
         else:
             changes, _ = claude_setup.run(settings_path, dry_run=dry_run, launcher=launcher)
     except claude_setup.SettingsUnreadable as e:

@@ -12,6 +12,10 @@ class TestEnabledAgents(unittest.TestCase):
         with mock.patch.dict(os.environ, {'AGENT_SESSIONS_AGENTS': 'claude,codex,made-up'}):
             self.assertEqual(agents.enabled_agents(), ['claude', 'codex'])
 
+    def test_opencode_is_a_known_agent(self):
+        with mock.patch.dict(os.environ, {'AGENT_SESSIONS_AGENTS': 'claude,opencode'}):
+            self.assertEqual(agents.enabled_agents(), ['claude', 'opencode'])
+
     def test_env_var_single_agent(self):
         with mock.patch.dict(os.environ, {'AGENT_SESSIONS_AGENTS': 'codex'}):
             self.assertEqual(agents.enabled_agents(), ['codex'])

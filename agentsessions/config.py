@@ -67,6 +67,9 @@ EVENTS_LOG = os.path.join(RUNTIME_DIR, 'events.log')
 CACHE_PATH = os.path.join(RUNTIME_DIR, 'scan-cache.json')
 STATUS_DIR = os.path.join(RUNTIME_DIR, 'status')
 STATS_CACHE_PATH = os.path.join(RUNTIME_DIR, 'stats-cache.json')
+# Per-session status files written by the OpenCode plugin that `setup --opencode`
+# installs (agents/opencode/plugin_js.py): `<ses_id>.json`.
+OPENCODE_STATUS_DIR = os.path.join(RUNTIME_DIR, 'opencode')
 # Last-known-good {thread_id: {"name", "title"}} from state_5.sqlite (T-105):
 # a fallback for when the database genuinely can't be opened read-only right
 # now (e.g. no -wal file and no running codex to have created one), so a

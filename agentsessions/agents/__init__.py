@@ -1,4 +1,4 @@
-"""Which agents (Claude Code, Codex, ...) this process scans/tracks.
+"""Which agents (Claude Code, Codex, OpenCode) this process scans/tracks.
 
 Enabled-agent resolution, in order:
 1. env `AGENT_SESSIONS_AGENTS` (comma-separated, e.g. "claude,codex") -- set by the
@@ -11,7 +11,7 @@ Enabled-agent resolution, in order:
    no plugin has ever run keeps working exactly as before.
 
 Each agent's scan/detail/live/usage logic lives in its own subpackage
-(`agents.claude`, `agents.codex`), each exposing the same small surface:
+(`agents.claude`, `agents.codex`, `agents.opencode`), each exposing the same small surface:
 `list_transcripts()`, `scan(paths, cache)`, `find_transcript(session_id)`,
 `read_detail_for(path)`, `live_sessions()`, `collect_usage(path)`.
 `agentsessions/cli/json_output.py` loops over `enabled_agents()` and merges
@@ -24,7 +24,7 @@ from typing import List
 
 from .. import config
 
-ALL_AGENTS = ('claude', 'codex')
+ALL_AGENTS = ('claude', 'codex', 'opencode')
 DEFAULT_AGENTS = ('claude',)
 
 

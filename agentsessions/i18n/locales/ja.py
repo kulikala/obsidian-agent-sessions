@@ -48,6 +48,10 @@ MESSAGES = {
     'setup.keybindings_broken': 'keybindings.json が壊れている（手で直す）: {path}',
     'setup.config_toml_removed': 'config.toml: 自分の行を取り除いた: {path}',
     'setup.config_toml_unreadable': 'config.toml を読めない: {error}',
+    'setup.opencode_installed': 'opencode プラグイン: {path} を入れた',
+    'setup.opencode_updated': 'opencode プラグイン: {path} を更新した',
+    'setup.opencode_removed': 'opencode プラグイン: {path} を取り除いた',
+    'setup.opencode_foreign': 'opencode プラグイン: {path} は自分のものではないので、そのままにした',
 
     'cmd.needs_value': '{flag} には値が要ります',
     'cmd.no_changes': '変更なし',

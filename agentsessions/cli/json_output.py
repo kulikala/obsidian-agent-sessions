@@ -2,8 +2,8 @@
 `json stats`.
 
 Every entry point loops over `agentsessions.agents.enabled_agents()` and merges
-each agent adapter's results (`agentsessions.agents.claude`,
-`agentsessions.agents.codex`) -- this module, not `sessions/scan.py` itself, is
+each agent adapter's results (`agentsessions.agents.claude`, `.codex`,
+`.opencode`) -- this module, not `sessions/scan.py` itself, is
 the "registered adapters, looped over and merged" dispatch point, since it's the
 layer that already owned cross-cutting concerns like the shared scan-cache and
 the daemon check.
@@ -17,6 +17,7 @@ from typing import Dict, List, Optional
 from .. import agents, config, i18n
 from ..agents import claude as claude_agent
 from ..agents import codex as codex_agent
+from ..agents import opencode as opencode_agent
 from ..daemon import protocol
 from ..sessions import cache, store
 from ..sessions.live import STATUS_LABEL_KEY
@@ -26,7 +27,7 @@ from ..usage import stats
 
 DAEMON_TIMEOUT = 1.0
 
-_ADAPTERS = {'claude': claude_agent, 'codex': codex_agent}
+_ADAPTERS = {'claude': claude_agent, 'codex': codex_agent, 'opencode': opencode_agent}
 
 
 def _adapter(name: str):
@@ -41,6 +42,8 @@ def _agent_roots() -> Dict[str, str]:
     return {
         'claude': config.PROJECTS_DIR,
         'codex': os.path.join(codex_agent.rollout.codex_home(), 'sessions'),
+        # OpenCode has no transcript files; its pseudo paths all start with this.
+        'opencode': opencode_agent.PSEUDO_ROOT,
     }
 
 
@@ -62,7 +65,7 @@ def _session_dict(s: Session) -> dict:
         'child': s.child,
         'transcript': s.path,
     }
-    # T-107: additive, Codex only for now -- Claude Code's model/effort come from
+    # T-107: additive, Codex and OpenCode only for now -- Claude Code's model/effort come from
     # statusLine (real-time, already surfaced separately), not scan; adding a
     # transcript-derived copy here would risk showing something stale or
     # inconsistent with what statusLine already reports for the same session.
@@ -171,37 +174,38 @@ def send_daemon_op(op: str, client: str = 'json', sock_path: Optional[str] = Non
             pass
 
 
-def _codex_daemon_links() -> Dict[str, str]:
-    """`{daemon_uuid: thread_id}` for every Codex session sessions.json links
-    (`sessions[<thread_id>] = {"agent": "codex", "daemon": "<daemon_uuid>"}`,
-    written by the plugin once `json resolve codex` finds the real thread id --
-    see design.md §3.3). A link whose `daemon_uuid` no longer names a running
-    daemon session (the daemon restarted, or the plugin already re-resumed under
-    a new uuid) is simply never looked up by `_daemon_list`'s relabeling below,
-    so a stale entry here is inert, not a bug to guard against."""
+def _daemon_links() -> Dict[str, str]:
+    """`{daemon_uuid: session_id}` for every non-Claude session sessions.json
+    links (`sessions[<session_id>] = {"agent": "codex"|"opencode", "daemon":
+    "<daemon_uuid>"}`, written by the plugin once `json resolve <agent>` finds
+    the real session id -- see design.md §3.3). A link whose `daemon_uuid` no
+    longer names a running daemon session (the daemon restarted, or the plugin
+    already re-resumed under a new uuid) is simply never looked up by
+    `_daemon_list`'s relabeling below, so a stale entry here is inert, not a
+    bug to guard against."""
     st = store.load(path=config.STORE_PATH)
     out: Dict[str, str] = {}
-    for thread_id, entry in st.sessions.items():
-        if isinstance(entry, dict) and entry.get('agent') == 'codex':
+    for session_id, entry in st.sessions.items():
+        if isinstance(entry, dict) and entry.get('agent') not in (None, 'claude'):
             daemon_id = entry.get('daemon')
             if isinstance(daemon_id, str) and daemon_id:
-                out[daemon_id] = thread_id
+                out[daemon_id] = session_id
     return out
 
 
 def _daemon_list() -> dict:
     """Fetches the daemon's `list`. `running: false` if it isn't up (this never
-    starts it). Codex sessions are relabeled from the daemon-assigned uuid
-    `start` was called with to the resolved thread id (Claude Code sessions are
-    unaffected -- there, the daemon uuid already *is* the transcript id), so a
-    consumer only ever sees thread ids for Codex, matching `json scan`'s rows."""
+    starts it). Codex and OpenCode sessions are relabeled from the daemon-assigned
+    uuid `start` was called with to the resolved session id (Claude Code sessions
+    are unaffected -- there, the daemon uuid already *is* the transcript id), so a
+    consumer only ever sees real session ids for them, matching `json scan`'s rows."""
     resp = send_daemon_op('list')
     if resp is None or not resp.get('ok'):
         return {'running': False, 'sessions': []}
     sessions = resp.get('sessions', [])
-    if any(isinstance(s, dict) and s.get('agent') == 'codex' for s in sessions):
-        links = _codex_daemon_links()
-        sessions = [dict(s, id=links[s['id']]) if isinstance(s, dict) and s.get('agent') == 'codex'
+    if any(isinstance(s, dict) and s.get('agent') not in (None, 'claude') for s in sessions):
+        links = _daemon_links()
+        sessions = [dict(s, id=links[s['id']]) if isinstance(s, dict) and s.get('agent') not in (None, 'claude')
                     and s.get('id') in links else s
                     for s in sessions]
     return {'running': True, 'sessions': sessions}
@@ -233,9 +237,10 @@ def live_output() -> dict:
         if name == 'claude':
             live_map = adapter.live_sessions()
         else:
-            # Codex has no ledger of its own -- it needs a scan (path/cwd per id)
-            # to know what to check. Reuses the shared, persistent scan-cache, so
-            # this doesn't cost more than `json scan` already would.
+            # Codex and OpenCode have no ledger of their own -- they need a scan
+            # (path/cwd per id) to know what to check. Reuses the shared,
+            # persistent scan-cache, so this doesn't cost more than `json scan`
+            # already would.
             c = cache.load(path=cache_path)
             scanned = adapter.scan(adapter.list_transcripts(), cache=c)
             cache.save(c, path=cache_path)
@@ -249,7 +254,7 @@ def _detail_dict(d) -> dict:
     out = {'last_user': d.last_user, 'last_assistant': d.last_assistant,
            'tools': d.tools, 'last_command': d.last_command}
     # additive: only present when the agent adapter actually populates them (today,
-    # only agents.codex -- Claude Code carries model/effort via statusLine instead,
+    # only agents.codex/agents.opencode -- Claude Code carries model/effort via statusLine instead,
     # see design.md §14), so an existing consumer reading just the four keys above
     # sees no difference.
     if d.model is not None:
@@ -281,21 +286,22 @@ def usage_output(session_id: str, from_ts: Optional[float] = None,
 
 def resolve_output(agent: str, pid: int, since: float, cwd: str) -> dict:
     """Backs `json resolve <agent> --pid --since --cwd` -- see
-    `agentsessions.agents.codex.resolve`'s docstring for the contract (a
-    freshly-started daemon session's real id, for an agent like Codex that
-    can't be told what id to use up front). `{"thread": null, "transcript": null}`
-    for any agent that doesn't need this (i.e. every agent but Codex, which picks
-    its own id via `--session-id` at launch, per T-96)."""
-    if agent != 'codex':
+    `agentsessions.agents.codex.resolve`'s and `.opencode.resolve`'s docstrings
+    for the contract (a freshly-started daemon session's real id, for an agent
+    like Codex or OpenCode that can't be told what id to use up front).
+    `{"thread": null, "transcript": null}` for any agent that doesn't need this
+    (Claude Code picks its own id via `--session-id` at launch, per T-96)."""
+    if agent not in ('codex', 'opencode'):
         return {'thread': None, 'transcript': None}
     st = store.load(path=config.STORE_PATH)
-    # A Codex link is keyed BY the thread id (`sessions[<thread_id>] =
-    # {"agent": "codex", "daemon": "<uuid>", ...}` -- see §3/§3.3 of design.md
-    # and `_codex_daemon_links`, above) -- so an already-linked thread id is the
+    # A link is keyed BY the real session id (`sessions[<session_id>] =
+    # {"agent": "<agent>", "daemon": "<uuid>", ...}` -- see §3/§3.3 of
+    # design.md and `_daemon_links`, above) -- so an already-linked id is the
     # dict key itself, not a value field.
     already_linked = {sid for sid, v in st.sessions.items()
-                       if isinstance(v, dict) and v.get('agent') == 'codex'}
-    thread, transcript = codex_agent.resolve.resolve(pid, since, cwd, already_linked=already_linked)
+                       if isinstance(v, dict) and v.get('agent') == agent}
+    resolver = codex_agent.resolve if agent == 'codex' else opencode_agent.resolve
+    thread, transcript = resolver.resolve(pid, since, cwd, already_linked=already_linked)
     return {'thread': thread, 'transcript': transcript}
 
 
