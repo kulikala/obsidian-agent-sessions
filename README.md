@@ -4,6 +4,8 @@
 
 Run and manage [Claude Code](https://claude.com/claude-code) and [Codex](https://github.com/openai/codex) sessions as terminal tabs inside [Obsidian](https://obsidian.md), with a session list, a usage dashboard, and a daemon that keeps sessions alive when you close a tab or quit Obsidian.
 
+![A Claude Code session in a terminal tab, with the side panel listing open, running, and recent Claude Code and Codex sessions](docs/images/overview.png)
+
 ## Features
 
 - **Multi-agent** — Claude Code and Codex sessions, mixed freely in the same list, sorted and filtered together. Auto-detected on first run; enable either or both, with per-agent path and environment-variable settings. Choosing "New session" with both enabled asks which one to start.
@@ -17,6 +19,10 @@ Run and manage [Claude Code](https://claude.com/claude-code) and [Codex](https:/
 - **Session and usage analytics** — per-session token/cost breakdown with a turn-by-turn table, and account-wide 5‑hour/7‑day usage totals, computed from each agent's own transcripts.
 - **CLI and TUI** — a standalone `agent-sessions` command for scripting or working outside Obsidian: a terminal UI to pick and attach to a session, and `json` subcommands that back the plugin.
 - **Bilingual UI** — English and Japanese, with an "automatic" mode that follows Obsidian's own language setting.
+
+![The Session Manager: sessions grouped by category with cost per window, and the 5-hour/7-day usage analysis below](docs/images/manager.png)
+
+![A Codex session waiting for approval, while a notice reports that a Claude Code session in another tab has finished](docs/images/codex.png)
 
 ## Supported environments
 
@@ -131,6 +137,10 @@ AGENT_SESSIONS_BIN=$PWD/../bin/agent-sessions npm test   # also run the tests th
 cd ..
 python3 -W error -m unittest discover -s tests -t .   # Python (standard library only)
 ```
+
+### Screenshots
+
+The images in this README are generated: `node tools/screenshots/shoot.mjs` (after `npm run build`) runs the built plugin in a separate, sandboxed Obsidian against made-up sessions and writes `docs/images/`. See [`tools/screenshots/README.md`](tools/screenshots/README.md).
 
 ### Adding a language
 

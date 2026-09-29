@@ -4,6 +4,8 @@
 
 [Obsidian](https://obsidian.md) の中で [Claude Code](https://claude.com/claude-code) と [Codex](https://github.com/openai/codex) のセッションをターミナルタブとして開き、管理するプラグイン。セッション一覧・利用状況ダッシュボード・タブを閉じても Obsidian を閉じてもセッションを生かし続けるデーモンを持つ。
 
+![ターミナルタブで動く Claude Code のセッションと、Claude Code・Codex のセッションを開いているタブ・起動中・最近に分けて並べるサイドパネル](docs/images/overview.png)
+
 ## 主な特徴
 
 - **複数エージェント対応** — Claude Code と Codex のセッションを同じ一覧に混在させ、並べ替え・絞り込みも一緒に行う。初回起動時に自動検出、どちらか一方、または両方を有効化でき、エージェントごとにパスと環境変数を設定できる。両方有効なときは「新規セッション」でどちらを起動するか選べる。
@@ -17,6 +19,10 @@
 - **セッション解析と利用状況** — セッション単位のトークン・コストをターン表付きで、アカウント全体の 5 時間／7 日の利用量を、どちらも各エージェント自身の transcript から算出する。
 - **CLI と TUI** — Obsidian の外や自動化から使える単体の `agent-sessions` コマンド：セッションを選んで attach する TUI と、プラグインを裏で支える `json` サブコマンド。
 - **日英 2 言語の UI** — 「自動」（Obsidian の言語設定に合わせる）・日本語・English を選べる。
+
+![セッションマネージャー：カテゴリ別にまとめたセッションと枠ごとのコスト、その下に 5 時間／7 日の利用分析](docs/images/manager.png)
+
+![承認を待つ Codex のセッションと、別タブの Claude Code のセッションが応答を終えたことを知らせる通知](docs/images/codex.png)
 
 ## 対応環境
 
@@ -129,6 +135,10 @@ AGENT_SESSIONS_BIN=$PWD/../bin/agent-sessions npm test   # 実デーモンを使
 cd ..
 python3 -W error -m unittest discover -s tests -t .   # Python（標準ライブラリのみ）
 ```
+
+### スクリーンショット
+
+README の画像は生成物。`npm run build` の後に `node tools/screenshots/shoot.mjs` を実行すると、ビルド済みのプラグインを隔離した別の Obsidian で架空のセッションに対して動かし、`docs/images/` に書き出す。詳細は [`tools/screenshots/README.md`](tools/screenshots/README.md)。
 
 ### 言語を追加するには
 
