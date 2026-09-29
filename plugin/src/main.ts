@@ -1074,7 +1074,8 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 	}
 
-	/** End session: confirm → `kill`. */
+	/** End session: confirm → `kill`, addressed by the daemon's own id (`daemonIdFor` — a linked
+	 * Codex session's row id isn't one the daemon knows). */
 	endSession(id: string): void {
 		new ConfirmModal(this.app, t("confirm.endSession.message"), t("action.endSession"), () => {
 			void (async () => {
@@ -1082,7 +1083,10 @@ export default class AgentSessionsPlugin extends Plugin {
 				try {
 					client = await ensureDaemon(this.sockPath(), this.agentSessionsPath());
 					await client.hello("plugin");
-					await client.kill(id);
+					const res = await client.kill(this.daemonIdFor(id));
+					if (!res.ok) {
+						throw new Error(res.error ?? "unknown");
+					}
 				} catch (err) {
 					new Notice(t("notice.endFailed", { error: messageOf(err) }));
 				} finally {
