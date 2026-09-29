@@ -39,6 +39,16 @@ export function editReplyFor(outcome: EditOutcome): { ok: boolean; error?: strin
 export function submitsAfterEdit(file: string): boolean {
 	return path.basename(file).startsWith("claude-prompt-");
 }
+
+/**
+ * Whether a tab is the one an `edit` request (`session` = the `AGENT_SESSIONS_ID` the agent was
+ * started with) belongs to. That id is the daemon's own id for the session, which differs from
+ * the tab's `sessionId` once a Codex/OpenCode tab has been linked to its real thread id.
+ */
+export function tabOwnsEditSession(tab: { sessionId: string; daemonId: string }, session: string): boolean {
+	return tab.sessionId === session || tab.daemonId === session;
+}
+
 export type EditHandler = (req: EditRequest, reply: EditReply) => void;
 
 interface Conn {

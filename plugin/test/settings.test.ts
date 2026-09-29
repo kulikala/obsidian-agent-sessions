@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	agentsWithLimits,
 	asAgentId,
 	DEFAULT_SETTINGS,
 	defaultFontFamily,
@@ -230,5 +231,23 @@ describe("defaultFontFamily (non-macOS support; Menlo isn't available on Linux)"
 describe("SUBMIT_KEYS_NON_MAC", () => {
 	it("does not include cmd+enter", () => {
 		expect(SUBMIT_KEYS_NON_MAC).toEqual(["enter", "shift+enter", "ctrl+enter", "alt+enter"]);
+	});
+});
+
+describe("agentsWithLimits", () => {
+	const on = { enabled: true };
+	const off = { enabled: false };
+
+	it("leaves OpenCode out: it has no usage windows", () => {
+		expect(agentsWithLimits({ claude: on, codex: off, opencode: on })).toEqual(["claude"]);
+		expect(agentsWithLimits({ claude: on, codex: on, opencode: on })).toEqual(["claude", "codex"]);
+	});
+
+	it("is empty when OpenCode is the only agent enabled, so no empty group is drawn", () => {
+		expect(agentsWithLimits({ claude: off, codex: off, opencode: on })).toEqual([]);
+	});
+
+	it("falls back to Claude when nothing is enabled", () => {
+		expect(agentsWithLimits({ claude: off, codex: off, opencode: off })).toEqual(["claude"]);
 	});
 });

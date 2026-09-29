@@ -61,16 +61,34 @@ export function setAgentEnv(vars: Record<string, string>): void {
 	extraJsonEnv = vars;
 }
 
+/** The variables OpenCode locates its database and plugin folder by; the Python side reads them
+ * from its own env (`agentsessions/agents/opencode/db.py`, `setup.py`), so they must match what
+ * OpenCode itself runs with. */
+const OPENCODE_XDG_VARS = ["XDG_DATA_HOME", "XDG_CONFIG_HOME"] as const;
+
 /** The env `setAgentEnv` expects, computed from the current agent settings: `AGENT_SESSIONS_AGENTS`
  * (every enabled agent, comma-separated) plus Codex's `CODEX_HOME` if its "environment
  * variables" setting has one (Python reads `CODEX_HOME` straight from its own env on every
- * call — see `agentsessions/agents/codex/rollout.py`'s `codex_home()`). Pure — no I/O. */
-export function agentEnvFor(settings: { agents: Record<AgentId, AgentSettings> }): Record<string, string> {
+ * call — see `agentsessions/agents/codex/rollout.py`'s `codex_home()`), and OpenCode's
+ * `XDG_DATA_HOME` / `XDG_CONFIG_HOME`: from its own "environment variables" setting, else from
+ * `login` (the login shell's env, which is what a session launches with; Obsidian's own env
+ * usually lacks what a shell rc exports). Pure — no I/O. */
+export function agentEnvFor(
+	settings: { agents: Record<AgentId, AgentSettings> },
+	login: Record<string, string> = {}
+): Record<string, string> {
 	const enabled = AGENT_IDS.filter((id) => settings.agents[id].enabled);
 	const vars: Record<string, string> = { AGENT_SESSIONS_AGENTS: enabled.join(",") };
 	const codexHome = parseEnvLines(settings.agents.codex.env).CODEX_HOME;
 	if (codexHome) {
 		vars.CODEX_HOME = codexHome;
+	}
+	const opencodeEnv = parseEnvLines(settings.agents.opencode.env);
+	for (const name of OPENCODE_XDG_VARS) {
+		const value = opencodeEnv[name] || login[name];
+		if (value) {
+			vars[name] = value;
+		}
 	}
 	return vars;
 }
@@ -424,8 +442,13 @@ export function locateProgram(bin: string, isMac: boolean): Promise<string | nul
 }
 
 /** Runs `cmd` and resolves with its stdout (rejects on a non-zero exit, like `execFileText`). */
-export async function runProgram(cmd: string, args: string[], timeoutMs = 60000): Promise<string> {
-	const { stdout } = await execFileText(cmd, args, process.env, timeoutMs);
+export async function runProgram(
+	cmd: string,
+	args: string[],
+	timeoutMs = 60000,
+	env: NodeJS.ProcessEnv = process.env
+): Promise<string> {
+	const { stdout } = await execFileText(cmd, args, env, timeoutMs);
 	return stdout;
 }
 

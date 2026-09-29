@@ -86,6 +86,28 @@ describe("agentEnvFor", () => {
 		expect(agentEnvFor(settings)).toEqual({ AGENT_SESSIONS_AGENTS: "claude,codex", CODEX_HOME: "/custom/.codex" });
 	});
 
+	it("forwards OpenCode's XDG_DATA_HOME / XDG_CONFIG_HOME from its env setting", () => {
+		const settings = {
+			agents: {
+				...DEFAULT_SETTINGS.agents,
+				opencode: { enabled: true, path: "", env: "XDG_DATA_HOME=/d\nXDG_CONFIG_HOME=/c\nOTHER=x" },
+			},
+		};
+		const env = agentEnvFor(settings, { XDG_DATA_HOME: "/login-d", XDG_CONFIG_HOME: "/login-c" });
+		expect(env.XDG_DATA_HOME).toBe("/d");
+		expect(env.XDG_CONFIG_HOME).toBe("/c");
+		expect(env).not.toHaveProperty("OTHER");
+	});
+
+	it("falls back to the login shell's XDG variables, and forwards nothing when neither has them", () => {
+		const settings = { agents: DEFAULT_SETTINGS.agents };
+		expect(agentEnvFor(settings, { XDG_DATA_HOME: "/login-d", PATH: "/bin" })).toEqual({
+			AGENT_SESSIONS_AGENTS: "claude",
+			XDG_DATA_HOME: "/login-d",
+		});
+		expect(agentEnvFor(settings, {})).toEqual({ AGENT_SESSIONS_AGENTS: "claude" });
+	});
+
 	it("omits CODEX_HOME when codex's env setting doesn't have one", () => {
 		expect(agentEnvFor({ agents: DEFAULT_SETTINGS.agents })).toEqual({ AGENT_SESSIONS_AGENTS: "claude" });
 	});

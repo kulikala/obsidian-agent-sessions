@@ -7,7 +7,7 @@ import * as net from "node:net";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { encodeFrame, FrameDecoder } from "../../src/backend/daemon-client";
-import { EditServer, editReplyFor, submitsAfterEdit, type EditOutcome, type EditRequest, type EditReply } from "../../src/backend/edit-server";
+import { EditServer, editReplyFor, submitsAfterEdit, tabOwnsEditSession, type EditOutcome, type EditRequest, type EditReply } from "../../src/backend/edit-server";
 
 interface Client {
 	socket: net.Socket;
@@ -209,5 +209,19 @@ describe("editReplyFor / submitsAfterEdit", () => {
 			server.stop();
 			rmSync(dir, { recursive: true, force: true });
 		}
+	});
+});
+
+describe("tabOwnsEditSession", () => {
+	it("matches by the tab's own id (Claude, or a not-yet-linked tab)", () => {
+		expect(tabOwnsEditSession({ sessionId: "u1", daemonId: "u1" }, "u1")).toBe(true);
+		expect(tabOwnsEditSession({ sessionId: "u1", daemonId: "u1" }, "u2")).toBe(false);
+	});
+
+	it("matches a linked tab by the daemon's placeholder id the agent was started with", () => {
+		const linked = { sessionId: "ses_abc", daemonId: "0f9c-placeholder" };
+		expect(tabOwnsEditSession(linked, "0f9c-placeholder")).toBe(true);
+		expect(tabOwnsEditSession(linked, "ses_abc")).toBe(true);
+		expect(tabOwnsEditSession(linked, "other")).toBe(false);
 	});
 });

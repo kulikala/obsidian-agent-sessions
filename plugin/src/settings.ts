@@ -36,6 +36,23 @@ export type AgentId = "claude" | "codex" | "opencode";
 
 export const AGENT_IDS: readonly AgentId[] = ["claude", "codex", "opencode"];
 
+/** Agents whose vendor exposes usage windows (5-hour, weekly, …). OpenCode has none, so it gets no
+ * usage bar, category bars or rate-limit rows. */
+export const AGENTS_WITHOUT_LIMITS: readonly AgentId[] = ["opencode"];
+
+/**
+ * The agents the usage bars / rate-limit rows are built for: the enabled ones that have usage
+ * windows. With no agent enabled at all it is `["claude"]` (the always-there default); with only
+ * OpenCode enabled it is empty — there is nothing to show, so no group is drawn.
+ */
+export function agentsWithLimits(agents: Record<AgentId, { enabled: boolean }>): AgentId[] {
+	const enabled = AGENT_IDS.filter((id) => agents[id].enabled);
+	if (enabled.length === 0) {
+		return ["claude"];
+	}
+	return enabled.filter((id) => !AGENTS_WITHOUT_LIMITS.includes(id));
+}
+
 /** Narrows a `Row`/tab's `agent` (`string`, since it round-trips through JSON with no runtime
  * validation) to a known `AgentId`, falling back to `claude` for anything else — a future/unknown
  * agent id degrades to the original single-agent behavior rather than failing to launch at all. */
