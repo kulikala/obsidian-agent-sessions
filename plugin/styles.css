@@ -1638,12 +1638,20 @@
 	flex: 1 1 auto;
 	min-width: 4em;
 	height: 1.6em;
-	border: none !important;
-	outline: none !important;
-	background: transparent !important;
-	box-shadow: none !important;
-	padding: 0 !important;
 	margin: 0;
+}
+
+/* A bare text field inside the chip box: Obsidian's own `input[type="text"]` rules (up to
+   `input[type="text"]:not(:disabled):hover`, specificity 0,3,1) give it a border, background,
+   shadow, and padding in every state, so these selectors are specific enough to outrank each
+   of them (0,2,1 at rest, 0,4,1 in any interactive state). */
+input.agent-sessions-name-input-field[type="text"],
+input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :focus-visible, :not(:disabled):hover) {
+	border: none;
+	outline: none;
+	background: transparent;
+	box-shadow: none;
+	padding: 0;
 }
 
 /* The chip's own click-to-edit-in-place replacement (T-112) — sized to its own content (a `size`

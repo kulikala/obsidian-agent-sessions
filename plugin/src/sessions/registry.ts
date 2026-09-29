@@ -98,7 +98,7 @@ function isBusyLike(status: string): boolean {
 export class Registry extends EventEmitter {
 	private entries: Map<string, RegistryEntry>;
 	private watcher: fs.FSWatcher | null = null;
-	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+	private debounceTimer: number | null = null;
 
 	constructor(
 		private sessionsDir: string,
@@ -155,13 +155,13 @@ export class Registry extends EventEmitter {
 			return Promise.resolve(true);
 		}
 		return new Promise((resolve) => {
-			const timer = setTimeout(() => {
+			const timer = window.setTimeout(() => {
 				this.off("change", check);
 				resolve(false);
 			}, timeoutMs);
 			const check = () => {
 				if (matches()) {
-					clearTimeout(timer);
+					window.clearTimeout(timer);
 					this.off("change", check);
 					resolve(true);
 				}
@@ -201,9 +201,9 @@ export class Registry extends EventEmitter {
 
 	private scheduleRefresh(): void {
 		if (this.debounceTimer) {
-			clearTimeout(this.debounceTimer);
+			window.clearTimeout(this.debounceTimer);
 		}
-		this.debounceTimer = setTimeout(() => {
+		this.debounceTimer = window.setTimeout(() => {
 			this.debounceTimer = null;
 			this.refresh();
 		}, this.debounceMs);
@@ -213,7 +213,7 @@ export class Registry extends EventEmitter {
 		this.watcher?.close();
 		this.watcher = null;
 		if (this.debounceTimer) {
-			clearTimeout(this.debounceTimer);
+			window.clearTimeout(this.debounceTimer);
 			this.debounceTimer = null;
 		}
 	}

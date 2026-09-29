@@ -29,7 +29,7 @@ Run and manage [Claude Code](https://claude.com/claude-code) and [Codex](https:/
 | | |
 |---|---|
 | **OS** | macOS — tested. Linux, including Linux Obsidian running under WSLg on Windows — supported (the terminal keybindings and the Python side both have platform branches for it, exercised in CI and in Linux containers by hand), but not yet verified on a real Obsidian install end to end. Windows (native) — not supported: the daemon depends on `pty`, `fcntl`, and `termios`, Unix-only standard-library modules with no Windows equivalent, and a native Windows build of Obsidian has no PTY to hold open; running the Linux build of Obsidian under WSLg avoids this entirely. On native Windows the plugin loads but stays inactive, saying why. |
-| **Obsidian** | Desktop only (`isDesktopOnly`, since the plugin spawns processes and opens Unix sockets — neither is available to a mobile or web build), version 1.7.2 or later (`minAppVersion`). |
+| **Obsidian** | Desktop only (`isDesktopOnly`, since the plugin spawns processes and opens Unix sockets — neither is available to a mobile or web build), version 1.8.7 or later (`minAppVersion`). |
 | **Python** | 3.9+, standard library only. macOS: the Command Line Tools' `python3` (`xcode-select --install`), python.org, or Homebrew; Linux: your distribution's `python3`. |
 | **Claude Code and/or Codex** | At least one of the two, either on your `PATH` or pointed to from the plugin's Agents settings (auto-detected on first run). Claude Code: the plugin relies on its hooks (`Stop`, `SessionEnd`, `SessionStart` with matcher `compact`, `UserPromptSubmit`), its `statusLine`, and — only if you change the submit-key setting away from the default — its `keybindings.json`. Codex: no hooks/statusLine equivalent is used yet; hands-on verification is still pending (see [`docs/design.md`](docs/design.md) §7.7, §25). |
 | **Node.js / npm** | Only if you are building the plugin from source (see [Development](#development)); CI builds with Node.js 20. |
@@ -44,6 +44,8 @@ Run and manage [Claude Code](https://claude.com/claude-code) and [Codex](https:/
   - installing the program writes it to a folder in your home directory (see [Installation](#installation)); the install and `install.sh` add hooks and a `statusLine` to `~/.claude/settings.json` (backed up first); changing the submit-key setting writes `~/.claude/keybindings.json`;
   - with Codex enabled, adds its submit-key keymap and a default `[tui].status_line` to `~/.codex/config.toml` (backed up first; each line it adds is marked, and `agent-sessions setup --remove` takes exactly those out);
   - the built-in editor edits the temporary file Claude Code hands to `$VISUAL`.
+- **Lists the vault's files** only to complete `@` file paths in the built-in editor.
+- **Uses the clipboard** only when you ask: copying a session ID or an analysis table, and Ctrl+Shift+C / Ctrl+Shift+V in a terminal tab (Linux keybindings).
 - **No accounts, payments, ads, or telemetry** of its own. Everything is open source under the MIT license.
 
 ## Installation

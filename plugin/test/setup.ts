@@ -5,3 +5,8 @@
 import { setLang } from "../src/i18n";
 
 setLang("en");
+
+// Code that only runs inside Obsidian calls `window.setTimeout` and friends (popout-window
+// compatibility); vitest's `node` environment has no `window`, so alias it to the global object,
+// whose timers are the same functions (and are what `vi.useFakeTimers()` replaces).
+(globalThis as { window?: unknown }).window ??= globalThis;

@@ -1,7 +1,7 @@
 // Display language. Doesn't depend on `obsidian` (same reason as `settings.ts`: importing
 // only plain data and functions means tests that don't run inside Obsidian can still resolve
 // it). Default is "auto" — when the setting's `language` is `auto`, it follows Obsidian's own
-// language (`window.localStorage.getItem("language")`); anything not covered by a registered
+// language (Obsidian's `getLanguage()`, read by `main.ts` and passed to `resolveLang`); anything not covered by a registered
 // locale falls back to English. `t()` is a pure function that just reads the current value held
 // in this module.
 //
@@ -66,23 +66,6 @@ export function resolveLang(setting: LanguageSetting, obsidianLang: string | nul
 	}
 	const matched = [...LOCALES].sort((a, b) => b.code.length - a.code.length).find((l) => obsidianLang.startsWith(l.code));
 	return matched?.code ?? DEFAULT_LANG;
-}
-
-/**
- * Obsidian's language setting. `null` in environments without `window.localStorage`, or where
- * it can't be read (tests, etc). This is what gets passed to `resolveLang` (`resolveLang`
- * itself is a pure function that only looks at the values it's given).
- *
- * Reads `localStorage` directly rather than Obsidian's own `getLanguage()` — that API needs
- * Obsidian 1.8.7, and this plugin's `minAppVersion` is 1.7.2 (`obsidianmd/no-unsupported-api`).
- * Revisit once the floor is raised past 1.8.7.
- */
-export function readObsidianLang(): string | null {
-	try {
-		return window.localStorage.getItem("language");
-	} catch {
-		return null;
-	}
 }
 
 /** The string for `key`. If `vars` is given, replaces `{name}` placeholders (names not in `vars` are left as-is). */

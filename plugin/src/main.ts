@@ -1,5 +1,6 @@
 import {
 	Events,
+	getLanguage,
 	MarkdownView,
 	Notice,
 	Platform,
@@ -50,7 +51,7 @@ import {
 import { DaemonClient, defaultSockPath, ensureDaemon } from "./backend/daemon-client";
 import { EditServer, editReplyFor, submitsAfterEdit, type EditReply, type EditRequest } from "./backend/edit-server";
 import { SessionIndex } from "./sessions/index";
-import { getLang, languageOptions, readObsidianLang, resolveLang, setLang, t, type MessageKey } from "./i18n";
+import { getLang, languageOptions, resolveLang, setLang, t, type MessageKey } from "./i18n";
 import { applyCodexConfig, defaultCodexConfigPath, type ApplyCodexConfigResult } from "./terminal/codex-config";
 import { applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./terminal/keybindings";
 import { reconcileSubmitKey, sendSequence } from "./terminal/keys";
@@ -407,12 +408,12 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	/**
 	 * Display language: derives `t()`'s current value from the setting's `language` and
-	 * Obsidian's own language (`localStorage.language`). Called first thing in `onload`, and
+	 * Obsidian's own language (`getLanguage()`). Called first thing in `onload`, and
 	 * whenever the language setting changes (call `saveSettings()` afterward so
 	 * `settings-changed` redraws every view).
 	 */
 	applyLanguage(): void {
-		setLang(resolveLang(this.settings.language, readObsidianLang()));
+		setLang(resolveLang(this.settings.language, getLanguage()));
 	}
 
 	/** Where `keybindings.json` lives. Also used by `AgentSessionsSettingTab`. */

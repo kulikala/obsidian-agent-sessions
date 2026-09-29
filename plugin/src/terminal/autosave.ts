@@ -11,7 +11,7 @@
  * else itself).
  */
 export class SaveDebouncer {
-	private timer: ReturnType<typeof setTimeout> | null = null;
+	private timer: number | null = null;
 
 	constructor(
 		private readonly ms: number,
@@ -21,7 +21,7 @@ export class SaveDebouncer {
 	/** Input happened: cancels any pending timer and starts a new one. */
 	schedule(): void {
 		this.cancel();
-		this.timer = setTimeout(() => {
+		this.timer = window.setTimeout(() => {
 			this.timer = null;
 			this.run();
 		}, this.ms);
@@ -36,7 +36,7 @@ export class SaveDebouncer {
 	/** Cancels any pending timer only (never calls `run`). */
 	cancel(): void {
 		if (this.timer !== null) {
-			clearTimeout(this.timer);
+			window.clearTimeout(this.timer);
 			this.timer = null;
 		}
 	}

@@ -47,7 +47,7 @@ const WAIT_NAME_POLL_MS = 300;
 const WAIT_NAME_TIMEOUT_MS = 5000;
 
 function delay(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+	return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function rowFromScan(s: ScanSession, openTabIds: Set<string>, store: Store): Row {
@@ -110,15 +110,15 @@ export class SessionIndex extends EventEmitter {
 	/** Category name → palette slot (a copy of `sessions.json`'s `categoryColors`). */
 	private categoryColors: Record<string, number> = {};
 	private detailCache = new Map<string, Detail>();
-	private timer: ReturnType<typeof setInterval> | null = null;
+	private timer: number | null = null;
 	private visibleCount = 0;
 	private eventsOffset = 0;
 	private eventsWatcher: fs.FSWatcher | null = null;
-	private eventsDebounce: ReturnType<typeof setTimeout> | null = null;
+	private eventsDebounce: number | null = null;
 	private registryUnsubscribe: () => void;
 	private registryIdleUnsubscribe: () => void;
 	private compactedUnsubscribe: () => void;
-	private liveDebounce: ReturnType<typeof setTimeout> | null = null;
+	private liveDebounce: number | null = null;
 
 	constructor(private deps: SessionIndexDeps) {
 		super();
@@ -382,7 +382,7 @@ export class SessionIndex extends EventEmitter {
 			this.eventsWatcher?.close();
 			this.eventsWatcher = null;
 			if (this.eventsDebounce) {
-				clearTimeout(this.eventsDebounce);
+				window.clearTimeout(this.eventsDebounce);
 				this.eventsDebounce = null;
 			}
 		};
@@ -393,20 +393,20 @@ export class SessionIndex extends EventEmitter {
 		this.registryIdleUnsubscribe();
 		this.compactedUnsubscribe();
 		if (this.timer) {
-			clearInterval(this.timer);
+			window.clearInterval(this.timer);
 			this.timer = null;
 		}
 		if (this.liveDebounce) {
-			clearTimeout(this.liveDebounce);
+			window.clearTimeout(this.liveDebounce);
 			this.liveDebounce = null;
 		}
 	}
 
 	private scheduleEventsCheck(): void {
 		if (this.eventsDebounce) {
-			clearTimeout(this.eventsDebounce);
+			window.clearTimeout(this.eventsDebounce);
 		}
-		this.eventsDebounce = setTimeout(() => {
+		this.eventsDebounce = window.setTimeout(() => {
 			this.eventsDebounce = null;
 			this.checkEventsLog();
 		}, 200);
@@ -414,9 +414,9 @@ export class SessionIndex extends EventEmitter {
 
 	private scheduleLiveRefresh(): void {
 		if (this.liveDebounce) {
-			clearTimeout(this.liveDebounce);
+			window.clearTimeout(this.liveDebounce);
 		}
-		this.liveDebounce = setTimeout(() => {
+		this.liveDebounce = window.setTimeout(() => {
 			this.liveDebounce = null;
 			void this.refreshLive();
 		}, LIVE_DEBOUNCE_MS);
@@ -433,11 +433,11 @@ export class SessionIndex extends EventEmitter {
 	private ensureTimer(): void {
 		const shouldRun = this.visibleCount > 0;
 		if (shouldRun && !this.timer) {
-			this.timer = setInterval(() => {
+			this.timer = window.setInterval(() => {
 				void this.rescan();
 			}, RESCAN_INTERVAL_MS);
 		} else if (!shouldRun && this.timer) {
-			clearInterval(this.timer);
+			window.clearInterval(this.timer);
 			this.timer = null;
 		}
 	}

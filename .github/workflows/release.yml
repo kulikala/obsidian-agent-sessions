@@ -10,6 +10,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      # For the build provenance attestation below.
+      id-token: write
+      attestations: write
     defaults:
       run:
         working-directory: plugin
@@ -24,6 +27,15 @@ jobs:
 
       - run: npm ci
       - run: npm run build
+
+      # Lets anyone verify the released files were built here, from this commit
+      # (`gh attestation verify main.js --repo kulikala/obsidian-agent-sessions`).
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            plugin/main.js
+            plugin/manifest.json
+            plugin/styles.css
 
       - name: Create release
         env:

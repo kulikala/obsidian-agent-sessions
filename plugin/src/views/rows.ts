@@ -69,7 +69,7 @@ export interface RenderRowOptions {
  * `SideView` itself, which imports `obsidian` eagerly.
  */
 export class DelayedRevert {
-	private timer: ReturnType<typeof setTimeout> | null = null;
+	private timer: number | null = null;
 
 	constructor(
 		private readonly ms: number,
@@ -79,7 +79,7 @@ export class DelayedRevert {
 	/** (Re)starts the delay — cancels any timer already pending first. */
 	schedule(): void {
 		this.cancel();
-		this.timer = setTimeout(() => {
+		this.timer = window.setTimeout(() => {
 			this.timer = null;
 			this.run();
 		}, this.ms);
@@ -88,7 +88,7 @@ export class DelayedRevert {
 	/** Stops a pending delay without calling `run`. A no-op if nothing is pending. */
 	cancel(): void {
 		if (this.timer !== null) {
-			clearTimeout(this.timer);
+			window.clearTimeout(this.timer);
 			this.timer = null;
 		}
 	}
@@ -235,17 +235,17 @@ export function formatRelativeTime(epochSeconds: number, now: number = Date.now(
  */
 export class RelativeTimeTicker {
 	private entries: { el: HTMLElement; epoch: number }[] = [];
-	private timer: ReturnType<typeof setInterval> | null = null;
+	private timer: number | null = null;
 
 	/** Starts the once-a-minute tick. Call once, from `onOpen`. */
 	start(): void {
-		this.timer = setInterval(() => this.tick(), 60000);
+		this.timer = window.setInterval(() => this.tick(), 60000);
 	}
 
 	/** Stops the tick — call from a `register()` cleanup so it doesn't outlive the view. */
 	stop(): void {
 		if (this.timer) {
-			clearInterval(this.timer);
+			window.clearInterval(this.timer);
 			this.timer = null;
 		}
 	}

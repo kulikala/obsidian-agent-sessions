@@ -55,7 +55,7 @@ function readStatus(statusDir: string, id: string): StatusInfo | null {
 /** Watches the `status/` directory. `get(id)` reads the file fresh every time (a single lightweight JSON file). */
 export class StatusLine extends EventEmitter {
 	private watcher: fs.FSWatcher | null = null;
-	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+	private debounceTimer: number | null = null;
 
 	constructor(
 		private statusDir: string,
@@ -96,9 +96,9 @@ export class StatusLine extends EventEmitter {
 
 	private scheduleRefresh(): void {
 		if (this.debounceTimer) {
-			clearTimeout(this.debounceTimer);
+			window.clearTimeout(this.debounceTimer);
 		}
-		this.debounceTimer = setTimeout(() => {
+		this.debounceTimer = window.setTimeout(() => {
 			this.debounceTimer = null;
 			this.refresh();
 		}, this.debounceMs);
@@ -108,7 +108,7 @@ export class StatusLine extends EventEmitter {
 		this.watcher?.close();
 		this.watcher = null;
 		if (this.debounceTimer) {
-			clearTimeout(this.debounceTimer);
+			window.clearTimeout(this.debounceTimer);
 			this.debounceTimer = null;
 		}
 	}

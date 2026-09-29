@@ -30,7 +30,7 @@ function readIds(dir: string): Set<string> {
 export class CompactedTracker extends EventEmitter {
 	private ids: Set<string>;
 	private watcher: fs.FSWatcher | null = null;
-	private debounceTimer: ReturnType<typeof setTimeout> | null = null;
+	private debounceTimer: number | null = null;
 
 	constructor(
 		private dir: string,
@@ -69,9 +69,9 @@ export class CompactedTracker extends EventEmitter {
 
 	private scheduleRefresh(): void {
 		if (this.debounceTimer) {
-			clearTimeout(this.debounceTimer);
+			window.clearTimeout(this.debounceTimer);
 		}
-		this.debounceTimer = setTimeout(() => {
+		this.debounceTimer = window.setTimeout(() => {
 			this.debounceTimer = null;
 			this.refresh();
 		}, this.debounceMs);
@@ -81,7 +81,7 @@ export class CompactedTracker extends EventEmitter {
 		this.watcher?.close();
 		this.watcher = null;
 		if (this.debounceTimer) {
-			clearTimeout(this.debounceTimer);
+			window.clearTimeout(this.debounceTimer);
 			this.debounceTimer = null;
 		}
 	}
