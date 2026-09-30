@@ -8,7 +8,7 @@ from .. import i18n
 # subcommand with no such module is "not implemented". The module's own name only
 # differs from the subcommand's for `json` (its module is `json_cmd`, so it doesn't
 # shadow the standard library's `json`).
-SUBCOMMANDS = ('daemon', 'json', 'attach', 'edit', 'hook', 'status', 'setup')
+SUBCOMMANDS = ('daemon', 'json', 'attach', 'edit', 'hook', 'status', 'setup', 'new', 'sessions', 'show', 'stats')
 _MODULE_NAMES = {'json': 'json_cmd'}
 
 

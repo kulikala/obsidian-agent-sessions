@@ -2,7 +2,9 @@ import json
 import os
 from typing import Optional
 
-RUNTIME_DIR = os.path.expanduser('~/.agents/sessions')
+# `AGENT_SESSIONS_RUNTIME_DIR` moves the whole runtime directory (socket, pid, log, ui.json,
+# vault.json, status files) -- how a scratch daemon and its clients are kept apart from the real one.
+RUNTIME_DIR = os.environ.get('AGENT_SESSIONS_RUNTIME_DIR') or os.path.expanduser('~/.agents/sessions')
 # Written by the plugin on load ({"vault": "<path>"}, atomically via tmp->rename).
 # How code outside Obsidian (the TUI, the CLI) learns where the vault is.
 VAULT_STATE_PATH = os.path.join(RUNTIME_DIR, 'vault.json')

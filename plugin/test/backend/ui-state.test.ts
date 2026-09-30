@@ -2,7 +2,8 @@ import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { writeUiState } from "../../src/backend/ui-state";
+import { DEFAULT_SETTINGS } from "../../src/settings";
+import { agentLaunchFor, writeUiState } from "../../src/backend/ui-state";
 
 describe("writeUiState", () => {
 	let dir: string;
@@ -76,5 +77,25 @@ describe("writeUiState", () => {
 		writeUiState(runtimeDir, "enter", "en", []);
 		const data = JSON.parse(readFileSync(join(runtimeDir, "ui.json"), "utf8"));
 		expect(data.agents).toEqual([]);
+	});
+
+	it("writes no agentLaunch unless given one", () => {
+		writeUiState(runtimeDir, "enter", "en", ["claude"]);
+		expect(JSON.parse(readFileSync(join(runtimeDir, "ui.json"), "utf8"))).not.toHaveProperty("agentLaunch");
+	});
+
+	it("mirrors each agent's path, parsed env and OpenCode's launch settings for `agent-sessions new`", () => {
+		const agents = structuredClone(DEFAULT_SETTINGS.agents);
+		agents.claude.path = "/opt/claude";
+		agents.codex.env = "# comment\nCODEX_HOME=/x/codex\nbad line\n";
+		agents.opencode.launchVia = "ollama";
+		agents.opencode.ollamaModel = "gemma";
+		writeUiState(runtimeDir, "enter", "en", ["claude"], true, agentLaunchFor(agents));
+		const data = JSON.parse(readFileSync(join(runtimeDir, "ui.json"), "utf8"));
+		expect(data.agentLaunch).toEqual({
+			claude: { path: "/opt/claude", env: {} },
+			codex: { path: "", env: { CODEX_HOME: "/x/codex" } },
+			opencode: { path: "", env: {}, launchVia: "ollama", ollamaModel: "gemma" },
+		});
 	});
 });
