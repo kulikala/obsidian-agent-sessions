@@ -20,6 +20,8 @@ beforeEach(() => {
 	tui = join(dir, "opencode", "tui.json");
 	backup = join(dir, "backup.json");
 	mkdirSync(join(dir, "opencode"));
+	// The status line's file, which `applyOpencodeTui` requires before it lists it in `plugin`.
+	writeFileSync(join(dir, "opencode", STATUS_LINE_PLUGIN_SPEC), "// status line\n");
 });
 afterEach(() => {
 	rmSync(dir, { recursive: true, force: true });
@@ -208,6 +210,12 @@ describe("editor_open", () => {
 });
 
 describe("the status line's plugin entry", () => {
+	it("is left out while the status line's file is missing", () => {
+		rmSync(join(dir, "opencode", STATUS_LINE_PLUGIN_SPEC));
+		applyOpencodeTui(tui, backup, "enter", "ctrl+g");
+		expect((read() as { plugin?: unknown }).plugin).toBeUndefined();
+	});
+
 	it("is added next to the user's own plugins and taken out again, leaving theirs", () => {
 		writeFileSync(tui, JSON.stringify({ plugin: ["acme-plugin", ["./mine.tsx", { a: 1 }]] }));
 		expect(applyOpencodeTui(tui, backup, "enter", "ctrl+g").status).toBe("written");
@@ -263,6 +271,8 @@ describe("syncOpencodeTui", () => {
 	it("moves to the new file when the config folder moves", () => {
 		syncOpencodeTui(tui, backup, "enter", "ctrl+g", true);
 		const other = join(dir, "other", "tui.json");
+		mkdirSync(join(dir, "other"));
+		writeFileSync(join(dir, "other", STATUS_LINE_PLUGIN_SPEC), "// status line\n");
 		expect(syncOpencodeTui(other, backup, "enter", "ctrl+g", true).status).toBe("written");
 		expect(existsSync(tui)).toBe(false);
 		expect(JSON.parse(readFileSync(other, "utf8"))).toEqual({ keybinds: { editor_open: "ctrl+g" }, ...line });

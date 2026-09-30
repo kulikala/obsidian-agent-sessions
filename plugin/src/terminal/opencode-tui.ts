@@ -312,7 +312,10 @@ export function applyOpencodeTui(filePath: string, backupPath: string, submitKey
 		restoreOpencodeTui(backupPath); // the config folder moved: hand the old file back first
 		backup = null;
 	}
-	return syncKeys(filePath, backupPath, backup, managedKeybinds(submitKey, editorKey), true);
+	// The status line's entry goes in only while its file is there: an entry naming a missing file
+	// would have OpenCode fail to load it.
+	const statusLine = fs.existsSync(path.join(path.dirname(filePath), STATUS_LINE_PLUGIN_SPEC));
+	return syncKeys(filePath, backupPath, backup, managedKeybinds(submitKey, editorKey), statusLine);
 }
 
 /**

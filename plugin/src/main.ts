@@ -262,8 +262,9 @@ export default class AgentSessionsPlugin extends Plugin {
 		// or the user wrote it by hand), bring the plugin's setting in line with it (without
 		// writing to keybindings.json itself).
 		await this.syncSubmitKeyFromKeybindings();
-		// OpenCode's tui.json carries the editor key whenever OpenCode is enabled.
-		this.syncOpencodeTui();
+		// OpenCode's plugin files follow the program (content only rewritten when it differs), then
+		// its tui.json carries the editor key and — once its file exists — the status line's entry.
+		void this.refreshOpencodeFiles();
 		this.syncUiState();
 		this.syncVaultState();
 
@@ -764,14 +765,11 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 		try {
 			this.bundled = writeBundle(info.dir, BACKEND_FILES, BACKEND_VERSION, info.python);
-			// The status plugin's content ships inside the program, so an updated program means
-			// an updated plugin file too — but only one that is already there; a silent refresh
-			// never creates it.
-			void this.installOpencodePlugin({ mode: "update-only" });
+			// OpenCode's plugin files ship inside the program too; `refreshOpencodeFiles`, which runs
+			// right after this on every load, brings them up to it.
 			// The skill ships in the program too, so it is written again with the new text (created if
 			// it is missing: the skill is part of the program, not an extra).
 			void this.installAgentSkills();
-			this.syncOpencodeTui();
 		} catch (err) {
 			console.warn("agent-sessions: couldn't update the installed program", err);
 		}
@@ -820,6 +818,15 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * when there was nothing to run (no installed program; `install`/`update-only` with OpenCode
 	 * disabled) or the run failed.
 	 */
+	/** Brings OpenCode's status plugin and status line files up to the program's version (when
+	 * OpenCode is enabled), then syncs tui.json against the files actually present. */
+	private async refreshOpencodeFiles(): Promise<void> {
+		if (this.settings.agents.opencode.enabled) {
+			await this.installOpencodePlugin({ mode: "update-only" });
+		}
+		this.syncOpencodeTui();
+	}
+
 	async installOpencodePlugin(
 		opts: { mode?: OpencodePluginMode; notify?: boolean; program?: string } = {}
 	): Promise<OpencodePluginStatus | null> {
@@ -1974,9 +1981,11 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 						// and take it away again when it's disabled (it would keep writing status
 						// files for an agent nobody is tracking).
 						if (id === "opencode") {
-							void this.plugin.installOpencodePlugin({ mode: value ? "install" : "remove", notify: true });
-							// Its tui.json submit-key keybinds follow the same switch.
-							this.plugin.syncOpencodeTui();
+							// Its tui.json keybinds and status line entry follow the same switch, once the
+							// files are in place (or gone).
+							void this.plugin
+								.installOpencodePlugin({ mode: value ? "install" : "remove", notify: true })
+								.then(() => this.plugin.syncOpencodeTui());
 						}
 						// The skill follows the enabled agents (a disabled agent's copy goes).
 						void this.plugin.installAgentSkills({ notify: true });
