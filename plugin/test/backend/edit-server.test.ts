@@ -184,6 +184,7 @@ describe("editReplyFor / submitsAfterEdit", () => {
 		expect(submitsAfterEdit("/v/CLAUDE.md", "claude")).toBe(false);
 		expect(submitsAfterEdit("/tmp/claude-prompt-dir/notes.md", "claude")).toBe(false);
 		expect(submitsAfterEdit("/var/folders/x/T/1790736238428.md", "opencode")).toBe(true);
+		expect(submitsAfterEdit("/v/.codex/editor/.tmpAbC123.md", "codex")).toBe(true);
 	});
 
 	it("over the socket, send/return arrive as ok:true and cancel arrives as ok:false with error:cancel", async () => {
