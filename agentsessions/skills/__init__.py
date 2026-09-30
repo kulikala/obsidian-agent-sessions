@@ -13,9 +13,11 @@ enabled agent of those two gets its own folder; OpenCode reads all three, so it 
 own only when it is the sole agent (and a name found in two folders is listed once).
 
 Every file written carries a marker. A skill folder whose `SKILL.md` lacks it is somebody else's and
-is never overwritten or removed. The bodies name the launcher by the path given at install time.
+is never overwritten or removed. The text is rendered for the enabled agents (only they are named; `render`) and names the launcher by
+the path given at install time, so every copy is rewritten when the set of agents changes.
 """
 import os
+import re
 from typing import List, Optional, Tuple
 
 from .. import i18n
@@ -59,10 +61,74 @@ def wanted_dirs(agents: List[str]) -> List[str]:
     return out
 
 
-def render(name: str, launcher: str) -> str:
-    """`name`'s `SKILL.md`: the template with the marker and the launcher filled in."""
+AGENT_NAMES = (('claude', 'Claude Code'), ('codex', 'Codex'), ('opencode', 'OpenCode'))
+_DIRECTIVE = re.compile(r'^\{\{(if (?P<cond>[^}]+)|endif)\}\}$')
+_INLINE_IF = re.compile(r'\{\{if (?P<cond>[^}]+)\}\}(?P<body>.*?)\{\{endif\}\}')
+
+
+def _join(words: List[str]) -> str:
+    if len(words) <= 1:
+        return ''.join(words)
+    return ', '.join(words[:-1]) + ' or ' + words[-1]
+
+
+def _facts(agents: List[str]) -> dict:
+    """What the template's conditions and tokens are made of, for the enabled `agents`
+    (none given = all three, so a rendering is always complete)."""
+    ids = [a for a, _ in AGENT_NAMES if a in agents] or [a for a, _ in AGENT_NAMES]
+    names = dict(AGENT_NAMES)
+    multi = len(ids) > 1
+    windows = 'claude' in ids or 'codex' in ids
+    late = [names[a] for a in ids if a in ('codex', 'opencode')]
+    conds = {a: a in ids for a, _ in AGENT_NAMES}
+    conds.update(multi=multi, windows=windows, late=bool(late))
+    tokens = {
+        'NAMES': _join([names[a] for a in ids]),
+        'IDS': '|'.join(ids),
+        'LATE': _join(late),
+        'AGENTS_WORD': 'agents, ' if multi else '',
+        'AGENT_WORD': 'agent, ' if multi else '',
+        'PER_AGENT': ' per agent' if multi else '',
+        'USAGE': (('the 5-hour and 7-day windows%s, and ' % (' per agent' if multi else '')) if windows else '')
+        + 'the tokens, cost and tools of a session',
+        'ASKS': 'usage, limits, quota or cost' if windows else 'usage or cost',
+    }
+    return {'conds': conds, 'tokens': tokens}
+
+
+def _holds(cond: str, conds: dict) -> bool:
+    """`a&b|!c`: `&` binds tighter than `|`; `!` negates a name."""
+    def term(t: str) -> bool:
+        t = t.strip()
+        return not conds[t[1:]] if t.startswith('!') else conds[t]
+    return any(all(term(t) for t in alt.split('&')) for alt in cond.split('|'))
+
+
+def render(name: str, launcher: str, agents: Optional[List[str]] = None) -> str:
+    """`name`'s `SKILL.md`: the template with the marker, the launcher and the text for the enabled
+    `agents` filled in. A line `{{if cond}}` ... `{{endif}}` is kept when the condition holds
+    (names: `claude`, `codex`, `opencode`, `multi` = several agents, `windows` = an agent with
+    5-hour/7-day windows, `late` = an agent that records a session after its first message); a
+    `{{if cond}}...{{endif}}` inside a line is kept or dropped the same way."""
     with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), name, SKILL_FILE), encoding='utf-8') as f:
         text = f.read()
+    facts = _facts(list(agents or []))
+    conds, tokens = facts['conds'], facts['tokens']
+    out: List[str] = []
+    stack: List[bool] = []
+    for line in text.split('\n'):
+        m = _DIRECTIVE.match(line)
+        if m:
+            if m.group('cond'):
+                stack.append(_holds(m.group('cond'), conds))
+            else:
+                stack.pop()
+            continue
+        if all(stack):
+            out.append(_INLINE_IF.sub(lambda i: i.group('body') if _holds(i.group('cond'), conds) else '', line))
+    text = '\n'.join(out)
+    for key, value in tokens.items():
+        text = text.replace('{{%s}}' % key, value)
     return text.replace('{{MARKER}}', MARKER).replace('{{LAUNCHER}}', launcher)
 
 
@@ -86,8 +152,8 @@ def _write(path: str, text: str) -> None:
     os.replace(tmp, path)
 
 
-def _files_of(name: str, base: str, launcher: str) -> List[Tuple[str, str]]:
-    return [(os.path.join(base, name, SKILL_FILE), render(name, launcher))]
+def _files_of(name: str, base: str, launcher: str, agents: List[str]) -> List[Tuple[str, str]]:
+    return [(os.path.join(base, name, SKILL_FILE), render(name, launcher, agents))]
 
 
 def install(vault: str, agents: List[str], launcher: Optional[str] = None,
@@ -107,7 +173,7 @@ def install(vault: str, agents: List[str], launcher: Optional[str] = None,
             changes.extend(_remove_dir(vault, base, dry_run))
             continue
         for name in SKILL_NAMES:
-            for rel, text in _files_of(name, base, launcher):
+            for rel, text in _files_of(name, base, launcher, agents):
                 path = os.path.join(vault, rel)
                 existing = _read(path)
                 if existing is not None and not _managed(existing):

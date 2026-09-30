@@ -90,6 +90,70 @@ class TestTemplates(unittest.TestCase):
         self.assertTrue(os.path.exists(os.path.expandvars(launcher.replace('$HOME', os.path.expanduser('~')))))
 
 
+class TestRenderedForAgents(unittest.TestCase):
+    NAMES = {'claude': 'Claude Code', 'codex': 'Codex', 'opencode': 'OpenCode'}
+
+    def combos(self):
+        import itertools
+        for n in (1, 2, 3):
+            for c in itertools.combinations(('claude', 'codex', 'opencode'), n):
+                yield list(c)
+
+    def test_there_are_seven_combinations(self):
+        self.assertEqual(len(list(self.combos())), 7)
+
+    def test_each_text_names_exactly_the_enabled_agents(self):
+        for agents in self.combos():
+            text = skills.render('agent-sessions', LAUNCHER, agents)
+            self.assertNotIn('{{', text, agents)
+            for a, name in self.NAMES.items():
+                self.assertEqual(name in text, a in agents, (agents, name))
+            head = text.split('---\n')[1]
+            for a, name in self.NAMES.items():
+                self.assertEqual(name in head, a in agents, (agents, name, 'description'))
+
+    def test_the_agent_flag_lists_the_enabled_ids_and_is_left_out_for_one_agent(self):
+        for agents in self.combos():
+            text = skills.render('agent-sessions', LAUNCHER, agents)
+            if len(agents) == 1:
+                self.assertNotIn('--agent', text, agents)
+                self.assertNotIn("own agent", text, agents)
+            else:
+                self.assertEqual(re.findall(r'--agent ([a-z|]+)\]', text), ['|'.join(agents)] * 2, agents)
+
+    def test_the_notes_appear_only_with_their_agent(self):
+        for agents in self.combos():
+            text = skills.render('agent-sessions', LAUNCHER, agents)
+            self.assertEqual('--remote-control' in text, 'claude' in agents, agents)
+            self.assertEqual('Remote Control URL' in text, 'claude' in agents, agents)
+            self.assertEqual('cannot be named at launch' in text, 'codex' in agents, agents)
+            self.assertEqual('recorded only after its first message' in text,
+                             'codex' in agents or 'opencode' in agents, agents)
+            self.assertEqual('OpenCode has no usage windows' in text, 'opencode' in agents, agents)
+
+    def test_stats_is_offered_only_where_an_agent_has_windows(self):
+        for agents in self.combos():
+            text = skills.render('agent-sessions', LAUNCHER, agents)
+            windows = 'claude' in agents or 'codex' in agents
+            self.assertEqual('" stats' in text, windows, agents)
+            self.assertEqual('5-hour' in text, windows, agents)
+            self.assertEqual('per agent' in text, windows and len(agents) > 1, agents)
+        self.assertIn('tokens, cost and tools', skills.render('agent-sessions', LAUNCHER, ['opencode']))
+
+    def test_the_late_agents_are_named_as_they_are_enabled(self):
+        self.assertIn('With Codex the session', skills.render('agent-sessions', LAUNCHER, ['claude', 'codex']))
+        self.assertIn('With Codex or OpenCode the', skills.render('agent-sessions', LAUNCHER, ['codex', 'opencode']))
+        self.assertIn('With OpenCode the', skills.render('agent-sessions', LAUNCHER, ['claude', 'opencode']))
+
+    def test_every_command_in_every_text_exists(self):
+        for agents in self.combos():
+            for cmd in re.findall(r'"%s" (\w+)' % re.escape(LAUNCHER), skills.render('agent-sessions', LAUNCHER, agents)):
+                self.assertIn(cmd, SUBCOMMANDS)
+
+    def test_no_agents_given_renders_for_all_three(self):
+        self.assertEqual(skills.render('agent-sessions', LAUNCHER), skills.render('agent-sessions', LAUNCHER, ['claude', 'codex', 'opencode']))
+
+
 class TestInstall(SkillsTestCase):
     def test_installs_into_the_folders_of_the_enabled_agents_only(self):
         status, changes = skills.install(self.vault, ['claude', 'codex'], LAUNCHER)
@@ -121,6 +185,31 @@ class TestInstall(SkillsTestCase):
         skills.install(self.vault, ['claude'], LAUNCHER)
         self.assertEqual(self.files(), sorted('%s/%s/SKILL.md' % (CLAUDE, n) for n in skills.SKILL_NAMES))
         self.assertFalse(os.path.exists(self.path('.agents')))
+
+    def test_a_changed_set_rewrites_every_installed_copy(self):
+        skills.install(self.vault, ['claude', 'codex', 'opencode'], LAUNCHER)
+        for base in (CLAUDE, CODEX):
+            text = read(self.path(base, 'agent-sessions', 'SKILL.md'))
+            self.assertIn('OpenCode', text)
+        status, changes = skills.install(self.vault, ['claude', 'codex'], LAUNCHER)
+        self.assertEqual(status, skills.UPDATED)
+        self.assertEqual(len(changes), 2)
+        for base in (CLAUDE, CODEX):
+            text = read(self.path(base, 'agent-sessions', 'SKILL.md'))
+            self.assertNotIn('OpenCode', text)
+            self.assertIn('Codex', text)
+        self.assertEqual(skills.install(self.vault, ['claude', 'codex'], LAUNCHER)[0], skills.UNCHANGED)
+        status, _ = skills.install(self.vault, ['claude'], LAUNCHER)
+        self.assertEqual(status, skills.UPDATED)
+        self.assertNotIn('Codex', read(self.path(CLAUDE, 'agent-sessions', 'SKILL.md')))
+        self.assertFalse(os.path.exists(self.path('.agents')))
+
+    def test_an_unchanged_copy_is_not_rewritten_when_only_the_other_changes(self):
+        skills.install(self.vault, ['claude', 'codex'], LAUNCHER)
+        path = self.path(CLAUDE, 'agent-sessions', 'SKILL.md')
+        os.utime(path, (1, 1))
+        skills.install(self.vault, ['claude', 'codex'], LAUNCHER)
+        self.assertEqual(os.stat(path).st_mtime, 1)
 
     def test_opencode_alone_moves_to_its_own_folder(self):
         skills.install(self.vault, ['claude'], LAUNCHER)
