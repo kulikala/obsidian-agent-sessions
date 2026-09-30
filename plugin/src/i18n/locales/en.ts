@@ -86,10 +86,10 @@ export const en = {
 	"notice.scanFailed": "Failed to scan sessions: {message}",
 	"notice.idCopied": "Copied the ID",
 	"notice.matchedKeybindings": "Matched keybindings.json",
-	"notice.keybindingsWritten": "Updated Claude Code's submit key setting",
-	"notice.keybindingsUnchanged": "Claude Code's submit key setting is already up to date",
-	"notice.codexConfigWritten": "Updated Codex's submit key setting",
-	"notice.opencodeTuiWritten": "Updated OpenCode's submit key setting",
+	"notice.keybindingsWritten": "Updated Claude Code's key settings",
+	"notice.keybindingsUnchanged": "Claude Code's key settings are already up to date",
+	"notice.codexConfigWritten": "Updated Codex's key settings",
+	"notice.opencodeTuiWritten": "Updated OpenCode's key settings",
 	"notice.opencodeTuiRestored": "Restored OpenCode's own key settings",
 	"notice.opencodePluginInstalled": "Installed OpenCode's status plugin",
 	"notice.opencodePluginUpdated": "Updated OpenCode's status plugin",
@@ -137,7 +137,7 @@ export const en = {
 	"settings.agentSessionsPath.name": "agent-sessions location",
 	"settings.agentSessionsPath.desc": "Leave empty to use ~/bin/agent-sessions if it exists, otherwise the copy installed from this plugin.",
 	"settings.editorHeight.name": "Editor pane height (%)",
-	"settings.editorHeight.desc": "Height of the built-in editor opened with Ctrl+G.",
+	"settings.editorHeight.desc": "Height of the built-in editor pane.",
 	"settings.scrollback.name": "Scrollback lines",
 	"settings.language.name": "Language",
 	"settings.language.optionAuto": "Auto",
@@ -153,7 +153,16 @@ export const en = {
 	"confirm.writeKeybindings.messageWithCodex":
 		"To make Enter insert a newline, this updates the settings of Claude Code (~/.claude/keybindings.json) and Codex (~/.codex/config.toml). The change also applies to claude and codex outside Obsidian, where Alt (Option)+Enter sends.",
 	"confirm.writeKeybindings.opencodeNote":
-		" It also sets the submit and newline keys in OpenCode's tui.json (its other settings stay as they are); opencode outside Obsidian then submits with Ctrl+J. Your previous values come back when you return to Enter or remove Agent Sessions.",
+		" It also sets the submit, newline and editor keys in OpenCode's tui.json (its other settings stay as they are); opencode outside Obsidian then submits with Ctrl+J. Your previous values come back when you return to Enter, turn OpenCode off or remove Agent Sessions.",
+	"settings.editorKey.name": "Editor key",
+	"settings.editorKey.desc":
+		"The key that opens the agent's editor — the built-in editor pane. Ctrl+G is Claude Code's and Codex's own key; other choices are written into each agent's settings. OpenCode's tui.json always carries this key, since its own is Ctrl+X, E.",
+	"confirm.writeEditorKey.message":
+		"To open the editor with {key}, this updates Claude Code's settings (~/.claude/keybindings.json), where Ctrl+G then no longer opens it. The change also applies to claude outside Obsidian.",
+	"confirm.writeEditorKey.messageWithCodex":
+		"To open the editor with {key}, this updates the settings of Claude Code (~/.claude/keybindings.json) and Codex (~/.codex/config.toml), where Ctrl+G then no longer opens it. The change also applies to claude and codex outside Obsidian.",
+	"confirm.writeEditorKey.opencodeNote":
+		" It also sets the editor key in OpenCode's tui.json (its other settings stay as they are); opencode outside Obsidian then opens its editor with {key} instead of Ctrl+X, E. Your previous value comes back when you turn OpenCode off or remove Agent Sessions.",
 	"settings.submitKeyMismatch.name": "Doesn't match Claude Code's settings",
 	"settings.submitKeyMismatch.desc": "keybindings.json doesn't match this submit key.",
 
@@ -360,7 +369,7 @@ export const en = {
 	// ---- terminal/codex-config.ts ----
 	"error.codexConfigUnreadable": "Can't read {path}. Please fix it by hand.",
 	"error.opencodeTuiUnreadable": "Can't read or write {path}. Please fix it by hand.",
-	"error.opencodeTuiNotJson": "{path} isn't plain JSON (comments or trailing commas?), so it was left unchanged. OpenCode's submit key needs its \"keybinds\" set by hand.",
+	"error.opencodeTuiNotJson": "{path} isn't plain JSON (comments or trailing commas?), so it was left unchanged. OpenCode's submit and editor keys need its \"keybinds\" set by hand.",
 	"error.codexConfigMalformed": "{path} isn't valid TOML, so it was left unchanged. Please fix it by hand.",
 	"warning.codexConfigManualFix": "{keys} already has a value you set yourself, so it was left unchanged.",
 

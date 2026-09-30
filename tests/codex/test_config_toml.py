@@ -119,6 +119,22 @@ class TestComputeRemoval(unittest.TestCase):
         self.assertEqual(new_text, '')
 
 
+class TestEditorKeyLines(unittest.TestCase):
+    def test_the_editor_key_line_and_its_table_header_are_removed(self):
+        text = (
+            '[tui]\nstatus_line = ["a"]\n\n'
+            '[tui.keymap.global] # managed by Agent Sessions\n'
+            'open_external_editor = "ctrl-q" # managed by Agent Sessions\n'
+        )
+        new_text, changed = config_toml.compute_removal(text)
+        self.assertTrue(changed)
+        self.assertEqual(new_text, '[tui]\nstatus_line = ["a"]\n\n')
+
+    def test_a_users_own_open_external_editor_is_kept(self):
+        text = '[tui.keymap.global]\nopen_external_editor = "ctrl-o"\n'
+        self.assertEqual(config_toml.compute_removal(text), (text, False))
+
+
 class TestRemoveManagedLines(ConfigTomlTestBase):
     def test_missing_file_is_a_no_op(self):
         changed, message = config_toml.remove_managed_lines(self.path)

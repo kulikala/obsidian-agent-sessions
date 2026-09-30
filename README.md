@@ -41,10 +41,10 @@ Run and manage [Claude Code](https://claude.com/claude-code), [Codex](https://gi
 - **Reads and writes files outside the vault**, because that is where the agents and the program keep their state:
   - reads Claude Code's `~/.claude/projects/`, `~/.claude/sessions/`, and `~/.claude/settings.json`, Codex's `~/.codex/` (or `$CODEX_HOME`), and OpenCode's database `~/.local/share/opencode/opencode.db` (or under `$XDG_DATA_HOME`; opened read-only), to list sessions and compute usage;
   - writes `~/.agents/sessions/` (the daemon's socket, logs, status snapshots, caches);
-  - installing the program writes it to a folder in your home directory (see [Installation](#installation)); the install and `install.sh` add hooks and a `statusLine` to `~/.claude/settings.json` (backed up first); changing the submit-key setting writes `~/.claude/keybindings.json`;
-  - with Codex enabled, adds its submit-key keymap and a default `[tui].status_line` to `~/.codex/config.toml` (backed up first; each line it adds is marked, and `agent-sessions setup --remove` takes exactly those out);
+  - installing the program writes it to a folder in your home directory (see [Installation](#installation)); the install and `install.sh` add hooks and a `statusLine` to `~/.claude/settings.json` (backed up first); changing the submit-key or editor-key setting writes `~/.claude/keybindings.json`;
+  - with Codex enabled, adds its submit-key keymap, its editor-key line (`open_external_editor`, only for an editor key other than Ctrl+G) and a default `[tui].status_line` to `~/.codex/config.toml` (backed up first; each line it adds is marked, and `agent-sessions setup --remove` takes exactly those out);
   - with OpenCode enabled, writes a status plugin, `~/.config/opencode/plugins/agent-sessions.js` (or under `$XDG_CONFIG_HOME`), and the plugin writes one status file per session under `~/.agents/sessions/opencode/`. The plugin file starts with a marker line; only a file carrying it is ever overwritten, and Remove (Settings → agent-sessions program) or `agent-sessions setup --remove` deletes it, as does turning OpenCode off in the plugin's settings; the installer's dialog lists this file when OpenCode is enabled, and a routine update of the program only refreshes a plugin file that is already there;
-  - with OpenCode enabled and a submit key other than Enter, sets `keybinds.input_submit` and `keybinds.input_newline` in OpenCode's `~/.config/opencode/tui.json` (or under `$XDG_CONFIG_HOME`) so that Return inserts a newline; no other key is touched, and a file that isn't plain JSON is left alone. Your previous values are kept in `~/.agents/sessions/opencode-tui-backup.json` and put back when you return to Enter, turn OpenCode off, or Remove (`agent-sessions setup --remove` does the same);
+  - with OpenCode enabled, sets `keybinds.editor_open` (the editor key; OpenCode's own is Ctrl+X, E) in OpenCode's `~/.config/opencode/tui.json` (or under `$XDG_CONFIG_HOME`), and, with a submit key other than Enter, `keybinds.input_submit` and `keybinds.input_newline` so that Return inserts a newline; no other key is touched, and a file that isn't plain JSON is left alone. Your previous values are kept in `~/.agents/sessions/opencode-tui-backup.json` and put back when you turn OpenCode off or Remove, and the submit keys when you return to Enter (`agent-sessions setup --remove` does the same);
   - the built-in editor edits the temporary file the agent hands to `$VISUAL`.
 - **Sessions not listed.** OpenCode sub-agent sessions and sessions started by `opencode run` are not listed.
 - **Lists the vault's files** only to complete `@` file paths in the built-in editor.
@@ -85,6 +85,8 @@ To install the plugin itself from source too, build it and give `install.sh` you
 
 Changing the **submit key** setting away from the default (Enter) additionally makes the plugin write to `~/.claude/keybindings.json` (the `Chat` context) so that Claude Code's own keybindings match — this affects Claude Code everywhere, including sessions started outside Obsidian (only this plugin's own terminal tabs are guaranteed to send the chosen key reliably, though; whether a terminal app elsewhere can even tell it apart from plain Enter depends on that terminal). Reverting the setting removes the keys the plugin manages for this setting.
 
+The same goes for the **editor key** (default Ctrl+G; Ctrl+Q and Option/Alt+G are the other choices — keys that Claude Code, Codex and OpenCode all leave free): Claude Code and Codex already open their editor on Ctrl+G, so nothing is written for the default. For another key the plugin binds it to `chat:externalEditor` in `~/.claude/keybindings.json` (freeing Ctrl+G there) and sets `open_external_editor` under `[tui.keymap.global]` in `~/.codex/config.toml`; this also applies to those agents outside Obsidian. OpenCode's default is a different key (Ctrl+X, E), so with OpenCode enabled its `tui.json` always carries the editor key, Ctrl+G included.
+
 Once the plugin has started at least once, the `agent-sessions` CLI can be run from outside Obsidian without repeating the vault path: it reads the vault location from `~/.agents/sessions/vault.json`, which the plugin keeps up to date.
 
 ## Usage
@@ -94,7 +96,7 @@ Once the plugin has started at least once, the `agent-sessions` CLI can be run f
 | Side panel (right sidebar) | New session, open the Session Manager, settings. A list split into *open tabs*, *running* (attached to the daemon but no tab), and *recent*; each row shows a state icon, a category chip, and the name. With no sessions at all yet, shows a "New session" button instead (or a link to settings, if no agent is available). A details pane (model, effort, connection status, context usage, total tokens/cost, last prompt/response). A rate-limit view with a 5‑hour/7‑day pair of bars and a countdown to reset for each enabled agent. |
 | Session Manager | The default view for a new tab. A session tree (grouped by category, plus an "Other" group and an archive), and a collapsible/resizable analytics panel below it: 5‑hour/7‑day usage cards, a weekly-pace projection, and a per-category cost bar — one section per enabled agent when more than one is enabled. Opening it never starts a session. |
 | Terminal tab | One session (Claude Code, Codex, or OpenCode) per tab. Header actions: insert the current note as `@path`, jump to the previous/next prompt or the last response. `Cmd +`/`Cmd -`/`Cmd 0` (macOS) or `Ctrl+Shift+=`/`Ctrl+Shift+-`/`Ctrl+Shift+0` (other platforms) change the tab's font size. On non-macOS, `Ctrl+Shift+C`/`Ctrl+Shift+V` copy the selection and paste, `Ctrl+Shift+W` closes the tab, and `Ctrl+Shift+P` opens the command palette; plain `Ctrl+<key>` combos (`Ctrl+C`, `Ctrl+G`, `Ctrl+W`, `Ctrl+P`, …) always reach the agent, not Obsidian. The submit-key setting and Enter interception apply to every tab: each agent's own keymap is adjusted to match (Claude Code's `keybindings.json`, Codex's `config.toml`, OpenCode's `tui.json` — see Disclosures), and plain Enter still confirms slash-command and file popups. Paths printed in the output are clickable if they resolve inside the vault. |
-| Ctrl+G (built-in editor) | Opens a split editing pane under the terminal for the file the agent would otherwise hand to `$VISUAL`. In OpenCode tabs Ctrl+G sends OpenCode's own editor chord (Ctrl+X, E). Supports `@`-file completion, autosave, and native paste/IME/undo. "Send" submits immediately for prompt edits; Esc returns to the input without sending. |
+| Editor key, Ctrl+G by default (built-in editor) | Opens a split editing pane under the terminal for the file the agent would otherwise hand to `$VISUAL`. The key is the **editor key** setting; each agent is configured to open its editor on it. Supports `@`-file completion, autosave, and native paste/IME/undo. "Send" submits immediately for prompt edits; Esc returns to the input without sending. |
 | Row menu (⋯ / right-click) | Rename, move to category (a single field, with a dropdown of existing categories and free-form entry for a new one — disabled until the session has a name or a first prompt to attach a category to), compress (`/compact`), view session analysis, archive/unarchive, end session, copy ID. |
 | Session analysis | From the row menu: cost, tokens, turn count, and duration cards; input/output/tool-use bars; a turn-by-turn table. Click rows to select a range; copy the result as Markdown. |
 
@@ -108,7 +110,7 @@ A small icon next to the state mark shows which agent a session belongs to (Clau
 
 ## Settings
 
-Font family and size, padding (comfortable/compact/none), submit key, recent-sessions count, idle notifications, agents (Claude Code/Codex/OpenCode — enabled, path, environment variables; for OpenCode also whether to start it directly or through `ollama launch opencode`, and the Ollama model to use, chosen from `ollama list` or typed in), path to `agent-sessions`, terminal scrollback, built-in editor height, display language (auto/Japanese/English), and the saved heights of the side panel's details pane and the manager's analytics panel.
+Font family and size, padding (comfortable/compact/none), submit key, editor key, recent-sessions count, idle notifications, agents (Claude Code/Codex/OpenCode — enabled, path, environment variables; for OpenCode also whether to start it directly or through `ollama launch opencode`, and the Ollama model to use, chosen from `ollama list` or typed in), path to `agent-sessions`, terminal scrollback, built-in editor height, display language (auto/Japanese/English), and the saved heights of the side panel's details pane and the manager's analytics panel.
 
 ## Troubleshooting
 
@@ -138,7 +140,7 @@ See [`docs/design.md`](docs/design.md) for the full design and [`docs/requiremen
 
 ## Uninstall
 
-If you installed the program from the plugin, remove it under **Settings → agent-sessions program → Remove** first: that stops the daemon (ending running sessions), takes its hooks and `statusLine` out of `~/.claude/settings.json`, its lines out of `~/.codex/config.toml`, its submit-key keybinds out of `~/.config/opencode/tui.json`, and its status plugin out of `~/.config/opencode/plugins/`, and deletes its folder. Then disable and remove **Agent Sessions** from Obsidian's Community plugins.
+If you installed the program from the plugin, remove it under **Settings → agent-sessions program → Remove** first: that stops the daemon (ending running sessions), takes its hooks and `statusLine` out of `~/.claude/settings.json`, its lines out of `~/.codex/config.toml`, its submit-key and editor-key keybinds out of `~/.config/opencode/tui.json`, and its status plugin out of `~/.config/opencode/plugins/`, and deletes its folder. Then disable and remove **Agent Sessions** from Obsidian's Community plugins.
 
 If you installed from a clone:
 
@@ -150,8 +152,8 @@ If you installed from a clone:
 `uninstall.sh` stops the daemon (asking for confirmation first if any session is still
 running — pass `--force` to skip that), removes the hooks and `statusLine` it added to
 `~/.claude/settings.json` (backing that file up first, the same way `install.sh` does),
-removes the `enter`/`meta+enter` entries it may have added under `Chat` in
-`~/.claude/keybindings.json` (only if you changed the submit key away from Enter), and
+removes the `enter`/`meta+enter` entries (submit key) and the `chat:externalEditor` entry with its freed `ctrl+g` (editor key) it may have added under `Chat` in
+`~/.claude/keybindings.json` (only if you changed those keys away from their defaults), and
 removes the `~/bin/agent-sessions` and `~/bin/agent-sessions-code` symlinks and, given a
 vault, `<vault>/.obsidian/plugins/agent-sessions` (a path that isn't actually a symlink is
 left in place with a note, in case you replaced it by hand). It leaves other tools'

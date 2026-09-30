@@ -30,7 +30,7 @@ class KeybindingsTestBase(unittest.TestCase):
 
 class TestMissingFile(KeybindingsTestBase):
     def test_missing_file_is_a_no_op(self):
-        changed, warning = keybindings.remove_enter_keys(self.path)
+        changed, warning = keybindings.remove_managed_keys(self.path)
         self.assertFalse(changed)
         self.assertIsNone(warning)
         self.assertFalse(os.path.exists(self.path))
@@ -39,7 +39,7 @@ class TestMissingFile(KeybindingsTestBase):
 class TestBrokenFile(KeybindingsTestBase):
     def test_invalid_json_is_left_untouched(self):
         self._write_text('{not json')
-        changed, warning = keybindings.remove_enter_keys(self.path)
+        changed, warning = keybindings.remove_managed_keys(self.path)
         self.assertFalse(changed)
         self.assertIsNotNone(warning)
         with open(self.path, encoding='utf-8') as f:
@@ -47,7 +47,7 @@ class TestBrokenFile(KeybindingsTestBase):
 
     def test_missing_bindings_array_is_left_untouched(self):
         self._write({'foo': 'bar'})
-        changed, warning = keybindings.remove_enter_keys(self.path)
+        changed, warning = keybindings.remove_managed_keys(self.path)
         self.assertFalse(changed)
         self.assertIsNotNone(warning)
 
@@ -59,7 +59,7 @@ class TestRemoval(KeybindingsTestBase):
                 {'context': 'Chat', 'bindings': {'enter': 'chat:newline', 'meta+enter': 'chat:submit'}},
             ],
         })
-        changed, warning = keybindings.remove_enter_keys(self.path)
+        changed, warning = keybindings.remove_managed_keys(self.path)
         self.assertTrue(changed)
         self.assertIsNone(warning)
         data = self._read()
@@ -79,7 +79,7 @@ class TestRemoval(KeybindingsTestBase):
                 }},
             ],
         })
-        changed, warning = keybindings.remove_enter_keys(self.path)
+        changed, warning = keybindings.remove_managed_keys(self.path)
         self.assertTrue(changed)
         self.assertIsNone(warning)
         data = self._read()
@@ -93,7 +93,7 @@ class TestRemoval(KeybindingsTestBase):
                 {'context': 'Chat', 'bindings': {'enter': 'chat:newline', 'shift+enter': 'chat:submit'}},
             ],
         })
-        changed, warning = keybindings.remove_enter_keys(self.path)
+        changed, warning = keybindings.remove_managed_keys(self.path)
         self.assertTrue(changed)
         self.assertIsNone(warning)
         data = self._read()
@@ -108,11 +108,50 @@ class TestRemoval(KeybindingsTestBase):
                 }},
             ],
         })
-        changed, warning = keybindings.remove_enter_keys(self.path)
+        changed, warning = keybindings.remove_managed_keys(self.path)
         self.assertTrue(changed)   # enter/meta+enter still removed
         self.assertIn('ctrl+enter', warning)
         data = self._read()
         self.assertEqual(data['bindings'][0]['bindings'], {'ctrl+enter': 'chat:externalEditor'})
+
+    def test_removes_the_editor_key_entries_but_not_a_ctrl_g_the_user_bound_elsewhere(self):
+        self._write({
+            'bindings': [
+                {'context': 'Chat', 'bindings': {'ctrl+q': 'chat:externalEditor', 'ctrl+g': None}},
+                {'context': 'Global', 'bindings': {'ctrl+k': 'app:redraw'}},
+            ],
+        })
+        changed, warning = keybindings.remove_managed_keys(self.path)
+        self.assertTrue(changed)
+        self.assertIsNone(warning)
+        self.assertEqual(self._read()['bindings'], [{'context': 'Global', 'bindings': {'ctrl+k': 'app:redraw'}}])
+
+    def test_meta_g_is_the_editor_key_too(self):
+        self._write({'bindings': [{'context': 'Chat', 'bindings': {'meta+g': 'chat:externalEditor', 'ctrl+g': None,
+                                                                    'enter': 'chat:newline', 'meta+enter': 'chat:submit'}}]})
+        changed, warning = keybindings.remove_managed_keys(self.path)
+        self.assertTrue(changed)
+        self.assertEqual(self._read()['bindings'], [])
+
+    def test_a_ctrl_g_bound_to_another_action_stays_without_a_warning(self):
+        self._write({'bindings': [{'context': 'Chat', 'bindings': {'ctrl+g': 'chat:stash', 'ctrl+q': 'chat:externalEditor'}}]})
+        changed, warning = keybindings.remove_managed_keys(self.path)
+        self.assertTrue(changed)
+        self.assertIsNone(warning)
+        self.assertEqual(self._read()['bindings'][0]['bindings'], {'ctrl+g': 'chat:stash'})
+
+    def test_a_missing_ctrl_g_is_not_mistaken_for_a_null_binding(self):
+        self._write({'bindings': [{'context': 'Chat', 'bindings': {'ctrl+k': 'chat:clear'}}]})
+        changed, warning = keybindings.remove_managed_keys(self.path)
+        self.assertFalse(changed)
+        self.assertIsNone(warning)
+
+    def test_an_editor_key_of_ours_bound_to_another_action_is_left_with_a_warning(self):
+        self._write({'bindings': [{'context': 'Chat', 'bindings': {'ctrl+q': 'chat:stash', 'ctrl+g': None}}]})
+        changed, warning = keybindings.remove_managed_keys(self.path)
+        self.assertTrue(changed)
+        self.assertIn('ctrl+q', warning)
+        self.assertEqual(self._read()['bindings'][0]['bindings'], {'ctrl+q': 'chat:stash'})
 
     def test_leaves_other_keys_in_chat_block(self):
         self._write({
@@ -122,7 +161,7 @@ class TestRemoval(KeybindingsTestBase):
                 }},
             ],
         })
-        changed, warning = keybindings.remove_enter_keys(self.path)
+        changed, warning = keybindings.remove_managed_keys(self.path)
         self.assertTrue(changed)
         self.assertIsNone(warning)
         data = self._read()
@@ -135,7 +174,7 @@ class TestRemoval(KeybindingsTestBase):
                 {'context': 'Global', 'bindings': {'ctrl+q': 'quit'}},
             ],
         })
-        keybindings.remove_enter_keys(self.path)
+        keybindings.remove_managed_keys(self.path)
         data = self._read()
         self.assertEqual(data['bindings'], [{'context': 'Global', 'bindings': {'ctrl+q': 'quit'}}])
 
@@ -145,7 +184,7 @@ class TestRemoval(KeybindingsTestBase):
                 {'context': 'Chat', 'bindings': {'enter': 'chat:custom-thing', 'meta+enter': 'chat:submit'}},
             ],
         })
-        changed, warning = keybindings.remove_enter_keys(self.path)
+        changed, warning = keybindings.remove_managed_keys(self.path)
         self.assertTrue(changed)  # meta+enter is removed
         self.assertIsNotNone(warning)
         data = self._read()
@@ -155,7 +194,7 @@ class TestRemoval(KeybindingsTestBase):
         original = '{"bindings": [{"context": "Global", "bindings": {"ctrl+q": "quit"}}]}'
         self._write_text(original)
         before_mtime = os.stat(self.path).st_mtime_ns
-        changed, warning = keybindings.remove_enter_keys(self.path)
+        changed, warning = keybindings.remove_managed_keys(self.path)
         self.assertFalse(changed)
         self.assertIsNone(warning)
         with open(self.path, encoding='utf-8') as f:
@@ -166,7 +205,7 @@ class TestRemoval(KeybindingsTestBase):
         # A Chat block exists, but neither enter nor meta+enter is set — still nothing
         # of ours to remove, so this must not add $schema/$docs either.
         self._write({'bindings': [{'context': 'Chat', 'bindings': {'ctrl+k': 'chat:clear'}}]})
-        changed, warning = keybindings.remove_enter_keys(self.path)
+        changed, warning = keybindings.remove_managed_keys(self.path)
         self.assertFalse(changed)
         self.assertIsNone(warning)
         data = self._read()
@@ -178,7 +217,7 @@ class TestRemoval(KeybindingsTestBase):
             '$schema': 'https://example.com/custom.json',
             'bindings': [{'context': 'Chat', 'bindings': {'enter': 'chat:newline', 'meta+enter': 'chat:submit'}}],
         })
-        keybindings.remove_enter_keys(self.path)
+        keybindings.remove_managed_keys(self.path)
         data = self._read()
         self.assertEqual(data['$schema'], 'https://example.com/custom.json')
 
@@ -189,7 +228,7 @@ class TestDryRun(KeybindingsTestBase):
             'bindings': [{'context': 'Chat', 'bindings': {'enter': 'chat:newline', 'meta+enter': 'chat:submit'}}],
         }
         self._write(original)
-        changed, warning = keybindings.remove_enter_keys(self.path, dry_run=True)
+        changed, warning = keybindings.remove_managed_keys(self.path, dry_run=True)
         self.assertTrue(changed)
         self.assertIsNone(warning)
         self.assertEqual(self._read(), original)

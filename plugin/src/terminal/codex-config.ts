@@ -21,6 +21,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { t } from "../i18n";
+import type { EditorKey } from "../settings";
+import { agentEditorKeyName, editorKeyIsAgentDefault } from "./keys";
 
 /** Written at the end of every line this feature adds to config.toml — must match
  * `agentsessions/codex/config_toml.py`'s `MANAGED_MARKER` exactly (agreed with lnx-py for
@@ -222,6 +224,15 @@ export interface ApplyCodexConfigResult {
  *    the user's own), writes `["model-with-reasoning", "context-used"]`. Never touches an
  *    already-set one, even one this feature wrote previously.
  *
+ * 3. **Editor key**: when the editor key isn't Codex's own default (Ctrl+G), ensures
+ *    `[tui.keymap.global] open_external_editor = "<key>"` (`ctrl-q`, `alt-g`); with Ctrl+G, removes
+ *    the managed line. Codex refuses to start when this key collides with another of its
+ *    bindings (`Ambiguous tui.keymap.main bindings`), so only the keys offered by
+ *    `EDITOR_KEYS` — checked against Codex's default keymap — are ever written.
+ *
+ * `opts.statusLine: false` (Codex switched off in the plugin) leaves out the `status_line`
+ * default and turns the keymap lines of 1 and 3 into removals.
+ *
  * Returns `{status: "unchanged"}` without touching the file (or creating a backup) if nothing
  * needs to change. Returns `{status: "failed", warning}` without writing anything if the file
  * can't be read, or `looksMalformed`. A conflict (an unmarked, pre-existing key where this
@@ -229,7 +240,17 @@ export interface ApplyCodexConfigResult {
  * did change, or as `{status: "unchanged", warning}` if that conflict was the only thing this
  * call would have done.
  */
-export function applyCodexConfig(filePath: string, submitKey: string): ApplyCodexConfigResult {
+export function applyCodexConfig(
+	filePath: string,
+	submitKey: string,
+	editorKey: EditorKey = "ctrl+g",
+	opts: { statusLine?: boolean } = {}
+): ApplyCodexConfigResult {
+	const statusLine = opts.statusLine ?? true;
+	if (!statusLine) {
+		submitKey = "enter";
+		editorKey = "ctrl+g";
+	}
 	let text: string;
 	try {
 		text = fs.readFileSync(filePath, "utf8");
@@ -271,7 +292,20 @@ export function applyCodexConfig(filePath: string, submitKey: string): ApplyCode
 		changed = changed || r2.changed;
 	}
 
-	if (!hasAnyKey(text, "tui", "status_line")) {
+	if (!editorKeyIsAgentDefault("codex", editorKey)) {
+		const r = upsertManagedKey(text, "tui.keymap.global", "open_external_editor", `"${agentEditorKeyName("codex", editorKey)}"`);
+		text = r.text;
+		changed = changed || r.changed;
+		if (r.conflict) {
+			conflicts.push("tui.keymap.global.open_external_editor");
+		}
+	} else {
+		const r = removeManagedKey(text, "tui.keymap.global", "open_external_editor");
+		text = r.text;
+		changed = changed || r.changed;
+	}
+
+	if (statusLine && !hasAnyKey(text, "tui", "status_line")) {
 		const r3 = upsertManagedKey(text, "tui", "status_line", tomlStringArray(CODEX_DEFAULT_STATUS_LINE));
 		text = r3.text;
 		changed = changed || r3.changed;

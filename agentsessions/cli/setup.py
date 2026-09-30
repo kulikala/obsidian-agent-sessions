@@ -92,7 +92,7 @@ def main(args: List[str]) -> int:
             # that, since the Python side doesn't manage a Codex installation
             # the way it manages a Claude Code one.
             changes, _ = claude_setup.run_remove(settings_path, dry_run=dry_run)
-            kb_changed, kb_warning = keybindings.remove_enter_keys(keybindings_path, dry_run=dry_run)
+            kb_changed, kb_warning = keybindings.remove_managed_keys(keybindings_path, dry_run=dry_run)
             if kb_changed:
                 changes.append(i18n.t('setup.keybindings_removed'))
             if kb_warning:

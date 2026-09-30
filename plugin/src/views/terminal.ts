@@ -68,8 +68,6 @@ const EARLY_EXIT_MS = 3000;
 const FONT_SIZE_MIN = 6;
 const FONT_SIZE_MAX = 40;
 /** Min/max for the editor pane's height (%). Acts as a ceiling — the terminal's minimum row count takes priority. */
-/** The pause between OpenCode's leader key and the chord's second key (see `handleKey`). */
-const OPENCODE_CHORD_GAP_MS = 150;
 const EDITOR_HEIGHT_MIN = 10;
 const EDITOR_HEIGHT_MAX = 90;
 /** Minimum rows left for the terminal while the editor pane is open. */
@@ -1035,18 +1033,6 @@ export class TerminalView extends ItemView {
 				} else {
 					this.sendInput(Buffer.from(agentSendSequence(agent, "newline", submitKey), "binary"));
 				}
-			}
-			return false;
-		}
-		// OpenCode opens `$VISUAL` on its leader chord Ctrl+X, E; Ctrl+G gives it the same key as
-		// Claude Code's and Codex's external editor. The two keys go in separate writes — sent in
-		// one, OpenCode doesn't read the E as the chord's second key.
-		if (agent === "opencode" && ev.ctrlKey && !ev.metaKey && !ev.altKey && !ev.shiftKey && ev.code === "KeyG") {
-			ev.preventDefault();
-			ev.stopPropagation();
-			if (ev.type === "keydown") {
-				this.sendInput(Buffer.from("\x18", "binary"));
-				window.setTimeout(() => this.sendInput(Buffer.from("e", "binary")), OPENCODE_CHORD_GAP_MS);
 			}
 			return false;
 		}

@@ -2,7 +2,7 @@
 // Pure functions with no dependency on xterm or obsidian. Used by `views/terminal.ts`'s
 // `handleKey` and by `views/editor-pane.ts`.
 
-import type { AgentId, SubmitKey } from "../settings";
+import type { AgentId, EditorKey, SubmitKey } from "../settings";
 
 /** Only the parts of a keyboard event that classification needs (so tests don't need to construct a real `KeyboardEvent`). */
 export interface KeyLike {
@@ -88,6 +88,46 @@ export function agentSendSequence(agent: AgentId, action: "submit" | "newline", 
 		return swapped ? "\r" : "\n";
 	}
 	return sendSequence(action, submitKey);
+}
+
+/**
+ * The editor key in each agent's own key syntax, for the config the plugin writes. Claude Code's
+ * `keybindings.json` calls Alt/Option `meta`; Codex's `config.toml` writes `ctrl-g`; OpenCode's
+ * `tui.json` accepts `alt+g`. Verified against Claude Code 2.1.285, Codex 0.159.0 and
+ * OpenCode 1.18.33: each opened `$VISUAL` on the bytes the terminal sends for the key
+ * (`\x07` Ctrl+G, `\x11` Ctrl+Q, `ESC g` Alt+G).
+ */
+export function agentEditorKeyName(agent: AgentId, key: EditorKey): string {
+	switch (agent) {
+		case "claude":
+			return key === "alt+g" ? "meta+g" : key;
+		case "codex":
+			return key.replace("+", "-");
+		case "opencode":
+			return key;
+	}
+}
+
+/** Each agent's own default for opening its external editor (`null`: nothing to write for the default). */
+export function agentDefaultEditorKey(agent: AgentId): EditorKey | null {
+	return agent === "opencode" ? null : "ctrl+g";
+}
+
+/** Whether the chosen editor key is one the agent already uses, so its config needs no change. */
+export function editorKeyIsAgentDefault(agent: AgentId, key: EditorKey): boolean {
+	return agentDefaultEditorKey(agent) === key;
+}
+
+/** The editor-key names shown in the dropdown (macOS spells Alt as Option). */
+export function editorKeyLabel(key: EditorKey, isMac: boolean): string {
+	switch (key) {
+		case "ctrl+g":
+			return "Ctrl+G";
+		case "ctrl+q":
+			return "Ctrl+Q";
+		case "alt+g":
+			return isMac ? "Option+G" : "Alt+G";
+	}
 }
 
 /**

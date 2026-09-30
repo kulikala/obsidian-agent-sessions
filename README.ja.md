@@ -41,10 +41,10 @@
 - **vault の外のファイルを読み書きする。** エージェントと `agent-sessions` が状態をそこに置くため：
   - セッション一覧と使用量のために、Claude Code の `~/.claude/projects/`・`~/.claude/sessions/`・`~/.claude/settings.json` 、Codex の `~/.codex/`（または `$CODEX_HOME`）、OpenCode のデータベース `~/.local/share/opencode/opencode.db`（`$XDG_DATA_HOME` 配下の場合もある。読み取り専用で開く）を読む。
   - `~/.agents/sessions/`（デーモンのソケット・ログ・状態のスナップショット・キャッシュ）に書く。
-  - プログラムのインストールで、ホームフォルダ内のフォルダに書き出す（[インストール](#インストール)を参照）。インストールと `install.sh` は `~/.claude/settings.json` にフックと `statusLine` を足す（先にバックアップを残す）。送信キーの設定を変えると `~/.claude/keybindings.json` に書く。
-  - Codex を有効にしている場合、`~/.codex/config.toml` に送信キーのキーマップと既定の `[tui].status_line` を足す（先にバックアップを残す。足した行には印が付き、`agent-sessions setup --remove` はその行だけを取り除く）。
+  - プログラムのインストールで、ホームフォルダ内のフォルダに書き出す（[インストール](#インストール)を参照）。インストールと `install.sh` は `~/.claude/settings.json` にフックと `statusLine` を足す（先にバックアップを残す）。送信キーまたはエディタキーの設定を変えると `~/.claude/keybindings.json` に書く。
+  - Codex を有効にしている場合、`~/.codex/config.toml` に送信キーのキーマップ、エディタキーの行（Ctrl+G 以外のときだけ `open_external_editor`）、既定の `[tui].status_line` を足す（先にバックアップを残す。足した行には印が付き、`agent-sessions setup --remove` はその行だけを取り除く）。
   - OpenCode を有効にしている場合、ステータス用プラグイン `~/.config/opencode/plugins/agent-sessions.js`（`$XDG_CONFIG_HOME` 配下の場合もある）を書き、そのプラグインがセッションごとの状態ファイルを `~/.agents/sessions/opencode/` に書く。プラグインファイルの先頭には印の行があり、印のあるファイルだけを上書きする。「設定 → agent-sessions プログラム → 削除」または `agent-sessions setup --remove` で取り除かれ、設定で OpenCode を無効にしたときにも取り除かれる。OpenCode を有効にしているとき、インストールのダイアログにこのファイルが並び、プログラムの通常の更新は、すでにあるプラグインファイルを更新するだけで新しく作ることはない。
-  - OpenCode を有効にしていて送信キーが Enter 以外のとき、OpenCode の `~/.config/opencode/tui.json`（`$XDG_CONFIG_HOME` 配下の場合もある）の `keybinds.input_submit` と `keybinds.input_newline` を設定し、Return が改行になるようにする。ほかのキーは触らず、通常の JSON でないファイルは書き換えない。元の値は `~/.agents/sessions/opencode-tui-backup.json` に控え、送信キーを Enter に戻したとき・OpenCode を無効にしたとき・削除したときに元へ戻す（`agent-sessions setup --remove` も同じ）。
+  - OpenCode を有効にしているとき、OpenCode の `~/.config/opencode/tui.json`（`$XDG_CONFIG_HOME` 配下の場合もある）の `keybinds.editor_open`（エディタキー。OpenCode 本来のキーは Ctrl+X, E）を設定し、送信キーが Enter 以外なら `keybinds.input_submit` と `keybinds.input_newline` も設定して Return が改行になるようにする。ほかのキーは触らず、通常の JSON でないファイルは書き換えない。元の値は `~/.agents/sessions/opencode-tui-backup.json` に控え、OpenCode を無効にしたとき・削除したときに元へ戻す（送信キーの分は Enter に戻したときにも戻す。`agent-sessions setup --remove` も同じ）。
   - 内蔵エディタは、エージェントが `$VISUAL` に渡す一時ファイルを編集する。
 - **一覧に出さないセッション。** OpenCode のサブエージェントのセッションと、`opencode run` で始めたセッションは一覧に出さない。
 - **vault のファイル一覧を読む**のは、内蔵エディタで `@` のファイルパスを補完するときだけ。
@@ -83,7 +83,9 @@ cd obsidian-agent-sessions
 - vault を渡した場合、`plugin/` を `<vault>/.obsidian/plugins/agent-sessions` に symlink する。
 - `agent-sessions setup` を実行する。これは **`~/.claude/settings.json` を書き換える**（先に `settings.json.bak-<時刻>` としてバックアップを残す）：`Stop`・`SessionEnd`・`SessionStart`（matcher `compact`）・`UserPromptSubmit` の各フックを `agent-sessions hook` に向けて追加・更新し、`statusLine` を `agent-sessions status` に設定する。自分が付けたと分かるエントリだけを触り、他のフックはそのまま残す。
 
-**送信キー**の設定を既定（Enter）以外に変えると、Claude Code 自身のキー割当と揃えるため、プラグインは `~/.claude/keybindings.json`（`Chat` コンテキスト）にも書き込む——これは Obsidian の外で起動した Claude Code を含め、Claude Code 全体に効く（ただし、選んだキーが確実に働くのはこのプラグイン自身のターミナルタブだけで、他のターミナルアプリがそのキーを素の Enter と区別できるかはターミナル次第）。設定を元に戻すと、この設定のためにプラグインが管理している鍵が消える。
+**送信キー**の設定を既定（Enter）以外に変えると、Claude Code 自身のキー割当と揃えるため、プラグインは `~/.claude/keybindings.json`（`Chat` コンテキスト）にも書き込む——これは Obsidian の外で起動した Claude Code を含め、Claude Code 全体に効く（ただし、選んだキーが確実に働くのはこのプラグイン自身のターミナルタブだけで、他のターミナルアプリがそのキーを素の Enter と区別できるかはターミナル次第）。設定を元に戻すと、この設定のためにプラグインが管理しているキーが消える。
+
+**エディタキー**（既定は Ctrl+G。ほかに Ctrl+Q、Option／Alt+G——Claude Code・Codex・OpenCode のどれでも使われていないキー）も同じ扱い。Claude Code と Codex は最初から Ctrl+G でエディタを開くので、既定のままなら何も書かない。別のキーにすると、`~/.claude/keybindings.json` でそのキーを `chat:externalEditor` に割り当て（Ctrl+G は空ける）、`~/.codex/config.toml` の `[tui.keymap.global]` に `open_external_editor` を設定する。Obsidian の外で使うこれらのエージェントにも効く。OpenCode 本来のキーは別（Ctrl+X, E）なので、OpenCode を有効にしていれば `tui.json` にはどの選択でもエディタキー（Ctrl+G を含む）を書く。
 
 プラグインが一度でも起動していれば、Obsidian の外で `agent-sessions` CLI を使うときも vault のパスを重ねて指定する必要はない——`~/.agents/sessions/vault.json`（プラグインが最新に保つ）から vault の場所を読む。
 
@@ -94,7 +96,7 @@ cd obsidian-agent-sessions
 | サイドパネル（右サイドバー） | 新規セッション、セッションマネージャーを開く、設定。一覧は「開いているタブ」「起動中（デーモンには居るがタブが無い）」「最近」に分かれ、各行は状態の印・カテゴリのチップ・名前を出す。セッションが1つも無いときは、代わりに「新しいセッション」ボタンを表示する（エージェントが使えないときは設定を開くリンクに）。詳細欄（モデル・エフォート・接続状況、コンテキスト使用率、総トークン・総コスト、直近の指示・応答）。レート制限は、有効な各エージェントごとに5時間／7日枠のバーとリセットまでのカウントダウンを表示。 |
 | セッションマネージャー | 新しいタブの既定の画面。セッションの木（カテゴリでグループ化、「その他」区分とアーカイブを含む）と、その下の折畳・リサイズ可能な分析パネル：5 時間／7 日の利用状況カード、7 日枠のペース判定、カテゴリ別のコストの帯——有効なエージェントが複数あれば、エージェントごとの節に分かれる。開いてもセッションは始まらない。 |
 | ターミナルタブ | 1 セッション（Claude Code・Codex・OpenCode のいずれか）＝1 タブ。ヘッダの操作：現在のノートを `@path` として挿入、前の指示・次の指示・最後の応答へジャンプ。`Cmd +`／`Cmd −`／`Cmd 0`（macOS）または `Ctrl+Shift+=`／`Ctrl+Shift+-`／`Ctrl+Shift+0`（それ以外）でそのタブのフォントサイズを変える。非 macOS では `Ctrl+Shift+C`／`Ctrl+Shift+V` が選択のコピー・貼り付け、`Ctrl+Shift+W` でタブを閉じ、`Ctrl+Shift+P` でコマンドパレットを開く。素の `Ctrl+<key>`（`Ctrl+C`・`Ctrl+G`・`Ctrl+W`・`Ctrl+P` 等）は常にそのエージェントへ届き Obsidian には渡らない。送信キーの設定と Enter の横取りは全エージェントのタブに効く。各エージェント自身のキー割当（Claude Code の `keybindings.json`、Codex の `config.toml`、OpenCode の `tui.json`）を設定に合わせて書き換え（開示事項を参照）、素の Enter はスラッシュコマンドやファイルの候補の確定にも使える。出力中のパスは vault 内に実在すればクリックできる。 |
-| Ctrl+G（内蔵エディタ） | エージェントが本来 `$VISUAL` に渡すファイルを、ターミナルの下の分割された編集領域で編集する。OpenCode のタブでは、Ctrl+G で OpenCode 自身のエディタ操作（Ctrl+X → E）を送る。`@` によるファイル補完・自動保存・ネイティブのペースト／IME／Undo に対応。プロンプト編集での「送る」は即座に送信、Esc は送信せず入力欄に戻る。 |
+| エディタキー（既定は Ctrl+G）で開く内蔵エディタ | エージェントが本来 `$VISUAL` に渡すファイルを、ターミナルの下の分割された編集領域で編集する。キーは**エディタキー**の設定で、各エージェントがそのキーでエディタを開くよう設定される。`@` によるファイル補完・自動保存・ネイティブのペースト／IME／Undo に対応。プロンプト編集での「送る」は即座に送信、Esc は送信せず入力欄に戻る。 |
 | 行メニュー（⋯／右クリック） | 名前を変更、カテゴリに移動（1行の入力欄——既存カテゴリのドロップダウンと自由入力の両方に対応。セッションに名前も最初のプロンプトも無いうちは使えない）、圧縮（`/compact`）、セッション解析結果を見る、アーカイブ⇄解除、セッションを終了、ID をコピー。 |
 | セッション解析結果 | 行メニューから開く。コスト・トークン・ターン数・期間のカード、入力／出力／ツール使用のバー、ターン表。行をクリックして区間を選び、結果を Markdown としてコピーできる。 |
 
@@ -108,7 +110,7 @@ cd obsidian-agent-sessions
 
 ## 設定
 
-フォント名とサイズ、余白（ゆったり／小さめ／なし）、送信キー、最近の件数、指示待ちの通知、エージェント（Claude Code／Codex／OpenCode——有効化・パス・環境変数。OpenCode はさらに、直接起動か `ollama launch opencode` 経由かと、使う Ollama のモデル（`ollama list` から選ぶか直接入力））、`agent-sessions` のパス、ターミナルのスクロールバック行数、内蔵エディタの高さ、表示言語（自動／日本語／English）、サイドパネルの詳細欄とマネージャーの分析パネルの保存された高さ。
+フォント名とサイズ、余白（ゆったり／小さめ／なし）、送信キー、エディタキー、最近の件数、指示待ちの通知、エージェント（Claude Code／Codex／OpenCode——有効化・パス・環境変数。OpenCode はさらに、直接起動か `ollama launch opencode` 経由かと、使う Ollama のモデル（`ollama list` から選ぶか直接入力））、`agent-sessions` のパス、ターミナルのスクロールバック行数、内蔵エディタの高さ、表示言語（自動／日本語／English）、サイドパネルの詳細欄とマネージャーの分析パネルの保存された高さ。
 
 ## トラブルシューティング
 
@@ -138,7 +140,7 @@ agent-sessions setup --opencode   # OpenCode のステータス用プラグイ�
 
 ## アンインストール
 
-プラグインからプログラムを入れた場合は、先に **設定 → agent-sessions プログラム → 削除** を押す。デーモンを止め（動いているセッションは終了する）、`~/.claude/settings.json` のフックと `statusLine`、`~/.codex/config.toml` の管理行、`~/.config/opencode/tui.json` に入れた送信キーの設定、`~/.config/opencode/plugins/` のステータス用プラグインを取り除き、フォルダを消す。その後、「コミュニティプラグイン」で **Agent Sessions** を無効化・削除する。
+プラグインからプログラムを入れた場合は、先に **設定 → agent-sessions プログラム → 削除** を押す。デーモンを止め（動いているセッションは終了する）、`~/.claude/settings.json` のフックと `statusLine`、`~/.codex/config.toml` の管理行、`~/.config/opencode/tui.json` に入れた送信キー・エディタキーの設定、`~/.config/opencode/plugins/` のステータス用プラグインを取り除き、フォルダを消す。その後、「コミュニティプラグイン」で **Agent Sessions** を無効化・削除する。
 
 clone から入れた場合：
 
@@ -149,8 +151,8 @@ clone から入れた場合：
 
 `uninstall.sh` は、デーモンを止め（動いているセッションが残っていれば確認を求める——飛ばすには
 `--force`）、`~/.claude/settings.json` から自分が足したフックと `statusLine` を取り除き
-（`install.sh` と同じやり方で先に backup を残す）、送信キーを Enter 以外に変えていた場合は
-`~/.claude/keybindings.json` の `Chat` に足した `enter`／`meta+enter` を取り除き、
+（`install.sh` と同じやり方で先に backup を残す）、送信キー・エディタキーを既定以外に変えていた場合は
+`~/.claude/keybindings.json` の `Chat` に足した `enter`／`meta+enter`（送信キー）と `chat:externalEditor`・空けた `ctrl+g`（エディタキー）を取り除き、
 `~/bin/agent-sessions`・`~/bin/agent-sessions-code` と、vault を渡した場合は
 `<vault>/.obsidian/plugins/agent-sessions` の symlink を外す（symlink でなければ——手で置き換えている等——消さずに案内だけ出す）。他の
 ツールのフック・`statusLine`・キーバインドには触れず、何度実行しても安全（冪等）。

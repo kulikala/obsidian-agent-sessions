@@ -65,8 +65,8 @@ import { EditServer, editReplyFor, submitsAfterEdit, tabOwnsEditSession, type Ed
 import { SessionIndex } from "./sessions/index";
 import { getLang, languageOptions, resolveLang, setLang, t, type MessageKey } from "./i18n";
 import { applyCodexConfig, defaultCodexConfigPath, type ApplyCodexConfigResult } from "./terminal/codex-config";
-import { applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./terminal/keybindings";
-import { agentSendSequence, reconcileSubmitKey } from "./terminal/keys";
+import { applyEditorKey, applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./terminal/keybindings";
+import { agentSendSequence, editorKeyLabel, reconcileSubmitKey } from "./terminal/keys";
 import {
 	BACKUP_FILENAME,
 	defaultOpencodeTuiPath,
@@ -85,6 +85,7 @@ import {
 	AgentSessionsSettings,
 	asAgentId,
 	DEFAULT_SETTINGS,
+	EDITOR_KEYS,
 	mergeSettings,
 	OPENCODE_LAUNCH_VIA,
 	parseEnvLines,
@@ -92,6 +93,7 @@ import {
 	SUBMIT_KEYS_NON_MAC,
 	type AgentId,
 	type AgentSettings,
+	type EditorKey,
 	type OpencodeLaunchVia,
 	type SubmitKey,
 } from "./settings";
@@ -250,6 +252,8 @@ export default class AgentSessionsPlugin extends Plugin {
 		// or the user wrote it by hand), bring the plugin's setting in line with it (without
 		// writing to keybindings.json itself).
 		await this.syncSubmitKeyFromKeybindings();
+		// OpenCode's tui.json carries the editor key whenever OpenCode is enabled.
+		this.syncOpencodeTui();
 		this.syncUiState();
 		this.syncVaultState();
 
@@ -486,18 +490,29 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * Syncs `~/.codex/config.toml` with the current `submitKey` setting and the `status_line`
-	 * default (T-108, `applyCodexConfig`) — called whenever the submit-key setting changes
-	 * (`AgentSessionsSettingTab`'s dropdown, same trigger as Claude's own `applySubmitKey`) and
-	 * once when Codex is first enabled (so `status_line` gets its one chance to apply even if the
-	 * submit key is still the default `enter`, which writes nothing keymap-related). `null` — no
-	 * read, no write, nothing — when Codex isn't enabled at all.
+	 * Syncs `~/.codex/config.toml` with the current `submitKey` and `editorKey` settings and the
+	 * `status_line` default (T-108, `applyCodexConfig`) — called whenever either key setting
+	 * changes (`AgentSessionsSettingTab`'s dropdowns, same trigger as Claude's own
+	 * `applySubmitKey`) and when Codex is switched on or off. With Codex enabled the keymap lines
+	 * are written (or removed at the defaults) and the `status_line` default applied once; with
+	 * Codex disabled the managed keymap lines are removed and nothing else is written — a file
+	 * that doesn't exist stays absent.
 	 */
-	syncCodexConfig(): ApplyCodexConfigResult | null {
-		if (!this.settings.agents.codex.enabled) {
-			return null;
+	syncCodexConfig(): ApplyCodexConfigResult {
+		const { submitKey, editorKey } = this.settings;
+		const enabled = this.settings.agents.codex.enabled;
+		const result = applyCodexConfig(this.codexConfigPath(), submitKey, editorKey, { statusLine: enabled });
+		// Taking the lines away from a Codex nobody uses is silent about a file it can't parse.
+		return enabled ? result : { status: result.status };
+	}
+
+	/** Shows the notice for a config sync result (a warning wins over "written"). */
+	noticeConfigResult(result: { status: string; warning?: string }, writtenKey: MessageKey): void {
+		if (result.warning) {
+			new Notice(result.warning);
+		} else if (result.status === "written") {
+			new Notice(t(writtenKey));
 		}
-		return applyCodexConfig(this.codexConfigPath(), this.settings.submitKey);
 	}
 
 	/** Where OpenCode's `tui.json` lives: the XDG_CONFIG_HOME OpenCode runs with (its own
@@ -508,8 +523,9 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * Brings OpenCode's `tui.json` keybinds in line with the submit key: managed while OpenCode is
-	 * enabled and the key isn't Enter, restored to the user's own values otherwise
+	 * Brings OpenCode's `tui.json` keybinds in line with the submit and editor keys: the editor key
+	 * is managed while OpenCode is enabled, the submit pair too when the key isn't Enter, and
+	 * everything is restored to the user's own values when OpenCode is disabled
 	 * (`syncOpencodeTui`). Returns the result and shows the notices for it; call it wherever
 	 * `syncCodexConfig` is called, and when OpenCode is switched on or off.
 	 */
@@ -518,6 +534,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			this.opencodeTuiPath(),
 			join(RUNTIME_DIR, BACKUP_FILENAME),
 			this.settings.submitKey,
+			this.settings.editorKey,
 			this.settings.agents.opencode.enabled
 		);
 		if (result.warning) {
@@ -1717,6 +1734,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl).setName(t("settings.input.heading")).setHeading();
 		this.renderSubmitKeySetting(containerEl);
+		this.renderEditorKeySetting(containerEl);
 
 		new Setting(containerEl).setName(t("settings.other.heading")).setHeading();
 
@@ -1825,18 +1843,11 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 						}
 						agentSettings.enabled = value;
 						await this.plugin.saveSettings();
-						// T-108: Codex's config.toml gets its first sync right when it's
-						// enabled (mainly for the status_line default — the submit-key
-						// keymap lines only matter once submitKey is already non-"enter",
-						// which normally wouldn't happen before Codex itself was ever
-						// enabled, but syncCodexConfig() covers that case too either way).
-						if (id === "codex" && value) {
-							const codexResult = this.plugin.syncCodexConfig();
-							if (codexResult?.warning) {
-								new Notice(codexResult.warning);
-							} else if (codexResult?.status === "written") {
-								new Notice(t("notice.codexConfigWritten"));
-							}
+						// T-108: Codex's config.toml follows the switch — the key lines and the
+						// status_line default when it's enabled, the key lines taken away
+						// again when it's disabled.
+						if (id === "codex") {
+							this.plugin.noticeConfigResult(this.plugin.syncCodexConfig(), "notice.codexConfigWritten");
 						}
 						// OpenCode's status comes from a plugin file the program installs into
 						// OpenCode's own config folder — put it there right when it's enabled,
@@ -2124,14 +2135,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			} else if (result.status === "unchanged") {
 				new Notice(t("notice.keybindingsUnchanged"));
 			}
-			// T-108: keeps Codex's own config.toml in step with the same setting — a no-op
-			// (`null`) when Codex isn't enabled at all.
-			const codexResult = this.plugin.syncCodexConfig();
-			if (codexResult?.warning) {
-				new Notice(codexResult.warning);
-			} else if (codexResult?.status === "written") {
-				new Notice(t("notice.codexConfigWritten"));
-			}
+			// T-108: keeps Codex's own config.toml in step with the same setting.
+			this.plugin.noticeConfigResult(this.plugin.syncCodexConfig(), "notice.codexConfigWritten");
 			// The same for OpenCode's tui.json (restores it when the key goes back to Enter).
 			this.plugin.syncOpencodeTui();
 			this.display();
@@ -2171,6 +2176,58 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		});
 
 		this.renderSubmitKeyMismatch(containerEl, keybindingsPath);
+	}
+
+	/**
+	 * The editor-key setting: the key that opens the agent's external editor (the built-in editor
+	 * pane). A key other than Ctrl+G is written into Claude Code's `keybindings.json`, Codex's
+	 * `config.toml` and OpenCode's `tui.json` after a confirmation; going back to Ctrl+G takes
+	 * it out of the first two again (OpenCode's `editor_open` is written for every choice, since
+	 * its own default is a different key).
+	 */
+	private renderEditorKeySetting(containerEl: HTMLElement): void {
+		const keybindingsPath = this.plugin.keybindingsPath();
+
+		const applyAndSave = (next: EditorKey) => {
+			const result = applyEditorKey(keybindingsPath, next);
+			this.plugin.settings.editorKey = next;
+			void this.plugin.saveSettings();
+			this.plugin.noticeConfigResult(result, "notice.keybindingsWritten");
+			this.plugin.noticeConfigResult(this.plugin.syncCodexConfig(), "notice.codexConfigWritten");
+			this.plugin.syncOpencodeTui();
+			this.display();
+		};
+
+		new Setting(containerEl)
+			.setName(t("settings.editorKey.name"))
+			.setDesc(t("settings.editorKey.desc"))
+			.addDropdown((dropdown) => {
+				for (const key of EDITOR_KEYS) {
+					dropdown.addOption(key, editorKeyLabel(key, Platform.isMacOS));
+				}
+				dropdown.setValue(this.plugin.settings.editorKey);
+				dropdown.onChange((value) => {
+					const next = value as EditorKey;
+					const current = this.plugin.settings.editorKey;
+					if (next === current) {
+						return;
+					}
+					if (next !== DEFAULT_SETTINGS.editorKey) {
+						const agents = this.plugin.settings.agents;
+						const vars = { key: editorKeyLabel(next, Platform.isMacOS) };
+						const message =
+							(agents.codex.enabled
+								? t("confirm.writeEditorKey.messageWithCodex", vars)
+								: t("confirm.writeEditorKey.message", vars)) +
+							(agents.opencode.enabled ? t("confirm.writeEditorKey.opencodeNote", vars) : "");
+						new ConfirmModal(this.app, message, t("action.write"), () => applyAndSave(next)).open();
+						// Revert the dropdown's appearance until confirmed (display() rebuilds it once applied).
+						dropdown.setValue(current);
+					} else {
+						applyAndSave(next);
+					}
+				});
+			});
 	}
 
 	/**

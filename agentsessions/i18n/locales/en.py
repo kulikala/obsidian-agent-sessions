@@ -49,7 +49,7 @@ MESSAGES = {
     'setup.hook_removed': 'hooks.{event}: removed {command}',
     'setup.status_line_set': 'statusLine: {old!r} -> {new!r}',
     'setup.status_line_removed': 'statusLine: removed {old!r}',
-    'setup.keybindings_removed': 'keybindings.json: removed enter/meta+enter',
+    'setup.keybindings_removed': 'keybindings.json: removed the submit-key and editor-key entries',
     'setup.keybindings_mismatch': 'keybindings.json: left {keys} in place under Chat '
                                    '(value differs from ours; fix it by hand)',
     'setup.keybindings_unreadable': 'keybindings.json: could not read it: {error}',
@@ -59,7 +59,7 @@ MESSAGES = {
     'setup.opencode_installed': 'opencode plugin: installed {path}',
     'setup.opencode_updated': 'opencode plugin: updated {path}',
     'setup.opencode_removed': 'opencode plugin: removed {path}',
-    'setup.opencode_tui_restored': 'opencode: restored the submit-key settings in {path}',
+    'setup.opencode_tui_restored': 'opencode: restored the submit-key and editor-key settings in {path}',
     'setup.opencode_tui_not_json': 'opencode: {path} is not plain JSON, so it was left unchanged',
     'setup.opencode_tui_failed': 'opencode: could not update {path}: {error}',
     'setup.opencode_foreign': 'opencode plugin: {path} exists and is not ours; left as is',

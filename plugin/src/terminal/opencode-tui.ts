@@ -1,37 +1,50 @@
 // OpenCode's TUI config (`$XDG_CONFIG_HOME/opencode/tui.json`, default `~/.config/opencode/`) —
-// the submit-key keymap, the OpenCode counterpart of `codex-config.ts`.
+// the submit-key and editor-key keymap, the OpenCode counterpart of `codex-config.ts`.
 //
-// With the submit key on plain Enter nothing is managed: OpenCode's defaults (Return submits,
-// Ctrl+J / linefeed is a newline) match the bytes the terminal view sends. With any other submit
-// key, `keybinds.input_submit` / `keybinds.input_newline` are set so that a linefeed (`\n`)
+// With the submit key on plain Enter the submit keys are not managed: OpenCode's defaults (Return
+// submits, Ctrl+J / linefeed is a newline) match the bytes the terminal view sends. With any other
+// submit key, `keybinds.input_submit` / `keybinds.input_newline` are set so that a linefeed (`\n`)
 // submits and Return (`\r`) inserts a newline; the terminal view then sends the chosen submit key
 // as `\n` and every other Enter combination as `\r` (`terminal/keys.ts`). Popups and dialogs keep
 // answering to `\r`: they are not governed by these two keybinds.
 //
-// Only those two keys are touched. The file is parsed and re-serialized as plain JSON, keeping
+// `keybinds.editor_open` carries the editor key (`settings.editorKey`). OpenCode's own default is
+// the leader chord `<leader>e` (Ctrl+X, then E), which is none of the offered keys, so it is
+// written whenever OpenCode is enabled. Ctrl+G is also OpenCode's `messages_first`; with the
+// prompt focused the editor still opens and the transcript does not move, so that binding is left
+// alone.
+//
+// Only those keys are touched. The file is parsed and re-serialized as plain JSON, keeping
 // every other key and the file's indentation; a file that isn't plain JSON (JSONC comments,
 // trailing commas) is never rewritten. The user's previous values are recorded in a small backup
 // file (`~/.agents/sessions/opencode-tui-backup.json`) that the Python side reads too
 // (`agentsessions/agents/opencode/tui_config.py`, run by `agent-sessions setup --remove` and
-// `--remove-opencode`), so removal works without the plugin. Restoring puts the previous values
-// back (or deletes the keys when there were none) and leaves alone any key the user has changed
-// since. The backup's field names must match the Python side.
+// `--remove-opencode`), so removal works without the plugin. Each key is tracked on its own: the
+// backup's `managed` holds the keys currently taken over and their values. Restoring puts the
+// previous values back (or deletes the keys when there were none) and leaves alone any key the
+// user has changed since. The backup's field names must match the Python side.
 
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { t } from "../i18n";
-import type { SubmitKey } from "../settings";
+import type { EditorKey, SubmitKey } from "../settings";
+import { agentEditorKeyName, editorKeyIsAgentDefault } from "./keys";
 
 export const BACKUP_FILENAME = "opencode-tui-backup.json";
+
+export type ManagedKey = "input_submit" | "input_newline" | "editor_open";
+const MANAGED_KEYS: readonly ManagedKey[] = ["input_submit", "input_newline", "editor_open"];
+export type ManagedKeybinds = Partial<Record<ManagedKey, string>>;
 
 export interface OpencodeTuiBackup {
 	/** The tui.json this backup belongs to. */
 	path: string;
-	/** The values the keys had before we took them over; `null` = the key wasn't there. */
-	input_submit: string | null;
-	input_newline: string | null;
-	/** The values we wrote. */
-	managed: { input_submit: string; input_newline: string };
+	/** The values the managed keys had before we took them over; `null` = the key wasn't there. */
+	input_submit?: string | null;
+	input_newline?: string | null;
+	editor_open?: string | null;
+	/** The keys we hold now and the values we wrote. */
+	managed: ManagedKeybinds;
 	/** We created the `keybinds` object / the whole file, so removing our keys may remove them too. */
 	created_keybinds: boolean;
 	created_file: boolean;
@@ -48,13 +61,18 @@ const SUBMIT_KEY_NAMES: Partial<Record<SubmitKey, string>> = {
 	"alt+enter": "alt+return",
 };
 
-/** The keybinds written for a non-enter submit key. */
-export function managedKeybinds(submitKey: SubmitKey): { input_submit: string; input_newline: string } {
-	const own = SUBMIT_KEY_NAMES[submitKey];
-	return {
-		input_submit: "linefeed,ctrl+j",
-		input_newline: RETURN_KEYS.filter((k) => k !== own).join(","),
-	};
+/** The keybinds to hold: the submit pair for a non-enter submit key, `editor_open` for an editor key other than OpenCode's own. */
+export function managedKeybinds(submitKey: SubmitKey, editorKey: EditorKey): ManagedKeybinds {
+	const out: ManagedKeybinds = {};
+	if (submitKey !== "enter") {
+		const own = SUBMIT_KEY_NAMES[submitKey];
+		out.input_submit = "linefeed,ctrl+j";
+		out.input_newline = RETURN_KEYS.filter((k) => k !== own).join(",");
+	}
+	if (!editorKeyIsAgentDefault("opencode", editorKey)) {
+		out.editor_open = agentEditorKeyName("opencode", editorKey);
+	}
+	return out;
 }
 
 export interface OpencodeTuiResult {
@@ -137,118 +155,139 @@ function stringOrNull(v: unknown): string | null {
 	return typeof v === "string" ? v : null;
 }
 
+/**
+ * Brings `filePath` in line with `want` (the keys to hold, possibly none) and records what is
+ * needed to undo it. A key held before and no longer wanted is handed back; a key wanted is set,
+ * remembering the user's value unless the file still holds what we wrote earlier. With nothing
+ * wanted, the backup is deleted at the end and a `keybinds` object or file we created goes too.
+ */
+function syncKeys(filePath: string, backupPath: string, backup: OpencodeTuiBackup | null, want: ManagedKeybinds): OpencodeTuiResult {
+	const loaded = load(filePath);
+	if (typeof loaded === "string") {
+		return { status: "failed", warning: loaded };
+	}
+	const wanted = MANAGED_KEYS.filter((k) => want[k] !== undefined);
+	const deleteBackup = () => {
+		try {
+			fs.unlinkSync(backupPath);
+		} catch {
+			// already gone
+		}
+	};
+	if (!loaded.existed && wanted.length === 0) {
+		deleteBackup();
+		return { status: "unchanged" };
+	}
+
+	const kb: Json | null = isObject(loaded.obj.keybinds) ? loaded.obj.keybinds : null;
+	const recorded = backup?.managed ?? {};
+	const held = MANAGED_KEYS.filter((k) => recorded[k] !== undefined && kb?.[k] === recorded[k]);
+	// Nothing of ours left in the file: the old records no longer describe it.
+	const fresh = backup === null || held.length === 0;
+	for (const k of wanted) {
+		if (kb?.[k] !== undefined && typeof kb[k] !== "string") {
+			return { status: "failed", warning: t("error.opencodeTuiNotJson", { path: filePath }) };
+		}
+	}
+
+	const previous: Partial<Record<ManagedKey, string | null>> = {};
+	const managed: ManagedKeybinds = {};
+	let target = kb;
+	let changed = false;
+	for (const k of MANAGED_KEYS) {
+		const isHeld = held.includes(k);
+		const w = want[k];
+		if (w === undefined) {
+			if (isHeld && target) {
+				const before = backup?.[k];
+				if (before === null || before === undefined) {
+					delete target[k];
+				} else {
+					target[k] = before;
+				}
+				changed = true;
+			}
+			continue;
+		}
+		if (!target) {
+			target = {};
+		}
+		const before = target[k];
+		previous[k] = isHeld ? (backup?.[k] ?? null) : stringOrNull(before);
+		managed[k] = w;
+		if (before !== w) {
+			target[k] = w;
+			changed = true;
+		}
+	}
+
+	const holding = Object.keys(managed).length > 0;
+	const next: OpencodeTuiBackup = {
+		path: filePath,
+		...previous,
+		managed,
+		created_keybinds: fresh || !backup ? kb === null : backup.created_keybinds,
+		created_file: fresh || !backup ? !loaded.existed : backup.created_file,
+	};
+	if (target) {
+		loaded.obj.keybinds = target;
+		if (!holding && Object.keys(target).length === 0 && (backup?.created_keybinds ?? false)) {
+			delete loaded.obj.keybinds;
+		}
+	}
+	try {
+		if (changed) {
+			if (!holding && Object.keys(loaded.obj).length === 0 && (backup?.created_file ?? false)) {
+				fs.unlinkSync(filePath);
+			} else {
+				writeAtomic(filePath, serialize(loaded));
+			}
+		}
+		if (holding) {
+			if (JSON.stringify(next) !== JSON.stringify(backup)) {
+				writeAtomic(backupPath, JSON.stringify(next, null, 2) + "\n");
+			}
+		} else {
+			deleteBackup();
+		}
+	} catch {
+		return { status: "failed", warning: t("error.opencodeTuiUnreadable", { path: filePath }) };
+	}
+	return { status: changed ? (holding ? "written" : "restored") : "unchanged" };
+}
+
 /** Puts the user's previous values back and deletes the backup. */
 export function restoreOpencodeTui(backupPath: string): OpencodeTuiResult {
 	const backup = readBackup(backupPath);
 	if (!backup) {
 		return { status: "unchanged" };
 	}
-	const loaded = load(backup.path);
-	if (typeof loaded === "string") {
-		return { status: "failed", warning: loaded };
-	}
-	let changed = false;
-	if (loaded.existed) {
-		const kb = isObject(loaded.obj.keybinds) ? loaded.obj.keybinds : null;
-		if (kb) {
-			for (const key of ["input_submit", "input_newline"] as const) {
-				if (kb[key] !== backup.managed[key]) {
-					continue; // changed by the user since; theirs now
-				}
-				const previous = backup[key];
-				if (previous === null || previous === undefined) {
-					delete kb[key];
-				} else {
-					kb[key] = previous;
-				}
-				changed = true;
-			}
-			if (Object.keys(kb).length === 0 && backup.created_keybinds) {
-				delete loaded.obj.keybinds;
-			}
-		}
-		if (changed) {
-			try {
-				if (Object.keys(loaded.obj).length === 0 && backup.created_file) {
-					fs.unlinkSync(backup.path);
-				} else {
-					writeAtomic(backup.path, serialize(loaded));
-				}
-			} catch {
-				return { status: "failed", warning: t("error.opencodeTuiUnreadable", { path: backup.path }) };
-			}
-		}
-	}
-	try {
-		fs.unlinkSync(backupPath);
-	} catch {
-		// already gone
-	}
-	return { status: changed ? "restored" : "unchanged" };
+	return syncKeys(backup.path, backupPath, backup, {});
 }
 
-/** Makes tui.json carry the managed keybinds for `submitKey` (not `enter`). */
-export function applyOpencodeTui(filePath: string, backupPath: string, submitKey: SubmitKey): OpencodeTuiResult {
+/** Makes tui.json carry the managed keybinds for `submitKey` and `editorKey`, handing back any it held that are no longer wanted. */
+export function applyOpencodeTui(filePath: string, backupPath: string, submitKey: SubmitKey, editorKey: EditorKey): OpencodeTuiResult {
 	let backup = readBackup(backupPath);
 	if (backup && backup.path !== filePath) {
 		restoreOpencodeTui(backupPath); // the config folder moved: hand the old file back first
 		backup = null;
 	}
-	const loaded = load(filePath);
-	if (typeof loaded === "string") {
-		return { status: "failed", warning: loaded };
-	}
-	const want = managedKeybinds(submitKey);
-	const kb = isObject(loaded.obj.keybinds) ? loaded.obj.keybinds : null;
-	const current = { input_submit: kb?.input_submit, input_newline: kb?.input_newline };
-	const alreadyManaged = current.input_submit === want.input_submit && current.input_newline === want.input_newline;
-	if (alreadyManaged && backup) {
-		return { status: "unchanged" };
-	}
-
-	// What the user had: the recorded values while the file still holds ours, otherwise what is there now.
-	const holdsOurs =
-		backup !== null &&
-		current.input_submit === backup.managed.input_submit &&
-		current.input_newline === backup.managed.input_newline;
-	const next: OpencodeTuiBackup = {
-		path: filePath,
-		input_submit: holdsOurs && backup ? backup.input_submit : stringOrNull(current.input_submit),
-		input_newline: holdsOurs && backup ? backup.input_newline : stringOrNull(current.input_newline),
-		managed: want,
-		created_keybinds: holdsOurs && backup ? backup.created_keybinds : kb === null,
-		created_file: holdsOurs && backup ? backup.created_file : !loaded.existed,
-	};
-	// A value we can't record (not a string) is left as is rather than overwritten.
-	for (const key of ["input_submit", "input_newline"] as const) {
-		if (current[key] !== undefined && typeof current[key] !== "string") {
-			return { status: "failed", warning: t("error.opencodeTuiNotJson", { path: filePath }) };
-		}
-	}
-	try {
-		if (!alreadyManaged) {
-			const target = kb ?? {};
-			target.input_submit = want.input_submit;
-			target.input_newline = want.input_newline;
-			loaded.obj.keybinds = target;
-			writeAtomic(filePath, serialize(loaded));
-		}
-		writeAtomic(backupPath, JSON.stringify(next, null, 2) + "\n");
-	} catch {
-		return { status: "failed", warning: t("error.opencodeTuiUnreadable", { path: filePath }) };
-	}
-	return { status: alreadyManaged ? "unchanged" : "written" };
+	return syncKeys(filePath, backupPath, backup, managedKeybinds(submitKey, editorKey));
 }
 
-/** The one entry point: manage the keybinds when OpenCode is enabled and the submit key isn't Enter; otherwise restore. */
+/**
+ * The one entry point: manage the keybinds while OpenCode is enabled (the editor key is always
+ * managed; the submit pair only for a submit key other than Enter); restore when it is disabled.
+ */
 export function syncOpencodeTui(
 	filePath: string,
 	backupPath: string,
 	submitKey: SubmitKey,
+	editorKey: EditorKey,
 	enabled: boolean
 ): OpencodeTuiResult {
-	if (enabled && submitKey !== "enter") {
-		return applyOpencodeTui(filePath, backupPath, submitKey);
+	if (enabled) {
+		return applyOpencodeTui(filePath, backupPath, submitKey, editorKey);
 	}
 	return restoreOpencodeTui(backupPath);
 }

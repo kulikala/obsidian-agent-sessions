@@ -75,6 +75,39 @@ class TestTuiConfigRestore(unittest.TestCase):
         with open(self.tui) as f:
             self.assertIn('\n    "a": 1', f.read())
 
+    def test_editor_open_only_backup_puts_the_previous_value_back(self):
+        self._tui({'keybinds': {'leader': 'ctrl+x', 'editor_open': 'ctrl+g'}})
+        self._backup(input_submit=None, input_newline=None, editor_open='<leader>o',
+                     managed={'editor_open': 'ctrl+g'})
+        changes = tui_config.restore(self.backup)
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(self._read(), {'keybinds': {'leader': 'ctrl+x', 'editor_open': '<leader>o'}})
+        self.assertFalse(os.path.exists(self.backup))
+
+    def test_editor_open_with_no_previous_value_is_deleted_and_a_created_file_removed(self):
+        self._tui({'keybinds': {'editor_open': 'alt+g'}})
+        self._backup(editor_open=None, managed={'editor_open': 'alt+g'}, created_keybinds=True, created_file=True)
+        tui_config.restore(self.backup)
+        self.assertFalse(os.path.exists(self.tui))
+
+    def test_all_three_keys_are_restored_together(self):
+        self._tui({'keybinds': {**MANAGED, 'editor_open': 'ctrl+q'}})
+        self._backup(input_submit='return', editor_open='<leader>o', managed={**MANAGED, 'editor_open': 'ctrl+q'})
+        tui_config.restore(self.backup)
+        self.assertEqual(self._read(), {'keybinds': {'input_submit': 'return', 'editor_open': '<leader>o'}})
+
+    def test_an_editor_key_the_user_changed_since_stays(self):
+        self._tui({'keybinds': {'editor_open': 'ctrl+e'}})
+        self._backup(editor_open=None, managed={'editor_open': 'ctrl+g'})
+        tui_config.restore(self.backup)
+        self.assertEqual(self._read(), {'keybinds': {'editor_open': 'ctrl+e'}})
+
+    def test_a_key_outside_managed_is_never_touched(self):
+        self._tui({'keybinds': {'editor_open': 'ctrl+g', 'input_submit': 'ctrl+s'}})
+        self._backup(editor_open=None, managed={'editor_open': 'ctrl+g'})
+        tui_config.restore(self.backup)
+        self.assertEqual(self._read(), {'keybinds': {'input_submit': 'ctrl+s'}})
+
     def test_jsonc_is_left_alone_and_the_backup_kept(self):
         text = '{\n  // mine\n  "keybinds": {"input_submit": "linefeed,ctrl+j"}\n}\n'
         with open(self.tui, 'w') as f:
@@ -95,6 +128,52 @@ class TestTuiConfigRestore(unittest.TestCase):
         self.assertEqual(len(tui_config.restore(self.backup, dry_run=True)), 1)
         self.assertEqual(self._read(), {'keybinds': MANAGED})
         self.assertTrue(os.path.exists(self.backup))
+
+
+class TestSetupRemovesEditorKeys(unittest.TestCase):
+    """`setup --remove` gives back all three agents' editor-key settings."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        d = self._tmp.name
+        self.tui = os.path.join(d, 'tui.json')
+        self.backup = os.path.join(d, 'backup.json')
+        self.kb = os.path.join(d, 'kb.json')
+        self.toml = os.path.join(d, 'c.toml')
+        with open(self.tui, 'w') as f:
+            json.dump({'keybinds': {'editor_open': 'ctrl+q'}}, f)
+        with open(self.backup, 'w') as f:
+            json.dump({'path': self.tui, 'editor_open': '<leader>o', 'managed': {'editor_open': 'ctrl+q'},
+                       'created_keybinds': False, 'created_file': False}, f)
+        with open(self.kb, 'w') as f:
+            json.dump({'bindings': [{'context': 'Chat', 'bindings': {'ctrl+q': 'chat:externalEditor', 'ctrl+g': None}}]}, f)
+        with open(self.toml, 'w') as f:
+            f.write('[tui.keymap.global] # managed by Agent Sessions\n'
+                    'open_external_editor = "ctrl-q" # managed by Agent Sessions\n')
+        self.args = ['--settings', os.path.join(d, 's.json'), '--keybindings', self.kb, '--config-toml', self.toml,
+                     '--opencode-plugin', os.path.join(d, 'plugin.js'), '--opencode-tui-backup', self.backup]
+
+    def test_remove_restores_claude_codex_and_opencode(self):
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(cmd_setup.main(['--remove'] + self.args), 0)
+        with open(self.kb) as f:
+            self.assertEqual(json.load(f)['bindings'], [])
+        with open(self.toml) as f:
+            self.assertEqual(f.read(), '')
+        with open(self.tui) as f:
+            self.assertEqual(json.load(f), {'keybinds': {'editor_open': '<leader>o'}})
+        self.assertFalse(os.path.exists(self.backup))
+
+    def test_remove_opencode_touches_only_opencode(self):
+        with redirect_stdout(io.StringIO()):
+            self.assertEqual(cmd_setup.main(['--remove-opencode'] + self.args), 0)
+        with open(self.tui) as f:
+            self.assertEqual(json.load(f), {'keybinds': {'editor_open': '<leader>o'}})
+        with open(self.kb) as f:
+            self.assertEqual(len(json.load(f)['bindings']), 1)
+        with open(self.toml) as f:
+            self.assertIn('open_external_editor', f.read())
 
 
 class TestSetupRemovesTui(unittest.TestCase):

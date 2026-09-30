@@ -19,6 +19,19 @@ export const SUBMIT_KEYS: readonly SubmitKey[] = ["enter", "shift+enter", "ctrl+
  */
 export const SUBMIT_KEYS_NON_MAC: readonly SubmitKey[] = ["enter", "shift+enter", "ctrl+enter", "alt+enter"];
 
+/**
+ * The key that opens the agent's external editor (the built-in editor pane, reached through
+ * `$VISUAL`). Each choice is one that Claude Code, Codex and OpenCode all leave free (or that
+ * takes nothing they use), and that reaches the terminal on macOS and Linux (`terminal/keys.ts`).
+ * `alt+g` is Option+G on macOS.
+ */
+export type EditorKey = "ctrl+g" | "ctrl+q" | "alt+g";
+
+export const EDITOR_KEYS: readonly EditorKey[] = ["ctrl+g", "ctrl+q", "alt+g"];
+
+/** The default editor key: Claude Code's and Codex's own, so neither needs a config change. */
+export const DEFAULT_EDITOR_KEY: EditorKey = "ctrl+g";
+
 const FONT_FAMILY_MAC = 'Menlo, "Hiragino Sans", monospace';
 /** Menlo doesn't exist on Linux, so non-macOS gets a monospace font with even CJK width plus a fallback. */
 const FONT_FAMILY_NON_MAC = '"DejaVu Sans Mono", "Noto Sans Mono CJK JP", monospace';
@@ -130,6 +143,8 @@ export interface AgentSessionsSettings {
 	editorHeight: number;
 	/** The submit key (default `enter`). Re-derived from keybindings.json at startup. */
 	submitKey: SubmitKey;
+	/** The key that opens the agent's external editor (default `ctrl+g`). */
+	editorKey: EditorKey;
 	/** The side panel's detail area height (px). */
 	sideDetailHeight: number;
 	/** The display language. Default is `auto` (follows Obsidian's own language). */
@@ -158,6 +173,7 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	scrollback: 5000,
 	editorHeight: 40,
 	submitKey: "enter",
+	editorKey: DEFAULT_EDITOR_KEY,
 	sideDetailHeight: 220,
 	language: "auto",
 	managerAnalysisHeight: 240,
@@ -240,6 +256,9 @@ export function mergeSettings(data: unknown, isMac = true): AgentSessionsSetting
 	}
 	if (!SUBMIT_KEYS.includes(saved.submitKey as SubmitKey)) {
 		delete saved.submitKey;
+	}
+	if (!EDITOR_KEYS.includes(saved.editorKey as EditorKey)) {
+		delete saved.editorKey;
 	}
 	if (!isMac && saved.submitKey === "cmd+enter") {
 		delete saved.submitKey;

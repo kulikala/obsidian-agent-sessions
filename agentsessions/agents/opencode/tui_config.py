@@ -1,14 +1,18 @@
 """Undoing the plugin's edit of OpenCode's `tui.json`
 (`$XDG_CONFIG_HOME/opencode/tui.json`, default `~/.config/opencode/`).
 
-With a submit key other than Enter the plugin sets `keybinds.input_submit` and
-`keybinds.input_newline` there (`plugin/src/terminal/opencode-tui.ts`) and records
-the user's previous values in `~/.agents/sessions/opencode-tui-backup.json`:
+The plugin sets `keybinds.editor_open` there (the editor key) whenever OpenCode is
+enabled, and `keybinds.input_submit` / `keybinds.input_newline` for a submit key
+other than Enter (`plugin/src/terminal/opencode-tui.ts`). It records the user's
+previous values in `~/.agents/sessions/opencode-tui-backup.json`:
 
     {"path": "<tui.json>", "input_submit": str|null, "input_newline": str|null,
-     "managed": {"input_submit": str, "input_newline": str},
+     "editor_open": str|null,
+     "managed": {"input_submit": str, "input_newline": str, "editor_open": str},
      "created_keybinds": bool, "created_file": bool}
 
+Only the keys in `managed` are held (the previous-value fields exist for those
+alone); a backup from before the editor key holds the submit pair only.
 `restore` puts the previous values back (deleting a key that did not exist
 before), leaves any key whose value is no longer the one the plugin wrote, and
 deletes the backup. A tui.json that is not plain JSON is left untouched and its
@@ -21,7 +25,7 @@ from typing import List, Optional
 from ... import config, i18n
 
 BACKUP_FILENAME = 'opencode-tui-backup.json'
-KEYS = ('input_submit', 'input_newline')
+KEYS = ('input_submit', 'input_newline', 'editor_open')
 
 
 def default_backup_path() -> str:
@@ -76,7 +80,7 @@ def restore(backup_path: Optional[str] = None, dry_run: bool = False) -> List[st
         changed = False
         if kb is not None:
             for key in KEYS:
-                if kb.get(key) != backup['managed'].get(key):
+                if key not in backup['managed'] or kb.get(key) != backup['managed'][key]:
                     continue
                 previous = backup.get(key)
                 if previous is None:

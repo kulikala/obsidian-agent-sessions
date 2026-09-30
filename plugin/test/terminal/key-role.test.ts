@@ -220,3 +220,17 @@ describe("terminalClaimsKey", () => {
 		expect(terminalClaimsKey(key({ key: "g", ctrlKey: true }), true)).toBe(false);
 	});
 });
+
+describe("editor keys reach the terminal", () => {
+	it("claims Ctrl+G and Ctrl+Q on non-macOS and sends them as plain Ctrl keys", () => {
+		for (const k of ["g", "q"]) {
+			expect(classifyCtrlKeyNonMac(key({ key: k, ctrlKey: true }))).toBe("terminal");
+			expect(terminalClaimsKey(key({ key: k, ctrlKey: true }), false)).toBe(true);
+		}
+	});
+
+	it("leaves Alt+G to xterm (Alt is Meta there, on macOS too), with no Obsidian hotkey claimed", () => {
+		expect(classifyCtrlKeyNonMac(key({ key: "g", altKey: true }))).toBe("passthrough");
+		expect(terminalClaimsKey(key({ key: "g", altKey: true }), false)).toBe(false);
+	});
+});

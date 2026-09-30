@@ -6,6 +6,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { t } from "../i18n";
+import type { EditorKey } from "../settings";
+import { agentEditorKeyName, editorKeyIsAgentDefault } from "./keys";
 
 export type EnterMode = "submit" | "newline" | "custom" | "unreadable";
 
@@ -28,7 +30,7 @@ export interface ApplySubmitKeyResult {
 
 interface KeybindingsBlock {
 	context: string;
-	bindings?: Record<string, string>;
+	bindings?: Record<string, string | null>;
 }
 
 interface KeybindingsFile {
@@ -138,7 +140,7 @@ export function readChatBindings(filePath: string): Record<string, string> | und
 	if (!data) {
 		return undefined;
 	}
-	return findChat(data)?.bindings;
+	return findChat(data)?.bindings as Record<string, string> | undefined;
 }
 
 /**
@@ -253,6 +255,131 @@ export function applySubmitKey(filePath: string, submitKey: string): ApplySubmit
 		return { status: "unchanged", warning };
 	}
 
+	fs.mkdirSync(path.dirname(filePath), { recursive: true });
+	fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
+	return { status: "written", warning };
+}
+
+const EDITOR_ACTION = "chat:externalEditor";
+
+/** Claude Code's own editor key, freed (`null`) while a different editor key is in use. */
+const CLAUDE_DEFAULT_EDITOR_BINDING = "ctrl+g";
+
+/** Every key name `applyEditorKey` can put `chat:externalEditor` on. */
+const OWNED_EDITOR_KEYS = (["ctrl+g", "ctrl+q", "alt+g"] as const)
+	.filter((k) => !editorKeyIsAgentDefault("claude", k))
+	.map((k) => agentEditorKeyName("claude", k));
+
+/**
+ * Applies the editor-key setting to `keybindings.json`'s `Chat` block — the same file and the
+ * same rules as `applySubmitKey`, for the action `chat:externalEditor` (Claude Code's default
+ * keys for it are Ctrl+G and the chord Ctrl+X Ctrl+E).
+ * - Editor key other than Ctrl+G: binds the key (`ctrl+q`, or `meta+g` for Alt/Option+G) to
+ *   `chat:externalEditor`, frees Ctrl+G (`ctrl+g: null`) so the setting names the one key that
+ *   opens the editor, and clears the other keys this feature can bind. A key that already holds
+ *   some other action is never overwritten: it is left as is with a `warning`, and Ctrl+G stays
+ *   bound so the editor stays reachable.
+ * - Ctrl+G: removes every key of ours (`chat:externalEditor` on the alternates, `null` on
+ *   `ctrl+g`) and drops a `Chat` block that ends up empty.
+ * Every other key and context is left alone. `{status: "unchanged"}` without touching the file
+ * when it already matches; `{status: "failed", warning}` when it exists but can't be parsed.
+ */
+export function applyEditorKey(filePath: string, editorKey: EditorKey): ApplySubmitKeyResult {
+	const writing = !editorKeyIsAgentDefault("claude", editorKey);
+
+	let text: string | null;
+	try {
+		text = fs.readFileSync(filePath, "utf8");
+	} catch (err) {
+		if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+			text = null;
+		} else {
+			return { status: "failed", warning: t("error.keybindingsUnreadable", { path: filePath }) };
+		}
+	}
+	if (text === null && !writing) {
+		return { status: "unchanged" };
+	}
+
+	let data: KeybindingsFile;
+	let mutated = false;
+	if (text === null) {
+		data = { bindings: [] };
+		mutated = true;
+	} else {
+		const parsed = parseKeybindingsFile(text);
+		if (!parsed) {
+			return { status: "failed", warning: t("error.keybindingsUnreadable", { path: filePath }) };
+		}
+		data = parsed;
+	}
+
+	let warning: string | undefined;
+	const mine = agentEditorKeyName("claude", editorKey);
+
+	if (writing) {
+		let chat = findChat(data);
+		if (!chat) {
+			chat = { context: "Chat", bindings: {} };
+			data.bindings.push(chat);
+			mutated = true;
+		}
+		const bindings = (chat.bindings ??= {});
+		let bound = bindings[mine] === EDITOR_ACTION;
+		if (!bound) {
+			if (mine in bindings) {
+				warning = t("warning.manualFix", { keys: mine });
+			} else {
+				bindings[mine] = EDITOR_ACTION;
+				bound = true;
+				mutated = true;
+			}
+		}
+		for (const key of OWNED_EDITOR_KEYS) {
+			if (key !== mine && bindings[key] === EDITOR_ACTION) {
+				delete bindings[key];
+				mutated = true;
+			}
+		}
+		if (bound && !(CLAUDE_DEFAULT_EDITOR_BINDING in bindings)) {
+			bindings[CLAUDE_DEFAULT_EDITOR_BINDING] = null;
+			mutated = true;
+		}
+	} else {
+		const chat = findChat(data);
+		const bindings = chat?.bindings;
+		if (chat && bindings) {
+			const mismatched: string[] = [];
+			for (const key of OWNED_EDITOR_KEYS) {
+				if (bindings[key] === EDITOR_ACTION) {
+					delete bindings[key];
+					mutated = true;
+				} else if (key in bindings) {
+					mismatched.push(key);
+				}
+			}
+			if (bindings[CLAUDE_DEFAULT_EDITOR_BINDING] === null) {
+				delete bindings[CLAUDE_DEFAULT_EDITOR_BINDING];
+				mutated = true;
+			}
+			if (Object.keys(bindings).length === 0) {
+				const before = data.bindings.length;
+				data.bindings = data.bindings.filter((b) => b !== chat);
+				mutated = mutated || data.bindings.length !== before;
+			}
+			if (mismatched.length > 0) {
+				warning = t("warning.manualFix", { keys: mismatched.join(", ") });
+			}
+		}
+	}
+
+	if (!mutated) {
+		return { status: "unchanged", warning };
+	}
+	if (writing) {
+		data.$schema ??= SCHEMA_URL;
+		data.$docs ??= DOCS_URL;
+	}
 	fs.mkdirSync(path.dirname(filePath), { recursive: true });
 	fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
 	return { status: "written", warning };

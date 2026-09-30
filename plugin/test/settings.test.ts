@@ -27,6 +27,7 @@ describe("DEFAULT_SETTINGS", () => {
 			scrollback: 5000,
 			editorHeight: 40,
 			submitKey: "enter",
+			editorKey: "ctrl+g",
 			sideDetailHeight: 220,
 			language: "auto",
 			managerAnalysisHeight: 240,

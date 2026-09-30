@@ -1,16 +1,18 @@
-"""Removes this tool's submit-key entries from `keybindings.json`.
+"""Removes this tool's submit-key and editor-key entries from `keybindings.json`.
 
 The write side (`plugin/src/terminal/keybindings.ts`'s `applySubmitKey`, writing
-`enter: chat:newline` / `meta+enter: chat:submit`) only exists in the plugin --
-uninstalling is the only thing the Python side does with this file, so only the
-removal rule lives here, kept in sync with the plugin's `OWNED_KEYS`/
-`ownedCanonicalValue` (see that module's docstring for why there are six, not
-two: `enter`/`meta+enter` are the only pair written today, but `cmd+enter`/
-`ctrl+enter`/`shift+enter`/`alt+enter` are also "ours" to clean up, since an
-earlier version or a hand-edited file could hold one of them). Remove a key
-only if its value still matches its canonical one, leave a mismatched value in
-place with a warning, and drop an emptied `Chat` block. A no-op if the file
-doesn't exist.
+`enter: chat:newline` / `meta+enter: chat:submit`, and `applyEditorKey`, writing
+`ctrl+q` or `meta+g: chat:externalEditor` with `ctrl+g: null`) only exists in the
+plugin -- uninstalling is the only thing the Python side does with this file, so
+only the removal rule lives here, kept in sync with the plugin's `OWNED_KEYS`/
+`ownedCanonicalValue`/`OWNED_EDITOR_KEYS` (see that module's docstring for why
+there are six submit keys, not two: `enter`/`meta+enter` are the only pair
+written today, but `cmd+enter`/`ctrl+enter`/`shift+enter`/`alt+enter` are also
+"ours" to clean up, since an earlier version or a hand-edited file could hold
+one of them). Remove a key only if it is present and its value still matches
+its canonical one, leave a mismatched value in place with a warning (except
+`ctrl+g`, which is the user's own whenever it is not `null`), and drop an
+emptied `Chat` block. A no-op if the file doesn't exist.
 """
 import json
 import os
@@ -27,7 +29,15 @@ OWNED_KEYS = {
     'ctrl+enter': 'chat:submit',
     'shift+enter': 'chat:submit',
     'alt+enter': 'chat:submit',
+    # The editor key: `applyEditorKey` binds `ctrl+q` / `meta+g` (Alt/Option+G) to
+    # `chat:externalEditor` and frees Claude Code's own `ctrl+g` (`null`).
+    'ctrl+q': 'chat:externalEditor',
+    'meta+g': 'chat:externalEditor',
+    'ctrl+g': None,
 }
+
+# Keys whose value, when it is not ours, belongs to the user and is not worth a warning.
+_SILENT_WHEN_MISMATCHED = {'ctrl+g'}
 
 SCHEMA_URL = 'https://www.schemastore.org/claude-code-keybindings.json'
 DOCS_URL = 'https://code.claude.com/docs/en/keybindings'
@@ -58,7 +68,7 @@ def _find_chat(data: dict) -> Optional[dict]:
     return None
 
 
-def remove_enter_keys(path: str = DEFAULT_KEYBINDINGS_PATH,
+def remove_managed_keys(path: str = DEFAULT_KEYBINDINGS_PATH,
                        dry_run: bool = False) -> Tuple[bool, Optional[str]]:
     """Removes each of `OWNED_KEYS` from `Chat`, but only where the value still matches.
 
@@ -88,10 +98,10 @@ def remove_enter_keys(path: str = DEFAULT_KEYBINDINGS_PATH,
     changed = False
     if chat is not None and isinstance(chat.get('bindings'), dict):
         for key, value in OWNED_KEYS.items():
-            if chat['bindings'].get(key) == value:
+            if key in chat['bindings'] and chat['bindings'][key] == value:
                 del chat['bindings'][key]
                 changed = True
-            elif key in chat['bindings']:
+            elif key in chat['bindings'] and key not in _SILENT_WHEN_MISMATCHED:
                 mismatched.append(key)
         if not chat['bindings']:
             data['bindings'] = [b for b in data['bindings'] if b is not chat]

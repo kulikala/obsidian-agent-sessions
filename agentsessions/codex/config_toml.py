@@ -1,6 +1,6 @@
 """Removes only the lines this project added to Codex CLI's own config
 (`~/.codex/config.toml`, respecting `CODEX_HOME`) -- the plugin (T-108) is
-what writes them (the submit-key keymap, and `[tui]` `status_line` only when
+what writes them (the submit-key and editor-key keymap, and `[tui]` `status_line` only when
 it wasn't already set), marking each written line with a trailing comment
 (`MANAGED_MARKER`). This module is `agent-sessions setup --remove`/
 `uninstall.sh`'s side of that.

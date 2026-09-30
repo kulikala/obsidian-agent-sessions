@@ -87,11 +87,11 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"notice.scanFailed": "一覧の走査に失敗しました: {message}",
 	"notice.idCopied": "ID をコピーしました",
 	"notice.matchedKeybindings": "keybindings.json に合わせました",
-	"notice.keybindingsWritten": "Claude Code の送信キーの設定を更新しました",
-	"notice.keybindingsUnchanged": "Claude Code の送信キーの設定は、すでにこの内容です",
-	"notice.opencodeTuiWritten": "OpenCode の送信キーの設定を更新しました",
+	"notice.keybindingsWritten": "Claude Code のキー設定を更新しました",
+	"notice.keybindingsUnchanged": "Claude Code のキー設定は、すでにこの内容です",
+	"notice.opencodeTuiWritten": "OpenCode のキー設定を更新しました",
 	"notice.opencodeTuiRestored": "OpenCode のキー設定を元に戻しました",
-	"notice.codexConfigWritten": "Codex の送信キーの設定を更新しました",
+	"notice.codexConfigWritten": "Codex のキー設定を更新しました",
 	"notice.opencodePluginInstalled": "OpenCode のステータス用プラグインを入れました",
 	"notice.opencodePluginUpdated": "OpenCode のステータス用プラグインを更新しました",
 	"notice.opencodePluginCurrent": "OpenCode のステータス用プラグインは最新です",
@@ -138,7 +138,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"settings.agentSessionsPath.name": "agent-sessions の場所",
 	"settings.agentSessionsPath.desc": "空欄のままにすると、~/bin/agent-sessions があればそれを、無ければこのプラグインからインストールしたものを使います。",
 	"settings.editorHeight.name": "編集領域の高さ（%）",
-	"settings.editorHeight.desc": "Ctrl+G で開く内蔵エディタの高さ。",
+	"settings.editorHeight.desc": "内蔵エディタの高さ。",
 	"settings.scrollback.name": "スクロールバック行数",
 	"settings.language.name": "言語",
 	"settings.language.optionAuto": "自動",
@@ -154,7 +154,16 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"confirm.writeKeybindings.messageWithCodex":
 		"Enter を改行にするため、Claude Code（~/.claude/keybindings.json）と Codex（~/.codex/config.toml）の設定を書き換えます。Obsidian の外で使う claude・codex にも反映され、そこでは Alt（Option）+Enter が送信になります。",
 	"confirm.writeKeybindings.opencodeNote":
-		"あわせて OpenCode の tui.json の送信・改行キーも設定します（ほかの設定はそのまま）。Obsidian の外で使う opencode では Ctrl+J が送信になります。Enter に戻したとき、または Agent Sessions を取り除いたときに、元の値に戻ります。",
+		"あわせて OpenCode の tui.json の送信・改行キーとエディタキーも設定します（ほかの設定はそのまま）。Obsidian の外で使う opencode では Ctrl+J が送信になります。Enter に戻したとき、OpenCode をオフにしたとき、または Agent Sessions を取り除いたときに、元の値に戻ります。",
+	"settings.editorKey.name": "エディタキー",
+	"settings.editorKey.desc":
+		"エージェントのエディタ（内蔵エディタ）を開くキー。Ctrl+G は Claude Code と Codex 本来のキーで、それ以外を選ぶと各エージェントの設定に書き込みます。OpenCode 本来のキーは Ctrl+X, E なので、OpenCode の tui.json にはどの選択でもこのキーを書き込みます。",
+	"confirm.writeEditorKey.message":
+		"{key} でエディタを開けるようにするため、Claude Code の設定（~/.claude/keybindings.json）を書き換えます。Ctrl+G ではエディタが開かなくなります。Obsidian の外で使う claude にも反映されます。",
+	"confirm.writeEditorKey.messageWithCodex":
+		"{key} でエディタを開けるようにするため、Claude Code（~/.claude/keybindings.json）と Codex（~/.codex/config.toml）の設定を書き換えます。Ctrl+G ではエディタが開かなくなります。Obsidian の外で使う claude・codex にも反映されます。",
+	"confirm.writeEditorKey.opencodeNote":
+		"あわせて OpenCode の tui.json のエディタキーも設定します（ほかの設定はそのまま）。Obsidian の外で使う opencode でも、Ctrl+X, E ではなく {key} でエディタが開きます。OpenCode をオフにしたとき、または Agent Sessions を取り除いたときに、元の値に戻ります。",
 	"settings.submitKeyMismatch.name": "Claude Code の設定と一致していません",
 	"settings.submitKeyMismatch.desc": "keybindings.json の内容が、この送信キーと食い違っています。",
 
@@ -361,7 +370,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	// ---- terminal/codex-config.ts ----
 	"error.codexConfigUnreadable": "{path} を読めません。手で直してください。",
 	"error.opencodeTuiUnreadable": "{path} を読み書きできません。手で直してください。",
-	"error.opencodeTuiNotJson": "{path} が通常の JSON ではない（コメントや末尾のカンマ？）ため、書き換えませんでした。OpenCode の送信キーは \"keybinds\" を手で設定してください。",
+	"error.opencodeTuiNotJson": "{path} が通常の JSON ではない（コメントや末尾のカンマ？）ため、書き換えませんでした。OpenCode の送信キー・エディタキーは \"keybinds\" を手で設定してください。",
 	"error.codexConfigMalformed": "{path} の書式が正しくないため、書き換えませんでした。手で直してください。",
 	"warning.codexConfigManualFix": "{keys} にはご自身で設定した値があるため、書き換えませんでした。",
 

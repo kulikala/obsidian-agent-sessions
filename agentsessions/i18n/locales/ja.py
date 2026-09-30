@@ -41,7 +41,7 @@ MESSAGES = {
     'setup.hook_removed': 'hooks.{event}: {command} を取り除いた',
     'setup.status_line_set': 'statusLine: {old!r} → {new!r}',
     'setup.status_line_removed': 'statusLine: {old!r} を取り除いた',
-    'setup.keybindings_removed': 'keybindings.json: enter・meta+enter を取り除いた',
+    'setup.keybindings_removed': 'keybindings.json: 送信キー・エディタキーの設定を取り除いた',
     'setup.keybindings_mismatch': 'keybindings.json の Chat に別の値の {keys} があるので残した'
                                    '（手で直す）',
     'setup.keybindings_unreadable': 'keybindings.json を読めない: {error}',
@@ -51,7 +51,7 @@ MESSAGES = {
     'setup.opencode_installed': 'opencode プラグイン: {path} を入れた',
     'setup.opencode_updated': 'opencode プラグイン: {path} を更新した',
     'setup.opencode_removed': 'opencode プラグイン: {path} を取り除いた',
-    'setup.opencode_tui_restored': 'opencode: {path} の送信キー設定を元に戻した',
+    'setup.opencode_tui_restored': 'opencode: {path} の送信キー・エディタキーの設定を元に戻した',
     'setup.opencode_tui_not_json': 'opencode: {path} は通常の JSON ではないため、書き換えなかった',
     'setup.opencode_tui_failed': 'opencode: {path} を更新できなかった: {error}',
     'setup.opencode_foreign': 'opencode プラグイン: {path} は自分のものではないので、そのままにした',
