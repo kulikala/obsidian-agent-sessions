@@ -90,12 +90,12 @@ def _files_of(name: str, base: str, launcher: str) -> List[Tuple[str, str]]:
     return [(os.path.join(base, name, SKILL_FILE), render(name, launcher))]
 
 
-def install(vault: str, agents: List[str], launcher: Optional[str] = None, dry_run: bool = False,
-            update_only: bool = False) -> Tuple[str, List[str]]:
+def install(vault: str, agents: List[str], launcher: Optional[str] = None,
+            dry_run: bool = False) -> Tuple[str, List[str]]:
     """Writes the skills the enabled `agents` need into `vault` and removes our copies from the other
     folders. Returns `(status, change descriptions)`; the status is the most notable outcome (`failed`,
-    `foreign`, `installed`, `updated`, `unchanged`, in that order). `update_only` refreshes files that
-    are already ours and creates and removes nothing (`absent` when there was nothing to refresh)."""
+    `foreign`, `installed`, `updated`, `unchanged`, in that order). A file is written only when its
+    text differs, so running this again with the same agents and launcher changes nothing."""
     launcher = launcher or default_launcher()
     wanted = wanted_dirs(agents)
     changes: List[str] = []
@@ -104,8 +104,7 @@ def install(vault: str, agents: List[str], launcher: Optional[str] = None, dry_r
         # Our copies of the skills earlier versions installed go from every folder.
         changes.extend(_remove_dir(vault, base, dry_run, LEGACY_SKILL_NAMES))
         if base not in wanted:
-            if not update_only:
-                changes.extend(_remove_dir(vault, base, dry_run))
+            changes.extend(_remove_dir(vault, base, dry_run))
             continue
         for name in SKILL_NAMES:
             for rel, text in _files_of(name, base, launcher):
@@ -117,8 +116,6 @@ def install(vault: str, agents: List[str], launcher: Optional[str] = None, dry_r
                     continue
                 if existing == text:
                     seen.add(UNCHANGED)
-                    continue
-                if existing is None and update_only:
                     continue
                 if not dry_run:
                     try:
@@ -133,7 +130,7 @@ def install(vault: str, agents: List[str], launcher: Optional[str] = None, dry_r
     for status in (FAILED, FOREIGN, INSTALLED, UPDATED, UNCHANGED):
         if status in seen:
             return status, changes
-    return (ABSENT if update_only or not wanted else UNCHANGED), changes
+    return (ABSENT if not wanted else UNCHANGED), changes
 
 
 def _remove_dir(vault: str, base: str, dry_run: bool, names: Tuple[str, ...] = SKILL_NAMES + LEGACY_SKILL_NAMES) -> List[str]:

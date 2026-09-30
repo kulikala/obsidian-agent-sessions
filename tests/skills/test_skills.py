@@ -175,31 +175,27 @@ class TestInstall(SkillsTestCase):
         skills.install(self.vault, ['codex'], LAUNCHER)
         self.assertEqual(read(policy), 'policy: mine\n')
 
-    def test_update_only_also_drops_the_old_skills(self):
-        self.write_legacy(CLAUDE, 'agent-sessions-stats')
-        self.assertEqual(skills.install(self.vault, ['claude'], LAUNCHER, update_only=True)[0], skills.ABSENT)
-        self.assertEqual(self.files(), [])
-
     def test_remove_takes_the_old_skills_too(self):
         self.write_legacy(CLAUDE, 'agent-sessions-info')
         skills.remove(self.vault)
         self.assertEqual(os.listdir(self.vault), [])
 
-    def test_update_only_refreshes_copies_that_exist_and_creates_nothing(self):
-        self.assertEqual(skills.install(self.vault, ['claude'], LAUNCHER, update_only=True), (skills.ABSENT, []))
-        self.assertEqual(self.files(), [])
-        skills.install(self.vault, ['claude'], LAUNCHER)
-        status, _ = skills.install(self.vault, ['claude'], '/other/agent-sessions', update_only=True)
+    def test_install_creates_missing_copies_and_rewrites_a_changed_launcher(self):
+        self.assertEqual(skills.install(self.vault, ['claude'], LAUNCHER)[0], skills.INSTALLED)
+        self.assertEqual(skills.install(self.vault, ['claude'], LAUNCHER)[0], skills.UNCHANGED)
+        status, _ = skills.install(self.vault, ['claude'], '/other/agent-sessions')
         self.assertEqual(status, skills.UPDATED)
         self.assertIn('/other/', read(self.path(CLAUDE, 'agent-sessions', 'SKILL.md')))
         os.unlink(self.path(CLAUDE, 'agent-sessions', 'SKILL.md'))
-        self.assertEqual(skills.install(self.vault, ['claude'], LAUNCHER, update_only=True)[0], skills.ABSENT)
-        self.assertFalse(os.path.exists(self.path(CLAUDE, 'agent-sessions', 'SKILL.md')))
+        self.assertEqual(skills.install(self.vault, ['claude'], LAUNCHER)[0], skills.INSTALLED)
+        self.assertTrue(os.path.exists(self.path(CLAUDE, 'agent-sessions', 'SKILL.md')))
 
-    def test_update_only_leaves_other_folders_alone(self):
-        skills.install(self.vault, ['claude', 'codex'], LAUNCHER)
-        skills.install(self.vault, ['claude'], LAUNCHER, update_only=True)
-        self.assertTrue(os.path.exists(self.path(CODEX, 'agent-sessions', 'SKILL.md')))
+    def test_an_unchanged_install_does_not_touch_the_file(self):
+        skills.install(self.vault, ['claude'], LAUNCHER)
+        path = self.path(CLAUDE, 'agent-sessions', 'SKILL.md')
+        os.utime(path, (1, 1))
+        skills.install(self.vault, ['claude'], LAUNCHER)
+        self.assertEqual(os.stat(path).st_mtime, 1)
 
     def test_dry_run_writes_nothing(self):
         status, changes = skills.install(self.vault, ['claude'], LAUNCHER, dry_run=True)
@@ -277,11 +273,11 @@ class TestSetupCommand(SkillsTestCase):
         self.assertEqual(rc, 1)
         self.assertIn('--vault', err)
 
-    def test_update_only_creates_nothing(self):
+    def test_update_only_flag_does_not_limit_the_skills(self):
         rc, out, _ = self.run_setup('--skills', '--update-only', '--vault', self.vault, '--agents', 'claude')
         self.assertEqual(rc, 0)
-        self.assertEqual(out.strip().splitlines()[-1], 'agent-skills: absent')
-        self.assertEqual(self.files(), [])
+        self.assertEqual(out.strip().splitlines()[-1], 'agent-skills: installed')
+        self.assertTrue(os.path.exists(self.path(CLAUDE, 'agent-sessions', 'SKILL.md')))
 
     def test_remove_skills_removes_only_the_skills(self):
         skills.install(self.vault, ['claude'], LAUNCHER)

@@ -1,10 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	AGENT_SKILLS_NOTICE,
 	agentSkillsArgs,
 	parseAgentSkillsStatus,
 	skillFolders,
 	skillLauncher,
+	skillsStamp,
+	syncAgentSkills,
+	type SkillsSyncInput,
 } from "../../src/backend/agent-skills";
 
 describe("parseAgentSkillsStatus", () => {
@@ -22,28 +25,99 @@ describe("parseAgentSkillsStatus", () => {
 });
 
 describe("agentSkillsArgs", () => {
-	it("installs for the enabled agents, into the vault, naming the launcher", () => {
-		expect(agentSkillsArgs("install", "/v", ["claude", "codex"], "$HOME/p/bin/agent-sessions")).toEqual([
+	it("installs for the given vault, agents and launcher, with no update-only or remove form", () => {
+		expect(agentSkillsArgs("/v", ["claude", "codex"], "$HOME/p/bin/agent-sessions")).toEqual([
 			"setup", "--skills", "--vault", "/v", "--agents", "claude,codex", "--command", "$HOME/p/bin/agent-sessions",
 		]);
 	});
+});
 
-	it("update-only adds the flag that stops setup from creating anything", () => {
-		expect(agentSkillsArgs("update-only", "/v", ["claude"], "l")).toContain("--update-only");
-		expect(agentSkillsArgs("install", "/v", ["claude"], "l")).not.toContain("--update-only");
+describe("skillsStamp", () => {
+	it("changes with the version, the launcher and the agents, not with the agents' order", () => {
+		const base = skillsStamp("1+a", "/l", ["claude", "codex"]);
+		expect(skillsStamp("1+a", "/l", ["codex", "claude"])).toBe(base);
+		expect(skillsStamp("1+b", "/l", ["claude", "codex"])).not.toBe(base);
+		expect(skillsStamp("1+a", "/m", ["claude", "codex"])).not.toBe(base);
+		expect(skillsStamp("1+a", "/l", ["claude"])).not.toBe(base);
+	});
+});
+
+describe("syncAgentSkills", () => {
+	const input = (over: Partial<SkillsSyncInput> = {}): SkillsSyncInput => ({
+		program: "/Users/a/bin/agent-sessions",
+		exists: () => true,
+		run: vi.fn(async () => "agent-skills: installed\n"),
+		version: "1+a",
+		home: "/Users/a",
+		vault: "/v",
+		agents: ["claude"],
+		savedStamp: "",
+		...over,
 	});
 
-	it("remove touches nothing but the skills of the given vault", () => {
-		const args = agentSkillsArgs("remove", "/v", ["claude"], "l");
-		expect(args).toEqual(["setup", "--remove-skills", "--vault", "/v"]);
-		expect(args).not.toContain("--remove");
+	it("writes nothing into the vault while the program is missing", async () => {
+		const run = vi.fn(async () => "");
+		expect(await syncAgentSkills(input({ exists: () => false, run, force: true }))).toEqual({ ran: false });
+		expect(run).not.toHaveBeenCalled();
+	});
+
+	it("installs when the skill was never written and returns the stamp to save", async () => {
+		const i = input();
+		const result = await syncAgentSkills(i);
+		expect(i.run).toHaveBeenCalledWith("/Users/a/bin/agent-sessions", [
+			"setup", "--skills", "--vault", "/v", "--agents", "claude", "--command", "$HOME/bin/agent-sessions",
+		]);
+		expect(result).toEqual({
+			ran: true,
+			status: "installed",
+			stamp: skillsStamp("1+a", "$HOME/bin/agent-sessions", ["claude"]),
+		});
+	});
+
+	it("skips while the saved stamp matches, and runs with force", async () => {
+		const savedStamp = skillsStamp("1+a", "$HOME/bin/agent-sessions", ["claude"]);
+		const idle = input({ savedStamp });
+		expect(await syncAgentSkills(idle)).toEqual({ ran: false });
+		expect(idle.run).not.toHaveBeenCalled();
+		const forced = input({ savedStamp, force: true });
+		expect((await syncAgentSkills(forced)).ran).toBe(true);
+		expect(forced.run).toHaveBeenCalledTimes(1);
+	});
+
+	it("runs again when the version, the launcher or the agents changed", async () => {
+		const savedStamp = skillsStamp("1+a", "$HOME/bin/agent-sessions", ["claude"]);
+		for (const over of [
+			{ version: "2+b" },
+			{ program: "/opt/as/bin/agent-sessions" },
+			{ agents: ["claude", "codex"] },
+		]) {
+			const i = input({ savedStamp, ...over });
+			expect((await syncAgentSkills(i)).ran).toBe(true);
+		}
+	});
+
+	it("names the bundled install's launcher with $HOME and a settings path verbatim", async () => {
+		const bundled = input({ program: "/Users/a/.local/share/agent-sessions/bin/agent-sessions" });
+		await syncAgentSkills(bundled);
+		expect(vi.mocked(bundled.run).mock.calls[0][1]).toContain("$HOME/.local/share/agent-sessions/bin/agent-sessions");
+		const custom = input({ program: "/opt/tools/as" });
+		await syncAgentSkills(custom);
+		expect(vi.mocked(custom.run).mock.calls[0][1]).toContain("/opt/tools/as");
+	});
+
+	it("passes on a failing run, and reports null for an older program without the status line", async () => {
+		await expect(
+			syncAgentSkills(input({ run: async () => Promise.reject(new Error("boom")) }))
+		).rejects.toThrow("boom");
+		const old = await syncAgentSkills(input({ run: async () => "no changes\n" }));
+		expect(old).toMatchObject({ ran: true, status: null });
 	});
 });
 
 describe("AGENT_SKILLS_NOTICE", () => {
-	it("says something different for installed, updated, unchanged, foreign and removed", () => {
-		const keys = (["installed", "updated", "unchanged", "foreign", "removed"] as const).map((s) => AGENT_SKILLS_NOTICE[s]);
-		expect(new Set(keys).size).toBe(5);
+	it("says something different for installed, updated, unchanged and foreign", () => {
+		const keys = (["installed", "updated", "unchanged", "foreign"] as const).map((s) => AGENT_SKILLS_NOTICE[s]);
+		expect(new Set(keys).size).toBe(4);
 		expect(keys.every((k) => k !== null)).toBe(true);
 	});
 });

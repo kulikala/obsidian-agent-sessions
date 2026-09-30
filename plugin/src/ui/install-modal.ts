@@ -72,13 +72,10 @@ export class InstallBackendModal extends Modal {
 			item(t("install.opencode"), t("install.opencodeValue"));
 		}
 		const settings = this.plugin.settings;
+		const folders = skillFolders(AGENT_IDS.filter((id) => settings.agents[id].enabled));
 		item(
 			t("install.skills"),
-			settings.installAgentSkills
-				? t("install.skillsOn", {
-						folders: skillFolders(AGENT_IDS.filter((id) => settings.agents[id].enabled)).join(", "),
-					})
-				: t("install.skillsOff")
+			folders.length > 0 ? t("install.skillsValue", { folders: folders.join(", ") }) : t("install.skillsSkipped")
 		);
 		const status = contentEl.createEl("p", { cls: "agent-sessions-install-status" });
 		new Setting(contentEl)

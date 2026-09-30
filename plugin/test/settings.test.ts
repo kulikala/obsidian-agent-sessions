@@ -34,16 +34,18 @@ describe("DEFAULT_SETTINGS", () => {
 			managerAnalysisCollapsed: false,
 			managerAnalysisFolded: { claude: false, codex: false, opencode: false },
 			managerStatusFilter: "all",
-			installAgentSkills: false,
+			agentSkillsStamp: "",
 		});
 	});
 });
 
 describe("mergeSettings", () => {
-	it("keeps installAgentSkills when it is a boolean and drops anything else (default off)", () => {
-		expect(mergeSettings({ installAgentSkills: true }).installAgentSkills).toBe(true);
-		expect(mergeSettings({ installAgentSkills: "yes" }).installAgentSkills).toBe(false);
-		expect(mergeSettings({}).installAgentSkills).toBe(false);
+	it("ignores the old installAgentSkills setting and keeps the skill stamp only as a string", () => {
+		expect(mergeSettings({ installAgentSkills: true })).not.toHaveProperty("installAgentSkills");
+		expect(mergeSettings({ installAgentSkills: false })).not.toHaveProperty("installAgentSkills");
+		expect(mergeSettings({ agentSkillsStamp: "x" }).agentSkillsStamp).toBe("x");
+		expect(mergeSettings({ agentSkillsStamp: 3 }).agentSkillsStamp).toBe("");
+		expect(mergeSettings({}).agentSkillsStamp).toBe("");
 	});
 
 	it("drops the removed newlineKey and an old submitKey value no longer in the current type", () => {

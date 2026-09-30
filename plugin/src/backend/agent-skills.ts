@@ -10,17 +10,56 @@ export type AgentSkillsStatus = "installed" | "updated" | "unchanged" | "foreign
 
 const STATUSES: readonly string[] = ["installed", "updated", "unchanged", "foreign", "absent", "failed", "removed"];
 
-/** How to call `setup` for the skills. `install` writes the skills the enabled agents need and takes
- * our copies away from the folders they don't; `update-only` refreshes copies that are already there
- * and creates nothing; `remove` deletes every copy of ours. */
-export type AgentSkillsMode = "install" | "update-only" | "remove";
+/** The arguments of `setup` that install the skills: it writes the ones the enabled agents need
+ * and takes our copies away from the folders they don't. Running it again with the same input
+ * changes nothing. */
+export function agentSkillsArgs(vault: string, agents: string[], launcher: string): string[] {
+	return ["setup", "--skills", "--vault", vault, "--agents", agents.join(","), "--command", launcher];
+}
 
-export function agentSkillsArgs(mode: AgentSkillsMode, vault: string, agents: string[], launcher: string): string[] {
-	if (mode === "remove") {
-		return ["setup", "--remove-skills", "--vault", vault];
+/**
+ * What the skill files in the vault were last written for: the program version, the launcher they
+ * name and the agents they were written for. It is kept in the plugin's settings; while it equals
+ * the current one nothing is run on load.
+ */
+export function skillsStamp(version: string, launcher: string, agents: readonly string[]): string {
+	return JSON.stringify([version, launcher, [...agents].sort()]);
+}
+
+export interface SkillsSyncInput {
+	/** The program in use (`agentSessionsPath`). */
+	program: string;
+	exists: (path: string) => boolean;
+	run: (program: string, args: string[]) => Promise<string>;
+	/** The version of the program bundled with this plugin. */
+	version: string;
+	home: string;
+	vault: string;
+	/** The enabled agents. */
+	agents: readonly string[];
+	/** The stamp saved by the last successful run (`""` = none). */
+	savedStamp: string;
+	/** Run even when the saved stamp is current. */
+	force?: boolean;
+}
+
+/** `ran: false`: nothing was done (no program, or the skill is current); the vault is untouched.
+ * Otherwise what the program reported and the stamp to save. A failing run rejects, and the
+ * caller keeps the old stamp so the next load tries again. */
+export type SkillsSyncResult = { ran: false } | { ran: true; status: AgentSkillsStatus | null; stamp: string };
+
+/** Installs (or brings up to date) the skill for the program in use. */
+export async function syncAgentSkills(input: SkillsSyncInput): Promise<SkillsSyncResult> {
+	if (!input.exists(input.program)) {
+		return { ran: false };
 	}
-	const args = ["setup", "--skills", "--vault", vault, "--agents", agents.join(","), "--command", launcher];
-	return mode === "update-only" ? [...args, "--update-only"] : args;
+	const launcher = skillLauncher(input.program, input.home);
+	const stamp = skillsStamp(input.version, launcher, input.agents);
+	if (!input.force && input.savedStamp === stamp) {
+		return { ran: false };
+	}
+	const stdout = await input.run(input.program, agentSkillsArgs(input.vault, [...input.agents], launcher));
+	return { ran: true, status: parseAgentSkillsStatus(stdout), stamp };
 }
 
 /** The status line at the end of `setup`'s stdout; `null` if there is none (an older program). */
@@ -43,7 +82,7 @@ export const AGENT_SKILLS_NOTICE: Record<AgentSkillsStatus, MessageKey | null> =
 	foreign: "notice.agentSkillsForeign",
 	absent: null,
 	failed: null,
-	removed: "notice.agentSkillsRemoved",
+	removed: null,
 };
 
 /**

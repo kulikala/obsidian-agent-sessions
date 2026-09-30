@@ -159,10 +159,9 @@ export interface AgentSessionsSettings {
 	managerAnalysisFolded: Record<AgentId, boolean>;
 	/** The manager's status-filter menu selection (next to the name filter). Default `all`. */
 	managerStatusFilter: ManagerStatusFilter;
-	/** Whether the agent skills (start a session, usage statistics, other sessions) are installed
-	 * into the vault's project skill folders for the enabled agents. Default off: it writes into
-	 * the vault's `.claude`, `.agents` or `.opencode` folder. */
-	installAgentSkills: boolean;
+	/** What the agent skill in the vault was last written for (`skillsStamp`); empty = never. Not
+	 * shown in the settings tab. */
+	agentSkillsStamp: string;
 }
 
 export const DEFAULT_SETTINGS: AgentSessionsSettings = {
@@ -184,7 +183,7 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	managerAnalysisCollapsed: false,
 	managerAnalysisFolded: defaultAnalysisFolded(),
 	managerStatusFilter: "all",
-	installAgentSkills: false,
+	agentSkillsStamp: "",
 };
 
 /** Validates a saved `agents` value, entry by entry — an invalid or missing field falls back to
@@ -259,8 +258,9 @@ export function mergeSettings(data: unknown, isMac = true): AgentSessionsSetting
 	if (!MANAGER_STATUS_FILTERS.includes(saved.managerStatusFilter as ManagerStatusFilter)) {
 		delete saved.managerStatusFilter;
 	}
-	if (typeof saved.installAgentSkills !== "boolean") {
-		delete saved.installAgentSkills;
+	delete saved.installAgentSkills;
+	if (typeof saved.agentSkillsStamp !== "string") {
+		delete saved.agentSkillsStamp;
 	}
 	if (!SUBMIT_KEYS.includes(saved.submitKey as SubmitKey)) {
 		delete saved.submitKey;

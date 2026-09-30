@@ -17,7 +17,8 @@ def main(args: List[str]) -> int:
     # `--opencode` installs only the OpenCode plugin: Claude Code's settings are
     # left alone, since OpenCode can be enabled without Claude Code.
     # `--remove-opencode` removes only that plugin file (OpenCode switched off in the plugin),
-    # `--update-only` refreshes it when it exists and never creates it.
+    # `--update-only` refreshes it when it exists and never creates it (the skills have no such mode:
+    # they are part of the program, so `--skills` always installs).
     remove_opencode = '--remove-opencode' in args and not remove
     opencode_only = '--opencode' in args and not remove and not remove_opencode
     update_only = '--update-only' in args
@@ -109,8 +110,7 @@ def main(args: List[str]) -> int:
                 changes = skills.remove(vault, dry_run=dry_run)
                 skills_status = 'removed' if changes else skills.ABSENT
             else:
-                skills_status, changes = skills.install(vault, skill_agents, skills_launcher, dry_run=dry_run,
-                                                        update_only=update_only)
+                skills_status, changes = skills.install(vault, skill_agents, skills_launcher, dry_run=dry_run)
             if skills_status == skills.FAILED:
                 exit_code = 1
         elif opencode_only:
