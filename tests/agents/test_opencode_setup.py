@@ -22,12 +22,65 @@ class TestOpencodeSetup(unittest.TestCase):
 
     def test_install_creates_the_file_with_the_marker_first(self):
         changes = ocsetup.install(self.path)
-        self.assertEqual(len(changes), 1)
+        self.assertEqual(len(changes), 2)   # the status plugin and the status line
         with open(self.path, encoding='utf-8') as f:
             text = f.read()
         self.assertEqual(text, plugin_js.PLUGIN_JS)
         self.assertTrue(text.startswith(plugin_js.MARKER))
         self.assertEqual(os.listdir(os.path.dirname(self.path)), ['agent-sessions.js'])
+
+    def test_install_writes_the_status_line_beside_the_plugins_folder(self):
+        ocsetup.install(self.path)
+        line = os.path.join(self.tmp, 'opencode', 'agent-sessions-tui.jsx')
+        self.assertEqual(ocsetup.tui_plugin_path(self.path), line)
+        with open(line, encoding='utf-8') as f:
+            self.assertEqual(f.read(), plugin_js.TUI_PLUGIN_JSX)
+        # never inside plugins/, which OpenCode loads as server plugins
+        self.assertEqual(os.listdir(os.path.dirname(self.path)), ['agent-sessions.js'])
+
+    def test_the_status_line_source_is_a_tui_module(self):
+        src = plugin_js.TUI_PLUGIN_JSX
+        self.assertTrue(src.startswith(plugin_js.MARKER))
+        self.assertIn('@jsxImportSource @opentui/solid', src)
+        self.assertIn('app_bottom', src)
+        self.assertIn('export default { id: "agent-sessions", tui }', src)
+        self.assertNotIn('server', src.replace('server plugin', ''))
+
+    def test_status_line_is_refreshed_and_removed_with_the_plugin(self):
+        line = ocsetup.tui_plugin_path(self.path)
+        ocsetup.install(self.path)
+        with open(line, 'w', encoding='utf-8') as f:
+            f.write(plugin_js.MARKER + ' (older version)\n')
+        status, changes = ocsetup.apply(self.path)
+        self.assertEqual((status, len(changes)), (ocsetup.UPDATED, 1))
+        self.assertEqual(ocsetup.apply(self.path)[0], ocsetup.UNCHANGED)
+        self.assertEqual(len(ocsetup.remove(self.path)), 2)
+        self.assertFalse(os.path.exists(line))
+        self.assertFalse(os.path.exists(self.path))
+
+    def test_update_only_brings_the_status_line_to_an_older_install(self):
+        line = ocsetup.tui_plugin_path(self.path)
+        ocsetup.install(self.path)
+        os.unlink(line)
+        status, _ = ocsetup.apply(self.path, update_only=True)
+        self.assertEqual(status, ocsetup.UPDATED)
+        self.assertTrue(os.path.exists(line))
+
+    def test_update_only_without_the_plugin_creates_neither_file(self):
+        self.assertEqual(ocsetup.apply(self.path, update_only=True), (ocsetup.ABSENT, []))
+        self.assertFalse(os.path.exists(ocsetup.tui_plugin_path(self.path)))
+
+    def test_a_foreign_status_line_file_is_left_alone(self):
+        line = ocsetup.tui_plugin_path(self.path)
+        os.makedirs(os.path.dirname(line))
+        with open(line, 'w') as f:
+            f.write('mine\n')
+        status, changes = ocsetup.apply(self.path)
+        self.assertEqual(status, ocsetup.INSTALLED)
+        self.assertIn(line, changes[-1])
+        self.assertEqual(ocsetup.remove(self.path)[0].count(line), 0)
+        with open(line) as f:
+            self.assertEqual(f.read(), 'mine\n')
 
     def test_install_is_idempotent_and_updates_our_own_older_file(self):
         ocsetup.install(self.path)
@@ -51,14 +104,15 @@ class TestOpencodeSetup(unittest.TestCase):
     def test_remove_deletes_ours_and_ignores_a_missing_file(self):
         self.assertEqual(ocsetup.remove(self.path), [])
         ocsetup.install(self.path)
-        self.assertEqual(len(ocsetup.remove(self.path)), 1)
+        self.assertEqual(len(ocsetup.remove(self.path)), 2)
         self.assertFalse(os.path.exists(self.path))
+        self.assertFalse(os.path.exists(ocsetup.tui_plugin_path(self.path)))
 
     def test_dry_run_writes_and_deletes_nothing(self):
-        self.assertEqual(len(ocsetup.install(self.path, dry_run=True)), 1)
+        self.assertEqual(len(ocsetup.install(self.path, dry_run=True)), 2)
         self.assertFalse(os.path.exists(self.path))
         ocsetup.install(self.path)
-        self.assertEqual(len(ocsetup.remove(self.path, dry_run=True)), 1)
+        self.assertEqual(len(ocsetup.remove(self.path, dry_run=True)), 2)
         self.assertTrue(os.path.exists(self.path))
 
     def test_default_path_honours_xdg_config_home(self):

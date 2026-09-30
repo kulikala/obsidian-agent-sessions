@@ -7,6 +7,7 @@ import {
 	defaultOpencodeTuiPath,
 	managedKeybinds,
 	restoreOpencodeTui,
+	STATUS_LINE_PLUGIN_SPEC,
 	syncOpencodeTui,
 } from "../../src/terminal/opencode-tui";
 
@@ -25,6 +26,8 @@ afterEach(() => {
 });
 
 const read = (): unknown => JSON.parse(readFileSync(tui, "utf8"));
+/** The status line's entry, which every managed file carries next to the keybinds. */
+const line = { plugin: [STATUS_LINE_PLUGIN_SPEC] };
 
 describe("managedKeybinds", () => {
 	it("submits on linefeed and drops the submit key's own name from the newline list", () => {
@@ -49,7 +52,7 @@ describe("defaultOpencodeTuiPath", () => {
 describe("applyOpencodeTui", () => {
 	it("creates the file, and restoring removes it again", () => {
 		expect(applyOpencodeTui(tui, backup, "alt+enter", "ctrl+g").status).toBe("written");
-		expect(read()).toEqual({ keybinds: managedKeybinds("alt+enter", "ctrl+g") });
+		expect(read()).toEqual({ keybinds: managedKeybinds("alt+enter", "ctrl+g"), ...line });
 		expect(restoreOpencodeTui(backup).status).toBe("restored");
 		expect(existsSync(tui)).toBe(false);
 		expect(existsSync(backup)).toBe(false);
@@ -67,6 +70,7 @@ describe("applyOpencodeTui", () => {
 		expect(read()).toEqual({
 			theme: "x",
 			keybinds: { leader: "ctrl+x", ...managedKeybinds("shift+enter", "ctrl+g") },
+			...line,
 		});
 		expect(restoreOpencodeTui(backup).status).toBe("restored");
 		expect(read()).toEqual({ theme: "x", keybinds: { leader: "ctrl+x", input_newline: "ctrl+j" } });
@@ -129,7 +133,7 @@ describe("managedKeybinds with the editor key", () => {
 describe("editor_open", () => {
 	it("is written for Enter submit, backed up, and restored (file removed when created by us)", () => {
 		expect(applyOpencodeTui(tui, backup, "enter", "ctrl+g").status).toBe("written");
-		expect(read()).toEqual({ keybinds: { editor_open: "ctrl+g" } });
+		expect(read()).toEqual({ keybinds: { editor_open: "ctrl+g" }, ...line });
 		expect(JSON.parse(readFileSync(backup, "utf8"))).toEqual({
 			path: tui,
 			editor_open: null,
@@ -145,9 +149,9 @@ describe("editor_open", () => {
 	it("remembers the user's own editor_open and puts it back", () => {
 		writeFileSync(tui, JSON.stringify({ keybinds: { leader: "ctrl+x", editor_open: "<leader>o" } }));
 		applyOpencodeTui(tui, backup, "enter", "ctrl+g");
-		expect(read()).toEqual({ keybinds: { leader: "ctrl+x", editor_open: "ctrl+g" } });
+		expect(read()).toEqual({ keybinds: { leader: "ctrl+x", editor_open: "ctrl+g" }, ...line });
 		applyOpencodeTui(tui, backup, "enter", "alt+g");
-		expect(read()).toEqual({ keybinds: { leader: "ctrl+x", editor_open: "alt+g" } });
+		expect(read()).toEqual({ keybinds: { leader: "ctrl+x", editor_open: "alt+g" }, ...line });
 		expect(restoreOpencodeTui(backup).status).toBe("restored");
 		expect(read()).toEqual({ keybinds: { leader: "ctrl+x", editor_open: "<leader>o" } });
 	});
@@ -160,10 +164,10 @@ describe("editor_open", () => {
 	it("keeps the editor key when the submit key goes back to Enter, and the submit keys when the editor key changes", () => {
 		applyOpencodeTui(tui, backup, "alt+enter", "ctrl+g");
 		expect(applyOpencodeTui(tui, backup, "enter", "ctrl+g").status).toBe("written");
-		expect(read()).toEqual({ keybinds: { editor_open: "ctrl+g" } });
+		expect(read()).toEqual({ keybinds: { editor_open: "ctrl+g" }, ...line });
 		expect(JSON.parse(readFileSync(backup, "utf8")).managed).toEqual({ editor_open: "ctrl+g" });
 		applyOpencodeTui(tui, backup, "shift+enter", "ctrl+q");
-		expect(read()).toEqual({ keybinds: { ...managedKeybinds("shift+enter", "ctrl+q") } });
+		expect(read()).toEqual({ keybinds: { ...managedKeybinds("shift+enter", "ctrl+q") }, ...line });
 		restoreOpencodeTui(backup);
 		expect(existsSync(tui)).toBe(false);
 	});
@@ -172,11 +176,12 @@ describe("editor_open", () => {
 		writeFileSync(tui, JSON.stringify({ keybinds: { input_submit: "ctrl+s", editor_open: "<leader>o" } }));
 		applyOpencodeTui(tui, backup, "alt+enter", "ctrl+g");
 		applyOpencodeTui(tui, backup, "enter", "ctrl+g");
-		expect(read()).toEqual({ keybinds: { input_submit: "ctrl+s", editor_open: "ctrl+g" } });
+		expect(read()).toEqual({ keybinds: { input_submit: "ctrl+s", editor_open: "ctrl+g" }, ...line });
 		const obj = read() as { keybinds: Record<string, string> };
 		obj.keybinds.editor_open = "ctrl+e";
 		writeFileSync(tui, JSON.stringify(obj));
-		expect(restoreOpencodeTui(backup).status).toBe("unchanged");
+		// The key the user changed stays; only the status line's entry goes.
+		expect(restoreOpencodeTui(backup).status).toBe("restored");
 		expect(read()).toEqual({ keybinds: { input_submit: "ctrl+s", editor_open: "ctrl+e" } });
 		expect(existsSync(backup)).toBe(false);
 	});
@@ -196,9 +201,52 @@ describe("editor_open", () => {
 			})
 		);
 		expect(applyOpencodeTui(tui, backup, "alt+enter", "ctrl+g").status).toBe("written");
-		expect(read()).toEqual({ keybinds: { ...old } });
+		expect(read()).toEqual({ keybinds: { ...old }, ...line });
 		restoreOpencodeTui(backup);
 		expect(read()).toEqual({ keybinds: { input_submit: "return" } });
+	});
+});
+
+describe("the status line's plugin entry", () => {
+	it("is added next to the user's own plugins and taken out again, leaving theirs", () => {
+		writeFileSync(tui, JSON.stringify({ plugin: ["acme-plugin", ["./mine.tsx", { a: 1 }]] }));
+		expect(applyOpencodeTui(tui, backup, "enter", "ctrl+g").status).toBe("written");
+		expect((read() as { plugin: unknown[] }).plugin).toEqual(["acme-plugin", ["./mine.tsx", { a: 1 }], STATUS_LINE_PLUGIN_SPEC]);
+		expect(applyOpencodeTui(tui, backup, "enter", "ctrl+g").status).toBe("unchanged");
+		expect(restoreOpencodeTui(backup).status).toBe("restored");
+		expect(read()).toEqual({ plugin: ["acme-plugin", ["./mine.tsx", { a: 1 }]] });
+	});
+
+	it("takes the plugin array with it when it was the only entry, and the file when we created it", () => {
+		writeFileSync(tui, JSON.stringify({ theme: "x" }));
+		applyOpencodeTui(tui, backup, "enter", "ctrl+g");
+		restoreOpencodeTui(backup);
+		expect(read()).toEqual({ theme: "x" });
+		rmSync(tui);
+		applyOpencodeTui(tui, backup, "enter", "ctrl+g");
+		restoreOpencodeTui(backup);
+		expect(existsSync(tui)).toBe(false);
+	});
+
+	it("is recognised in its tuple form too, and is not duplicated", () => {
+		writeFileSync(tui, JSON.stringify({ plugin: [[STATUS_LINE_PLUGIN_SPEC, { x: 1 }]] }));
+		applyOpencodeTui(tui, backup, "enter", "ctrl+g");
+		expect((read() as { plugin: unknown[] }).plugin).toEqual([[STATUS_LINE_PLUGIN_SPEC, { x: 1 }]]);
+		restoreOpencodeTui(backup);
+		expect((read() as Record<string, unknown>).plugin).toBeUndefined();
+	});
+
+	it("refuses a plugin value that isn't an array", () => {
+		writeFileSync(tui, '{"plugin": "x"}');
+		expect(applyOpencodeTui(tui, backup, "enter", "ctrl+g").status).toBe("failed");
+		expect(readFileSync(tui, "utf8")).toBe('{"plugin": "x"}');
+	});
+
+	it("keeps a file we created across a later run that changes only the keys", () => {
+		applyOpencodeTui(tui, backup, "enter", "ctrl+g");
+		applyOpencodeTui(tui, backup, "alt+enter", "ctrl+g");
+		restoreOpencodeTui(backup);
+		expect(existsSync(tui)).toBe(false);
 	});
 });
 
@@ -206,7 +254,7 @@ describe("syncOpencodeTui", () => {
 	it("manages while enabled (editor key even on Enter), restores when disabled", () => {
 		expect(syncOpencodeTui(tui, backup, "alt+enter", "ctrl+g", true).status).toBe("written");
 		expect(syncOpencodeTui(tui, backup, "enter", "ctrl+g", true).status).toBe("written");
-		expect(read()).toEqual({ keybinds: { editor_open: "ctrl+g" } });
+		expect(read()).toEqual({ keybinds: { editor_open: "ctrl+g" }, ...line });
 		expect(syncOpencodeTui(tui, backup, "enter", "ctrl+g", false).status).toBe("restored");
 		expect(existsSync(tui)).toBe(false);
 		expect(syncOpencodeTui(tui, backup, "enter", "ctrl+g", false).status).toBe("unchanged");
@@ -217,6 +265,6 @@ describe("syncOpencodeTui", () => {
 		const other = join(dir, "other", "tui.json");
 		expect(syncOpencodeTui(other, backup, "enter", "ctrl+g", true).status).toBe("written");
 		expect(existsSync(tui)).toBe(false);
-		expect(JSON.parse(readFileSync(other, "utf8"))).toEqual({ keybinds: { editor_open: "ctrl+g" } });
+		expect(JSON.parse(readFileSync(other, "utf8"))).toEqual({ keybinds: { editor_open: "ctrl+g" }, ...line });
 	});
 });

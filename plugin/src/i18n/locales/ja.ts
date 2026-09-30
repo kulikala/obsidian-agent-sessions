@@ -89,8 +89,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"notice.matchedKeybindings": "keybindings.json に合わせました",
 	"notice.keybindingsWritten": "Claude Code のキー設定を更新しました",
 	"notice.keybindingsUnchanged": "Claude Code のキー設定は、すでにこの内容です",
-	"notice.opencodeTuiWritten": "OpenCode のキー設定を更新しました",
-	"notice.opencodeTuiRestored": "OpenCode のキー設定を元に戻しました",
+	"notice.opencodeTuiWritten": "OpenCode のキー設定とステータスラインを更新しました",
+	"notice.opencodeTuiRestored": "OpenCode のキー設定を元に戻し、ステータスラインを外しました",
 	"notice.codexConfigWritten": "Codex のキー設定を更新しました",
 	"notice.opencodePluginInstalled": "OpenCode のステータス用プラグインを入れました",
 	"notice.opencodePluginUpdated": "OpenCode のステータス用プラグインを更新しました",
@@ -204,7 +204,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"install.hooksValue": "~/.claude/settings.json にフックとステータスラインを追加します（バックアップを残します）",
 	"install.hooksSkipped": "変更しません（エージェントの設定で Claude Code がオフです）",
 	"install.opencode": "OpenCode",
-	"install.opencodeValue": "~/.config/opencode/plugins/ にステータス用のプラグインを追加します",
+	"install.opencodeValue": "~/.config/opencode/plugins/ にステータス用のプラグインを、tui.json に載せるステータスライン（agent-sessions-tui.jsx）を追加します",
 	"install.skills": "エージェント用スキル",
 	"install.skillsValue": "この Vault に 1 つのスキルを追加します: {folders}",
 	"install.skillsSkipped": "書き込みません（エージェントの設定でどのエージェントもオフです）",
@@ -219,7 +219,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"install.reason.characters": "パスに空白やシェルが誤解する文字が含まれています",
 	"install.reason.inVault": "この vault の中です",
 	"install.reason.notWritable": "書き込めません",
-	"uninstall.confirm": "{dir} から agent-sessions を削除しますか？ 動いているセッションは終了し、Claude Code のフックとステータスライン、OpenCode のステータス用プラグイン、この Vault のエージェント用スキルも取り除かれます。",
+	"uninstall.confirm": "{dir} から agent-sessions を削除しますか？ 動いているセッションは終了し、Claude Code のフックとステータスライン、OpenCode のステータス用プラグインとステータスライン、この Vault のエージェント用スキルも取り除かれます。",
 	"uninstall.done": "agent-sessions を削除しました。",
 	"uninstall.failed": "agent-sessions を削除できませんでした: {error}",
 
@@ -378,7 +378,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	// ---- terminal/codex-config.ts ----
 	"error.codexConfigUnreadable": "{path} を読めません。手で直してください。",
 	"error.opencodeTuiUnreadable": "{path} を読み書きできません。手で直してください。",
-	"error.opencodeTuiNotJson": "{path} が通常の JSON ではない（コメントや末尾のカンマ？）ため、書き換えませんでした。OpenCode の送信キー・エディタキーは \"keybinds\" を手で設定してください。",
+	"error.opencodeTuiNotJson": "{path} が通常の JSON ではない（コメントや末尾のカンマ？）ため、書き換えませんでした。OpenCode の送信キー・エディタキーは \"keybinds\" を、ステータスラインは \"plugin\" に \"./agent-sessions-tui.jsx\" を手で設定してください。",
 	"error.codexConfigMalformed": "{path} の書式が正しくないため、書き換えませんでした。手で直してください。",
 	"warning.codexConfigManualFix": "{keys} にはご自身で設定した値があるため、書き換えませんでした。",
 

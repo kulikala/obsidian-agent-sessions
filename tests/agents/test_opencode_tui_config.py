@@ -50,6 +50,26 @@ class TestTuiConfigRestore(unittest.TestCase):
         tui_config.restore(self.backup)
         self.assertEqual(self._read(), {'theme': 'x', 'keybinds': {'leader': 'ctrl+x'}})
 
+    def test_removes_the_status_line_entry_and_keeps_the_users_plugins(self):
+        self._tui({'plugin': ['acme', tui_config.PLUGIN_SPEC], 'keybinds': dict(MANAGED)})
+        self._backup()
+        tui_config.restore(self.backup)
+        self.assertEqual(self._read(), {'plugin': ['acme'], 'keybinds': {}})
+
+    def test_drops_the_plugin_array_when_the_entry_was_all_of_it(self):
+        self._tui({'theme': 'x', 'plugin': [[tui_config.PLUGIN_SPEC, {}]], 'keybinds': dict(MANAGED)})
+        self._backup(created_keybinds=True)
+        tui_config.restore(self.backup)
+        self.assertEqual(self._read(), {'theme': 'x'})
+
+    def test_a_non_list_plugin_value_leaves_the_file_and_the_backup(self):
+        self._tui({'plugin': 'x', 'keybinds': dict(MANAGED)})
+        self._backup()
+        changes = tui_config.restore(self.backup)
+        self.assertEqual(len(changes), 1)
+        self.assertEqual(self._read(), {'plugin': 'x', 'keybinds': dict(MANAGED)})
+        self.assertTrue(os.path.exists(self.backup))
+
     def test_removes_what_it_created(self):
         self._tui({'keybinds': dict(MANAGED)})
         self._backup(created_keybinds=True, created_file=True)

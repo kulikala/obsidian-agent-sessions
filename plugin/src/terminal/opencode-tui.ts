@@ -14,7 +14,14 @@
 // prompt focused the editor still opens and the transcript does not move, so that binding is left
 // alone.
 //
-// Only those keys are touched. The file is parsed and re-serialized as plain JSON, keeping
+// While OpenCode is enabled `plugin` also lists the status line, a TUI plugin
+// (`agentsessions/agents/opencode/plugin_js.py`'s `TUI_PLUGIN_JSX`, installed beside tui.json).
+// OpenCode loads TUI plugins from that list only: a module is either a server or a TUI plugin, and
+// nothing in a folder is discovered. The entry identifies itself, so the backup needs no field for
+// it: while the backup exists the entry is ours, and restoring removes it (and the `plugin` array
+// when that leaves it empty).
+//
+// Only those keys and that entry are touched. The file is parsed and re-serialized as plain JSON, keeping
 // every other key and the file's indentation; a file that isn't plain JSON (JSONC comments,
 // trailing commas) is never rewritten. The user's previous values are recorded in a small backup
 // file (`~/.agents/sessions/opencode-tui-backup.json`) that the Python side reads too
@@ -31,6 +38,10 @@ import type { EditorKey, SubmitKey } from "../settings";
 import { agentEditorKeyName, editorKeyIsAgentDefault } from "./keys";
 
 export const BACKUP_FILENAME = "opencode-tui-backup.json";
+
+/** The status line's entry in tui.json's `plugin` array, resolved against tui.json's folder; must match
+ * `agentsessions/agents/opencode/tui_config.py`'s `PLUGIN_SPEC`. */
+export const STATUS_LINE_PLUGIN_SPEC = "./agent-sessions-tui.jsx";
 
 export type ManagedKey = "input_submit" | "input_newline" | "editor_open";
 const MANAGED_KEYS: readonly ManagedKey[] = ["input_submit", "input_newline", "editor_open"];
@@ -151,17 +162,27 @@ export function readBackup(backupPath: string): OpencodeTuiBackup | null {
 	return null;
 }
 
+function isStatusLineEntry(entry: unknown): boolean {
+	return entry === STATUS_LINE_PLUGIN_SPEC || (Array.isArray(entry) && entry[0] === STATUS_LINE_PLUGIN_SPEC);
+}
+
 function stringOrNull(v: unknown): string | null {
 	return typeof v === "string" ? v : null;
 }
 
 /**
- * Brings `filePath` in line with `want` (the keys to hold, possibly none) and records what is
- * needed to undo it. A key held before and no longer wanted is handed back; a key wanted is set,
+ * Brings `filePath` in line with `want` (the keys to hold, possibly none) and `wantPlugin` (the
+ * status line's `plugin` entry) and records what is needed to undo it. A key held before and no longer wanted is handed back; a key wanted is set,
  * remembering the user's value unless the file still holds what we wrote earlier. With nothing
  * wanted, the backup is deleted at the end and a `keybinds` object or file we created goes too.
  */
-function syncKeys(filePath: string, backupPath: string, backup: OpencodeTuiBackup | null, want: ManagedKeybinds): OpencodeTuiResult {
+function syncKeys(
+	filePath: string,
+	backupPath: string,
+	backup: OpencodeTuiBackup | null,
+	want: ManagedKeybinds,
+	wantPlugin: boolean
+): OpencodeTuiResult {
 	const loaded = load(filePath);
 	if (typeof loaded === "string") {
 		return { status: "failed", warning: loaded };
@@ -174,7 +195,7 @@ function syncKeys(filePath: string, backupPath: string, backup: OpencodeTuiBacku
 			// already gone
 		}
 	};
-	if (!loaded.existed && wanted.length === 0) {
+	if (!loaded.existed && wanted.length === 0 && !wantPlugin) {
 		deleteBackup();
 		return { status: "unchanged" };
 	}
@@ -182,8 +203,14 @@ function syncKeys(filePath: string, backupPath: string, backup: OpencodeTuiBacku
 	const kb: Json | null = isObject(loaded.obj.keybinds) ? loaded.obj.keybinds : null;
 	const recorded = backup?.managed ?? {};
 	const held = MANAGED_KEYS.filter((k) => recorded[k] !== undefined && kb?.[k] === recorded[k]);
+	const rawPlugins: unknown = loaded.obj.plugin;
+	if (rawPlugins !== undefined && !Array.isArray(rawPlugins)) {
+		return { status: "failed", warning: t("error.opencodeTuiNotJson", { path: filePath }) };
+	}
+	const plugins = rawPlugins as unknown[] | undefined;
+	const pluginHeld = backup !== null && (plugins?.some(isStatusLineEntry) ?? false);
 	// Nothing of ours left in the file: the old records no longer describe it.
-	const fresh = backup === null || held.length === 0;
+	const fresh = backup === null || (held.length === 0 && !pluginHeld);
 	for (const k of wanted) {
 		if (kb?.[k] !== undefined && typeof kb[k] !== "string") {
 			return { status: "failed", warning: t("error.opencodeTuiNotJson", { path: filePath }) };
@@ -221,7 +248,20 @@ function syncKeys(filePath: string, backupPath: string, backup: OpencodeTuiBacku
 		}
 	}
 
-	const holding = Object.keys(managed).length > 0;
+	const holding = Object.keys(managed).length > 0 || wantPlugin;
+	const hasEntry = plugins?.some(isStatusLineEntry) ?? false;
+	if (wantPlugin && !hasEntry) {
+		loaded.obj.plugin = [...(plugins ?? []), STATUS_LINE_PLUGIN_SPEC];
+		changed = true;
+	} else if (!wantPlugin && hasEntry && plugins) {
+		const kept = plugins.filter((e) => !isStatusLineEntry(e));
+		if (kept.length > 0) {
+			loaded.obj.plugin = kept;
+		} else {
+			delete loaded.obj.plugin;
+		}
+		changed = true;
+	}
 	const next: OpencodeTuiBackup = {
 		path: filePath,
 		...previous,
@@ -262,21 +302,21 @@ export function restoreOpencodeTui(backupPath: string): OpencodeTuiResult {
 	if (!backup) {
 		return { status: "unchanged" };
 	}
-	return syncKeys(backup.path, backupPath, backup, {});
+	return syncKeys(backup.path, backupPath, backup, {}, false);
 }
 
-/** Makes tui.json carry the managed keybinds for `submitKey` and `editorKey`, handing back any it held that are no longer wanted. */
+/** Makes tui.json carry the managed keybinds for `submitKey` and `editorKey` and the status line's plugin entry, handing back any keybind it held that is no longer wanted. */
 export function applyOpencodeTui(filePath: string, backupPath: string, submitKey: SubmitKey, editorKey: EditorKey): OpencodeTuiResult {
 	let backup = readBackup(backupPath);
 	if (backup && backup.path !== filePath) {
 		restoreOpencodeTui(backupPath); // the config folder moved: hand the old file back first
 		backup = null;
 	}
-	return syncKeys(filePath, backupPath, backup, managedKeybinds(submitKey, editorKey));
+	return syncKeys(filePath, backupPath, backup, managedKeybinds(submitKey, editorKey), true);
 }
 
 /**
- * The one entry point: manage the keybinds while OpenCode is enabled (the editor key is always
+ * The one entry point: manage the keybinds and the status line's entry while OpenCode is enabled (the editor key is always
  * managed; the submit pair only for a submit key other than Enter); restore when it is disabled.
  */
 export function syncOpencodeTui(

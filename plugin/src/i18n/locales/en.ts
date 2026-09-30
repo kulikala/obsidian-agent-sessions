@@ -89,8 +89,8 @@ export const en = {
 	"notice.keybindingsWritten": "Updated Claude Code's key settings",
 	"notice.keybindingsUnchanged": "Claude Code's key settings are already up to date",
 	"notice.codexConfigWritten": "Updated Codex's key settings",
-	"notice.opencodeTuiWritten": "Updated OpenCode's key settings",
-	"notice.opencodeTuiRestored": "Restored OpenCode's own key settings",
+	"notice.opencodeTuiWritten": "Updated OpenCode's key settings and status line",
+	"notice.opencodeTuiRestored": "Restored OpenCode's own key settings and removed its status line",
 	"notice.opencodePluginInstalled": "Installed OpenCode's status plugin",
 	"notice.opencodePluginUpdated": "Updated OpenCode's status plugin",
 	"notice.opencodePluginCurrent": "OpenCode's status plugin is already up to date",
@@ -203,7 +203,7 @@ export const en = {
 	"install.hooksValue": "Adds hooks and a status line to ~/.claude/settings.json (a backup is kept)",
 	"install.hooksSkipped": "Left unchanged (Claude Code is turned off in the agent settings)",
 	"install.opencode": "OpenCode",
-	"install.opencodeValue": "Adds a status plugin to ~/.config/opencode/plugins/",
+	"install.opencodeValue": "Adds a status plugin to ~/.config/opencode/plugins/ and a status line (agent-sessions-tui.jsx, listed in tui.json)",
 	"install.skills": "Agent skills",
 	"install.skillsValue": "Adds one skill to this vault: {folders}",
 	"install.skillsSkipped": "Not written (no agent is turned on in the agent settings)",
@@ -218,7 +218,7 @@ export const en = {
 	"install.reason.characters": "The path has spaces or characters a shell would misread",
 	"install.reason.inVault": "It's inside this vault",
 	"install.reason.notWritable": "It can't be written to",
-	"uninstall.confirm": "Remove agent-sessions from {dir}? Running sessions end, and its Claude Code hooks and status line, OpenCode's status plugin and the agent skills in this vault are removed.",
+	"uninstall.confirm": "Remove agent-sessions from {dir}? Running sessions end, and its Claude Code hooks and status line, OpenCode's status plugin and status line, and the agent skills in this vault are removed.",
 	"uninstall.done": "agent-sessions removed.",
 	"uninstall.failed": "Couldn't remove agent-sessions: {error}",
 
@@ -377,7 +377,7 @@ export const en = {
 	// ---- terminal/codex-config.ts ----
 	"error.codexConfigUnreadable": "Can't read {path}. Please fix it by hand.",
 	"error.opencodeTuiUnreadable": "Can't read or write {path}. Please fix it by hand.",
-	"error.opencodeTuiNotJson": "{path} isn't plain JSON (comments or trailing commas?), so it was left unchanged. OpenCode's submit and editor keys need its \"keybinds\" set by hand.",
+	"error.opencodeTuiNotJson": "{path} isn't plain JSON (comments or trailing commas?), so it was left unchanged. OpenCode's submit and editor keys need its \"keybinds\" set by hand, and its status line needs \"./agent-sessions-tui.jsx\" in \"plugin\".",
 	"error.codexConfigMalformed": "{path} isn't valid TOML, so it was left unchanged. Please fix it by hand.",
 	"warning.codexConfigManualFix": "{keys} already has a value you set yourself, so it was left unchanged.",
 

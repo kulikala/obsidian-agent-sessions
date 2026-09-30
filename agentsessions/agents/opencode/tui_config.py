@@ -11,6 +11,12 @@ previous values in `~/.agents/sessions/opencode-tui-backup.json`:
      "managed": {"input_submit": str, "input_newline": str, "editor_open": str},
      "created_keybinds": bool, "created_file": bool}
 
+It also lists the status line, a TUI plugin, in the file's `plugin` array
+(`PLUGIN_SPEC`, resolved against the folder of tui.json; OpenCode loads TUI plugins from
+that list only). That entry identifies itself, so the backup has no field for it: while
+the backup exists the entry is ours, and `restore` removes it (and the `plugin` array
+when that leaves it empty).
+
 Only the keys in `managed` are held (the previous-value fields exist for those
 alone); a backup from before the editor key holds the submit pair only.
 `restore` puts the previous values back (deleting a key that did not exist
@@ -26,6 +32,7 @@ from ... import config, i18n
 
 BACKUP_FILENAME = 'opencode-tui-backup.json'
 KEYS = ('input_submit', 'input_newline', 'editor_open')
+PLUGIN_SPEC = './agent-sessions-tui.jsx'
 
 
 def default_backup_path() -> str:
@@ -77,7 +84,18 @@ def restore(backup_path: Optional[str] = None, dry_run: bool = False) -> List[st
         kb = obj.get('keybinds') if isinstance(obj, dict) else None
         if not isinstance(obj, dict) or ('keybinds' in obj and not isinstance(kb, dict)):
             return [i18n.t('setup.opencode_tui_not_json', path=tui_path)]
+        plugins = obj.get('plugin')
+        if 'plugin' in obj and not isinstance(plugins, list):
+            return [i18n.t('setup.opencode_tui_not_json', path=tui_path)]
         changed = False
+        if plugins is not None:
+            kept = [e for e in plugins if e != PLUGIN_SPEC and not (isinstance(e, list) and e[:1] == [PLUGIN_SPEC])]
+            if len(kept) != len(plugins):
+                changed = True
+                if kept:
+                    obj['plugin'] = kept
+                else:
+                    del obj['plugin']
         if kb is not None:
             for key in KEYS:
                 if key not in backup['managed'] or kb.get(key) != backup['managed'][key]:

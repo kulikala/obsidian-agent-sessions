@@ -17,6 +17,16 @@ Event names are the ones OpenCode's SDK types declare; `permission.asked` /
 `permission.updated` and both spellings of a session id location are handled
 because versions differ. Sub-agent sessions (`parentID` set) are ignored, like
 in the session list. Nothing here may throw into OpenCode.
+
+`TUI_PLUGIN_JSX` is the second file, OpenCode's status line
+(`~/.config/opencode/agent-sessions-tui.jsx`). A module is either a server plugin or a
+TUI plugin, never both, and TUI plugins are not discovered from a folder: the file sits
+outside `plugins/` and `tui.json`'s `plugin` array lists it (`tui_config.PLUGIN_SPEC`, kept
+there by the managed tui.json writer). It is JSX with the `@opentui/solid` pragma, which the
+`opencode` binary compiles itself when it loads the file, so no build step is involved. It
+registers a renderer for the `app_bottom` slot, the row under OpenCode's own footer, showing
+`[<submit-key symbol> · ]<model> · <variant> · ctx NN% · ●/○ <busy|idle|waiting>` for the
+session on screen, all read from the TUI's own state (`api.state`).
 """
 
 MARKER = '// managed by Agent Sessions'
@@ -175,4 +185,125 @@ export const AgentSessionsStatus = async ({ directory }) => ({
 		} catch {}
 	},
 });
+'''
+
+
+TUI_PLUGIN_JSX = r'''// managed by Agent Sessions (`agent-sessions setup --opencode`). Do not edit: it is rewritten on update
+// and deleted by `agent-sessions setup --remove`.
+/** @jsxImportSource @opentui/solid */
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+
+const UI_STATE = path.join(process.env.AGENT_SESSIONS_RUNTIME_DIR || path.join(os.homedir(), ".agents", "sessions"), "ui.json");
+const MAX_MODEL = 28;
+
+let cached = { at: 0, symbol: "", ja: false };
+
+// ui.json is written by the Obsidian plugin: the submit-key symbol (shown only in a session it
+// started, like `agent-sessions status`) and the display language.
+function uiState() {
+	const now = Date.now();
+	if (now - cached.at < 2000) {
+		return cached;
+	}
+	let symbol = "";
+	let ja = false;
+	try {
+		const data = JSON.parse(fs.readFileSync(UI_STATE, "utf8"));
+		if (data && typeof data === "object") {
+			ja = typeof data.language === "string" && data.language.startsWith("ja");
+			if (process.env.AGENT_SESSIONS_ID && typeof data.submitSymbol === "string") {
+				symbol = data.submitSymbol;
+			}
+		}
+	} catch {}
+	cached = { at: now, symbol, ja };
+	return cached;
+}
+
+function last(list, role) {
+	for (let i = list.length - 1; i >= 0; i--) {
+		if (list[i].role === role) {
+			return list[i];
+		}
+	}
+	return undefined;
+}
+
+function shortModel(id) {
+	const name = String(id).split("/").pop();
+	return name.length > MAX_MODEL ? name.slice(0, MAX_MODEL - 1) + "…" : name;
+}
+
+// The parts of the line for the session on screen: the same items as `agent-sessions status`
+// (submit-key symbol, model, effort, ctx %), plus what the session is doing.
+function parts(api) {
+	try {
+		const route = api.route.current;
+		if (route.name !== "session" || !route.params || typeof route.params.sessionID !== "string") {
+			return null;
+		}
+		const sid = route.params.sessionID;
+		const ui = uiState();
+		const msgs = api.state.session.messages(sid);
+		const user = last(msgs, "user");
+		const assistant = last(msgs, "assistant");
+		let providerID = user ? user.model.providerID : assistant ? assistant.providerID : "";
+		let modelID = user ? user.model.modelID : assistant ? assistant.modelID : "";
+		if (!modelID) {
+			const configured = String((api.state.config && api.state.config.model) || "");
+			const slash = configured.indexOf("/");
+			providerID = slash < 0 ? "" : configured.slice(0, slash);
+			modelID = slash < 0 ? configured : configured.slice(slash + 1);
+		}
+		const variant = (user && user.model.variant) || (assistant && assistant.variant) || (ui.ja ? "デフォルト" : "Default");
+
+		let pct = "—";
+		const counted = msgs.findLast((m) => m.role === "assistant" && m.tokens && m.tokens.output > 0);
+		if (counted) {
+			const t = counted.tokens;
+			const used = t.input + t.output + t.reasoning + t.cache.read + t.cache.write;
+			const provider = api.state.provider.find((p) => p.id === counted.providerID);
+			const limit = provider && provider.models[counted.modelID] && provider.models[counted.modelID].limit.context;
+			if (limit) {
+				pct = String(Math.round((used / limit) * 100));
+			}
+		}
+
+		const status = api.state.session.status(sid);
+		const waiting = api.state.session.permission(sid).length + api.state.session.question(sid).length > 0;
+		const state = waiting ? "waiting" : status && status.type !== "idle" ? "busy" : "idle";
+		return {
+			head: (ui.symbol ? ui.symbol + " · " : "") + (modelID ? shortModel(modelID) : ui.ja ? "デフォルト" : "Default") + " · " + variant + " · ctx " + pct + "% ·",
+			state,
+		};
+	} catch {
+		return null;
+	}
+}
+
+const tui = async (api) => {
+	api.slots.register({
+		slots: {
+			// The bottom row of the screen, below OpenCode's own footer: the prompt's row already
+			// shows agent, model and variant, so this is where a status line sits.
+			app_bottom(ctx) {
+				const theme = () => ctx.theme.current;
+				const color = (state) => (state === "idle" ? theme().textMuted : theme().warning);
+				return (
+					<box flexShrink={0} paddingLeft={2} paddingRight={2}>
+						{parts(api) ? (
+							<text fg={theme().textMuted}>
+								{parts(api).head} <span style={{ fg: color(parts(api).state) }}>{parts(api).state === "idle" ? "○" : "●"} {parts(api).state}</span>
+							</text>
+						) : null}
+					</box>
+				);
+			},
+		},
+	});
+};
+
+export default { id: "agent-sessions", tui };
 '''
