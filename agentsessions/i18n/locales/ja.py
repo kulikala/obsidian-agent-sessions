@@ -56,6 +56,12 @@ MESSAGES = {
     'setup.opencode_tui_failed': 'opencode: {path} を更新できなかった: {error}',
     'setup.opencode_foreign': 'opencode プラグイン: {path} は自分のものではないので、そのままにした',
     'setup.opencode_failed': 'opencode プラグイン: {path} を変更できなかった: {error}',
+    'setup.skill_installed': 'エージェントのスキル: {path} を入れた',
+    'setup.skill_updated': 'エージェントのスキル: {path} を更新した',
+    'setup.skill_removed': 'エージェントのスキル: {path} を削除した',
+    'setup.skill_foreign': 'エージェントのスキル: {path} は別のものなので、そのままにした',
+    'setup.skill_failed': 'エージェントのスキル: {path} を変更できなかった: {error}',
+    'setup.skill_no_vault': 'エージェントのスキルには Vault が要る: --vault DIR を渡すか AGENT_SESSIONS_VAULT を設定する',
 
     'cmd.needs_value': '{flag} には値が要ります',
     'cmd.no_changes': '変更なし',

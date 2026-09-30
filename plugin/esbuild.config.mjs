@@ -11,7 +11,8 @@ const REPO = fileURLToPath(new URL("..", import.meta.url));
 
 /**
  * The `agent-sessions` program as plain text, keyed by its path in an install directory: every
- * `.py` under `agentsessions/` plus the two launchers in `bin/`. The plugin writes these out when
+ * `.py` under `agentsessions/` and the agent skills' `SKILL.md` templates, plus the two launchers in
+ * `bin/`. The plugin writes these out when
  * the user installs the program from inside Obsidian (`src/backend/bundle.ts`).
  */
 function backendFiles() {
@@ -26,7 +27,7 @@ function backendFiles() {
 				if (name !== "__pycache__") {
 					walk(full);
 				}
-			} else if (name.endsWith(".py")) {
+			} else if (name.endsWith(".py") || name === "SKILL.md") {
 				add(full);
 			}
 		}

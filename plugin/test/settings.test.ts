@@ -34,11 +34,18 @@ describe("DEFAULT_SETTINGS", () => {
 			managerAnalysisCollapsed: false,
 			managerAnalysisFolded: { claude: false, codex: false, opencode: false },
 			managerStatusFilter: "all",
+			installAgentSkills: false,
 		});
 	});
 });
 
 describe("mergeSettings", () => {
+	it("keeps installAgentSkills when it is a boolean and drops anything else (default off)", () => {
+		expect(mergeSettings({ installAgentSkills: true }).installAgentSkills).toBe(true);
+		expect(mergeSettings({ installAgentSkills: "yes" }).installAgentSkills).toBe(false);
+		expect(mergeSettings({}).installAgentSkills).toBe(false);
+	});
+
 	it("drops the removed newlineKey and an old submitKey value no longer in the current type", () => {
 		const merged = mergeSettings({ newlineKey: "enter", submitKey: "super+enter", fontSize: 15 });
 		expect(merged).not.toHaveProperty("newlineKey");

@@ -109,7 +109,15 @@ import {
 } from "./sessions/terminal-status";
 import { claudeSettingsPath, readFullscreenTui } from "./terminal/tui-mode";
 import type { ArchivedSession, DaemonSession, Detail, LiveResult, ScanResult } from "./types";
-import { writeUiState } from "./backend/ui-state";
+import {
+	AGENT_SKILLS_NOTICE,
+	agentSkillsArgs,
+	parseAgentSkillsStatus,
+	skillLauncher,
+	type AgentSkillsMode,
+	type AgentSkillsStatus,
+} from "./backend/agent-skills";
+import { agentLaunchFor, writeUiState } from "./backend/ui-state";
 import { InstallBackendModal } from "./ui/install-modal";
 import { UsageModal } from "./usage/usage-modal";
 import { writeVaultState } from "./backend/vault-state";
@@ -445,7 +453,14 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 		const enabledAgents = AGENT_IDS.filter((id) => this.settings.agents[id].enabled);
 		try {
-			writeUiState(RUNTIME_DIR, this.settings.submitKey, getLang(), enabledAgents, Platform.isMacOS);
+			writeUiState(
+				RUNTIME_DIR,
+				this.settings.submitKey,
+				getLang(),
+				enabledAgents,
+				Platform.isMacOS,
+				agentLaunchFor(this.settings.agents)
+			);
 		} catch (err) {
 			console.warn("agent-sessions: couldn't write ui.json", err);
 		}
@@ -750,6 +765,8 @@ export default class AgentSessionsPlugin extends Plugin {
 			// an updated plugin file too — but only one that is already there; a silent refresh
 			// never creates it.
 			void this.installOpencodePlugin({ mode: "update-only" });
+			// Likewise the skills: an updated program means updated skill text, for copies already there.
+			void this.installAgentSkills({ mode: "update-only", program: launcherPath(info.dir) });
 			this.syncOpencodeTui();
 		} catch (err) {
 			console.warn("agent-sessions: couldn't update the installed program", err);
@@ -785,6 +802,9 @@ export default class AgentSessionsPlugin extends Plugin {
 			// written must not fail the rest of the install.
 			await this.installOpencodePlugin({ notify: true, program: launcher });
 			this.syncOpencodeTui();
+		}
+		if (this.settings.installAgentSkills) {
+			await this.installAgentSkills({ notify: true, program: launcher });
 		}
 		this.syncVaultState();
 		await this.index.rescan();
@@ -824,6 +844,49 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
+	 * Runs `setup` for the agent skills in the vault (`mode`: `install` writes the skills the enabled
+	 * agents need and takes our copies out of the other folders, `update-only` refreshes copies that
+	 * are already there, `remove` deletes every copy of ours) and returns what the program reports
+	 * (`agent-skills: <status>`). `notify` says what happened in a `Notice`; a failure is always
+	 * reported that way, never thrown. `null` when there was nothing to run (no installed program,
+	 * or `install`/`update-only` with the setting off) or the run failed.
+	 */
+	async installAgentSkills(
+		opts: { mode?: AgentSkillsMode; notify?: boolean; program?: string } = {}
+	): Promise<AgentSkillsStatus | null> {
+		const mode = opts.mode ?? "install";
+		const program = opts.program ?? this.agentSessionsPath();
+		if ((mode !== "remove" && !this.settings.installAgentSkills) || !existsSync(program)) {
+			return null;
+		}
+		try {
+			const enabled = AGENT_IDS.filter((id) => this.settings.agents[id].enabled);
+			const args = agentSkillsArgs(mode, this.vaultPath(), enabled, skillLauncher(program, homedir()));
+			const status = parseAgentSkillsStatus(await runProgram(program, args));
+			const key = status ? AGENT_SKILLS_NOTICE[status] : null;
+			if (opts.notify && key) {
+				new Notice(t(key));
+			}
+			return status;
+		} catch (err) {
+			const stderr = (err as { stderr?: string }).stderr?.trim();
+			new Notice(t("notice.agentSkillsFailed", { error: stderr ? stderr.split("\n")[0] : messageOf(err) }));
+			return null;
+		}
+	}
+
+	/** The "Install agent skills" switch: saves it, then writes the skills (or takes them away). */
+	async setInstallAgentSkills(value: boolean): Promise<void> {
+		this.settings.installAgentSkills = value;
+		await this.saveSettings();
+		if (value && !this.backendAvailable()) {
+			// Nothing to run yet: the install writes them once the program is there.
+			return;
+		}
+		await this.installAgentSkills({ mode: value ? "install" : "remove", notify: true });
+	}
+
+	/**
 	 * Undoes `installBackend`: stops the daemon (ending any running session), removes its
 	 * Claude Code hooks/statusLine, the Codex config lines, OpenCode's status plugin and
 	 * its tui.json keybinds it manages (`setup --remove`), then deletes the files.
@@ -835,7 +898,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 		const launcher = launcherPath(info.dir);
 		await runProgram(launcher, ["daemon", "--stop"]).catch(() => undefined);
-		await runProgram(launcher, ["setup", "--remove"]).catch((err) => {
+		await runProgram(launcher, ["setup", "--remove", "--vault", this.vaultPath()]).catch((err) => {
 			console.warn("agent-sessions: setup --remove failed", err);
 		});
 		removeBundle(info.dir);
@@ -1760,6 +1823,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			);
 
 		this.renderBackendSetting(containerEl);
+		this.renderAgentSkillsSetting(containerEl);
 
 		new Setting(containerEl)
 			.setName(t("settings.agentSessionsPath.name"))
@@ -1858,6 +1922,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 							// Its tui.json submit-key keybinds follow the same switch.
 							this.plugin.syncOpencodeTui();
 						}
+						// The skills follow the enabled agents (a disabled agent's copies go).
+						void this.plugin.installAgentSkills({ notify: true });
 						redraw();
 					})
 				);
@@ -2079,6 +2145,18 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 					}).open();
 				})
 		);
+	}
+
+	/** The "Install agent skills" switch (default off): writes into the vault's skill folders. */
+	private renderAgentSkillsSetting(containerEl: HTMLElement): void {
+		new Setting(containerEl)
+			.setName(t("settings.agentSkills.name"))
+			.setDesc(t("settings.agentSkills.desc"))
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.installAgentSkills).onChange(async (value) => {
+					await this.plugin.setInstallAgentSkills(value);
+				})
+			);
 	}
 
 	private renderLanguageSetting(containerEl: HTMLElement): void {

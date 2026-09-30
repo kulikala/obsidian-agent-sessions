@@ -152,7 +152,8 @@ class TestSetupRemovesEditorKeys(unittest.TestCase):
             f.write('[tui.keymap.global] # managed by Agent Sessions\n'
                     'open_external_editor = "ctrl-q" # managed by Agent Sessions\n')
         self.args = ['--settings', os.path.join(d, 's.json'), '--keybindings', self.kb, '--config-toml', self.toml,
-                     '--opencode-plugin', os.path.join(d, 'plugin.js'), '--opencode-tui-backup', self.backup]
+                     '--opencode-plugin', os.path.join(d, 'plugin.js'), '--opencode-tui-backup', self.backup,
+                     '--vault', os.path.join(d, 'vault')]
 
     def test_remove_restores_claude_codex_and_opencode(self):
         with redirect_stdout(io.StringIO()):
@@ -191,7 +192,7 @@ class TestSetupRemovesTui(unittest.TestCase):
         self.args = ['--settings', os.path.join(d, 's.json'), '--keybindings', os.path.join(d, 'kb.json'),
                      '--config-toml', os.path.join(d, 'c.toml'),
                      '--opencode-plugin', os.path.join(d, 'plugin.js'),
-                     '--opencode-tui-backup', self.backup]
+                     '--opencode-tui-backup', self.backup, '--vault', os.path.join(d, 'vault')]
 
     def _check(self):
         with open(self.tui) as f:

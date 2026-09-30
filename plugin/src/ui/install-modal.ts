@@ -3,9 +3,11 @@
 // anything is written, and runs `AgentSessionsPlugin.installBackend` only on confirmation.
 
 import { App, Modal, Notice, Setting } from "obsidian";
+import { skillFolders } from "../backend/agent-skills";
 import { MIN_PYTHON, type InstallDirChoice, type PythonInfo, type UnsuitableReason } from "../backend/bundle";
 import { t, type MessageKey } from "../i18n";
 import type AgentSessionsPlugin from "../main";
+import { AGENT_IDS } from "../settings";
 
 const REASON_KEY: Record<UnsuitableReason, MessageKey> = {
 	characters: "install.reason.characters",
@@ -69,6 +71,15 @@ export class InstallBackendModal extends Modal {
 		if (this.plugin.settings.agents.opencode.enabled) {
 			item(t("install.opencode"), t("install.opencodeValue"));
 		}
+		const settings = this.plugin.settings;
+		item(
+			t("install.skills"),
+			settings.installAgentSkills
+				? t("install.skillsOn", {
+						folders: skillFolders(AGENT_IDS.filter((id) => settings.agents[id].enabled)).join(", "),
+					})
+				: t("install.skillsOff")
+		);
 		const status = contentEl.createEl("p", { cls: "agent-sessions-install-status" });
 		new Setting(contentEl)
 			.addButton((button) => button.setButtonText(t("action.cancel")).onClick(() => this.close()))

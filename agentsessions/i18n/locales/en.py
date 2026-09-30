@@ -64,6 +64,12 @@ MESSAGES = {
     'setup.opencode_tui_failed': 'opencode: could not update {path}: {error}',
     'setup.opencode_foreign': 'opencode plugin: {path} exists and is not ours; left as is',
     'setup.opencode_failed': 'opencode plugin: could not change {path}: {error}',
+    'setup.skill_installed': 'agent skill: installed {path}',
+    'setup.skill_updated': 'agent skill: updated {path}',
+    'setup.skill_removed': 'agent skill: removed {path}',
+    'setup.skill_foreign': 'agent skill: {path} exists and is not ours; left as is',
+    'setup.skill_failed': 'agent skill: could not change {path}: {error}',
+    'setup.skill_no_vault': 'agent skills need a vault: pass --vault DIR or set AGENT_SESSIONS_VAULT',
 
     # cmd_setup.py
     'cmd.needs_value': '{flag} needs a value',
