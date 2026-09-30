@@ -946,8 +946,7 @@ export class TerminalView extends ItemView {
 
 	/**
 	 * Adds a separator and the session actions after Obsidian's standard items (including split
-	 * right/down). "Compact session" is disabled based on `index.getCachedDetail`'s
-	 * `last_command` (synchronous — stays enabled if not yet fetched, and `compactSession` itself checks again).
+	 * right/down). "Compact session" is disabled right after a compaction (`isJustCompacted`).
 	 */
 	// Matches `ItemView.onPaneMenu`'s own signature (obsidian.d.ts) — the `"more-options" |
 	// "tab-header"` literals are structurally redundant next to `string` (any string is already
@@ -956,9 +955,7 @@ export class TerminalView extends ItemView {
 	onPaneMenu(menu: Menu, source: "more-options" | "tab-header" | (string & {})): void {
 		super.onPaneMenu(menu, source);
 		const id = this.id;
-		const lastCommand = this.plugin.index.getCachedDetail(id)?.last_command ?? null;
-		// If not yet fetched, kick off a fetch for next time this opens.
-		void this.plugin.index.getDetail(id).catch(() => undefined);
+		const justCompacted = this.plugin.isJustCompacted(id);
 		menu.addSeparator();
 		menu.addItem((item) =>
 			item
@@ -976,7 +973,7 @@ export class TerminalView extends ItemView {
 			item
 				.setTitle(t("action.compact"))
 				.setIcon("fold-vertical")
-				.setDisabled(lastCommand === "/compact")
+				.setDisabled(justCompacted)
 				.onClick(() => void this.plugin.compactSession(id))
 		);
 		menu.addItem((item) =>

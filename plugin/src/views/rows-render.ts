@@ -89,8 +89,7 @@ export function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): voi
 			item.setDisabled(true);
 		}
 	});
-	const lastPrompt = actions.lastUserPrompt?.(row.id);
-	const alreadyCompacted = lastPrompt != null && lastPrompt.trim() === "/compact";
+	const alreadyCompacted = actions.isJustCompacted?.(row.id) === true;
 	menu.addItem((item) => {
 		item
 			.setTitle(t("action.compact"))

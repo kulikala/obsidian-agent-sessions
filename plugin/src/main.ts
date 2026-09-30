@@ -1271,20 +1271,18 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * Whether the last instruction was `/compact` (`json detail`'s `last_command`; only Python
-	 * reads the transcript). Uses `index.getDetail`'s cache if there is one, otherwise fetches it.
+	 * Whether the session has just been compacted and no instruction has been sent since — the
+	 * just-compacted marker (`CompactedTracker`), which the SessionStart(compact) hook sets and
+	 * the next prompt clears. Not the transcript's most recent slash command: that stays `/compact`
+	 * through any number of ordinary prompts afterwards.
 	 */
-	async lastInstructionIsCompact(id: string): Promise<boolean> {
-		try {
-			return (await this.index.getDetail(id)).last_command === "/compact";
-		} catch {
-			return false;
-		}
+	isJustCompacted(id: string): boolean {
+		return this.index.sessions.get(id)?.compacted === true;
 	}
 
-	/** Compact: does nothing if the last instruction was already `/compact`; otherwise sends `/compact` (even without a tab). */
+	/** Compact: does nothing right after a compaction (`isJustCompacted`); otherwise sends `/compact` (even without a tab). */
 	async compactSession(id: string): Promise<void> {
-		if (await this.lastInstructionIsCompact(id)) {
+		if (this.isJustCompacted(id)) {
 			new Notice(t("notice.compactAlready"));
 			return;
 		}

@@ -41,11 +41,10 @@ export interface RowActions {
 	/** Opens the session-analytics modal. */
 	showUsage(id: string): void;
 	/**
-	 * The most recent slash command (`json detail`'s `last_command`, e.g. `/compact`; excludes
-	 * arguments). Returns synchronously if already fetched — doesn't call `json detail` itself
-	 * (`index.getCachedDetail`). `undefined` if not fetched yet (doesn't disable "compact session" in that case).
+	 * Whether the session has just been compacted with no instruction since (`isJustCompacted`) —
+	 * disables "Compact session".
 	 */
-	lastUserPrompt?(id: string): string | undefined;
+	isJustCompacted?(id: string): boolean;
 }
 
 export interface RenderRowOptions {
@@ -349,6 +348,6 @@ export function createRowActions(
 		hideDetail: onHideDetail,
 		cancelHideDetail: onCancelHideDetail,
 		showUsage: (id) => plugin.showUsage(id),
-		lastUserPrompt: (id) => plugin.index.getCachedDetail(id)?.last_command ?? undefined,
+		isJustCompacted: (id) => plugin.isJustCompacted(id),
 	};
 }
