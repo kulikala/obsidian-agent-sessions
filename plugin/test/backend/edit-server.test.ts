@@ -179,10 +179,11 @@ describe("editReplyFor / submitsAfterEdit", () => {
 	});
 
 	it("only a prompt-edit temp file continues on to submit", () => {
-		expect(submitsAfterEdit("/var/folders/x/T/claude-prompt-1234-abcd.md")).toBe(true);
-		expect(submitsAfterEdit("/Users/x/.claude/keybindings.json")).toBe(false);
-		expect(submitsAfterEdit("/v/CLAUDE.md")).toBe(false);
-		expect(submitsAfterEdit("/tmp/claude-prompt-dir/notes.md")).toBe(false);
+		expect(submitsAfterEdit("/var/folders/x/T/claude-prompt-1234-abcd.md", "claude")).toBe(true);
+		expect(submitsAfterEdit("/Users/x/.claude/keybindings.json", "claude")).toBe(false);
+		expect(submitsAfterEdit("/v/CLAUDE.md", "claude")).toBe(false);
+		expect(submitsAfterEdit("/tmp/claude-prompt-dir/notes.md", "claude")).toBe(false);
+		expect(submitsAfterEdit("/var/folders/x/T/1790736238428.md", "opencode")).toBe(true);
 	});
 
 	it("over the socket, send/return arrive as ok:true and cancel arrives as ok:false with error:cancel", async () => {

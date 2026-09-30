@@ -35,8 +35,13 @@ export function editReplyFor(outcome: EditOutcome): { ok: boolean; error?: strin
 	return { ok: false, error: outcome };
 }
 
-/** Whether to send the submit sequence after "send": only for a prompt-edit temp file (`claude-prompt-*`). */
-export function submitsAfterEdit(file: string): boolean {
+/** Whether to send the submit sequence after "send": for Claude Code, only a prompt-edit temp file
+ * (`claude-prompt-*`, as opposed to `/memory` or `/keybindings`); for OpenCode, always — its editor
+ * key only ever opens the prompt. */
+export function submitsAfterEdit(file: string, agent: string): boolean {
+	if (agent === "opencode") {
+		return true;
+	}
 	return path.basename(file).startsWith("claude-prompt-");
 }
 

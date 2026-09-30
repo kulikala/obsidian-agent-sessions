@@ -167,6 +167,9 @@ function messageOf(err: unknown): string {
 /** The pause between the parts of a command sent in several writes (`commandChunks`). */
 const COMMAND_CHUNK_GAP_MS = 250;
 
+/** How long `refreshUntilExited` keeps re-reading after an end request (the daemon's 10 s kill grace plus a margin). */
+const END_REFRESH_MAX_MS = 12_000;
+
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -681,7 +684,7 @@ export default class AgentSessionsPlugin extends Plugin {
 				}
 				const { ok, error } = editReplyFor(result);
 				reply(ok, error);
-				if (result === "send" && submitsAfterEdit(req.file)) {
+				if (result === "send" && submitsAfterEdit(req.file, view.sessionAgent)) {
 					window.setTimeout(() => view.submitPrompt(), SUBMIT_AFTER_EDIT_MS);
 				}
 			})
@@ -1227,6 +1230,10 @@ export default class AgentSessionsPlugin extends Plugin {
 		if (agent === "claude" && !text.includes(" ")) {
 			return [pasted, "\t", submit];
 		}
+		// Codex: a bare command needs a trailing space to close its popup, then the submit key.
+		if (agent === "codex" && !text.includes(" ")) {
+			return [PASTE_BEGIN + text + " " + PASTE_END, submit];
+		}
 		// OpenCode: `\r` runs the highlighted popup command only once the popup is up; arriving with
 		// the paste, it's read as Return in the input box (a newline, with the managed keybinds).
 		if (agent === "opencode") {
@@ -1388,6 +1395,7 @@ export default class AgentSessionsPlugin extends Plugin {
 					if (!res.ok) {
 						throw new Error(res.error ?? "unknown");
 					}
+					void this.refreshUntilExited(id);
 				} catch (err) {
 					new Notice(t("notice.endFailed", { error: messageOf(err) }));
 				} finally {
@@ -1395,6 +1403,21 @@ export default class AgentSessionsPlugin extends Plugin {
 				}
 			})();
 		}).open();
+	}
+
+	/** Re-reads the daemon's list once a second (for up to `END_REFRESH_MAX_MS`, the kill grace
+	 * plus a margin) until the row of `id` shows as exited, so an ended session leaves "Running"
+	 * without a rescan — nothing else prompts a re-read for a Codex/OpenCode session without a tab. */
+	private async refreshUntilExited(id: string): Promise<void> {
+		const until = Date.now() + END_REFRESH_MAX_MS;
+		while (Date.now() < until) {
+			await sleep(1000);
+			await this.index.refreshLive();
+			const row = this.index.sessions.get(id);
+			if (!row || !row.daemon || row.exited !== null) {
+				return;
+			}
+		}
 	}
 
 	/** Opens the session analytics modal. */

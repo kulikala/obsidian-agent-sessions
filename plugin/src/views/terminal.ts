@@ -792,6 +792,9 @@ export class TerminalView extends ItemView {
 
 	private onExit(code: number): void {
 		this.attached = false;
+		// Moves the row out of "Running" now (Claude's ledger does this by itself; Codex and
+		// OpenCode have nothing else prompting a re-read of the daemon's list).
+		void this.plugin.index.refreshLive();
 		const early = this.startedAt > 0 && Date.now() - this.startedAt <= EARLY_EXIT_MS;
 		this.startedAt = 0;
 		if (early && code === 127) {
