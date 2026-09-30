@@ -22,7 +22,7 @@ import { AGENT_BIN_NAME, BackendError, loginEnv, resolveAgentBinary, withBinDirO
 import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../backend/daemon-client";
 import { t } from "../i18n";
 import { promptHasDraft, type ScreenCell } from "../terminal/prompt-draft";
-import { agentSendSequence, classifyCtrlKeyNonMac, classifyEnter, resolveEnterAction, terminalClaimsKey } from "../terminal/keys";
+import { agentSendSequence, classifyCtrlKeyNonMac, classifyEnter, isCloseTabKey, resolveEnterAction, terminalClaimsKey } from "../terminal/keys";
 import { buildAtToken, selectionLineRange, VaultLinkProvider } from "../terminal/links";
 import { submitSequence } from "../main";
 import type AgentSessionsPlugin from "../main";
@@ -318,6 +318,12 @@ export class TerminalView extends ItemView {
 		// terminal needs are claimed through this view's scope while the terminal has focus.
 		this.scope = new Scope(this.app.scope);
 		this.scope.register(null, null, (ev) => {
+			// While the built-in editor is open, Mod+W (Obsidian's "Close current tab") does nothing,
+			// so an edit in progress isn't lost to a reflexive close. This scope is only active while
+			// this tab is the active one, so Mod+W still closes other tabs.
+			if (this.pendingEdit && isCloseTabKey(ev, Platform.isMacOS)) {
+				return false;
+			}
 			if (this.pendingEdit || !this.termEl.contains(activeDocument.activeElement)) {
 				return undefined;
 			}

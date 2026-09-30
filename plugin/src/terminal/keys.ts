@@ -289,3 +289,9 @@ export function terminalClaimsKey(ev: KeyLike, isMacOS: boolean): boolean {
 	const role = classifyCtrlKeyNonMac(ev);
 	return role !== "passthrough" && role !== "obsidian";
 }
+
+/** Mod+W — Obsidian's default "Close current tab" hotkey: Cmd+W on macOS, Ctrl+W elsewhere. */
+export function isCloseTabKey(ev: Pick<KeyboardEvent, "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey">, isMac: boolean): boolean {
+	const mod = isMac ? ev.metaKey && !ev.ctrlKey : ev.ctrlKey && !ev.metaKey;
+	return mod && !ev.altKey && !ev.shiftKey && ev.key.toLowerCase() === "w";
+}
