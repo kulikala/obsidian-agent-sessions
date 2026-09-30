@@ -97,7 +97,8 @@ import {
 	type OpencodeLaunchVia,
 	type SubmitKey,
 } from "./settings";
-import { loadStore, migrateFromMarkdown, StoreLockError, updateStore } from "./sessions/store";
+import { orphanDaemonSessions } from "./sessions/orphans";
+import { loadStore, migrateFromMarkdown, type Store, StoreLockError, updateStore } from "./sessions/store";
 import {
 	ALL_TERMINAL_STATUSES,
 	higherPriorityStatus,
@@ -165,8 +166,9 @@ const HEADLESS_ROWS = 40;
 /** `resolveAgentSession`'s polling interval, and how many attempts before giving up on finding
  * the daemon-tracked pid (should appear almost immediately after `start`). Thread-id resolution
  * itself isn't bounded by an attempt count — Codex doesn't create its rollout file until the first
- * turn completes, which can be well after the tab opens, so that stage keeps retrying for as long
- * as the tab stays open (`resolveAgentSession`'s loop condition). */
+ * turn completes, which can be well after the session starts, so that stage keeps retrying for as
+ * long as the session is wanted: its tab is open or its daemon session is running
+ * (`resolveAgentSession`'s loop condition). */
 const RESOLVE_POLL_MS = 2000;
 const RESOLVE_PID_ATTEMPTS = 15;
 
@@ -290,6 +292,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.opener = new SessionOpener<WorkspaceLeaf>(this.app.workspace);
 
 		this.register(this.index.registry.onIdle((id) => void this.notifyIdle(id)));
+		this.register(this.index.onDaemonSessions((sessions) => this.adoptOrphanSessions(sessions)));
 
 		// Remember the last-frontmost Markdown view (the target for `@` insertion).
 		this.registerEvent(
@@ -1028,9 +1031,41 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	/** Starts finding the real id of a new Codex/OpenCode session that runs under `placeholderId`
 	 * (`newSession`, and a tab's "Start fresh"). */
-	trackNewAgentSession(agent: AgentId, placeholderId: string, cwd: string): void {
+	trackNewAgentSession(agent: AgentId, placeholderId: string, cwd: string, since?: number): void {
+		if (this.unresolvedIds.has(placeholderId)) {
+			return;
+		}
 		this.unresolvedIds.add(placeholderId);
-		void this.resolveAgentSession(agent, placeholderId, cwd);
+		void this.resolveAgentSession(agent, placeholderId, cwd, since);
+	}
+
+	/**
+	 * Called with the daemon's session list on every live refresh: a running Codex/OpenCode session
+	 * that no `sessions.json` entry links and no resolver is looking for (`orphanDaemonSessions` — one
+	 * started by `agent-sessions new`, which cannot learn the real id at launch) gets the same
+	 * resolve-and-link flow as a tab of the plugin's own, for as long as it runs. A name `new` left in
+	 * `pendingRenames` under the daemon id is picked up by `linkAgentSession`.
+	 */
+	private adoptOrphanSessions(sessions: DaemonSession[]): void {
+		if (!this.backendAvailable() || sessions.length === 0) {
+			return;
+		}
+		let stored: Store;
+		try {
+			stored = loadStore(this.storePath());
+		} catch {
+			return;
+		}
+		const linkedDaemonIds = new Set<string>();
+		for (const entry of Object.values(stored.sessions)) {
+			if (entry.daemon) {
+				linkedDaemonIds.add(entry.daemon);
+			}
+		}
+		const sessionIds = new Set<string>([...Object.keys(stored.sessions), ...this.index.sessions.keys()]);
+		for (const s of orphanDaemonSessions(sessions, { linkedDaemonIds, sessionIds, resolving: this.unresolvedIds })) {
+			this.trackNewAgentSession(asAgentId(s.agent), s.id, s.cwd, s.startedAt ?? undefined);
+		}
 	}
 
 	/**
@@ -1047,9 +1082,9 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * over to it (`TerminalView.relinkId`) so `id` is the real id everywhere from then on — row
 	 * matching, `sendCommand` route ①, and the saved workspace layout.
 	 */
-	private async resolveAgentSession(agent: AgentId, placeholderId: string, cwd: string): Promise<void> {
+	private async resolveAgentSession(agent: AgentId, placeholderId: string, cwd: string, startedAt?: number): Promise<void> {
 		try {
-			const since = Date.now() / 1000;
+			const since = startedAt ?? Date.now() / 1000;
 			let client: DaemonClient;
 			try {
 				client = await ensureDaemon(this.sockPath(), this.agentSessionsPath());
@@ -1059,13 +1094,22 @@ export default class AgentSessionsPlugin extends Plugin {
 			try {
 				await client.hello("plugin");
 				let pid: number | null = null;
+				// Wanted while a tab of it is open, or its daemon session runs (one nobody has open — from
+				// `agent-sessions new` — has no tab). An unanswered `list` doesn't end the wait.
+				const wanted = async (): Promise<DaemonSession | "unknown" | null> => {
+					const list = await client.list().catch(() => null);
+					if (!list) {
+						return this.findTerminalView(placeholderId) ? "unknown" : null;
+					}
+					const found = ((list.sessions as DaemonSession[] | undefined) ?? []).find((s) => s.id === placeholderId);
+					return found && found.exited === null ? found : this.findTerminalView(placeholderId) ? "unknown" : null;
+				};
 				for (let i = 0; i < RESOLVE_PID_ATTEMPTS && pid === null; i++) {
-					if (!this.findTerminalView(placeholderId)) {
+					const state = await wanted();
+					if (state === null) {
 						return;
 					}
-					const list = await client.list().catch(() => null);
-					const sessions = (list?.sessions as DaemonSession[] | undefined) ?? [];
-					pid = sessions.find((s) => s.id === placeholderId)?.pid ?? null;
+					pid = state === "unknown" ? null : state.pid ?? null;
 					if (pid === null) {
 						await sleep(RESOLVE_POLL_MS);
 					}
@@ -1073,7 +1117,7 @@ export default class AgentSessionsPlugin extends Plugin {
 				if (pid === null) {
 					return;
 				}
-				while (this.findTerminalView(placeholderId)) {
+				while (pid !== null && (await wanted()) !== null) {
 					const { thread } = await resolve(this.agentSessionsPath(), this.vaultPath(), agent, pid, since, cwd).catch(
 						() => ({ thread: null, transcript: null })
 					);
@@ -1105,7 +1149,9 @@ export default class AgentSessionsPlugin extends Plugin {
 			updateStore(this.storePath(), (store) => {
 				// Keeps a name the user already gave (OpenCode stores it here — see `renameSession`),
 				// or the one given while the session was still under its placeholder id.
-				const name = this.pendingNames.get(daemonId) ?? store.sessions[id]?.name;
+				// A session started by `agent-sessions new` has its name in `pendingRenames[daemonId]`.
+				const name = this.pendingNames.get(daemonId) ?? store.pendingRenames[daemonId] ?? store.sessions[id]?.name;
+				delete store.pendingRenames[daemonId];
 				store.sessions[id] = { agent, cwd, daemon: daemonId, ...(name ? { name } : {}) };
 			});
 			this.index.refreshStore();

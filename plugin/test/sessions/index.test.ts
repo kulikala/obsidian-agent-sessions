@@ -204,6 +204,26 @@ describe("SessionIndex", () => {
 		expect(index.sessions.get("a")?.exited).toBeNull();
 	});
 
+	it("hands the daemon's sessions to onDaemonSessions after a live refresh that reached the daemon", async () => {
+		const index = new SessionIndex(deps);
+		const seen: string[][] = [];
+		const stop = index.onDaemonSessions((sessions) => seen.push(sessions.map((s) => s.id)));
+		liveImpl = async () => ({
+			live: {},
+			daemon: { running: true, sessions: [{ id: "x", agent: "codex", cwd: "/v", pid: 1, startedAt: 0, clients: 0, exited: null, exitedAt: null }] },
+		});
+		await index.refreshLive();
+		liveImpl = async () => emptyLive();
+		await index.refreshLive();
+		stop();
+		liveImpl = async () => ({
+			live: {},
+			daemon: { running: true, sessions: [] },
+		});
+		await index.refreshLive();
+		expect(seen).toEqual([["x"]]);
+	});
+
 	it("also reflects live on every scan; an id present in daemon.sessions gets daemon: true", async () => {
 		scanImpl = async () => ({
 			sessions: [scanSession({ id: "a" }), scanSession({ id: "b" })],

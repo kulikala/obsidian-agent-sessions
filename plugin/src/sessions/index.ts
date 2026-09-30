@@ -10,7 +10,7 @@ import { listCategories } from "./name";
 import { Registry } from "./registry";
 import { StatusLine } from "./statusline";
 import { loadStore, updateStore, type Store } from "./store";
-import type { Detail, LiveResult, ScanResult, ScanSession } from "../types";
+import type { DaemonSession, Detail, LiveResult, ScanResult, ScanSession } from "../types";
 
 /** One row: a scan result (from Python) combined with the running-daemon ledger and tab state. */
 export interface Row extends ScanSession {
@@ -324,6 +324,15 @@ export class SessionIndex extends EventEmitter {
 		if (this.applyLive(result)) {
 			this.emit("change");
 		}
+		if (result.daemon.running) {
+			this.emit("daemon", result.daemon.sessions);
+		}
+	}
+
+	/** Notified with the daemon's session list after every live refresh that reached the daemon. */
+	onDaemonSessions(cb: (sessions: DaemonSession[]) => void): () => void {
+		this.on("daemon", cb);
+		return () => this.off("daemon", cb);
 	}
 
 	/** Called when an append to `events.log` is detected (by hand, or from `fs.watch`). */

@@ -8,10 +8,11 @@ window and is opened from Obsidian's Agent Sessions list or with `agent-sessions
 
 Claude Code takes its id, name and Remote Control as flags; the transcript then confirms the name
 (`custom-title`) and the Remote Control URL (`system/bridge_status`). Codex and OpenCode choose their
-own ids and only record a session once its first message is sent, so the command waits for
-`json resolve` to learn the real id (which needs `--prompt`) and links it in `sessions.json`
-(design.md 3.3); their name is kept in `sessions.json` (OpenCode) or not applied (Codex has no way
-to name a session at launch).
+own ids and only record a session once its first message is sent. With `--prompt` the command waits
+for `json resolve` to learn the real id and links it in `sessions.json` (design.md 3.3). Without it
+the command exits 0 once the process is up: the plugin sees the unlinked daemon session on its live
+refresh and resolves and links it after the first message. An OpenCode name waits in `sessions.json`'s
+`pendingRenames[<daemon id>]` for that link (Codex has no way to name a session at launch).
 
 Exit codes: 0 = started and confirmed, 1 = started but not confirmed in time (the session keeps
 running; never retry, or there will be two), 2 = could not start.
@@ -160,6 +161,16 @@ def _register_claude(sid: str, cwd: str, warnings: List[str]) -> None:
         warnings.append('could not register the session in sessions.json: %s' % e)
 
 
+def _park_name(daemon_id: str, name: str, warnings: List[str]) -> None:
+    """Keeps an OpenCode name for the plugin's link of the not yet resolved session."""
+    if not config.STORE_PATH:
+        return
+    try:
+        store.update(lambda st: st.pendingRenames.__setitem__(daemon_id, name), config.STORE_PATH)
+    except Exception as e:  # noqa: BLE001
+        warnings.append('could not keep the session name in sessions.json: %s' % e)
+
+
 def _link(agent: str, real_id: str, cwd: str, daemon_id: str, name: Optional[str], warnings: List[str]) -> bool:
     if not config.STORE_PATH:
         warnings.append('the vault is not configured, so the session was not linked in sessions.json')
@@ -167,8 +178,11 @@ def _link(agent: str, real_id: str, cwd: str, daemon_id: str, name: Optional[str
     entry: Dict[str, Any] = {'agent': agent, 'cwd': cwd, 'daemon': daemon_id}
     if name and agent == 'opencode':
         entry['name'] = name
+    def apply(st: Any) -> None:
+        st.pendingRenames.pop(daemon_id, None)
+        st.sessions[real_id] = entry
     try:
-        store.update(lambda st: st.sessions.__setitem__(real_id, entry), config.STORE_PATH)
+        store.update(apply, config.STORE_PATH)
         return True
     except Exception as e:  # noqa: BLE001
         warnings.append('could not link the session in sessions.json: %s' % e)
@@ -214,6 +228,8 @@ def start(ns: argparse.Namespace, environ: Optional[Dict[str, str]] = None) -> D
     env = launch.build_env(agent, environ, cfg.get('env', {}), bin_path, config.VAULT, shim_path())
     if agent == 'claude':
         _register_claude(daemon_id, cwd, warnings)
+    elif name and agent == 'opencode':
+        _park_name(daemon_id, name, warnings)
 
     since = time.time()
     resp = _daemon('start', id=daemon_id, agent=agent, cwd=cwd, argv=argv, env=env, cols=120, rows=40)
@@ -227,6 +243,11 @@ def start(ns: argparse.Namespace, environ: Optional[Dict[str, str]] = None) -> D
     }
     if agent == 'claude':
         _wait_claude(result, name, rc, ns.timeout)
+    elif not prompt:
+        _wait_running(result)
+        result['warnings'].append(
+            'the session appears under its real id after its first message; Obsidian links it then '
+            '(until then the ID above is the daemon id)')
     else:
         _wait_resolved(result, name, since, ns.timeout, warnings)
     result['exit'] = 0 if result['confirmed'] else 1
@@ -265,6 +286,17 @@ def _wait_claude(result: Dict[str, Any], name: Optional[str], rc: bool, timeout:
     result['confirmed'] = (not rc or bool(url)) and (not name or title == name)
 
 
+def _wait_running(result: Dict[str, Any]) -> None:
+    """Codex and OpenCode have nothing to read back before the first message: the session counts as
+    started once its process is still up after a moment."""
+    time.sleep(SETTLE_SECONDS)
+    s = _daemon_session(result['daemon_id'])
+    if s is None or s.get('exited') is not None:
+        raise Failure('the session ended right after it started (see %s)'
+                      % os.path.join(config.RUNTIME_DIR, 'daemon.log'))
+    result['confirmed'] = True
+
+
 def _wait_resolved(result: Dict[str, Any], name: Optional[str], since: float, timeout: float,
                    warnings: List[str]) -> None:
     daemon_id, agent, cwd = result['daemon_id'], result['agent'], result['cwd']
@@ -284,8 +316,8 @@ def _wait_resolved(result: Dict[str, Any], name: Optional[str], since: float, ti
         if time.monotonic() >= deadline:
             break
         time.sleep(POLL_SECONDS)
-    warnings.append('%s records its session once the first message is sent, so its id is not known yet '
-                    '(start with --prompt to have it resolved)' % ('Codex' if agent == 'codex' else 'OpenCode'))
+    warnings.append('%s records its session once the first message is sent, so its id is not known yet; '
+                    'Obsidian links it after that message' % ('Codex' if agent == 'codex' else 'OpenCode'))
 
 
 def render(result: Dict[str, Any]) -> str:

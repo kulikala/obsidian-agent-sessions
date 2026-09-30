@@ -240,18 +240,19 @@ class TestResolvedAgents(NewTestCase):
 
     def test_opencode_is_linked_under_its_real_id_with_the_name(self):
         with self.resolver('ses_real', after=3):
-            rc, out, _ = self.run_new('--agent', 'opencode', '--name', 'Docs', '--json')
+            rc, out, _ = self.run_new('--agent', 'opencode', '--name', 'Docs', '--prompt', 'hi', '--json')
         self.assertEqual(rc, 0)
         result = json.loads(out)
         self.assertEqual(result['id'], 'ses_real')
         entry = store.load(self.store_path).sessions['ses_real']
         self.assertEqual(entry, {'agent': 'opencode', 'cwd': self.work, 'daemon': result['daemon_id'], 'name': 'Docs'})
+        self.assertEqual(store.load(self.store_path).pendingRenames, {})
         self.wait_recorded()
         self.assertNotIn('--name', self.recorded('argv'))
 
     def test_codex_is_linked_and_its_name_is_reported_as_not_applied(self):
         with self.resolver('thread-1'):
-            rc, out, _ = self.run_new('--agent', 'codex', '--name', 'Docs', '--json')
+            rc, out, _ = self.run_new('--agent', 'codex', '--name', 'Docs', '--prompt', 'hi', '--json')
         self.assertEqual(rc, 0)
         result = json.loads(out)
         entry = store.load(self.store_path).sessions['thread-1']
@@ -260,22 +261,41 @@ class TestResolvedAgents(NewTestCase):
 
     def test_an_id_that_does_not_appear_in_time_exits_1_and_says_how_to_attach(self):
         with self.resolver(None):
-            rc, out, _ = self.run_new('--agent', 'codex', '--timeout', '0.5', '--json')
+            rc, out, _ = self.run_new('--agent', 'codex', '--prompt', 'hi', '--timeout', '0.5', '--json')
         self.assertEqual(rc, 1)
         result = json.loads(out)
         self.assertEqual(result['id'], result['daemon_id'])
-        self.assertTrue(any('--prompt' in w for w in result['warnings']))
+        self.assertTrue(any('Obsidian links it' in w for w in result['warnings']))
         self.assertEqual(store.load(self.store_path).sessions, {})
 
-    def test_opencode_without_a_first_message_cannot_be_confirmed(self):
-        with self.resolver(None):
-            rc, out, _ = self.run_new('--agent', 'opencode', '--timeout', '0.3', '--json')
-        self.assertEqual(rc, 1)
-        self.assertTrue(any('OpenCode records' in w and '--prompt' in w for w in json.loads(out)['warnings']))
+    def test_without_a_prompt_it_exits_0_once_the_process_is_up_and_leaves_the_linking_to_obsidian(self):
+        with mock.patch.object(cmd_new, 'SETTLE_SECONDS', 0.2), mock.patch.object(
+                json_output, 'resolve_output', side_effect=AssertionError('must not resolve')):
+            rc, out, _ = self.run_new('--agent', 'codex', '--json')
+        self.assertEqual(rc, 0)
+        result = json.loads(out)
+        self.assertEqual(result['id'], result['daemon_id'])
+        self.assertTrue(any('real id after its first message' in w and 'Obsidian links it' in w
+                            for w in result['warnings']))
+        self.assertEqual(store.load(self.store_path).sessions, {})
+
+    def test_an_opencode_name_waits_in_pending_renames_for_the_link(self):
+        with mock.patch.object(cmd_new, 'SETTLE_SECONDS', 0.2):
+            rc, out, _ = self.run_new('--agent', 'opencode', '--name', 'Docs', '--json')
+        self.assertEqual(rc, 0)
+        st = store.load(self.store_path)
+        self.assertEqual(st.pendingRenames, {json.loads(out)['daemon_id']: 'Docs'})
+        self.assertEqual(st.sessions, {})
+
+    def test_a_process_that_dies_at_once_is_not_reported_as_started(self):
+        with mock.patch.object(cmd_new, 'SETTLE_SECONDS', 0.2), mock.patch.object(
+                cmd_new, '_daemon_session', return_value=None):
+            rc, out, _ = self.run_new('--agent', 'codex', '--json')
+        self.assertEqual(rc, 2)
 
     def test_remote_control_is_ignored_for_other_agents(self):
         with self.resolver('t'):
-            rc, out, _ = self.run_new('--agent', 'codex', '--remote-control', '--json')
+            rc, out, _ = self.run_new('--agent', 'codex', '--remote-control', '--prompt', 'x', '--json')
         self.assertTrue(any('only for Claude Code' in w for w in json.loads(out)['warnings']))
         self.wait_recorded()
         self.assertNotIn('remote-control', self.recorded('argv'))
