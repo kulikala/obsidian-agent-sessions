@@ -143,7 +143,8 @@ class TestSetupCommand(unittest.TestCase):
             rc = cmd_setup.main(list(args) + ['--settings', self.settings,
                                                  '--keybindings', os.path.join(self.tmp, 'kb.json'),
                                                  '--config-toml', os.path.join(self.tmp, 'config.toml'),
-                                                 '--opencode-tui-backup', self.backup])
+                                                 '--opencode-tui-backup', self.backup,
+                                                 '--vault', os.path.join(self.tmp, 'vault')])
         return rc, out.getvalue()
 
     def test_opencode_flag_installs_only_the_plugin(self):
