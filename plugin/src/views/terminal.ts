@@ -21,6 +21,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { AGENT_BIN_NAME, BackendError, loginEnv, resolveAgentBinary, withBinDirOnPath } from "../backend/backend";
 import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../backend/daemon-client";
 import { t } from "../i18n";
+import { promptHasDraft, type ScreenCell } from "../terminal/prompt-draft";
 import { agentSendSequence, classifyCtrlKeyNonMac, classifyEnter, resolveEnterAction, terminalClaimsKey } from "../terminal/keys";
 import { buildAtToken, selectionLineRange, VaultLinkProvider } from "../terminal/links";
 import { submitSequence } from "../main";
@@ -228,6 +229,25 @@ export class TerminalView extends ItemView {
 	/** Writes an already-assembled byte sequence to the PTY, called from `main.ts`'s `sendCommand`. */
 	sendBytes(bytes: Buffer): void {
 		this.sendInput(bytes);
+	}
+
+	/** Whether the agent's input box on screen holds a draft (`promptHasDraft` over the visible
+	 * rows; `null` when no prompt line is visible). */
+	promptHasDraft(): boolean | null {
+		const buffer = this.terminal.buffer.active;
+		const lines: ScreenCell[][] = [];
+		for (let y = buffer.baseY; y < buffer.baseY + this.terminal.rows; y++) {
+			const row = buffer.getLine(y);
+			const cells: ScreenCell[] = [];
+			for (let x = 0; row && x < row.length; x++) {
+				const cell = row.getCell(x);
+				if (cell) {
+					cells.push({ chars: cell.getChars(), dim: cell.isDim() !== 0 });
+				}
+			}
+			lines.push(cells);
+		}
+		return promptHasDraft(lines);
 	}
 
 	/** Whether this tab is attached to the daemon (the condition `main.ts`'s `sendCommand` uses to pick its first route). */

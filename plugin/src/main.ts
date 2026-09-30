@@ -1206,8 +1206,10 @@ export default class AgentSessionsPlugin extends Plugin {
 	/** Stash (Claude only) → command as bracketed paste → submit sequence (`submitSequence`: the
 	 * configured submit key for Claude and Codex, T-108 — same reasoning as `views/terminal.ts`'s
 	 * `sendSubmit()`; always `\r` for OpenCode, see below). */
-	private commandChunks(text: string, agent: AgentId): string[] {
-		const stash = agent === "claude" ? STASH : "";
+	private commandChunks(text: string, agent: AgentId, draft: boolean): string[] {
+		// Ctrl+S (`chat:stash`) only over a draft: on an empty box it brings a previously stashed
+		// draft back instead, and the command would be pasted after it.
+		const stash = agent === "claude" && draft ? STASH : "";
 		// OpenCode's slash popup answers to `\r` only (`\n` leaves it open), and `\r` runs the
 		// highlighted command whichever submit key is configured, so commands always end in `\r`.
 		const submit = agent === "opencode" ? "\r" : submitSequence(this.settings, agent);
@@ -1221,9 +1223,10 @@ export default class AgentSessionsPlugin extends Plugin {
 		return [pasted + submit];
 	}
 
-	/** Writes `commandChunks` through `write`, pausing `COMMAND_CHUNK_GAP_MS` between chunks. */
-	private async writeCommand(write: (data: Buffer) => void, text: string, agent: AgentId): Promise<void> {
-		const chunks = this.commandChunks(text, agent);
+	/** Writes `commandChunks` through `write`, pausing `COMMAND_CHUNK_GAP_MS` between chunks.
+	 * `draft`: whether the input box holds a draft to stash first (known only for an open tab). */
+	private async writeCommand(write: (data: Buffer) => void, text: string, agent: AgentId, draft = false): Promise<void> {
+		const chunks = this.commandChunks(text, agent, draft);
 		for (let i = 0; i < chunks.length; i++) {
 			if (i > 0) {
 				await sleep(COMMAND_CHUNK_GAP_MS);
@@ -1234,7 +1237,7 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	/** Route ①: write straight to that tab. */
 	private sendViaView(view: TerminalView, text: string): Promise<void> {
-		return this.writeCommand((data) => view.sendBytes(data), text, asAgentId(view.sessionAgent));
+		return this.writeCommand((data) => view.sendBytes(data), text, asAgentId(view.sessionAgent), view.promptHasDraft() === true);
 	}
 
 	/** Route ②: attach temporarily and write. */
