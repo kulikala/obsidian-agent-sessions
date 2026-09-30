@@ -18,6 +18,7 @@ Run and manage [Claude Code](https://claude.com/claude-code), [Codex](https://gi
 - **Navigation helpers** — file paths printed in the output become clickable links into the vault, "insert current note as `@path`", and jump buttons for the previous/next prompt and the last response.
 - **Session and usage analytics** — per-session token/cost breakdown with a turn-by-turn table, and account-wide 5‑hour/7‑day usage totals, computed from each agent's own transcripts.
 - **CLI and TUI** — a standalone `agent-sessions` command for scripting or working outside Obsidian: a terminal UI to pick and attach to a session, and `json` subcommands that back the plugin.
+- **Agent skills** (optional, off by default) — three skills that let a Claude Code, Codex or OpenCode session started in the vault start a new session (in a folder, with a name, on any enabled agent, Claude Code optionally with Remote Control), read the 5‑hour/7‑day usage windows and a session's tokens and cost, and list other sessions with their status and last messages.
 - **Bilingual UI** — English and Japanese, with an "automatic" mode that follows Obsidian's own language setting.
 
 ![The Session Manager: sessions grouped by category with cost per window, and the 5-hour/7-day usage analysis below](docs/images/manager.png)
@@ -45,6 +46,7 @@ Run and manage [Claude Code](https://claude.com/claude-code), [Codex](https://gi
   - with Codex enabled, adds its submit-key keymap, its editor-key line (`open_external_editor`, only for an editor key other than Ctrl+G) and a default `[tui].status_line` to `~/.codex/config.toml` (backed up first; each line it adds is marked, and `agent-sessions setup --remove` takes exactly those out);
   - with OpenCode enabled, writes a status plugin, `~/.config/opencode/plugins/agent-sessions.js` (or under `$XDG_CONFIG_HOME`), and the plugin writes one status file per session under `~/.agents/sessions/opencode/`. The plugin file starts with a marker line; only a file carrying it is ever overwritten, and Remove (Settings → agent-sessions program) or `agent-sessions setup --remove` deletes it, as does turning OpenCode off in the plugin's settings; the installer's dialog lists this file when OpenCode is enabled, and a routine update of the program only refreshes a plugin file that is already there;
   - with OpenCode enabled, sets `keybinds.editor_open` (the editor key; OpenCode's own is Ctrl+X, E) in OpenCode's `~/.config/opencode/tui.json` (or under `$XDG_CONFIG_HOME`), and, with a submit key other than Enter, `keybinds.input_submit` and `keybinds.input_newline` so that Return inserts a newline; no other key is touched, and a file that isn't plain JSON is left alone. Your previous values are kept in `~/.agents/sessions/opencode-tui-backup.json` and put back when you turn OpenCode off or Remove, and the submit keys when you return to Enter (`agent-sessions setup --remove` does the same);
+  - with **Install agent skills** on (Settings; default off), writes three skills into the vault's own skill folders, never into your home directory: `<vault>/.claude/skills/` for Claude Code, `<vault>/.agents/skills/` for Codex, and `<vault>/.opencode/skills/` only when OpenCode is the only agent enabled (OpenCode also reads the first two). Each file carries an `agent-sessions:managed` marker; a skill without it is never overwritten or removed. Turning the setting off, disabling an agent, or Remove takes them away again, and the installer's dialog lists the folders. Agents started in other folders do not see them;
   - the built-in editor edits the temporary file the agent hands to `$VISUAL`.
 - **Sessions not listed.** OpenCode sub-agent sessions and sessions started by `opencode run` are not listed.
 - **Lists the vault's files** only to complete `@` file paths in the built-in editor.
@@ -110,7 +112,7 @@ A small icon next to the state mark shows which agent a session belongs to (Clau
 
 ## Settings
 
-Font family and size, padding (comfortable/compact/none), submit key, editor key, recent-sessions count, idle notifications, agents (Claude Code/Codex/OpenCode — enabled, path, environment variables; for OpenCode also whether to start it directly or through `ollama launch opencode`, and the Ollama model to use, chosen from `ollama list` or typed in), path to `agent-sessions`, terminal scrollback, built-in editor height, display language (auto/Japanese/English), and the saved heights of the side panel's details pane and the manager's analytics panel.
+Font family and size, padding (comfortable/compact/none), submit key, editor key, recent-sessions count, idle notifications, agents (Claude Code/Codex/OpenCode — enabled, path, environment variables; for OpenCode also whether to start it directly or through `ollama launch opencode`, and the Ollama model to use, chosen from `ollama list` or typed in), path to `agent-sessions`, terminal scrollback, built-in editor height, whether to install the agent skills into the vault (off by default), display language (auto/Japanese/English), and the saved heights of the side panel's details pane and the manager's analytics panel.
 
 ## Troubleshooting
 
@@ -126,6 +128,11 @@ agent-sessions daemon [--detach]
 agent-sessions json scan|live|detail ID|usage ID [--from ISO --to ISO]|stats
 agent-sessions setup [--dry-run]
 agent-sessions setup --opencode   # install OpenCode's status plugin only (--remove-opencode: remove just that file and restore the tui.json keybinds)
+agent-sessions setup --skills     # install the agent skills into the vault (--remove-skills: remove just those)
+agent-sessions new [--agent A] [--cwd DIR] [--name N] [--remote-control] [--prompt TEXT]   # start a session in the daemon (exit 0 confirmed, 1 unconfirmed, 2 failed)
+agent-sessions sessions [--query TEXT] [--agent A] [--limit N] [--json]   # list sessions with their status
+agent-sessions show [ID|NAME] [--json]   # one session's usage and last messages (default: this session)
+agent-sessions stats [--json]     # 5-hour/7-day usage windows per agent
 ```
 
 `agent-sessions json` is the machine-readable interface the plugin itself uses (`scan`, `live`, `detail`, `usage`, `stats`); `hook` and `status` back the Claude Code hooks and `statusLine` described above; `edit` is the receiving end of the built-in editor.
@@ -140,7 +147,7 @@ See [`docs/design.md`](docs/design.md) for the full design and [`docs/requiremen
 
 ## Uninstall
 
-If you installed the program from the plugin, remove it under **Settings → agent-sessions program → Remove** first: that stops the daemon (ending running sessions), takes its hooks and `statusLine` out of `~/.claude/settings.json`, its lines out of `~/.codex/config.toml`, its submit-key and editor-key keybinds out of `~/.config/opencode/tui.json`, and its status plugin out of `~/.config/opencode/plugins/`, and deletes its folder. Then disable and remove **Agent Sessions** from Obsidian's Community plugins.
+If you installed the program from the plugin, remove it under **Settings → agent-sessions program → Remove** first: that stops the daemon (ending running sessions), takes its hooks and `statusLine` out of `~/.claude/settings.json`, its lines out of `~/.codex/config.toml`, its submit-key and editor-key keybinds out of `~/.config/opencode/tui.json`, its status plugin out of `~/.config/opencode/plugins/`, and the agent skills out of the vault, and deletes its folder. Then disable and remove **Agent Sessions** from Obsidian's Community plugins.
 
 If you installed from a clone:
 

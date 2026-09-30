@@ -18,6 +18,7 @@
 - **移動の補助** — 出力中に現れるファイルパスは vault 内に実在すればクリックできるリンクになり、「現在のノートを `@path` として挿入」、前の指示・次の指示・最後の応答へのジャンプボタンを持つ。
 - **セッション解析と利用状況** — セッション単位のトークン・コストをターン表付きで、アカウント全体の 5 時間／7 日の利用量を、どちらも各エージェント自身の transcript から算出する。
 - **CLI と TUI** — Obsidian の外や自動化から使える単体の `agent-sessions` コマンド：セッションを選んで attach する TUI と、プラグインを裏で支える `json` サブコマンド。
+- **エージェント用スキル**（任意・既定はオフ） — Vault で起動した Claude Code・Codex・OpenCode のセッションから、新しいセッションの開始（フォルダ・名前・有効なエージェントを指定でき、Claude Code は Remote Control も指定可）、5 時間／7 日の利用枠やセッションのトークン・コストの取得、他のセッションの状態と直近のやり取りの一覧を行えるようにする 3 つのスキル。
 - **日英 2 言語の UI** — 「自動」（Obsidian の言語設定に合わせる）・日本語・English を選べる。
 
 ![セッションマネージャー：カテゴリ別にまとめたセッションと枠ごとのコスト、その下に 5 時間／7 日の利用分析](docs/images/manager.png)
@@ -45,6 +46,7 @@
   - Codex を有効にしている場合、`~/.codex/config.toml` に送信キーのキーマップ、エディタキーの行（Ctrl+G 以外のときだけ `open_external_editor`）、既定の `[tui].status_line` を足す（先にバックアップを残す。足した行には印が付き、`agent-sessions setup --remove` はその行だけを取り除く）。
   - OpenCode を有効にしている場合、ステータス用プラグイン `~/.config/opencode/plugins/agent-sessions.js`（`$XDG_CONFIG_HOME` 配下の場合もある）を書き、そのプラグインがセッションごとの状態ファイルを `~/.agents/sessions/opencode/` に書く。プラグインファイルの先頭には印の行があり、印のあるファイルだけを上書きする。「設定 → agent-sessions プログラム → 削除」または `agent-sessions setup --remove` で取り除かれ、設定で OpenCode を無効にしたときにも取り除かれる。OpenCode を有効にしているとき、インストールのダイアログにこのファイルが並び、プログラムの通常の更新は、すでにあるプラグインファイルを更新するだけで新しく作ることはない。
   - OpenCode を有効にしているとき、OpenCode の `~/.config/opencode/tui.json`（`$XDG_CONFIG_HOME` 配下の場合もある）の `keybinds.editor_open`（エディタキー。OpenCode 本来のキーは Ctrl+X, E）を設定し、送信キーが Enter 以外なら `keybinds.input_submit` と `keybinds.input_newline` も設定して Return が改行になるようにする。ほかのキーは触らず、通常の JSON でないファイルは書き換えない。元の値は `~/.agents/sessions/opencode-tui-backup.json` に控え、OpenCode を無効にしたとき・削除したときに元へ戻す（送信キーの分は Enter に戻したときにも戻す。`agent-sessions setup --remove` も同じ）。
+  - 設定の **エージェント用スキルを入れる**（既定はオフ）をオンにすると、ホームディレクトリではなく Vault 自身のスキルフォルダに 3 つのスキルを書く：Claude Code は `<vault>/.claude/skills/`、Codex は `<vault>/.agents/skills/`、OpenCode は他の 2 つが要らないとき（OpenCode だけが有効なとき）に限り `<vault>/.opencode/skills/`（OpenCode は前の 2 つも読む）。各ファイルには `agent-sessions:managed` の印があり、印のないスキルは上書きも削除もしない。設定をオフにする・エージェントを無効にする・「削除」を押すと取り除かれ、インストーラのダイアログにも書き込み先のフォルダが出る。Vault 以外のフォルダで起動したエージェントには見えない；
   - 内蔵エディタは、エージェントが `$VISUAL` に渡す一時ファイルを編集する。
 - **一覧に出さないセッション。** OpenCode のサブエージェントのセッションと、`opencode run` で始めたセッションは一覧に出さない。
 - **vault のファイル一覧を読む**のは、内蔵エディタで `@` のファイルパスを補完するときだけ。
@@ -110,7 +112,7 @@ cd obsidian-agent-sessions
 
 ## 設定
 
-フォント名とサイズ、余白（ゆったり／小さめ／なし）、送信キー、エディタキー、最近の件数、指示待ちの通知、エージェント（Claude Code／Codex／OpenCode——有効化・パス・環境変数。OpenCode はさらに、直接起動か `ollama launch opencode` 経由かと、使う Ollama のモデル（`ollama list` から選ぶか直接入力））、`agent-sessions` のパス、ターミナルのスクロールバック行数、内蔵エディタの高さ、表示言語（自動／日本語／English）、サイドパネルの詳細欄とマネージャーの分析パネルの保存された高さ。
+フォント名とサイズ、余白（ゆったり／小さめ／なし）、送信キー、エディタキー、最近の件数、指示待ちの通知、エージェント（Claude Code／Codex／OpenCode——有効化・パス・環境変数。OpenCode はさらに、直接起動か `ollama launch opencode` 経由かと、使う Ollama のモデル（`ollama list` から選ぶか直接入力））、`agent-sessions` のパス、ターミナルのスクロールバック行数、内蔵エディタの高さ、エージェント用スキルを Vault に入れるか（既定はオフ）、表示言語（自動／日本語／English）、サイドパネルの詳細欄とマネージャーの分析パネルの保存された高さ。
 
 ## トラブルシューティング
 
@@ -126,6 +128,11 @@ agent-sessions daemon [--detach]
 agent-sessions json scan|live|detail ID|usage ID [--from ISO --to ISO]|stats
 agent-sessions setup [--dry-run]
 agent-sessions setup --opencode   # OpenCode のステータス用プラグインだけを入れる（--remove-opencode でそのファイルを取り除き、tui.json の送信キー設定を元に戻す）
+agent-sessions setup --skills     # エージェント用スキルを Vault に入れる（--remove-skills でそれだけ取り除く）
+agent-sessions new [--agent A] [--cwd DIR] [--name N] [--remote-control] [--prompt TEXT]   # デーモンでセッションを開始（終了コード 0 確認済み・1 未確認・2 失敗）
+agent-sessions sessions [--query TEXT] [--agent A] [--limit N] [--json]   # セッションを状態付きで一覧
+agent-sessions show [ID|NAME] [--json]   # 1 つのセッションの利用状況と直近のやり取り（省略時はこのセッション）
+agent-sessions stats [--json]     # エージェントごとの 5 時間／7 日の利用枠
 ```
 
 `agent-sessions json` はプラグイン自身が使う機械可読の窓口（`scan`・`live`・`detail`・`usage`・`stats`）。`hook`・`status` は上記の Claude Code のフックと `statusLine` の受け口。`edit` は内蔵エディタの受け口。
@@ -140,7 +147,7 @@ agent-sessions setup --opencode   # OpenCode のステータス用プラグイ�
 
 ## アンインストール
 
-プラグインからプログラムを入れた場合は、先に **設定 → agent-sessions プログラム → 削除** を押す。デーモンを止め（動いているセッションは終了する）、`~/.claude/settings.json` のフックと `statusLine`、`~/.codex/config.toml` の管理行、`~/.config/opencode/tui.json` に入れた送信キー・エディタキーの設定、`~/.config/opencode/plugins/` のステータス用プラグインを取り除き、フォルダを消す。その後、「コミュニティプラグイン」で **Agent Sessions** を無効化・削除する。
+プラグインからプログラムを入れた場合は、先に **設定 → agent-sessions プログラム → 削除** を押す。デーモンを止め（動いているセッションは終了する）、`~/.claude/settings.json` のフックと `statusLine`、`~/.codex/config.toml` の管理行、`~/.config/opencode/tui.json` に入れた送信キー・エディタキーの設定、`~/.config/opencode/plugins/` のステータス用プラグイン、Vault のエージェント用スキルを取り除き、フォルダを消す。その後、「コミュニティプラグイン」で **Agent Sessions** を無効化・削除する。
 
 clone から入れた場合：
 
