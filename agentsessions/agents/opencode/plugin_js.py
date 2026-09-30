@@ -25,7 +25,8 @@ outside `plugins/` and `tui.json`'s `plugin` array lists it (`tui_config.PLUGIN_
 there by the managed tui.json writer). It is JSX with the `@opentui/solid` pragma, which the
 `opencode` binary compiles itself when it loads the file, so no build step is involved. It
 registers a renderer for the `app_bottom` slot, the row under OpenCode's own footer, showing
-`[<submit-key symbol> · ]●/○ <busy|idle|waiting>` (the state label in the display language) for
+`[<submit-key symbol> · ]<busy|idle|waiting>` (the state label in the display language, no ●/○:
+those mean Remote Control in the Claude Code line) for
 the session on screen, read from the TUI's own state (`api.state`). Model, variant, folder and
 context use are left out: OpenCode's own prompt row and footer already show them.
 """
@@ -264,7 +265,7 @@ const tui = async (api) => {
 					<box flexShrink={0} paddingLeft={2} paddingRight={2}>
 						{parts(api) ? (
 							<text fg={theme().textMuted}>
-								{parts(api).head ? parts(api).head + " " : ""}<span style={{ fg: color(parts(api).state) }}>{parts(api).state === "idle" ? "○" : "●"} {parts(api).label}</span>
+								{parts(api).head ? parts(api).head + " " : ""}<span style={{ fg: color(parts(api).state) }}>{parts(api).label}</span>
 							</text>
 						) : null}
 					</box>
