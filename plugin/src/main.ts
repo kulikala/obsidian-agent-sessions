@@ -165,7 +165,7 @@ function messageOf(err: unknown): string {
 }
 
 /** The pause between the parts of a command sent in several writes (`commandChunks`). */
-const COMMAND_CHUNK_GAP_MS = 150;
+const COMMAND_CHUNK_GAP_MS = 250;
 
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -1063,8 +1063,15 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * already the real id post-relink, so that lookup uses `id` directly. Swallows a lock/read
 	 * failure by falling back to `id` unchanged — a transient store error shouldn't block sending a
 	 * command entirely.
+	 *
+	 * `sessions` (the daemon's current list) wins over the link when it holds `id` itself: a linked
+	 * session resumed from its row runs under its real id, while the link still names the
+	 * placeholder of an earlier, since-ended run.
 	 */
-	private daemonIdFor(id: string): string {
+	private daemonIdFor(id: string, sessions?: DaemonSession[]): string {
+		if (sessions?.some((s) => s.id === id)) {
+			return id;
+		}
 		try {
 			return loadStore(this.storePath()).sessions[id]?.daemon || id;
 		} catch {
@@ -1185,7 +1192,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			const sessions = (list.sessions as DaemonSession[] | undefined) ?? [];
 			// Routes ②/③ talk to the daemon's raw session list, which is always keyed by its own
 			// tracked id (`daemonIdFor`) — for a linked Codex session that can differ from `id`.
-			const daemonId = this.daemonIdFor(id);
+			const daemonId = this.daemonIdFor(id, sessions);
 			const existing = sessions.find((s) => s.id === daemonId);
 			if (existing && existing.exited === null) {
 				await this.sendViaAttach(client, daemonId, text, existing.agent);
@@ -1219,6 +1226,11 @@ export default class AgentSessionsPlugin extends Plugin {
 		// goes in its own write, after the list has had a moment to appear, and the submit after it.
 		if (agent === "claude" && !text.includes(" ")) {
 			return [pasted, "\t", submit];
+		}
+		// OpenCode: `\r` runs the highlighted popup command only once the popup is up; arriving with
+		// the paste, it's read as Return in the input box (a newline, with the managed keybinds).
+		if (agent === "opencode") {
+			return [pasted, submit];
 		}
 		return [pasted + submit];
 	}
@@ -1370,7 +1382,9 @@ export default class AgentSessionsPlugin extends Plugin {
 				try {
 					client = await ensureDaemon(this.sockPath(), this.agentSessionsPath());
 					await client.hello("plugin");
-					const res = await client.kill(this.daemonIdFor(id));
+					const list = await client.list();
+					const sessions = (list.sessions as DaemonSession[] | undefined) ?? [];
+					const res = await client.kill(this.daemonIdFor(id, sessions));
 					if (!res.ok) {
 						throw new Error(res.error ?? "unknown");
 					}
