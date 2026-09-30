@@ -164,6 +164,9 @@ function messageOf(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
 }
 
+/** The pause between the parts of a command sent in several writes (`commandChunks`). */
+const COMMAND_CHUNK_GAP_MS = 150;
+
 function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
@@ -1146,7 +1149,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	// ---- Sending commands ------------------------------------------------------
 	//
 	// Sends `text` (`/rename NAME`, `/compact`) by one of three routes depending on where the
-	// session currently is. Every route sends the same shape of sequence (`commandBytes`): for
+	// session currently is. Every route sends the same shape of sequence (`commandChunks`): for
 	// Claude, Ctrl+S (`chat:stash` — stashes the draft if there is one, does nothing if empty;
 	// Claude Code-specific, so skipped for any other agent, which may not treat Ctrl+S as
 	// harmless) → the command as bracketed paste (goes in as one block without opening `/`
@@ -1171,7 +1174,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		// directly — no `daemonIdFor` conversion needed here.
 		const view = this.findTerminalView(id);
 		if (view?.isAttached()) {
-			this.sendViaView(view, text);
+			await this.sendViaView(view, text);
 			return;
 		}
 		const client = await ensureDaemon(this.sockPath(), this.agentSessionsPath());
@@ -1203,24 +1206,35 @@ export default class AgentSessionsPlugin extends Plugin {
 	/** Stash (Claude only) → command as bracketed paste → submit sequence (`submitSequence`: the
 	 * configured submit key for Claude and Codex, T-108 — same reasoning as `views/terminal.ts`'s
 	 * `sendSubmit()`; always `\r` for OpenCode, see below). */
-	private commandBytes(text: string, agent: AgentId): Buffer {
-		// Claude Code: a bare command (`/compact`) leaves the slash-command completion list open, and
-		// that list swallows a rebound submit key (meta+Enter); a trailing space closes it first.
-		// Not for OpenCode, whose list runs the highlighted command on `\r` but sends `/compact `
-		// (with the space) to the model as plain text.
-		if (agent === "claude" && !text.includes(" ")) {
-			text += " ";
-		}
+	private commandChunks(text: string, agent: AgentId): string[] {
 		const stash = agent === "claude" ? STASH : "";
 		// OpenCode's slash popup answers to `\r` only (`\n` leaves it open), and `\r` runs the
 		// highlighted command whichever submit key is configured, so commands always end in `\r`.
 		const submit = agent === "opencode" ? "\r" : submitSequence(this.settings, agent);
-		return Buffer.from(stash + PASTE_BEGIN + text + PASTE_END + submit, "utf8");
+		const pasted = stash + PASTE_BEGIN + text + PASTE_END;
+		// Claude Code: a bare command (`/compact`) leaves the slash-command completion list open, and
+		// that list swallows a rebound submit key (meta+Enter). Tab accepts the completion first; it
+		// goes in its own write, after the list has had a moment to appear, and the submit after it.
+		if (agent === "claude" && !text.includes(" ")) {
+			return [pasted, "\t", submit];
+		}
+		return [pasted + submit];
+	}
+
+	/** Writes `commandChunks` through `write`, pausing `COMMAND_CHUNK_GAP_MS` between chunks. */
+	private async writeCommand(write: (data: Buffer) => void, text: string, agent: AgentId): Promise<void> {
+		const chunks = this.commandChunks(text, agent);
+		for (let i = 0; i < chunks.length; i++) {
+			if (i > 0) {
+				await sleep(COMMAND_CHUNK_GAP_MS);
+			}
+			write(Buffer.from(chunks[i], "utf8"));
+		}
 	}
 
 	/** Route ①: write straight to that tab. */
-	private sendViaView(view: TerminalView, text: string): void {
-		view.sendBytes(this.commandBytes(text, asAgentId(view.sessionAgent)));
+	private sendViaView(view: TerminalView, text: string): Promise<void> {
+		return this.writeCommand((data) => view.sendBytes(data), text, asAgentId(view.sessionAgent));
 	}
 
 	/** Route ②: attach temporarily and write. */
@@ -1230,7 +1244,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			throw new Error(t("error.attachFailed", { error: res.error ?? "unknown" }));
 		}
 		try {
-			client.writeInput(this.commandBytes(text, asAgentId(agent)));
+			await this.writeCommand((data) => client.writeInput(data), text, asAgentId(agent));
 		} finally {
 			await client.detach().catch(() => undefined);
 		}
@@ -1321,12 +1335,12 @@ export default class AgentSessionsPlugin extends Plugin {
 			if (!(await ready(WAIT_IDLE_MS))) {
 				throw new Error(t("error.agentStartWaitFailed", { name: t(AGENT_DISPLAY_NAME_KEY[agent]) }));
 			}
-			client.writeInput(this.commandBytes(text, agent));
+			await this.writeCommand((data) => client.writeInput(data), text, agent);
 			await registry.waitFor(id, "busy", WAIT_BUSY_MS);
 			if (!(await ready(WAIT_IDLE_MS))) {
 				throw new Error(t("error.replyWaitFailed"));
 			}
-			client.writeInput(this.commandBytes("/exit", agent));
+			await this.writeCommand((data) => client.writeInput(data), "/exit", agent);
 			const timeout = new Promise<"timeout">((resolve) => window.setTimeout(() => resolve("timeout"), WAIT_EXIT_MS));
 			if ((await Promise.race([exited, timeout])) === "timeout") {
 				await tearDown();
