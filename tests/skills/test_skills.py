@@ -62,10 +62,20 @@ class TestTemplates(unittest.TestCase):
             self.assertIn('"%s"' % LAUNCHER, text)
             self.assertNotIn('{{', text)
 
-    def test_new_is_user_invoked_only_and_the_others_are_not(self):
-        self.assertIn('disable-model-invocation: true', skills.render('agent-sessions-new', LAUNCHER))
-        for name in ('agent-sessions-stats', 'agent-sessions-info'):
-            self.assertNotIn('disable-model-invocation', skills.render(name, LAUNCHER))
+    def test_there_is_one_skill_and_the_model_may_invoke_it(self):
+        self.assertEqual(skills.SKILL_NAMES, ('agent-sessions',))
+        text = skills.render('agent-sessions', LAUNCHER)
+        self.assertNotIn('disable-model-invocation', text)
+        self.assertIn('Only when the user explicitly asks for a new session', text)
+
+    def test_the_body_covers_new_stats_and_other_sessions(self):
+        calls = set(re.findall(r'"%s" (\w+)' % re.escape(LAUNCHER), skills.render('agent-sessions', LAUNCHER)))
+        self.assertEqual(calls, {'new', 'stats', 'show', 'sessions'})
+
+    def test_the_body_never_tells_the_agent_to_invent_a_prompt(self):
+        text = skills.render('agent-sessions', LAUNCHER)
+        self.assertIn('never make one up', text)
+        self.assertNotIn('short greeting', text)
 
     def test_the_bodies_call_the_commands_that_exist(self):
         for name in skills.SKILL_NAMES:
@@ -84,11 +94,10 @@ class TestInstall(SkillsTestCase):
     def test_installs_into_the_folders_of_the_enabled_agents_only(self):
         status, changes = skills.install(self.vault, ['claude', 'codex'], LAUNCHER)
         self.assertEqual(status, skills.INSTALLED)
-        self.assertEqual(len(changes), 7)   # 3 + 3 skills and Codex's policy file
+        self.assertEqual(len(changes), 2)
         self.assertEqual(self.files(), sorted(
             ['%s/%s/SKILL.md' % (CLAUDE, n) for n in skills.SKILL_NAMES]
-            + ['%s/%s/SKILL.md' % (CODEX, n) for n in skills.SKILL_NAMES]
-            + ['%s/agent-sessions-new/agents/openai.yaml' % CODEX]))
+            + ['%s/%s/SKILL.md' % (CODEX, n) for n in skills.SKILL_NAMES]))
 
     def test_nothing_goes_outside_the_vault(self):
         with tempfile.TemporaryDirectory() as home:
@@ -104,8 +113,8 @@ class TestInstall(SkillsTestCase):
         skills.install(self.vault, ['claude'], LAUNCHER)
         status, changes = skills.install(self.vault, ['claude'], '/other/agent-sessions')
         self.assertEqual(status, skills.UPDATED)
-        self.assertEqual(len(changes), 3)
-        self.assertIn('/other/agent-sessions', read(self.path(CLAUDE, 'agent-sessions-info', 'SKILL.md')))
+        self.assertEqual(len(changes), 1)
+        self.assertIn('/other/agent-sessions', read(self.path(CLAUDE, 'agent-sessions', 'SKILL.md')))
 
     def test_disabling_an_agent_takes_its_copies_away(self):
         skills.install(self.vault, ['claude', 'codex'], LAUNCHER)
@@ -119,7 +128,7 @@ class TestInstall(SkillsTestCase):
         self.assertEqual(self.files(), sorted('%s/%s/SKILL.md' % (OPENCODE, n) for n in skills.SKILL_NAMES))
 
     def test_a_skill_without_the_marker_is_never_overwritten_or_removed(self):
-        mine = self.path(CLAUDE, 'agent-sessions-info', 'SKILL.md')
+        mine = self.path(CLAUDE, 'agent-sessions', 'SKILL.md')
         os.makedirs(os.path.dirname(mine))
         with open(mine, 'w') as f:
             f.write('my own skill\n')
@@ -127,39 +136,74 @@ class TestInstall(SkillsTestCase):
         self.assertEqual(status, skills.FOREIGN)
         self.assertTrue(any(mine in c for c in changes))
         self.assertEqual(read(mine), 'my own skill\n')
-        self.assertTrue(os.path.exists(self.path(CLAUDE, 'agent-sessions-new', 'SKILL.md')))   # the others still go in
         skills.remove(self.vault)
         self.assertEqual(read(mine), 'my own skill\n')
         skills.install(self.vault, ['codex'], LAUNCHER)   # moving away from the Claude folder
         self.assertEqual(read(mine), 'my own skill\n')
 
-    def test_a_foreign_policy_file_is_left_alone(self):
+    def write_legacy(self, base, name, managed=True, policy=False):
+        path = self.path(base, name, 'SKILL.md')
+        os.makedirs(os.path.dirname(path))
+        with open(path, 'w') as f:
+            f.write(('%s\n' % skills.MARKER if managed else '') + 'old\n')
+        if policy:
+            yaml = self.path(base, name, 'agents', 'openai.yaml')
+            os.makedirs(os.path.dirname(yaml))
+            with open(yaml, 'w') as f:
+                f.write(skills.YAML_MARKER + '\npolicy:\n  allow_implicit_invocation: false\n')
+        return path
+
+    def test_install_removes_our_three_old_skills_from_every_folder(self):
+        for base in (CLAUDE, CODEX, OPENCODE):
+            for name in skills.LEGACY_SKILL_NAMES:
+                self.write_legacy(base, name, policy=(base == CODEX and name == 'agent-sessions-new'))
+        status, _ = skills.install(self.vault, ['claude'], LAUNCHER)
+        self.assertEqual(status, skills.INSTALLED)
+        self.assertEqual(self.files(), ['%s/agent-sessions/SKILL.md' % CLAUDE])
+
+    def test_an_old_skill_without_the_marker_is_left_alone(self):
+        mine = self.write_legacy(CLAUDE, 'agent-sessions-new', managed=False)
+        skills.install(self.vault, ['claude'], LAUNCHER)
+        self.assertEqual(read(mine), 'old\n')
+
+    def test_a_foreign_policy_file_of_an_old_skill_is_left_alone(self):
+        self.write_legacy(CODEX, 'agent-sessions-new')
         policy = self.path(CODEX, 'agent-sessions-new', 'agents', 'openai.yaml')
         os.makedirs(os.path.dirname(policy))
         with open(policy, 'w') as f:
             f.write('policy: mine\n')
-        status, _ = skills.install(self.vault, ['codex'], LAUNCHER)
-        self.assertEqual(status, skills.FOREIGN)
+        skills.install(self.vault, ['codex'], LAUNCHER)
         self.assertEqual(read(policy), 'policy: mine\n')
+
+    def test_update_only_also_drops_the_old_skills(self):
+        self.write_legacy(CLAUDE, 'agent-sessions-stats')
+        self.assertEqual(skills.install(self.vault, ['claude'], LAUNCHER, update_only=True)[0], skills.ABSENT)
+        self.assertEqual(self.files(), [])
+
+    def test_remove_takes_the_old_skills_too(self):
+        self.write_legacy(CLAUDE, 'agent-sessions-info')
+        skills.remove(self.vault)
+        self.assertEqual(os.listdir(self.vault), [])
 
     def test_update_only_refreshes_copies_that_exist_and_creates_nothing(self):
         self.assertEqual(skills.install(self.vault, ['claude'], LAUNCHER, update_only=True), (skills.ABSENT, []))
         self.assertEqual(self.files(), [])
         skills.install(self.vault, ['claude'], LAUNCHER)
-        os.unlink(self.path(CLAUDE, 'agent-sessions-stats', 'SKILL.md'))
         status, _ = skills.install(self.vault, ['claude'], '/other/agent-sessions', update_only=True)
         self.assertEqual(status, skills.UPDATED)
-        self.assertFalse(os.path.exists(self.path(CLAUDE, 'agent-sessions-stats', 'SKILL.md')))
-        self.assertIn('/other/', read(self.path(CLAUDE, 'agent-sessions-info', 'SKILL.md')))
+        self.assertIn('/other/', read(self.path(CLAUDE, 'agent-sessions', 'SKILL.md')))
+        os.unlink(self.path(CLAUDE, 'agent-sessions', 'SKILL.md'))
+        self.assertEqual(skills.install(self.vault, ['claude'], LAUNCHER, update_only=True)[0], skills.ABSENT)
+        self.assertFalse(os.path.exists(self.path(CLAUDE, 'agent-sessions', 'SKILL.md')))
 
     def test_update_only_leaves_other_folders_alone(self):
         skills.install(self.vault, ['claude', 'codex'], LAUNCHER)
         skills.install(self.vault, ['claude'], LAUNCHER, update_only=True)
-        self.assertTrue(os.path.exists(self.path(CODEX, 'agent-sessions-info', 'SKILL.md')))
+        self.assertTrue(os.path.exists(self.path(CODEX, 'agent-sessions', 'SKILL.md')))
 
     def test_dry_run_writes_nothing(self):
         status, changes = skills.install(self.vault, ['claude'], LAUNCHER, dry_run=True)
-        self.assertEqual((status, len(changes)), (skills.INSTALLED, 3))
+        self.assertEqual((status, len(changes)), (skills.INSTALLED, 1))
         self.assertEqual(self.files(), [])
 
     def test_a_folder_that_cannot_be_written_is_reported_not_raised(self):
@@ -174,7 +218,7 @@ class TestRemove(SkillsTestCase):
     def test_removes_every_copy_of_ours_and_the_folders_it_leaves_empty(self):
         skills.install(self.vault, ['claude', 'codex'], LAUNCHER)
         changes = skills.remove(self.vault)
-        self.assertEqual(len(changes), 7)
+        self.assertEqual(len(changes), 2)
         self.assertEqual(os.listdir(self.vault), [])
 
     def test_keeps_other_skills_and_the_folders_that_hold_them(self):
@@ -188,11 +232,11 @@ class TestRemove(SkillsTestCase):
 
     def test_keeps_a_file_someone_added_to_one_of_our_folders(self):
         skills.install(self.vault, ['claude'], LAUNCHER)
-        extra = self.path(CLAUDE, 'agent-sessions-new', 'notes.txt')
+        extra = self.path(CLAUDE, 'agent-sessions', 'notes.txt')
         with open(extra, 'w') as f:
             f.write('n')
         skills.remove(self.vault)
-        self.assertEqual(self.files(), ['%s/agent-sessions-new/notes.txt' % CLAUDE])
+        self.assertEqual(self.files(), ['%s/agent-sessions/notes.txt' % CLAUDE])
 
     def test_nothing_to_remove_touches_nothing(self):
         os.makedirs(self.path(CLAUDE))
@@ -211,21 +255,21 @@ class TestSetupCommand(SkillsTestCase):
         rc, out, _ = self.run_setup('--skills', '--vault', self.vault, '--agents', 'claude', '--command', LAUNCHER)
         self.assertEqual(rc, 0)
         self.assertEqual(out.strip().splitlines()[-1], 'agent-skills: installed')
-        self.assertIn('"%s"' % LAUNCHER, read(self.path(CLAUDE, 'agent-sessions-new', 'SKILL.md')))
+        self.assertIn('"%s"' % LAUNCHER, read(self.path(CLAUDE, 'agent-sessions', 'SKILL.md')))
         rc, out, _ = self.run_setup('--skills', '--vault', self.vault, '--agents', 'claude', '--command', LAUNCHER)
         self.assertEqual(out.strip().splitlines()[-1], 'agent-skills: unchanged')
 
     def test_the_agents_come_from_the_enabled_ones_when_not_given(self):
         with mock.patch.dict(os.environ, {'AGENT_SESSIONS_AGENTS': 'codex'}):
             self.run_setup('--skills', '--vault', self.vault)
-        self.assertTrue(os.path.exists(self.path(CODEX, 'agent-sessions-new', 'SKILL.md')))
+        self.assertTrue(os.path.exists(self.path(CODEX, 'agent-sessions', 'SKILL.md')))
         self.assertFalse(os.path.exists(self.path('.claude')))
 
     def test_the_vault_falls_back_to_the_configured_one(self):
         with mock.patch.object(config, 'VAULT', self.vault), \
                 mock.patch.dict(os.environ, {'AGENT_SESSIONS_AGENTS': 'claude'}):
             self.run_setup('--skills')
-        self.assertTrue(os.path.exists(self.path(CLAUDE, 'agent-sessions-info', 'SKILL.md')))
+        self.assertTrue(os.path.exists(self.path(CLAUDE, 'agent-sessions', 'SKILL.md')))
 
     def test_without_any_vault_it_fails_in_words(self):
         with mock.patch.object(config, 'VAULT', None):

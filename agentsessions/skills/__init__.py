@@ -1,7 +1,7 @@
 """The agent skills Agent Sessions installs into a vault (`agent-sessions setup --skills`).
 
-Three skills ship inside the program (`agent-sessions-new`, `-stats`, `-info`; the `SKILL.md`
-templates sit next to this file). They are installed as *project* skills of the vault, in the folders
+One skill, `agent-sessions`, ships inside the program (start a session, usage statistics, other
+sessions; the `SKILL.md` template sits next to this file). It is installed as a *project* skill of the vault, in the folders
 each agent reads them from when it runs in the vault:
 
     Claude Code   <vault>/.claude/skills/<name>/SKILL.md      (OpenCode reads this too)
@@ -22,13 +22,12 @@ from .. import i18n
 
 MARKER = '<!-- agent-sessions:managed - written by `agent-sessions setup --skills`; edits are overwritten -->'
 YAML_MARKER = '# agent-sessions:managed - written by `agent-sessions setup --skills`; edits are overwritten'
-SKILL_NAMES = ('agent-sessions-new', 'agent-sessions-stats', 'agent-sessions-info')
+SKILL_NAMES = ('agent-sessions',)
+# The three skills earlier versions installed; ours (marked) are removed on install, whatever the agents.
+LEGACY_SKILL_NAMES = ('agent-sessions-new', 'agent-sessions-stats', 'agent-sessions-info')
 SKILL_FILE = 'SKILL.md'
-# Codex reads `agents/openai.yaml` next to a skill; this keeps the user-invoked skill out of its
-# implicit matching (Claude Code does the same with `disable-model-invocation`).
+# Earlier versions wrote Codex's `agents/openai.yaml` (an implicit-invocation policy) next to a skill.
 CODEX_POLICY_FILE = os.path.join('agents', 'openai.yaml')
-CODEX_POLICY = YAML_MARKER + '\npolicy:\n  allow_implicit_invocation: false\n'
-POLICY_SKILLS = ('agent-sessions-new',)
 
 CLAUDE_DIR = os.path.join('.claude', 'skills')
 CODEX_DIR = os.path.join('.agents', 'skills')
@@ -88,10 +87,7 @@ def _write(path: str, text: str) -> None:
 
 
 def _files_of(name: str, base: str, launcher: str) -> List[Tuple[str, str]]:
-    files = [(os.path.join(base, name, SKILL_FILE), render(name, launcher))]
-    if base == CODEX_DIR and name in POLICY_SKILLS:
-        files.append((os.path.join(base, name, CODEX_POLICY_FILE), CODEX_POLICY))
-    return files
+    return [(os.path.join(base, name, SKILL_FILE), render(name, launcher))]
 
 
 def install(vault: str, agents: List[str], launcher: Optional[str] = None, dry_run: bool = False,
@@ -105,6 +101,8 @@ def install(vault: str, agents: List[str], launcher: Optional[str] = None, dry_r
     changes: List[str] = []
     seen = set()
     for base in ALL_DIRS:
+        # Our copies of the skills earlier versions installed go from every folder.
+        changes.extend(_remove_dir(vault, base, dry_run, LEGACY_SKILL_NAMES))
         if base not in wanted:
             if not update_only:
                 changes.extend(_remove_dir(vault, base, dry_run))
@@ -138,9 +136,9 @@ def install(vault: str, agents: List[str], launcher: Optional[str] = None, dry_r
     return (ABSENT if update_only or not wanted else UNCHANGED), changes
 
 
-def _remove_dir(vault: str, base: str, dry_run: bool) -> List[str]:
+def _remove_dir(vault: str, base: str, dry_run: bool, names: Tuple[str, ...] = SKILL_NAMES + LEGACY_SKILL_NAMES) -> List[str]:
     changes: List[str] = []
-    for name in SKILL_NAMES:
+    for name in names:
         folder = os.path.join(vault, base, name)
         for rel in (SKILL_FILE, CODEX_POLICY_FILE):
             path = os.path.join(folder, rel)
