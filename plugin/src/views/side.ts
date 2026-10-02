@@ -10,6 +10,7 @@ import { t } from "../i18n";
 import { VIEW_TYPE_TERMINAL } from "../sessions/open-session";
 import { TerminalView } from "./terminal";
 import { NewSessionModal } from "../ui/modals";
+import { OrganizeModal } from "../ui/organize-modal";
 import type { Row } from "../sessions/index";
 import { AGENT_IDS } from "../settings";
 import type { SideList } from "../sessions/tree";
@@ -211,6 +212,12 @@ export class SideView extends ItemView {
 				.setTitle(t("action.rescan"))
 				.setIcon("refresh-cw")
 				.onClick(() => void this.plugin.index.rescan())
+		);
+		menu.addItem((item) =>
+			item
+				.setTitle(t("action.organize"))
+				.setIcon("wand-sparkles")
+				.onClick(() => new OrganizeModal(this.plugin).open())
 		);
 		menu.addItem((item) =>
 			item

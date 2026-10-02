@@ -25,7 +25,7 @@ function makeWide(setting: Setting): Setting {
 	return setting;
 }
 
-interface CategorySuggest {
+export interface CategorySuggest {
 	/** Opens/refreshes the dropdown for `query` (`filterCategories`). Closes it if nothing matches. */
 	openFor(query: string): void;
 	close(): void;
@@ -48,7 +48,7 @@ interface CategorySuggest {
  * composed name field (`buildComposedNameField`) and `MoveToCategoryModal` — the two callers
  * differ only in what `onConfirm` does with the result (both now turn it into a chip).
  */
-function buildCategorySuggest(
+export function buildCategorySuggest(
 	anchorEl: HTMLElement,
 	categories: string[],
 	colorIndexFor: (category: string) => number,

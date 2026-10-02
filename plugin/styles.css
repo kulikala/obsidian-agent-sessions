@@ -2458,4 +2458,57 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	color: var(--text-muted);
 	margin-top: 0;
 	overflow-wrap: anywhere;
+/* ---- Organize names and categories dialog ---- */
+
+.agent-sessions-organize {
+	width: min(900px, 94vw);
+}
+
+.agent-sessions-organize-intro {
+	color: var(--text-muted);
+	margin-top: 0;
+}
+
+.agent-sessions-organize-status {
+	min-height: 1.4em;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.agent-sessions-organize-status.is-error {
+	color: var(--text-error);
+}
+
+.agent-sessions-organize-list {
+	max-height: 50vh;
+	overflow-y: auto;
+}
+
+.agent-sessions-organize-row {
+	display: grid;
+	grid-template-columns: auto minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1.4fr);
+	gap: var(--size-4-2);
+	align-items: center;
+	padding: var(--size-4-1) 0;
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.agent-sessions-organize-row.is-header {
+	position: sticky;
+	top: 0;
+	background: var(--background-primary);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.agent-sessions-organize-current {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	color: var(--text-muted);
+}
+
+.agent-sessions-organize-input {
+	width: 100%;
+	min-width: 0;
 }
