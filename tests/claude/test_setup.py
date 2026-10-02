@@ -428,3 +428,17 @@ class TestLauncher(SetupTestBase):
         rc = cmd_setup.main(['setup', '--settings', self.path, '--command', self.PLUGIN])
         self.assertEqual(rc, 0)
         self.assertEqual(self._read()['statusLine']['command'], '"%s" status' % self.PLUGIN)
+
+
+class WindowsCommandTest(unittest.TestCase):
+    def test_a_cmd_launcher_is_named_unquoted_with_forward_slashes(self) -> None:
+        launcher = r'C:\Users\agent\AppData\Local\agent-sessions\bin\agent-sessions.cmd'
+        self.assertEqual(setup.hook_command(launcher),
+                         'C:/Users/agent/AppData/Local/agent-sessions/bin/agent-sessions.cmd hook')
+        self.assertEqual(setup.status_line(launcher)['command'],
+                         'C:/Users/agent/AppData/Local/agent-sessions/bin/agent-sessions.cmd status')
+
+    def test_windows_commands_are_recognized_as_ours(self) -> None:
+        self.assertTrue(setup._is_our_command('C:/x/bin/agent-sessions.cmd hook', 'hook'))
+        self.assertTrue(setup._is_our_command('C:/x/bin/agent-sessions.cmd status', 'status'))
+        self.assertFalse(setup._is_our_command('C:/x/bin/other.cmd hook', 'hook'))
