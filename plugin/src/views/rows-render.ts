@@ -68,7 +68,7 @@ export function renderAgentMark(container: HTMLElement, agent: string): void {
 	setTooltip(mark, t(AGENT_NAME_KEY[agent]));
 }
 
-/** The row menu (rename, move to category, compact session, archive, end session, session
+/** The row menu (rename, move to category, compact session, archive, restart session, end session, session
  * analytics, copy ID). `manager.ts`'s table opens the same menu — shared by both the `⋯` button
  * and right-click. */
 export function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): void {
@@ -106,6 +106,17 @@ export function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): voi
 			.onClick(() => actions.toggleArchive(row))
 	);
 	if (row.daemon) {
+		menu.addItem((item) => {
+			item
+				.setTitle(t("action.restartSession"))
+				.setIcon("rotate-cw")
+				.onClick(() => actions.restartSession(row));
+			// `MenuItem.dom` exists at runtime but isn't in the public typings.
+			setTooltip((item as unknown as { dom: HTMLElement }).dom, t("action.restartSession.hint"));
+			if (!actions.canRestart(row)) {
+				item.setDisabled(true);
+			}
+		});
 		menu.addItem((item) =>
 			item
 				.setTitle(t("action.endSession"))

@@ -20,6 +20,9 @@ export interface RowActions {
 	compact(id: string): void;
 	toggleArchive(row: Row): void;
 	endSession(id: string): void;
+	restartSession(row: Row): void;
+	/** Whether "Restart session" is enabled for the row. */
+	canRestart(row: Row): boolean;
 	copyId(id: string): void;
 	/** Called after a 300ms hover. */
 	showDetail(id: string): void;
@@ -341,6 +344,8 @@ export function createRowActions(
 			}
 		},
 		endSession: (id) => plugin.endSession(id),
+		restartSession: (row) => plugin.restartSession(row),
+		canRestart: (row) => plugin.restartState(row).enabled,
 		copyId: (id) => {
 			void navigator.clipboard.writeText(id);
 		},
