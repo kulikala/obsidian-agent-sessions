@@ -86,6 +86,9 @@ function buildSandbox(root, now) {
 	writeJson(join(pluginDir, "data.json"), {
 		language: "en",
 		notifyOnIdle: true,
+		// Keeps the welcome guide from opening over the scenes.
+		onboardingShownVersion: "screenshots",
+		onboardingOnUpdate: false,
 		agentSessionsPath: cli,
 		agents: {
 			claude: { enabled: true, path: "/usr/bin/true", env: "" },

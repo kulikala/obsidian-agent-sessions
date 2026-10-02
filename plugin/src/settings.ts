@@ -19,6 +19,19 @@ export const SUBMIT_KEYS: readonly SubmitKey[] = ["enter", "shift+enter", "ctrl+
  */
 export const SUBMIT_KEYS_NON_MAC: readonly SubmitKey[] = ["enter", "shift+enter", "ctrl+enter", "alt+enter"];
 
+/** The submit keys offered on this platform (`cmd+enter` is macOS-only). */
+export function submitKeyChoices(isMac: boolean): readonly SubmitKey[] {
+	return isMac ? SUBMIT_KEYS : SUBMIT_KEYS_NON_MAC;
+}
+
+export const SUBMIT_KEY_LABELS: Record<SubmitKey, string> = {
+	enter: "Enter",
+	"shift+enter": "Shift+Enter",
+	"ctrl+enter": "Ctrl+Enter",
+	"alt+enter": "Option+Enter",
+	"cmd+enter": "Cmd+Enter",
+};
+
 /**
  * The key that opens the agent's external editor (the built-in editor pane, reached through
  * `$VISUAL`). Each choice is one that Claude Code, Codex and OpenCode all leave free (or that
@@ -162,6 +175,10 @@ export interface AgentSessionsSettings {
 	/** What the agent skill in the vault was last written for (`skillsStamp`); empty = never. Not
 	 * shown in the settings tab. */
 	agentSkillsStamp: string;
+	/** The plugin version the welcome guide was last shown for; empty = never shown. Not shown in the settings tab. */
+	onboardingShownVersion: string;
+	/** Whether the welcome guide is shown again after an update. */
+	onboardingOnUpdate: boolean;
 }
 
 export const DEFAULT_SETTINGS: AgentSessionsSettings = {
@@ -184,6 +201,8 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	managerAnalysisFolded: defaultAnalysisFolded(),
 	managerStatusFilter: "all",
 	agentSkillsStamp: "",
+	onboardingShownVersion: "",
+	onboardingOnUpdate: true,
 };
 
 /** Validates a saved `agents` value, entry by entry — an invalid or missing field falls back to
@@ -261,6 +280,12 @@ export function mergeSettings(data: unknown, isMac = true): AgentSessionsSetting
 	delete saved.installAgentSkills;
 	if (typeof saved.agentSkillsStamp !== "string") {
 		delete saved.agentSkillsStamp;
+	}
+	if (typeof saved.onboardingShownVersion !== "string") {
+		delete saved.onboardingShownVersion;
+	}
+	if (typeof saved.onboardingOnUpdate !== "boolean") {
+		delete saved.onboardingOnUpdate;
 	}
 	if (!SUBMIT_KEYS.includes(saved.submitKey as SubmitKey)) {
 		delete saved.submitKey;

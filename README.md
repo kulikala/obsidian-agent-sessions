@@ -111,9 +111,13 @@ These are further grouped into the same buckets Claude's own app filters session
 
 A small icon next to the state mark shows which agent a session belongs to (Claude Code, Codex, or OpenCode) — each agent's own mark (single-color, matching the rest of the UI), not a colored brand logo.
 
+### Welcome guide
+
+A short guide opens on first install and after an update: what Agent Sessions is, how to use sessions, installing the `agent-sessions` program, and the first settings (which agents to use, the submit key). Turn off "Show this guide after updates" on its last page (or under **Settings → Show the welcome guide after updates**) to stop it reopening; open it any time with the **Show welcome guide** command or the button in settings.
+
 ## Settings
 
-Font family and size, padding (comfortable/compact/none), submit key, editor key, recent-sessions count, idle notifications, agents (Claude Code/Codex/OpenCode — enabled, path, environment variables; for OpenCode also whether to start it directly or through `ollama launch opencode`, and the Ollama model to use, chosen from `ollama list` or typed in), path to `agent-sessions`, terminal scrollback, built-in editor height, display language (auto/Japanese/English), and the saved heights of the side panel's details pane and the manager's analytics panel.
+Font family and size, padding (comfortable/compact/none), submit key, editor key, recent-sessions count, idle notifications, agents (Claude Code/Codex/OpenCode — enabled, path, environment variables; for OpenCode also whether to start it directly or through `ollama launch opencode`, and the Ollama model to use, chosen from `ollama list` or typed in), path to `agent-sessions`, terminal scrollback, built-in editor height, display language (auto/Japanese/English), whether the welcome guide reopens after updates, and the saved heights of the side panel's details pane and the manager's analytics panel.
 
 ## Troubleshooting
 
