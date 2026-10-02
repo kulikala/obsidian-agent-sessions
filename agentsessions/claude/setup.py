@@ -10,7 +10,7 @@ from typing import List, Optional, Tuple
 
 from .. import i18n
 
-DEFAULT_SETTINGS_PATH = os.path.expanduser('~/.claude/settings.json')
+DEFAULT_SETTINGS_PATH = os.path.normpath(os.path.expanduser('~/.claude/settings.json'))
 
 
 class SettingsUnreadable(RuntimeError):

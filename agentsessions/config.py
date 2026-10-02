@@ -4,7 +4,7 @@ from typing import Optional
 
 # `AGENT_SESSIONS_RUNTIME_DIR` moves the whole runtime directory (socket, pid, log, ui.json,
 # vault.json, status files) -- how a scratch daemon and its clients are kept apart from the real one.
-RUNTIME_DIR = os.environ.get('AGENT_SESSIONS_RUNTIME_DIR') or os.path.expanduser('~/.agents/sessions')
+RUNTIME_DIR = os.environ.get('AGENT_SESSIONS_RUNTIME_DIR') or os.path.join(os.path.expanduser('~'), '.agents', 'sessions')
 # Written by the plugin on load ({"vault": "<path>"}, atomically via tmp->rename).
 # How code outside Obsidian (the TUI, the CLI) learns where the vault is.
 VAULT_STATE_PATH = os.path.join(RUNTIME_DIR, 'vault.json')
@@ -83,8 +83,8 @@ COMPACTED_DIR = os.path.join(RUNTIME_DIR, 'compacted')
 # Where the plugin writes the submit-key symbol; `format_status_line` reads it.
 UI_STATE_PATH = os.path.join(RUNTIME_DIR, 'ui.json')
 
-PROJECTS_DIR = os.path.expanduser('~/.claude/projects')
-SESSIONS_DIR = os.path.expanduser('~/.claude/sessions')
+PROJECTS_DIR = os.path.normpath(os.path.expanduser('~/.claude/projects'))
+SESSIONS_DIR = os.path.normpath(os.path.expanduser('~/.claude/sessions'))
 
 # The identifier for the "Other" group (a key in the store's folded-groups list): the one
 # group that combines named sessions with no category and sessions with no name. Kept in

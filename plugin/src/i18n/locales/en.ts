@@ -213,6 +213,7 @@ export const en = {
 	"install.noPython": "Python {min} or later wasn't found.",
 	"install.noPython.mac": "Install it with `xcode-select --install` in Terminal, or from python.org or Homebrew, then check again.",
 	"install.noPython.linux": "Install python3 with your distribution's package manager, then check again.",
+	"settings.agents.unsupportedOnPlatform": "Not available on Windows yet.",
 	"install.noPython.windows": "Install it with the button below (WinGet, for your user only — no administrator rights needed), or from python.org, then check again.",
 	"install.claudeMissing": "Claude Code wasn't found on this computer. Install it to start sessions:",
 	"install.winget.python": "Install Python with WinGet",

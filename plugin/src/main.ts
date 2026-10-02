@@ -83,6 +83,7 @@ import { sessionDisplayName } from "./sessions/name";
 import { renameRoute, sessionAgentOf } from "./sessions/rename";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./sessions/open-session";
 import {
+	agentsSupportedOn,
 	AGENT_IDS,
 	AgentSessionsSettings,
 	asAgentId,
@@ -1981,6 +1982,11 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 				const iconEl = heading.nameEl.createSpan({ cls: "agent-sessions-settings-agent-icon" });
 				setIcon(iconEl, AGENT_ICON_ID[id]);
 				heading.nameEl.createSpan({ text: t(AGENT_DISPLAY_NAME_KEY[id]) });
+				if (!agentsSupportedOn(process.platform).includes(id)) {
+					heading.setDesc(t("settings.agents.unsupportedOnPlatform"));
+					heading.addToggle((toggle) => toggle.setValue(false).setDisabled(true));
+					continue;
+				}
 				heading.addToggle((toggle) =>
 					toggle.setValue(agentSettings.enabled).onChange(async (value) => {
 						if (!value && AGENT_IDS.filter((other) => other !== id).every((other) => !this.plugin.settings.agents[other].enabled)) {

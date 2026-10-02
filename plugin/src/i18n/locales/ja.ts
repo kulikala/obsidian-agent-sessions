@@ -213,6 +213,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"install.failed": "agent-sessions をインストールできませんでした: {error}",
 	"install.noPython": "Python {min} 以降が見つかりません。",
 	"install.noPython.mac": "ターミナルで `xcode-select --install` を実行するか、python.org または Homebrew からインストールしてから、もう一度確認してください。",
+	"settings.agents.unsupportedOnPlatform": "Windows ではまだ使えません。",
 	"install.noPython.windows": "下のボタンで WinGet からインストールするか（このユーザーだけに入り、管理者権限は不要です）、python.org から入れてから、もう一度確認してください。",
 	"install.claudeMissing": "このコンピューターに Claude Code が見つかりません。セッションを始めるにはインストールしてください:",
 	"install.winget.python": "WinGet で Python をインストール",
