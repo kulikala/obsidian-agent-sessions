@@ -280,6 +280,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"settings.agents.unsupportedOnPlatform": "Windows ではまだ使えません。",
 	"install.noPython.windows": "下のボタンで WinGet からインストールするか（このユーザーだけに入り、管理者権限は不要です）、python.org から入れてから、もう一度確認してください。",
 	"install.claudeMissing": "このコンピューターに Claude Code が見つかりません。セッションを始めるにはインストールしてください:",
+	"onboarding.install.claudeFound": "Claude Code: {path}",
 	"install.winget.python": "WinGet で Python をインストール",
 	"install.winget.claude": "WinGet で Claude Code をインストール",
 	"install.winget.running": "WinGet でインストールしています…数分かかることがあります。",

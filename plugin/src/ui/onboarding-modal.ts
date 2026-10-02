@@ -2,11 +2,11 @@
 // (command, settings tab). It only presents; installing, enabling agents and the submit key go
 // through the same `AgentSessionsPlugin` methods the install dialog and the settings tab use.
 
-import { App, Modal, Platform, Setting, setIcon } from "obsidian";
+import { App, Modal, Notice, Platform, Setting, setIcon } from "obsidian";
 import { detectAgents } from "../backend/backend";
 import { t, type MessageKey } from "../i18n";
 import type AgentSessionsPlugin from "../main";
-import { AGENT_IDS, SUBMIT_KEY_LABELS, submitKeyChoices, type AgentId, type SubmitKey } from "../settings";
+import { AGENT_IDS, agentsSupportedOn, SUBMIT_KEY_LABELS, submitKeyChoices, type AgentId, type SubmitKey } from "../settings";
 import { editorKeyLabel } from "../terminal/keys";
 import { AGENT_ICON_ID } from "./icons";
 import {
@@ -137,6 +137,9 @@ export class OnboardingModal extends Modal {
 		body.createEl("p", { text: t("onboarding.install.desc") });
 		const state = installPageState(this.plugin.backendAvailable(), this.plugin.agentSessionsPath());
 		const setting = new Setting(body);
+		if (process.platform === "win32") {
+			void this.renderClaudeOnWindows(body.createDiv());
+		}
 		if (state.kind === "installed") {
 			setting.setName(t("onboarding.install.installed", { path: state.path }));
 			setIcon(setting.nameEl.createSpan({ cls: "agent-sessions-onboarding-ok" }), "check");
@@ -151,6 +154,33 @@ export class OnboardingModal extends Modal {
 		);
 	}
 
+	/** Windows: Claude Code found, or a button installing it with WinGet (Python is offered by
+	 * the install dialog itself). */
+	private async renderClaudeOnWindows(el: HTMLElement): Promise<void> {
+		const found = await this.plugin.findClaudeBinary();
+		const setting = new Setting(el);
+		if (found) {
+			setting.setName(t("onboarding.install.claudeFound", { path: found }));
+			setIcon(setting.nameEl.createSpan({ cls: "agent-sessions-onboarding-ok" }), "check");
+			return;
+		}
+		setting.setName(t("install.claudeMissing"));
+		setting.addButton((button) =>
+			button
+				.setButtonText(t("install.winget.claude"))
+				.onClick(async () => {
+					button.setDisabled(true).setButtonText(t("install.winget.running"));
+					try {
+						await this.plugin.wingetInstall("claude");
+					} catch (err) {
+						const message = err instanceof Error ? err.message : String(err);
+						new Notice(message === "winget-missing" ? t("install.winget.missing") : t("install.winget.failed", { error: message }));
+					}
+					this.render();
+				})
+		);
+	}
+
 	private renderSettings(body: HTMLElement): void {
 		body.createEl("p", { text: t("onboarding.settings.desc") });
 		if (!this.detected) {
@@ -161,6 +191,11 @@ export class OnboardingModal extends Modal {
 			const setting = new Setting(body);
 			setIcon(setting.nameEl.createSpan({ cls: "agent-sessions-settings-agent-icon" }), AGENT_ICON_ID[id]);
 			setting.nameEl.createSpan({ text: t(AGENT_NAME_KEY[id]) });
+			if (!agentsSupportedOn(process.platform).includes(id)) {
+				setting.setDesc(t("settings.agents.unsupportedOnPlatform"));
+				setting.addToggle((toggle) => toggle.setValue(false).setDisabled(true));
+				continue;
+			}
 			const found = this.detected?.[id];
 			if (found !== undefined) {
 				setting.setDesc(found ? t("settings.agents.detected.found", { path: found }) : t("settings.agents.detected.notFound"));

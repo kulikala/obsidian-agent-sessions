@@ -280,6 +280,7 @@ export const en = {
 	"settings.agents.unsupportedOnPlatform": "Not available on Windows yet.",
 	"install.noPython.windows": "Install it with the button below (WinGet, for your user only — no administrator rights needed), or from python.org, then check again.",
 	"install.claudeMissing": "Claude Code wasn't found on this computer. Install it to start sessions:",
+	"onboarding.install.claudeFound": "Claude Code: {path}",
 	"install.winget.python": "Install Python with WinGet",
 	"install.winget.claude": "Install Claude Code with WinGet",
 	"install.winget.running": "Installing with WinGet… this can take a few minutes.",
