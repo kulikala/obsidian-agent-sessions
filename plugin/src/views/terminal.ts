@@ -22,7 +22,15 @@ import { AGENT_BIN_NAME, BackendError, loginEnv, resolveAgentBinary, withBinDirO
 import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../backend/daemon-client";
 import { t } from "../i18n";
 import { promptHasDraft, type ScreenCell } from "../terminal/prompt-draft";
-import { agentSendSequence, classifyCtrlKeyNonMac, classifyEnter, isCloseTabKey, resolveEnterAction, terminalClaimsKey } from "../terminal/keys";
+import {
+	agentSendSequence,
+	classifyCtrlKeyNonMac,
+	classifyEnter,
+	isCloseTabKey,
+	resolveEnterAction,
+	terminalClaimsKey,
+	type CtrlKeyContext,
+} from "../terminal/keys";
 import { buildAtToken, selectionLineRange, VaultLinkProvider } from "../terminal/links";
 import { submitSequence } from "../main";
 import type AgentSessionsPlugin from "../main";
@@ -327,7 +335,7 @@ export class TerminalView extends ItemView {
 			if (this.pendingEdit || !this.termEl.contains(activeDocument.activeElement)) {
 				return undefined;
 			}
-			return terminalClaimsKey(ev, Platform.isMacOS) ? true : undefined;
+			return terminalClaimsKey(ev, Platform.isMacOS, this.ctrlKeyContext()) ? true : undefined;
 		});
 		// While the editor pane is open, don't forward anything to the PTY — including IME-confirmed characters and paste.
 		const onData = this.terminal.onData((data) => {
@@ -1055,7 +1063,7 @@ export class TerminalView extends ItemView {
 		// as the final fallback below), and only a few combinations are routed to Obsidian,
 		// copy/paste, or font size (`classifyCtrlKeyNonMac`).
 		if (!Platform.isMacOS) {
-			const role = classifyCtrlKeyNonMac(ev);
+			const role = classifyCtrlKeyNonMac(ev, this.ctrlKeyContext());
 			if (role === "obsidian") {
 				// Not passed to xterm (`false`), but propagation isn't stopped — no
 				// preventDefault either, so it goes straight to Obsidian's hotkeys (same idea as
@@ -1126,6 +1134,11 @@ export class TerminalView extends ItemView {
 	 * Cmd+C is left to the native `copy` event (which xterm itself handles), so this code path
 	 * doesn't run there.
 	 */
+	/** What `classifyCtrlKeyNonMac` needs to apply Windows Terminal's copy/paste keys. */
+	private ctrlKeyContext(): CtrlKeyContext {
+		return { windows: process.platform === "win32", hasSelection: this.terminal.hasSelection() };
+	}
+
 	private async copySelection(): Promise<void> {
 		const text = this.terminal.getSelection();
 		if (!text) {

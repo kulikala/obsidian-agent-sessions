@@ -231,11 +231,27 @@ export type CtrlKeyRole =
 	| "command-palette"
 	| "passthrough";
 
-export function classifyCtrlKeyNonMac(ev: KeyLike): CtrlKeyRole {
+export interface CtrlKeyContext {
+	/** Native Windows: Windows Terminal's conventions on top — Ctrl+V pastes, and Ctrl+C copies
+	 * while there's a selection (it still interrupts without one). Claude Code on Windows pastes
+	 * images with Alt+V, so Ctrl+V is free there. */
+	windows?: boolean;
+	hasSelection?: boolean;
+}
+
+export function classifyCtrlKeyNonMac(ev: KeyLike, ctx: CtrlKeyContext = {}): CtrlKeyRole {
 	if (!ev.ctrlKey || ev.metaKey || ev.altKey) {
 		return "passthrough";
 	}
 	const key = ev.key;
+	if (ctx.windows && !ev.shiftKey) {
+		if (key === "v" || key === "V") {
+			return "paste";
+		}
+		if ((key === "c" || key === "C") && ctx.hasSelection) {
+			return "copy";
+		}
+	}
 	if (ev.shiftKey) {
 		// Ctrl+Shift+C/V: copy/paste the terminal's selection (the convention used by Linux terminal apps).
 		if (key === "c" || key === "C") {
@@ -282,11 +298,11 @@ export function classifyCtrlKeyNonMac(ev: KeyLike): CtrlKeyRole {
  * Only non-macOS is affected (on macOS, Obsidian's modifier is Cmd). Keys whose role is
  * `obsidian` (Ctrl+Tab, Ctrl+,, other Ctrl+Shift combinations) are left to Obsidian.
  */
-export function terminalClaimsKey(ev: KeyLike, isMacOS: boolean): boolean {
+export function terminalClaimsKey(ev: KeyLike, isMacOS: boolean, ctx: CtrlKeyContext = {}): boolean {
 	if (isMacOS) {
 		return false;
 	}
-	const role = classifyCtrlKeyNonMac(ev);
+	const role = classifyCtrlKeyNonMac(ev, ctx);
 	return role !== "passthrough" && role !== "obsidian";
 }
 
