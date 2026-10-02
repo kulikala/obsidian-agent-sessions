@@ -31,6 +31,7 @@ export function runClaudeHeadless(run: HeadlessRun): Promise<string> {
 			cwd: run.cwd,
 			env: run.env,
 			stdio: ["pipe", "pipe", "pipe"],
+			windowsHide: true,
 		});
 		let stdout = "";
 		let stderr = "";
