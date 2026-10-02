@@ -125,3 +125,15 @@ class EditTest(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FileArgumentTest(unittest.TestCase):
+    def test_vscode_style_arguments(self) -> None:
+        d = tempfile.mkdtemp()
+        f = os.path.join(d, 'claude-prompt-x.md')
+        open(f, 'w').close()
+        self.assertEqual(cmd_edit.file_argument([f]), f)
+        self.assertEqual(cmd_edit.file_argument(['-g', f + ':1']), f)
+        self.assertEqual(cmd_edit.file_argument(['--wait', '-g', f + ':3:7']), f)
+        self.assertIsNone(cmd_edit.file_argument(['-g']))
+        self.assertIsNone(cmd_edit.file_argument([]))

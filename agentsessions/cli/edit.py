@@ -10,10 +10,11 @@ for a response (EOF, `ECONNRESET`). Waits for the response with no timeout. `SIG
 """
 
 import os
+import re
 import signal
 import subprocess
 import sys
-from typing import List
+from typing import List, Optional
 
 from .. import config, i18n, transport
 from ..daemon import protocol
@@ -31,11 +32,30 @@ def _fallback(file: str) -> None:
     os.execvp(editor, [editor, file])
 
 
+_LINE_SUFFIX = re.compile(r'(?::\d+){1,2}$')
+
+
+def file_argument(args: List[str]) -> Optional[str]:
+    """The file to edit among an editor's arguments. Claude Code treats an editor whose name
+    contains "code" as VS Code and, on Windows, calls it as `<editor> -g <file>:<line>`; other
+    callers pass the file alone. Options are skipped and a `:line[:col]` suffix is dropped when the
+    file exists without it."""
+    for arg in args:
+        if arg.startswith('-') and not os.path.exists(arg):
+            continue
+        m = _LINE_SUFFIX.search(arg)
+        if m and not os.path.exists(arg) and os.path.exists(arg[:m.start()]):
+            return arg[:m.start()]
+        return arg
+    return None
+
+
 def main(args: List[str]) -> int:
-    if not args:
+    target = file_argument(args)
+    if target is None:
         sys.stderr.write(i18n.t('cmd.edit_usage') + '\n')
         return 2
-    file = os.path.abspath(args[0])
+    file = os.path.abspath(target)
     sock_path = os.environ.get(SOCK_ENV) or config.PLUGIN_SOCK_PATH
 
     try:
