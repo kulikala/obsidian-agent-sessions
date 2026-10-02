@@ -2378,3 +2378,79 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 .agent-sessions-manager-analysis.is-empty {
 	display: none;
 }
+
+/* ---- Welcome guide ---- */
+.agent-sessions-onboarding {
+	width: min(560px, 92vw);
+}
+.agent-sessions-onboarding-steps {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--size-4-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+.agent-sessions-onboarding-dots {
+	display: flex;
+	gap: var(--size-4-1);
+}
+.agent-sessions-onboarding-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: var(--background-modifier-border);
+}
+.agent-sessions-onboarding-dot.is-current {
+	background: var(--interactive-accent);
+}
+.agent-sessions-onboarding-heading {
+	margin: var(--size-4-3) 0 var(--size-4-2);
+}
+.agent-sessions-onboarding-body {
+	min-height: 14em;
+}
+.agent-sessions-onboarding-lead {
+	color: var(--text-normal);
+}
+.agent-sessions-onboarding-body ul {
+	padding-left: 1.2em;
+}
+.agent-sessions-onboarding-body li {
+	margin-bottom: 0.4em;
+}
+.agent-sessions-onboarding-item {
+	display: flex;
+	gap: var(--size-4-3);
+	margin-bottom: var(--size-4-3);
+}
+.agent-sessions-onboarding-item-icon {
+	flex: none;
+	margin-top: 2px;
+	color: var(--text-accent);
+}
+.agent-sessions-onboarding-item-icon svg {
+	width: 18px;
+	height: 18px;
+}
+.agent-sessions-onboarding-item-text {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+.agent-sessions-onboarding-item-title {
+	font-weight: var(--font-semibold);
+}
+.agent-sessions-onboarding-item-body,
+.agent-sessions-onboarding-muted {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+.agent-sessions-onboarding-ok {
+	margin-left: var(--size-4-2);
+	color: var(--color-green);
+	vertical-align: middle;
+}
+.agent-sessions-onboarding-footer {
+	border-top: none;
+	justify-content: flex-end;
+}

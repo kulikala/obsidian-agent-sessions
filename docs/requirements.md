@@ -124,6 +124,11 @@ Agent CLIs other than Claude Code, Codex, and OpenCode (agy, …) are a future d
 - R-L1 The plugin's UI supports Japanese and English. The "Language" setting: Auto (follows Obsidian's own language), Japanese, or English; default Auto. The extension's own description (`manifest.json`) is always English.
 - R-L2 The CLI, TUI, and statusLine output are independently bilingual (Japanese/English; see R-C6). Selection order: a plugin-launched session matches the plugin's own resolved display language; otherwise the environment's `LANG`/`LC_ALL`/`LC_MESSAGES` decide, defaulting to English. Internal log and error text (not meant for a chosen-language audience) stays English regardless.
 
+### R-G Welcome guide
+
+- R-G1 A multi-page welcome guide opens once on first install and once after each update (unless the user turned "Show this guide after updates" off), after the workspace is ready; never on an unsupported platform. It can also be opened with the "Show welcome guide" command and a settings-tab button.
+- R-G2 It explains what the plugin is, how to use sessions, offers the program install, and sets the enabled agents and the submit key through the same code paths as the settings tab.
+
 ### R-U Uninstall
 
 - R-U1 `uninstall.sh <vault>` removes only what this project added: its own hook entries and `statusLine` in `~/.claude/settings.json` (backed up first), its own submit-key entries in `~/.claude/keybindings.json` (the same six-key `OWNED_KEYS` set the plugin's own cleanup uses, R-T5b — only those still holding their canonical value), the daemon (stopped cleanly first), OpenCode's status plugin if it carries our marker, the agent skills in the vault if they carry our marker, and its own symlinks (`~/bin/agent-sessions`, `~/bin/agent-sessions-code`, `<vault>/.obsidian/plugins/agent-sessions`). Every other tool's hooks, `statusLine`, and keybindings entries are left untouched. Running it again when nothing is left to remove is safe and reports as much.

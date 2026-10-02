@@ -92,8 +92,8 @@ import {
 	mergeSettings,
 	OPENCODE_LAUNCH_VIA,
 	parseEnvLines,
-	SUBMIT_KEYS,
-	SUBMIT_KEYS_NON_MAC,
+	SUBMIT_KEY_LABELS,
+	submitKeyChoices,
 	type AgentId,
 	type AgentSettings,
 	type EditorKey,
@@ -120,6 +120,8 @@ import {
 } from "./backend/agent-skills";
 import { agentLaunchFor, writeUiState } from "./backend/ui-state";
 import { InstallBackendModal } from "./ui/install-modal";
+import { OnboardingModal } from "./ui/onboarding-modal";
+import { shouldShowOnboarding } from "./ui/onboarding-model";
 import { UsageModal } from "./usage/usage-modal";
 import { writeVaultState } from "./backend/vault-state";
 import { ManagerView, VIEW_TYPE_MANAGER } from "./views/manager";
@@ -335,6 +337,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		});
 
 		this.registerCommands();
+		this.app.workspace.onLayoutReady(() => this.maybeShowOnboarding());
 		// Redraw command names whenever the language changes (re-calling `addCommand` with the same id overwrites it).
 		this.registerEvent(this.events.on("settings-changed", () => this.registerCommands()));
 
@@ -365,6 +368,12 @@ export default class AgentSessionsPlugin extends Plugin {
 			callback: () => {
 				new NewSessionModal(this, (name, agent) => this.newSession(name || undefined, agent)).open();
 			},
+		});
+
+		this.addCommand({
+			id: "show-welcome",
+			name: t("action.showWelcome"),
+			callback: () => this.openOnboarding(),
 		});
 
 		this.addCommand({
@@ -948,6 +957,99 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.settings.agentSkillsStamp = "";
 		await this.saveSettings();
 		await this.index.rescan();
+	}
+
+	/**
+	 * Switches an agent on or off, with everything that follows from it (the settings tab and the
+	 * welcome guide both call this). Returns `false` when refused: at least one agent stays enabled.
+	 */
+	async setAgentEnabled(id: AgentId, value: boolean): Promise<boolean> {
+		const others = AGENT_IDS.filter((other) => other !== id);
+		if (!value && others.every((other) => !this.settings.agents[other].enabled)) {
+			new Notice(t("notice.needsOneAgentEnabled"));
+			return false;
+		}
+		this.settings.agents[id].enabled = value;
+		await this.saveSettings();
+		// T-108: Codex's config.toml follows the switch — the key lines and the
+		// status_line default when it's enabled, the key lines taken away
+		// again when it's disabled.
+		if (id === "codex") {
+			this.noticeConfigResult(this.syncCodexConfig(), "notice.codexConfigWritten");
+		}
+		// OpenCode's status comes from a plugin file the program installs into
+		// OpenCode's own config folder — put it there right when it's enabled,
+		// and take it away again when it's disabled (it would keep writing status
+		// files for an agent nobody is tracking).
+		if (id === "opencode") {
+			// Its tui.json keybinds and status line entry follow the same switch, once the
+			// files are in place (or gone).
+			void this.installOpencodePlugin({ mode: value ? "install" : "remove", notify: true }).then(() => this.syncOpencodeTui());
+		}
+		// The skill follows the enabled agents (a disabled agent's copy goes).
+		void this.installAgentSkills({ notify: true });
+		return true;
+	}
+
+	/** Writes a submit key to `keybindings.json` and the other agents' configs, and saves it. */
+	private commitSubmitKey(next: SubmitKey): void {
+		const result = applySubmitKey(this.keybindingsPath(), next);
+		this.settings.submitKey = next;
+		void this.saveSettings();
+		if (result.warning) {
+			new Notice(result.warning);
+		} else if (result.status === "written") {
+			new Notice(t("notice.keybindingsWritten"));
+		} else if (result.status === "unchanged") {
+			new Notice(t("notice.keybindingsUnchanged"));
+		}
+		// T-108: keeps Codex's own config.toml in step with the same setting.
+		this.noticeConfigResult(this.syncCodexConfig(), "notice.codexConfigWritten");
+		// The same for OpenCode's tui.json (restores it when the key goes back to Enter).
+		this.syncOpencodeTui();
+	}
+
+	/**
+	 * Changes the submit key the way the settings tab does: anything but Enter asks for
+	 * confirmation first (it writes the agents' config files). `onApplied` runs once it is written;
+	 * returns whether the change was applied right away (so a caller can revert its control while
+	 * the confirmation is open).
+	 */
+	requestSubmitKey(next: SubmitKey, onApplied: () => void): boolean {
+		if (next === this.settings.submitKey) {
+			return false;
+		}
+		if (next === "enter") {
+			this.commitSubmitKey(next);
+			onApplied();
+			return true;
+		}
+		const agents = this.settings.agents;
+		const message =
+			(agents.codex.enabled ? t("confirm.writeKeybindings.messageWithCodex") : t("confirm.writeKeybindings.message")) +
+			(agents.opencode.enabled ? t("confirm.writeKeybindings.opencodeNote") : "");
+		new ConfirmModal(this.app, message, t("action.write"), () => {
+			this.commitSubmitKey(next);
+			onApplied();
+		}).open();
+		return false;
+	}
+
+	/** Opens the welcome guide. */
+	openOnboarding(): void {
+		new OnboardingModal(this.app, this).open();
+	}
+
+	/** Opens the welcome guide by itself on first install and after an update (once per version). */
+	private maybeShowOnboarding(): void {
+		const version = this.manifest.version;
+		const s = this.settings;
+		if (!shouldShowOnboarding(s.onboardingShownVersion, version, s.onboardingOnUpdate)) {
+			return;
+		}
+		s.onboardingShownVersion = version;
+		void this.saveSettings();
+		this.openOnboarding();
 	}
 
 	/** Opens the install dialog (side panel's empty state, settings); `onDone` runs after a successful install. */
@@ -1908,6 +2010,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			);
 
 		this.renderBackendSetting(containerEl);
+		this.renderOnboardingSetting(containerEl);
 
 		new Setting(containerEl)
 			.setName(t("settings.agentSessionsPath.name"))
@@ -1989,32 +2092,10 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 				}
 				heading.addToggle((toggle) =>
 					toggle.setValue(agentSettings.enabled).onChange(async (value) => {
-						if (!value && AGENT_IDS.filter((other) => other !== id).every((other) => !this.plugin.settings.agents[other].enabled)) {
-							new Notice(t("notice.needsOneAgentEnabled"));
+						if (!(await this.plugin.setAgentEnabled(id, value))) {
 							toggle.setValue(true);
 							return;
 						}
-						agentSettings.enabled = value;
-						await this.plugin.saveSettings();
-						// T-108: Codex's config.toml follows the switch — the key lines and the
-						// status_line default when it's enabled, the key lines taken away
-						// again when it's disabled.
-						if (id === "codex") {
-							this.plugin.noticeConfigResult(this.plugin.syncCodexConfig(), "notice.codexConfigWritten");
-						}
-						// OpenCode's status comes from a plugin file the program installs into
-						// OpenCode's own config folder — put it there right when it's enabled,
-						// and take it away again when it's disabled (it would keep writing status
-						// files for an agent nobody is tracking).
-						if (id === "opencode") {
-							// Its tui.json keybinds and status line entry follow the same switch, once the
-							// files are in place (or gone).
-							void this.plugin
-								.installOpencodePlugin({ mode: value ? "install" : "remove", notify: true })
-								.then(() => this.plugin.syncOpencodeTui());
-						}
-						// The skill follows the enabled agents (a disabled agent's copy goes).
-						void this.plugin.installAgentSkills({ notify: true });
 						redraw();
 					})
 				);
@@ -2238,6 +2319,22 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		);
 	}
 
+	/** The welcome guide: a button to open it, and whether it comes back after updates. */
+	private renderOnboardingSetting(containerEl: HTMLElement): void {
+		new Setting(containerEl)
+			.setName(t("settings.onboarding.name"))
+			.setDesc(t("settings.onboarding.desc"))
+			.addButton((button) => button.setButtonText(t("action.showWelcome")).onClick(() => this.plugin.openOnboarding()));
+		new Setting(containerEl)
+			.setName(t("settings.onboardingOnUpdate.name"))
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.onboardingOnUpdate).onChange(async (value) => {
+					this.plugin.settings.onboardingOnUpdate = value;
+					await this.plugin.saveSettings();
+				})
+			);
+	}
+
 	private renderLanguageSetting(containerEl: HTMLElement): void {
 		new Setting(containerEl)
 			.setName(t("settings.language.name"))
@@ -2253,14 +2350,6 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 					})
 			);
 	}
-
-	private static readonly SUBMIT_KEY_LABELS: Record<SubmitKey, string> = {
-		enter: "Enter",
-		"shift+enter": "Shift+Enter",
-		"ctrl+enter": "Ctrl+Enter",
-		"alt+enter": "Option+Enter",
-		"cmd+enter": "Cmd+Enter",
-	};
 
 	/** Only for displaying the current keybindings.json's Chat `enter` value — never used to change it. */
 	private currentEnterBindingText(keybindingsPath: string): string {
@@ -2281,24 +2370,6 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 	private renderSubmitKeySetting(containerEl: HTMLElement): void {
 		const keybindingsPath = this.plugin.keybindingsPath();
 
-		const applyAndSave = (next: SubmitKey) => {
-			const result = applySubmitKey(keybindingsPath, next);
-			this.plugin.settings.submitKey = next;
-			void this.plugin.saveSettings();
-			if (result.warning) {
-				new Notice(result.warning);
-			} else if (result.status === "written") {
-				new Notice(t("notice.keybindingsWritten"));
-			} else if (result.status === "unchanged") {
-				new Notice(t("notice.keybindingsUnchanged"));
-			}
-			// T-108: keeps Codex's own config.toml in step with the same setting.
-			this.plugin.noticeConfigResult(this.plugin.syncCodexConfig(), "notice.codexConfigWritten");
-			// The same for OpenCode's tui.json (restores it when the key goes back to Enter).
-			this.plugin.syncOpencodeTui();
-			this.display();
-		};
-
 		const setting = new Setting(containerEl).setName(t("settings.submitKey.name"));
 		setting.descEl.createDiv({
 			text: t("settings.submitKey.desc"),
@@ -2306,28 +2377,15 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		setting.descEl.createDiv({ text: this.currentEnterBindingText(keybindingsPath) });
 		setting.addDropdown((dropdown) => {
 			// Non-macOS doesn't offer cmd+enter (Command — on non-macOS that's Super).
-			for (const key of Platform.isMacOS ? SUBMIT_KEYS : SUBMIT_KEYS_NON_MAC) {
-				dropdown.addOption(key, AgentSessionsSettingTab.SUBMIT_KEY_LABELS[key]);
+			for (const key of submitKeyChoices(Platform.isMacOS)) {
+				dropdown.addOption(key, SUBMIT_KEY_LABELS[key]);
 			}
 			dropdown.setValue(this.plugin.settings.submitKey);
 			dropdown.onChange((value) => {
-				const next = value as SubmitKey;
 				const current = this.plugin.settings.submitKey;
-				if (next === current) {
-					return;
-				}
-				if (next !== "enter") {
-					const agents = this.plugin.settings.agents;
-					const message =
-						(agents.codex.enabled
-							? t("confirm.writeKeybindings.messageWithCodex")
-							: t("confirm.writeKeybindings.message")) +
-						(agents.opencode.enabled ? t("confirm.writeKeybindings.opencodeNote") : "");
-					new ConfirmModal(this.app, message, t("action.write"), () => applyAndSave(next)).open();
+				if (!this.plugin.requestSubmitKey(value as SubmitKey, () => this.display())) {
 					// Revert the dropdown's appearance until confirmed (display() rebuilds it once applied).
 					dropdown.setValue(current);
-				} else {
-					applyAndSave(next);
 				}
 			});
 		});

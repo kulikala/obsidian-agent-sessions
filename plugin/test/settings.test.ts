@@ -36,6 +36,8 @@ describe("DEFAULT_SETTINGS", () => {
 			managerAnalysisFolded: { claude: false, codex: false, opencode: false },
 			managerStatusFilter: "all",
 			agentSkillsStamp: "",
+			onboardingShownVersion: "",
+			onboardingOnUpdate: true,
 		});
 	});
 });
@@ -47,6 +49,14 @@ describe("mergeSettings", () => {
 		expect(mergeSettings({ agentSkillsStamp: "x" }).agentSkillsStamp).toBe("x");
 		expect(mergeSettings({ agentSkillsStamp: 3 }).agentSkillsStamp).toBe("");
 		expect(mergeSettings({}).agentSkillsStamp).toBe("");
+		expect(mergeSettings({ onboardingShownVersion: "0.4.0", onboardingOnUpdate: false })).toMatchObject({
+			onboardingShownVersion: "0.4.0",
+			onboardingOnUpdate: false,
+		});
+		expect(mergeSettings({ onboardingShownVersion: 4, onboardingOnUpdate: "no" })).toMatchObject({
+			onboardingShownVersion: "",
+			onboardingOnUpdate: true,
+		});
 	});
 
 	it("drops the removed newlineKey and an old submitKey value no longer in the current type", () => {
