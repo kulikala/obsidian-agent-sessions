@@ -5,6 +5,7 @@
 import { App, Modal, Notice, Setting } from "obsidian";
 import { skillFolders } from "../backend/agent-skills";
 import { MIN_PYTHON, type InstallDirChoice, type PythonInfo, type UnsuitableReason } from "../backend/bundle";
+import type { WingetPackage } from "../backend/windows";
 import { t, type MessageKey } from "../i18n";
 import type AgentSessionsPlugin from "../main";
 import { AGENT_IDS } from "../settings";
@@ -56,6 +57,9 @@ export class InstallBackendModal extends Modal {
 
 	private renderPlan(python: PythonInfo, dir: string): void {
 		const { contentEl } = this;
+		if (process.platform === "win32" && this.plugin.settings.agents.claude.enabled) {
+			void this.renderClaudeOnWindows(contentEl.createDiv());
+		}
 		const list = contentEl.createEl("ul", { cls: "agent-sessions-install-plan" });
 		const item = (label: string, value: string) => {
 			const li = list.createEl("li");
@@ -109,10 +113,51 @@ export class InstallBackendModal extends Modal {
 	private renderNoPython(): void {
 		const { contentEl } = this;
 		contentEl.createEl("p", { text: t("install.noPython", { min: MIN_PYTHON.join(".") }) });
+		if (process.platform === "win32") {
+			contentEl.createEl("p", { text: t("install.noPython.windows") });
+			this.renderWingetButton("python", () => void this.check());
+			this.renderRetry();
+			return;
+		}
 		contentEl.createEl("p", {
 			text: t(process.platform === "darwin" ? "install.noPython.mac" : "install.noPython.linux"),
 		});
 		this.renderRetry();
+	}
+
+	/** Windows: whether Claude Code is there, with a WinGet button when it isn't. */
+	private async renderClaudeOnWindows(el: HTMLElement): Promise<void> {
+		const found = await this.plugin.findClaudeBinary();
+		if (found) {
+			return;
+		}
+		el.createEl("p", { text: t("install.claudeMissing") });
+		this.renderWingetButton("claude", () => void this.check(), el);
+	}
+
+	/** A button that installs `pkg` with WinGet (per-user, no administrator prompt), then `after`. */
+	private renderWingetButton(pkg: WingetPackage, after: () => void, el: HTMLElement = this.contentEl): void {
+		const status = el.createEl("p", { cls: "agent-sessions-install-status" });
+		new Setting(el).addButton((button) =>
+			button
+				.setButtonText(t(pkg === "python" ? "install.winget.python" : "install.winget.claude"))
+				.setCta()
+				.onClick(async () => {
+					button.setDisabled(true);
+					status.setText(t("install.winget.running"));
+					try {
+						await this.plugin.wingetInstall(pkg);
+					} catch (err) {
+						button.setDisabled(false);
+						const message = err instanceof Error ? err.message : String(err);
+						status.setText(
+							message === "winget-missing" ? t("install.winget.missing") : t("install.winget.failed", { error: message })
+						);
+						return;
+					}
+					after();
+				})
+		);
 	}
 
 	private renderNoLocation(location: InstallDirChoice): void {

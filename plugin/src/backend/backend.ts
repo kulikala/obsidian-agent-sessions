@@ -8,6 +8,9 @@ import { delimiter, dirname, join } from "node:path";
 import { t } from "../i18n";
 import { AGENT_IDS, parseEnvLines, type AgentId, type AgentSettings } from "../settings";
 import type { Detail, LiveResult, ScanResult, StatsResult, UsageResult } from "../types";
+import { locateWindowsProgram, programInvocation, windowsEnv } from "./windows";
+
+const IS_WINDOWS = process.platform === "win32";
 
 /** Thrown when a `json` subcommand fails. `message` is stderr's first line. */
 export class BackendError extends Error {}
@@ -33,8 +36,12 @@ function execFileText(
 	env?: NodeJS.ProcessEnv,
 	timeoutMs?: number
 ): Promise<{ stdout: string; stderr: string }> {
+	// Windows: a launcher `.cmd` runs as `python script …` (execFile refuses `.cmd` files), with
+	// UTF-8 Python and no console window popping up per call.
+	const call = programInvocation(cmd, args);
+	const callEnv = IS_WINDOWS ? { ...(env ?? process.env), PYTHONUTF8: "1" } : env;
 	return new Promise((resolve, reject) => {
-		execFile(cmd, args, { encoding: "utf8", env, timeout: timeoutMs }, (err, stdout, stderr) => {
+		execFile(call.file, call.args, { encoding: "utf8", env: callEnv, timeout: timeoutMs, windowsHide: true }, (err, stdout, stderr) => {
 			if (err) {
 				const e = err as NodeJS.ErrnoException & { stderr?: string };
 				e.stderr = stderr;
@@ -236,6 +243,11 @@ export async function loginEnv(isMac = true): Promise<Record<string, string>> {
 	if (cachedLoginEnv) {
 		return cachedLoginEnv;
 	}
+	if (IS_WINDOWS) {
+		// No login shell to ask: the whole environment, with PATH re-read from the registry.
+		cachedLoginEnv = await windowsEnv();
+		return cachedLoginEnv;
+	}
 	const shell = process.env.SHELL || defaultLoginShell(isMac);
 	const { stdout } = await execFileText(shell, ["-l", "-c", "env"]);
 	const all = parseEnvOutput(stdout);
@@ -418,6 +430,9 @@ function isExecutable(path: string): boolean {
  * search order for every agent and every caller.
  */
 async function locateBinary(bin: string, isMac: boolean): Promise<string | null> {
+	if (IS_WINDOWS) {
+		return locateWindowsProgram(bin);
+	}
 	const shell = process.env.SHELL || defaultLoginShell(isMac);
 	try {
 		const { stdout } = await execFileText(shell, ["-l", "-c", `command -v ${bin}`]);
@@ -479,7 +494,11 @@ export async function resolveAgentBinary(agent: AgentId, configuredPath: string,
  */
 export function withBinDirOnPath<T extends Record<string, string | undefined>>(env: T, bin: string): T {
 	const dir = dirname(bin);
-	return { ...env, PATH: env.PATH ? `${dir}${delimiter}${env.PATH}` : dir };
+	// Windows spells it `Path`; adding a second, differently-cased key would leave which one the
+	// child sees to chance.
+	const key = Object.keys(env).find((k) => k.toUpperCase() === "PATH") ?? "PATH";
+	const current = env[key];
+	return { ...env, [key]: current ? `${dir}${delimiter}${current}` : dir };
 }
 
 /** `<bin> --version`, trimmed to its first non-blank line. `null` on any failure (missing, not

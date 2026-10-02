@@ -41,6 +41,7 @@ import {
 	chooseInstallDir,
 	findInstalled,
 	findPython,
+	findPythonIn,
 	hookLauncher,
 	installCandidates,
 	isSupportedPlatform,
@@ -51,6 +52,7 @@ import {
 	type InstallInfo,
 	type PythonInfo,
 } from "./backend/bundle";
+import { windowsPythonCandidates, wingetInstall, type WingetPackage } from "./backend/windows";
 import { DaemonClient, defaultSockPath, ensureDaemon } from "./backend/daemon-client";
 import { waitUntilReady } from "./backend/headless-ready";
 import { OllamaModelCache } from "./backend/ollama-models";
@@ -656,7 +658,22 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	/** The `VISUAL` value put into `start`'s `env`: `agent-sessions-code`, next to the program in use. */
 	visualPath(): string {
-		return join(dirname(this.agentSessionsPath()), "agent-sessions-code");
+		return join(dirname(this.agentSessionsPath()), process.platform === "win32" ? "agent-sessions-code.cmd" : "agent-sessions-code");
+	}
+
+	/** Claude Code's binary as configured or found, `null` if it isn't there (Windows install dialog). */
+	async findClaudeBinary(): Promise<string | null> {
+		return resolveAgentBinary("claude", this.settings.agents.claude.path, Platform.isMacOS).catch(() => null);
+	}
+
+	/** Windows: installs Python or Claude Code with WinGet (per-user). Rejects with WinGet's error. */
+	async wingetInstall(pkg: WingetPackage): Promise<void> {
+		await wingetInstall(pkg);
+		resetLoginEnvCache();
+		if (pkg === "claude" && !this.settings.agents.claude.path) {
+			// Detection of the freshly installed binary happens on the next lookup; nothing to save.
+			this.events.trigger("settings-changed");
+		}
 	}
 
 	/** The built-in editor's env for `agent`'s process: `VISUAL` (Claude Code, Codex) — and
@@ -778,11 +795,14 @@ export default class AgentSessionsPlugin extends Plugin {
 	/** What an install would use, for the install dialog to show before anything is written. */
 	async planBackendInstall(): Promise<{ python: PythonInfo | null; location: InstallDirChoice }> {
 		const isMac = Platform.isMacOS;
-		const python = await findPython(isMac, {
-			locate: () => locateProgram("python3", isMac),
-			run: (bin, args) => runProgram(bin, args, 15000),
-			exists: (path) => existsSync(path),
-		});
+		const python =
+			process.platform === "win32"
+				? await findPythonIn(await windowsPythonCandidates(), (bin, args) => runProgram(bin, args, 15000))
+				: await findPython(isMac, {
+						locate: () => locateProgram("python3", isMac),
+						run: (bin, args) => runProgram(bin, args, 15000),
+						exists: (path) => existsSync(path),
+					});
 		const location = chooseInstallDir(installCandidates(homedir(), process.env), this.vaultPath());
 		return { python, location };
 	}

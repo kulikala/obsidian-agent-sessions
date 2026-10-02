@@ -4,6 +4,7 @@ import copy
 import json
 import os
 import re
+import sys
 import time
 from typing import List, Optional, Tuple
 
@@ -29,15 +30,36 @@ DEFAULT_LAUNCHER = '$HOME/bin/agent-sessions'
 # (or `status`). Recognizing ours by shape rather than by one exact path is what lets a later
 # `run()` with a different launcher move the entries over, and `run_remove()` take them out
 # no matter which install wrote them.
-_OUR_COMMAND_RE = re.compile(r'^"[^"]*/agent-sessions" (hook|status)$')
+# On Windows the launcher is `agent-sessions.cmd`, named unquoted (see `_command`).
+_OUR_COMMAND_RE = re.compile(r'^(?:"[^"]*/agent-sessions"|[^"\s]*/agent-sessions\.cmd) (hook|status)$')
+
+
+def windows_command_path(path: str) -> str:
+    """How a Windows hook or statusLine names `path`. Claude Code runs those commands through Git
+    Bash when it is installed and through PowerShell otherwise; the one spelling both run as a
+    plain command is an unquoted path with forward slashes (bash eats unquoted backslashes, and
+    PowerShell treats a quoted string followed by arguments as an expression). A path with spaces
+    is shortened to its 8.3 form, which has none."""
+    if ' ' in path and sys.platform == 'win32':
+        import ctypes
+        buf = ctypes.create_unicode_buffer(32768)
+        if ctypes.windll.kernel32.GetShortPathNameW(path, buf, len(buf)):  # type: ignore[attr-defined]
+            path = buf.value
+    return path.replace('\\', '/')
+
+
+def _command(launcher: str, verb: str) -> str:
+    if launcher.lower().endswith('.cmd'):
+        return '%s %s' % (windows_command_path(launcher), verb)
+    return '"%s" %s' % (launcher, verb)
 
 
 def hook_command(launcher: str = DEFAULT_LAUNCHER) -> str:
-    return '"%s" hook' % launcher
+    return _command(launcher, 'hook')
 
 
 def status_line(launcher: str = DEFAULT_LAUNCHER) -> dict:
-    return {'type': 'command', 'command': '"%s" status' % launcher}
+    return {'type': 'command', 'command': _command(launcher, 'status')}
 
 
 def _is_our_command(command, verb: str) -> bool:

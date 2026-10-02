@@ -10,6 +10,7 @@ import * as fs from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
 import { encodeFrame, FrameDecoder } from "./daemon-client";
+import { listenEndpoint, TokenGate } from "./transport";
 
 export interface EditRequest {
 	file: string;
@@ -58,6 +59,7 @@ export type EditHandler = (req: EditRequest, reply: EditReply) => void;
 
 interface Conn {
 	socket: net.Socket;
+	gate: TokenGate;
 	decoder: FrameDecoder;
 	req: EditRequest | null;
 	seq: number;
@@ -69,13 +71,14 @@ export class EditServer {
 	private sockPath = "";
 	private handler: EditHandler | null = null;
 	private conns = new Set<Conn>();
+	private token: string | null = null;
 
 	onEdit(handler: EditHandler): void {
 		this.handler = handler;
 	}
 
-	/** Removes any stale socket, starts listening, then `chmod 0600`. */
-	start(sockPath: string): Promise<void> {
+	/** Removes any stale socket, starts listening (a `0600` Unix socket, or loopback TCP plus a token on Windows — see `transport.ts`). */
+	async start(sockPath: string): Promise<void> {
 		this.sockPath = sockPath;
 		fs.mkdirSync(path.dirname(sockPath), { recursive: true, mode: 0o700 });
 		try {
@@ -85,19 +88,8 @@ export class EditServer {
 		}
 		const server = net.createServer((socket) => this.accept(socket));
 		this.server = server;
-		return new Promise((resolve, reject) => {
-			server.once("error", reject);
-			server.listen(sockPath, () => {
-				server.removeListener("error", reject);
-				server.on("error", (err) => console.warn("agent-sessions: plugin.sock", err));
-				try {
-					fs.chmodSync(sockPath, 0o600);
-				} catch {
-					// Keep listening even if this fails.
-				}
-				resolve();
-			});
-		});
+		this.token = await listenEndpoint(server, sockPath);
+		server.on("error", (err) => console.warn("agent-sessions: plugin.sock", err));
 	}
 
 	/** Replies `cancel` to any still-pending request, then closes every connection and the listener, and removes the socket. */
@@ -129,7 +121,7 @@ export class EditServer {
 	}
 
 	private accept(socket: net.Socket): void {
-		const conn: Conn = { socket, decoder: new FrameDecoder(), req: null, seq: 0, replied: false };
+		const conn: Conn = { socket, gate: new TokenGate(this.token), decoder: new FrameDecoder(), req: null, seq: 0, replied: false };
 		this.conns.add(conn);
 		socket.on("data", (chunk: Buffer) => this.onData(conn, chunk));
 		socket.on("error", () => undefined);
@@ -143,6 +135,15 @@ export class EditServer {
 	}
 
 	private onData(conn: Conn, chunk: Buffer): void {
+		if (!conn.gate.passed) {
+			const { state, rest } = conn.gate.feed(chunk);
+			if (state === false) {
+				conn.socket.destroy();
+				return;
+			}
+			if (state === null || rest.length === 0) return;
+			chunk = rest;
+		}
 		let frames;
 		try {
 			frames = conn.decoder.feed(chunk);

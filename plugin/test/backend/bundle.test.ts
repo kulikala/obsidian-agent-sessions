@@ -22,10 +22,10 @@ import {
 } from "../../src/backend/bundle";
 
 describe("isSupportedPlatform", () => {
-	it("runs on desktop macOS and Linux only", () => {
+	it("runs on desktop macOS, Linux and Windows only", () => {
 		expect(isSupportedPlatform("darwin", false)).toBe(true);
 		expect(isSupportedPlatform("linux", false)).toBe(true);
-		expect(isSupportedPlatform("win32", false)).toBe(false);
+		expect(isSupportedPlatform("win32", false)).toBe(true);
 		expect(isSupportedPlatform("freebsd", false)).toBe(false);
 		expect(isSupportedPlatform("darwin", true)).toBe(false);
 		expect(isSupportedPlatform("linux", true)).toBe(false);
@@ -221,5 +221,21 @@ describe("Python", () => {
 
 	it("returns null when nothing usable is found", async () => {
 		expect(await findPython(false, probe({ exists: [], versions: {} }))).toBeNull();
+	});
+});
+
+describe("Windows install locations", () => {
+	it("prefers %LOCALAPPDATA%\\agent-sessions", () => {
+		expect(installCandidates("C:\\Users\\a", { LOCALAPPDATA: "C:\\Users\\a\\AppData\\Local" }, "win32")).toEqual([
+			"C:\\Users\\a\\AppData\\Local\\agent-sessions",
+			"C:\\Users\\a\\.agents\\sessions\\app",
+		]);
+	});
+	it("accepts spaces but not shell metacharacters, and never the vault", () => {
+		const ok = () => true;
+		expect(unsuitableReason("C:\\Users\\John Smith\\AppData\\Local\\agent-sessions", "D:\\Vault", ok, "win32")).toBeNull();
+		expect(unsuitableReason("C:\\Users\\a&b\\agent-sessions", "D:\\Vault", ok, "win32")).toBe("characters");
+		expect(unsuitableReason("C:\\Users\\a%x%\\agent-sessions", "D:\\Vault", ok, "win32")).toBe("characters");
+		expect(unsuitableReason("D:\\Vault\\app", "D:\\Vault", ok, "win32")).toBe("in-vault");
 	});
 });

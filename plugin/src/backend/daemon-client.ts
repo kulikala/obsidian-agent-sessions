@@ -14,6 +14,8 @@ import { spawn } from "node:child_process";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { t } from "../i18n";
+import { connectEndpoint } from "./transport";
+import { programInvocation } from "./windows";
 
 export type FrameKind = "J" | "D" | "R";
 
@@ -102,7 +104,7 @@ export class DaemonClient extends EventEmitter {
 
 	connect(): Promise<void> {
 		return new Promise((resolve, reject) => {
-			const socket = net.connect(this.sockPath);
+			const socket = connectEndpoint(this.sockPath);
 			const onError = (err: Error) => {
 				socket.removeAllListeners();
 				reject(err);
@@ -248,7 +250,13 @@ export async function ensureDaemon(sockPath: string, agentSessionsPath: string):
 			lastErr = err;
 		}
 		try {
-			spawn(agentSessionsPath, ["daemon", "--detach"], { detached: true, stdio: "ignore" }).unref();
+			const call = programInvocation(agentSessionsPath, ["daemon", "--detach"]);
+			spawn(call.file, call.args, {
+				detached: true,
+				stdio: "ignore",
+				windowsHide: true,
+				env: process.platform === "win32" ? { ...process.env, PYTHONUTF8: "1" } : process.env,
+			}).unref();
 		} catch (err) {
 			lastErr = err;
 		}

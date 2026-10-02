@@ -89,7 +89,9 @@ const context = await esbuild.context({
 	logLevel: "info",
 	sourcemap: production ? false : "inline",
 	treeShaking: true,
-	outfile: "main.js",
+	// AGENT_SESSIONS_OUTFILE: build somewhere else than plugin/main.js (which a development vault may
+	// link to), e.g. for a test machine.
+	outfile: process.env.AGENT_SESSIONS_OUTFILE || "main.js",
 	minify: production,
 });
 
