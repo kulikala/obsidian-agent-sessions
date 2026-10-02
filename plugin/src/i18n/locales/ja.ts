@@ -183,6 +183,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"modal.newSession.agentField": "エージェント",
 	"modal.renameSession.title": "名前を変更",
 	"modal.moveToCategory.title": "カテゴリに移動",
+	"modal.moveToCategory.session": "セッション: {name}",
 	"modal.moveToCategory.categoryField": "カテゴリ",
 
 	// ---- Side panel (views/side.ts) ----

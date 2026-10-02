@@ -333,7 +333,7 @@ export function createRowActions(
 			// eslint-disable-next-line @typescript-eslint/no-require-imports -- see rename's comment above
 			const { MoveToCategoryModal } = require("../ui/modals") as typeof import("../ui/modals");
 			const [category] = row.name ? splitName(row.name) : [""];
-			new MoveToCategoryModal(plugin, category ?? "", label, (name) => void plugin.renameSession(row.id, name)).open();
+			new MoveToCategoryModal(plugin, category ?? "", label, sessionDisplayName(row), (name) => void plugin.renameSession(row.id, name)).open();
 		},
 		compact: (id) => void plugin.compactSession(id),
 		toggleArchive: (row) => {

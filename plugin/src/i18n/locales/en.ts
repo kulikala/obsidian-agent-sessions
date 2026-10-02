@@ -183,6 +183,7 @@ export const en = {
 	"modal.renameSession.title": "Rename",
 	"modal.moveToCategory.title": "Move to category",
 	"modal.moveToCategory.categoryField": "Category",
+	"modal.moveToCategory.session": "Session: {name}",
 
 	// ---- Side panel (views/side.ts) ----
 	"section.openTabs": "Open tabs",
