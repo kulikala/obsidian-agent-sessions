@@ -11,6 +11,7 @@ import { stats, usage } from "../backend/backend";
 import { paletteHueDeg } from "../sessions/category";
 import { t } from "../i18n";
 import { NewSessionModal } from "../ui/modals";
+import { OrganizeModal } from "../ui/organize-modal";
 import { AGENT_ICON_ID, moreIconId } from "../ui/icons";
 import { agentsWithLimits, type AgentId } from "../settings";
 import {
@@ -859,6 +860,12 @@ export class ManagerView extends ItemView {
 					this.showArchived = !this.showArchived;
 					this.render();
 				})
+		);
+		menu.addItem((item) =>
+			item
+				.setTitle(t("action.organize"))
+				.setIcon("wand-sparkles")
+				.onClick(() => new OrganizeModal(this.plugin).open())
 		);
 		menu.showAtMouseEvent(evt);
 	}
