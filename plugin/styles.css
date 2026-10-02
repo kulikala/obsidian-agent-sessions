@@ -2454,3 +2454,8 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	border-top: none;
 	justify-content: flex-end;
 }
+.agent-sessions-modal-session {
+	color: var(--text-muted);
+	margin-top: 0;
+	overflow-wrap: anywhere;
+}

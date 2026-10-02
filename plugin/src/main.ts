@@ -64,7 +64,7 @@ import {
 	type OpencodePluginStatus,
 } from "./backend/opencode-plugin";
 import { EditServer, editReplyFor, submitsAfterEdit, tabOwnsEditSession, type EditReply, type EditRequest } from "./backend/edit-server";
-import { SessionIndex } from "./sessions/index";
+import { SessionIndex, type Row } from "./sessions/index";
 import { getLang, languageOptions, resolveLang, setLang, t, type MessageKey } from "./i18n";
 import { applyCodexConfig, defaultCodexConfigPath, type ApplyCodexConfigResult } from "./terminal/codex-config";
 import { applyEditorKey, applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./terminal/keybindings";
@@ -80,6 +80,8 @@ import { ConfirmModal, NewSessionModal } from "./ui/modals";
 import { AGENT_ICON_ID } from "./ui/icons";
 import { registerAgentIcons } from "./ui/register-icons";
 import { sessionDisplayName } from "./sessions/name";
+import { restartDecision, type RestartDecision } from "./sessions/restart";
+import { resolveRowStatus } from "./sessions/terminal-status";
 import { renameRoute, sessionAgentOf } from "./sessions/rename";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./sessions/open-session";
 import {
@@ -1670,6 +1672,75 @@ export default class AgentSessionsPlugin extends Plugin {
 				}
 			})();
 		}).open();
+	}
+
+	/** Whether "Restart session" is available for the row, and whether to confirm first
+	 * (`restartDecision`). A Codex/OpenCode session still under its placeholder id has no real
+	 * conversation id to resume yet. */
+	restartState(row: Row): RestartDecision {
+		return restartDecision({
+			running: row.daemon && row.exited === null,
+			resumable: !this.unresolvedIds.has(row.id),
+			status: resolveRowStatus(this, row),
+		});
+	}
+
+	/**
+	 * Restart session: (confirm if busy) → `kill` like `endSession` → wait for the exit → resume the
+	 * same conversation by its real id. An open tab restarts in place (`TerminalView.resumeAfterEnd`,
+	 * the same path as its "Resume" button, which also re-links a Codex/OpenCode tab to the new
+	 * daemon id); without a tab the exited daemon entry is forgotten and the session is opened like
+	 * any recent one.
+	 */
+	restartSession(row: Row): void {
+		const decision = this.restartState(row);
+		if (!decision.enabled) {
+			return;
+		}
+		const run = () => void this.doRestart(row);
+		if (decision.needsConfirm) {
+			new ConfirmModal(this.app, t("confirm.restartSession.message"), t("action.restartSession"), run).open();
+		} else {
+			run();
+		}
+	}
+
+	private async doRestart(row: Row): Promise<void> {
+		const id = row.id;
+		let client: DaemonClient | null = null;
+		try {
+			client = await ensureDaemon(this.sockPath(), this.agentSessionsPath());
+			await client.hello("plugin");
+			const list = await client.list();
+			const daemonId = this.daemonIdFor(id, (list.sessions as DaemonSession[] | undefined) ?? []);
+			const res = await client.kill(daemonId);
+			if (!res.ok) {
+				throw new Error(res.error ?? "unknown");
+			}
+			const until = Date.now() + END_REFRESH_MAX_MS;
+			for (;;) {
+				const found = (((await client.list()).sessions as DaemonSession[] | undefined) ?? []).find((s) => s.id === daemonId);
+				if (!found || found.exited !== null) {
+					break;
+				}
+				if (Date.now() > until) {
+					throw new Error(t("error.restartTimeout"));
+				}
+				await sleep(300);
+			}
+			const view = this.findTerminalView(id);
+			if (view) {
+				await view.resumeAfterEnd();
+			} else {
+				await client.forget(daemonId).catch(() => undefined);
+				await this.openSession(id, { agent: row.agent, cwd: row.cwd });
+			}
+			void this.index.refreshLive();
+		} catch (err) {
+			new Notice(t("notice.restartFailed", { error: messageOf(err) }));
+		} finally {
+			client?.close();
+		}
 	}
 
 	/** Re-reads the daemon's list once a second (for up to `END_REFRESH_MAX_MS`, the kill grace

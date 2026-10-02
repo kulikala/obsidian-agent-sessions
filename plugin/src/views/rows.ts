@@ -20,6 +20,9 @@ export interface RowActions {
 	compact(id: string): void;
 	toggleArchive(row: Row): void;
 	endSession(id: string): void;
+	restartSession(row: Row): void;
+	/** Whether "Restart session" is enabled for the row. */
+	canRestart(row: Row): boolean;
 	copyId(id: string): void;
 	/** Called after a 300ms hover. */
 	showDetail(id: string): void;
@@ -330,7 +333,7 @@ export function createRowActions(
 			// eslint-disable-next-line @typescript-eslint/no-require-imports -- see rename's comment above
 			const { MoveToCategoryModal } = require("../ui/modals") as typeof import("../ui/modals");
 			const [category] = row.name ? splitName(row.name) : [""];
-			new MoveToCategoryModal(plugin, category ?? "", label, (name) => void plugin.renameSession(row.id, name)).open();
+			new MoveToCategoryModal(plugin, category ?? "", label, sessionDisplayName(row), (name) => void plugin.renameSession(row.id, name)).open();
 		},
 		compact: (id) => void plugin.compactSession(id),
 		toggleArchive: (row) => {
@@ -341,6 +344,8 @@ export function createRowActions(
 			}
 		},
 		endSession: (id) => plugin.endSession(id),
+		restartSession: (row) => plugin.restartSession(row),
+		canRestart: (row) => plugin.restartState(row).enabled,
 		copyId: (id) => {
 			void navigator.clipboard.writeText(id);
 		},

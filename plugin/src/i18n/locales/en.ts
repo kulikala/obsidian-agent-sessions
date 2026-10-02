@@ -18,6 +18,8 @@ export const en = {
 	"action.archive": "Archive",
 	"action.unarchive": "Remove from archive",
 	"action.endSession": "End session",
+	"action.restartSession": "Restart session",
+	"action.restartSession.hint": "Ends the agent and resumes the same conversation, to pick up changed settings, hooks, skills or environment",
 	"action.usage": "Session analytics",
 	"action.showUsage": "Show session analytics",
 	"action.copyId": "Copy ID",
@@ -80,6 +82,9 @@ export const en = {
 	"error.replyWaitFailed": "Timed out waiting for a reply",
 	"confirm.endSession.message": "End this session?",
 	"notice.endFailed": "Failed to end: {error}",
+	"confirm.restartSession.message": "This session is busy. Restart it anyway? The current work will be interrupted.",
+	"error.restartTimeout": "Timed out waiting for the session to end",
+	"notice.restartFailed": "Failed to restart: {error}",
 	"notice.waitingForInput": "{name}: waiting for input",
 	"notice.storeLocked": "Couldn't lock sessions.json. Wait a moment and try again",
 	"notice.storeUpdateFailed": "Failed to update sessions.json: {error}",
@@ -178,6 +183,7 @@ export const en = {
 	"modal.renameSession.title": "Rename",
 	"modal.moveToCategory.title": "Move to category",
 	"modal.moveToCategory.categoryField": "Category",
+	"modal.moveToCategory.session": "Session: {name}",
 
 	// ---- Welcome guide (ui/onboarding-modal.ts) ----
 	"action.showWelcome": "Show welcome guide",

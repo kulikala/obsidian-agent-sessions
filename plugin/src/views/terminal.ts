@@ -1239,6 +1239,15 @@ export class TerminalView extends ItemView {
 		await this.ensureAttached();
 	}
 
+	/** "Restart session" (`main.ts`): after the agent was ended from outside, waits for the tab to
+	 * show the exit, then resumes the same conversation in this tab. */
+	async resumeAfterEnd(): Promise<void> {
+		for (let i = 0; i < 20 && this.exitReason?.kind !== "exited"; i++) {
+			await new Promise((resolve) => window.setTimeout(resolve, 150));
+		}
+		await this.restart(false);
+	}
+
 	/** Restart: `forget` → `start` (`--resume`, or `--session-id` if `fresh`) → `attach`. */
 	private async restart(fresh: boolean): Promise<void> {
 		this.hideExit();

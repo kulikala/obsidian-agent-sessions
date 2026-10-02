@@ -569,6 +569,8 @@ export class MoveToCategoryModal extends Modal {
 		private plugin: AgentSessionsPlugin,
 		private currentCategory: string,
 		private label: string,
+		/** The session being moved, shown under the title (`sessionDisplayName`). */
+		private sessionName: string,
 		private onSubmit: (name: string) => void
 	) {
 		super(plugin.app);
@@ -577,6 +579,10 @@ export class MoveToCategoryModal extends Modal {
 
 	onOpen(): void {
 		this.setTitle(t("modal.moveToCategory.title"));
+		this.contentEl.createEl("p", {
+			cls: "agent-sessions-modal-session",
+			text: t("modal.moveToCategory.session", { name: this.sessionName }),
+		});
 		const setting = makeWide(new Setting(this.contentEl).setName(t("modal.moveToCategory.categoryField")));
 		const boxEl = setting.controlEl.createDiv({ cls: "agent-sessions-name-input" });
 		this.boxEl = boxEl;
