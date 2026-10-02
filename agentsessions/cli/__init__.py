@@ -12,7 +12,21 @@ SUBCOMMANDS = ('daemon', 'json', 'attach', 'edit', 'hook', 'status', 'setup', 'n
 _MODULE_NAMES = {'json': 'json_cmd'}
 
 
+def _utf8_stdio() -> None:
+    """Windows' console and pipes default to the ANSI code page (cp932 on Japanese Windows);
+    everything this program prints — JSON for the plugin, hook output, the status line — is
+    UTF-8."""
+    if sys.platform != 'win32':
+        return
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding='utf-8', errors='replace')  # type: ignore[attr-defined]
+        except (AttributeError, ValueError):
+            pass
+
+
 def main(argv: List[str]) -> int:
+    _utf8_stdio()
     args = argv[1:]
     if not args:
         from ..tui.app import main as tui_main

@@ -19,7 +19,7 @@ import tty
 from typing import Optional
 
 from . import protocol
-from .. import i18n
+from .. import i18n, transport
 
 DETACH_BYTE = 0x1c   # Ctrl+\
 CONNECT_TIMEOUT = 5.0
@@ -99,10 +99,12 @@ class _Client:
 
 
 def run(sid: str, sock_path: str) -> int:
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
-        sock.settimeout(CONNECT_TIMEOUT)
-        sock.connect(sock_path)
+        sock = transport.connect(sock_path, CONNECT_TIMEOUT)
+    except OSError as e:
+        sys.stderr.write(i18n.t('attach.failed', error=e) + '\n')
+        return 1
+    try:
         client = _Client(sock)
         hello = client.request('hello', client='tui')
         if not hello.get('ok'):

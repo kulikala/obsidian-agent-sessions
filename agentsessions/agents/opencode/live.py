@@ -23,7 +23,7 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 
-from ... import config
+from ... import config, procs
 from ...sessions.model import Session
 from . import db as _db
 
@@ -47,13 +47,7 @@ class Live:
 def pid_alive(pid: int) -> bool:
     if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
         return False
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except OSError:
-        return True   # e.g. EPERM: it exists, just isn't ours
-    return True
+    return procs.pid_alive(pid)
 
 
 def read_status_files(status_dir: Optional[str] = None) -> Dict[str, Live]:

@@ -14,7 +14,7 @@ import socket
 import time
 from typing import Dict, List, Optional
 
-from .. import agents, config, i18n
+from .. import agents, config, i18n, transport
 from ..agents import claude as claude_agent
 from ..agents import codex as codex_agent
 from ..agents import opencode as opencode_agent
@@ -149,10 +149,11 @@ def send_daemon_op(op: str, client: str = 'json', sock_path: Optional[str] = Non
     check and for one-off requests to the daemon (e.g. `tui.py`'s `forget`)."""
     if sock_path is None:
         sock_path = daemon_sock_path()
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
-        sock.settimeout(DAEMON_TIMEOUT)
-        sock.connect(sock_path)
+        sock = transport.connect(sock_path, DAEMON_TIMEOUT)
+    except OSError:
+        return None
+    try:
         decoder = protocol.Decoder()
         deadline = time.monotonic() + DAEMON_TIMEOUT
 

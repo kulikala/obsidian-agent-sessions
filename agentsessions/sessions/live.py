@@ -7,7 +7,7 @@ import subprocess
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from .. import config, i18n
+from .. import config, i18n, procs
 
 # Maps a session's raw `status` to the i18n key for its display label.
 STATUS_LABEL_KEY = {
@@ -59,6 +59,10 @@ def _claude_pids() -> Optional[set]:
     since been reused by an unrelated process.
     `-eo pid=,args=` works on both GNU ps (procps-ng) and BSD ps (macOS).
     """
+    if procs.IS_WINDOWS:
+        # Executable names only there (`claude.exe`).
+        table = procs.process_table()
+        return None if table is None else {pid for pid, exe in table.items() if 'claude' in exe.lower()}
     try:
         out = subprocess.run([_ps_path(), '-eo', 'pid=,args='],
                              stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -74,15 +78,7 @@ def _claude_pids() -> Optional[set]:
 
 
 def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    except OSError:
-        return False
-    return True
+    return procs.pid_alive(pid)
 
 
 def live_sessions(sessions_dir: Optional[str] = None,

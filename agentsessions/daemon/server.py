@@ -1,17 +1,22 @@
 """PTY daemon.
 
-A single-threaded `select` loop waits on the Unix socket's connections and
-every session's PTY master fd together. There is no blocking I/O (both
-sockets and masters are non-blocking; output is flushed from each
+A single-threaded `select` loop waits on the listening socket's connections and
+every session's terminal together. There is no blocking I/O (both
+sockets and terminals are non-blocking; output is flushed from each
 connection's own queue whenever that connection becomes writable).
 
-- Session: started with `pty.fork()`; output is buffered as a `deque` of
+The listening socket and the terminals are platform-specific and live behind
+`transport` (a Unix socket, or loopback TCP plus a token on Windows) and
+`ptyproc` (a `pty.fork()` child, or a ConPTY child whose output arrives on a
+socket pair on Windows, since Windows' `select` takes sockets only).
+
+- Session: started with `ptyproc.spawn()`; output is buffered as a `deque` of
   chunks (1 MiB total). The same `D` frame is fanned out to every attached
   connection, and input is accepted from any of them.
 - Size: the minimum cols and minimum rows across all currently attached
   connections, recomputed on `resize`, `detach`, and disconnect.
 - Exit: detected via EOF/`EIO` on the master, or via `SIGCHLD` (delivered
-  through a self-pipe) followed by `waitpid(WNOHANG)`. An exited session is
+  through a self-pipe; Unix only) followed by the terminal's `poll()`. An exited session is
   kept around until `forget` is called.
 - Lifetime: the daemon exits once there are zero running sessions and zero
   connections for `idle_exit` seconds. On exit (idle timeout, `shutdown`,
@@ -19,24 +24,28 @@ connection's own queue whenever that connection becomes writable).
   `exited.json`.
 """
 
-import errno
-import fcntl
 import json
 import os
-import pty
 import select
 import signal
 import socket
-import struct
 import sys
-import termios
 import threading
 import time
 from collections import deque
 from typing import Any, Callable, Deque, Dict, List, Optional, Set
 
-from . import protocol
-from .. import config
+from . import protocol, ptyproc
+from .. import config, transport
+
+IS_WINDOWS = sys.platform == 'win32'
+if IS_WINDOWS:
+    import msvcrt
+else:
+    import fcntl
+
+# `signal.SIGKILL` doesn't exist on Windows; requests still name it.
+SIGKILL = getattr(signal, 'SIGKILL', 9)
 
 VERSION = 1
 BUFFER_LIMIT = 1024 * 1024          # Per-session output buffer
@@ -57,10 +66,6 @@ class BadRequest(Exception):
     """Raised when a request is malformed. The reply is `{"ok":false,"error":"bad-request"}`."""
 
 
-def _set_winsize(fd: int, cols: int, rows: int) -> None:
-    fcntl.ioctl(fd, termios.TIOCSWINSZ, struct.pack('HHHH', rows, cols, 0, 0))
-
-
 def _signal_from(value: Any) -> int:
     if isinstance(value, bool):
         raise BadRequest('signal')
@@ -71,6 +76,8 @@ def _signal_from(value: Any) -> int:
     name = value.upper()
     if not name.startswith('SIG'):
         name = 'SIG' + name
+    if name == 'SIGKILL':
+        return SIGKILL
     try:
         return int(getattr(signal, name))
     except (AttributeError, TypeError, ValueError):
@@ -93,12 +100,13 @@ def _str_field(req: Dict[str, Any], key: str) -> str:
 
 class Session:
     def __init__(self, id: str, agent: str, cwd: str, pid: Optional[int],
-                 master_fd: Optional[int], started_at: Optional[float]) -> None:
+                 term: Any, started_at: Optional[float]) -> None:
         self.id = id
         self.agent = agent
         self.cwd = cwd
         self.pid = pid
-        self.master_fd = master_fd
+        self.term = term                  # the `ptyproc` child; None for a record loaded from exited.json
+        self.master_open = term is not None
         self.started_at = started_at
         self.clients: Set['Conn'] = set()
         self.chunks: Deque[bytes] = deque()
@@ -136,8 +144,9 @@ class Session:
 
 
 class Conn:
-    def __init__(self, sock: socket.socket) -> None:
+    def __init__(self, sock: socket.socket, token: Optional[str] = None) -> None:
         self.sock = sock
+        self.gate = transport.TokenGate(token)
         self.decoder = protocol.Decoder()
         self.out = bytearray()
         self.attached: Optional[Session] = None
@@ -162,9 +171,10 @@ class Daemon:
         self.sessions: Dict[str, Session] = {}
         self.conns: Dict[int, Conn] = {}
         self._listener: Optional[socket.socket] = None
+        self._token: Optional[str] = None
         self._pid_fd: Optional[int] = None
-        self._wake_r = -1
-        self._wake_w = -1
+        self._wake_r: Optional[socket.socket] = None
+        self._wake_w: Optional[socket.socket] = None
         self._stop: Optional[str] = None
         self._idle_since: Optional[float] = None
         self._ops: Dict[str, Callable[[Conn, int, Dict[str, Any]], None]] = {
@@ -191,50 +201,40 @@ class Daemon:
         os.chmod(self.runtime_dir, 0o700)
         fd = os.open(self.pid_path, os.O_RDWR | os.O_CREAT, 0o600)
         try:
-            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if IS_WINDOWS:
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except OSError:
             os.close(fd)
             raise AlreadyRunning(self.pid_path)
         self._pid_fd = fd
         try:
             self._load_exited()
-            self._listener = self._listen()
+            self._listener, self._token = transport.listen(self.sock_path)
         except BaseException:
             os.close(fd)
             self._pid_fd = None
             raise
-        self._wake_r, self._wake_w = os.pipe()
-        os.set_blocking(self._wake_r, False)
-        os.set_blocking(self._wake_w, False)
+        # A socket pair rather than a pipe: Windows' `select` only takes sockets.
+        self._wake_r, self._wake_w = socket.socketpair()
+        self._wake_r.setblocking(False)
+        self._wake_w.setblocking(False)
 
-    def _listen(self) -> socket.socket:
-        try:
-            os.unlink(self.sock_path)
-        except FileNotFoundError:
-            pass
-        listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        old_umask = os.umask(0o077)
-        try:
-            listener.bind(self.sock_path)
-        except BaseException:
-            listener.close()
-            raise
-        finally:
-            os.umask(old_umask)
-        os.chmod(self.sock_path, 0o600)
-        listener.listen(16)
-        listener.setblocking(False)
-        return listener
+    def close_unstarted(self) -> None:
+        """Undoes `bind()` without serving (Windows `--detach` hands the work to a new process)."""
+        self._finish_handles()
 
     def _write_pid(self) -> None:
         assert self._pid_fd is not None
-        os.ftruncate(self._pid_fd, 0)
         os.lseek(self._pid_fd, 0, os.SEEK_SET)
         os.write(self._pid_fd, ('%d\n' % os.getpid()).encode('ascii'))
+        os.ftruncate(self._pid_fd, os.lseek(self._pid_fd, 0, os.SEEK_CUR))
 
     def _wake(self, tag: bytes) -> None:
         try:
-            os.write(self._wake_w, tag)
+            if self._wake_w is not None:
+                self._wake_w.send(tag)
         except OSError:
             pass
 
@@ -244,10 +244,11 @@ class Daemon:
         # `waitpid(WNOHANG)` call picks up exits.
         if threading.current_thread() is not threading.main_thread():
             return
-        signal.signal(signal.SIGCHLD, lambda *_: self._wake(b'C'))
         signal.signal(signal.SIGTERM, lambda *_: self._wake(b'T'))
         signal.signal(signal.SIGINT, lambda *_: self._wake(b'T'))
-        signal.signal(signal.SIGPIPE, signal.SIG_IGN)
+        if not IS_WINDOWS:
+            signal.signal(signal.SIGCHLD, lambda *_: self._wake(b'C'))
+            signal.signal(signal.SIGPIPE, signal.SIG_IGN)
 
     def stop(self, reason: str = 'stop') -> None:
         """Requests shutdown from another thread."""
@@ -270,7 +271,7 @@ class Daemon:
     def _finish(self) -> None:
         self._log('stop (%s)' % (self._stop or 'error'))
         self._save_exited()
-        running = [s for s in self.sessions.values() if s.running and s.pid is not None]
+        running = [s for s in self.sessions.values() if s.running and s.term is not None]
         for s in running:
             self._killpg(s, signal.SIGTERM)
         for s in list(self.sessions.values()):
@@ -283,23 +284,39 @@ class Daemon:
         for conn in list(self.conns.values()):
             self._flush(conn)
             self._close_conn(conn)
+        for s in self.sessions.values():
+            if s.term is not None and not s.running:
+                s.term.release()
+        self._finish_handles()
+
+    def _finish_handles(self) -> None:
         if self._listener is not None:
             self._listener.close()
             self._listener = None
-        try:
-            os.unlink(self.sock_path)
-        except OSError:
-            pass
-        for fd in (self._wake_r, self._wake_w):
-            if fd >= 0:
-                os.close(fd)
-        self._wake_r = self._wake_w = -1
+        transport.remove(self.sock_path)
+        for sock in (self._wake_r, self._wake_w):
+            if sock is not None:
+                sock.close()
+        self._wake_r = self._wake_w = None
         if self._pid_fd is not None:
-            try:
-                os.unlink(self.pid_path)
-            except OSError:
-                pass
-            os.close(self._pid_fd)
+            if IS_WINDOWS:
+                # A locked, open file can't be deleted on Windows: unlock and close first.
+                try:
+                    os.lseek(self._pid_fd, 0, os.SEEK_SET)
+                    msvcrt.locking(self._pid_fd, msvcrt.LK_UNLCK, 1)
+                except OSError:
+                    pass
+                os.close(self._pid_fd)
+                try:
+                    os.unlink(self.pid_path)
+                except OSError:
+                    pass
+            else:
+                try:
+                    os.unlink(self.pid_path)
+                except OSError:
+                    pass
+                os.close(self._pid_fd)
             self._pid_fd = None
 
     # ---- exited.json ----------------------------------------------------
@@ -389,7 +406,9 @@ class Daemon:
     def _tick(self) -> None:
         now = time.time()
         assert self._listener is not None
-        rlist: List[int] = [self._listener.fileno(), self._wake_r]
+        assert self._wake_r is not None
+        wake_fd = self._wake_r.fileno()
+        rlist: List[int] = [self._listener.fileno(), wake_fd]
         wlist: List[int] = []
         masters: Dict[int, Session] = {}
         for conn in self.conns.values():
@@ -397,13 +416,19 @@ class Daemon:
             if conn.out:
                 wlist.append(conn.fileno())
         for s in self.sessions.values():
-            if s.master_fd is None:
+            if not s.master_open:
                 continue
-            masters[s.master_fd] = s
-            rlist.append(s.master_fd)
+            fd = s.term.fileno()
+            masters[fd] = s
+            rlist.append(fd)
             if s.inq:
-                wlist.append(s.master_fd)
-        rr, ww, _ = select.select(rlist, wlist, [], self._next_timeout(now))
+                wlist.append(fd)
+        timeout = self._next_timeout(now)
+        if IS_WINDOWS and not wlist:
+            # Windows' select can't be woken by a terminal's exit (that arrives on a thread),
+            # so poll for it every so often.
+            timeout = min(timeout, 0.25)
+        rr, ww, _ = select.select(rlist, wlist, [], timeout)
         for fd in ww:
             if fd in self.conns:
                 self._flush(self.conns[fd])
@@ -412,18 +437,19 @@ class Daemon:
         for fd in rr:
             if fd == self._listener.fileno():
                 self._accept()
-            elif fd == self._wake_r:
+            elif fd == wake_fd:
                 self._drain_wake()
             elif fd in self.conns:
                 self._read_conn(self.conns[fd])
-            elif fd in masters and masters[fd].master_fd == fd:
+            elif fd in masters and masters[fd].master_open:
                 self._read_master(masters[fd])
         self._housekeeping(time.time())
 
     def _drain_wake(self) -> None:
+        assert self._wake_r is not None
         try:
             while True:
-                data = os.read(self._wake_r, 4096)
+                data = self._wake_r.recv(4096)
                 if not data:
                     break
                 if b'T' in data and self._stop is None:
@@ -435,16 +461,16 @@ class Daemon:
         for s in list(self.sessions.values()):
             if not s.running:
                 continue
-            if s.pid is not None:
+            if s.term is not None:
                 self._reap(s)
             if not s.running:
                 continue
             if s.kill_at is not None and now >= s.kill_at:
                 s.kill_at = None
-                self._killpg(s, signal.SIGKILL)
+                self._killpg(s, SIGKILL)
             if s.nudge_at is not None and now >= s.nudge_at:
                 s.nudge_at = None
-                if s.master_fd is not None and s.cols and s.rows:
+                if s.master_open and s.cols and s.rows:
                     self._winsize(s, s.cols, s.rows)
         running = any(s.running for s in self.sessions.values())
         if running or self.conns:
@@ -463,7 +489,7 @@ class Daemon:
         except OSError:
             return
         sock.setblocking(False)
-        self.conns[sock.fileno()] = Conn(sock)
+        self.conns[sock.fileno()] = Conn(sock, self._token)
 
     def _close_conn(self, conn: Conn) -> None:
         fd = conn.fileno()
@@ -484,6 +510,14 @@ class Daemon:
         if not data:
             self._close_conn(conn)
             return
+        if not conn.gate.passed:
+            ok, data = conn.gate.feed(data)
+            if ok is False:
+                self._log('connection with a bad token; closed')
+                self._close_conn(conn)
+                return
+            if not ok or not data:
+                return
         for kind, payload in conn.decoder.feed(data):
             if conn.fileno() not in self.conns:
                 break
@@ -580,27 +614,17 @@ class Daemon:
         env['TERM'] = 'xterm-256color'
         env['COLORTERM'] = 'truecolor'
         env['AGENT_SESSIONS_ID'] = id
-        pid, master = pty.fork()
-        if pid == 0:
-            try:
-                try:
-                    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
-                except (ValueError, OSError):
-                    pass
-                _set_winsize(0, cols, rows)
-                os.chdir(cwd)
-                os.execvpe(argv[0], argv, env)
-            except BaseException as e:  # noqa: BLE001 — no matter what happens, the child must exec or _exit
-                try:
-                    os.write(2, ('agent-sessions daemon: %s\r\n' % e).encode('utf-8', 'replace'))
-                except OSError:
-                    pass
-            os._exit(127)
-        os.set_blocking(master, False)
-        s = Session(id, agent, cwd, pid, master, time.time())
+        try:
+            term = ptyproc.spawn(argv, env, cwd, cols, rows)
+        except OSError as e:
+            # Unix reports a bad command from the child (exit 127); Windows can only fail here.
+            self._log('start %s failed: %s' % (id, e))
+            self._reply(conn, seq, {'ok': False, 'error': 'spawn-failed', 'message': str(e)})
+            return
+        s = Session(id, agent, cwd, term.pid, term, time.time())
         self.sessions[id] = s
         self._winsize(s, cols, rows)
-        self._log('start %s pid=%d argv=%r cwd=%s' % (id, pid, argv, cwd))
+        self._log('start %s pid=%d argv=%r cwd=%s' % (id, term.pid, argv, cwd))
         self._reply(conn, seq, {'ok': True})
 
     def _op_attach(self, conn: Conn, seq: int, req: Dict[str, Any]) -> None:
@@ -636,9 +660,9 @@ class Daemon:
         # bottom of the screen gets redrawn. If the size is unchanged, no
         # SIGWINCH is emitted: Claude Code redraws the whole screen on
         # SIGWINCH, which would wipe out the screen we just replayed.
-        if size_changed and s.master_fd is not None and s.rows > 1:
+        if size_changed and s.master_open and s.rows > 1:
             try:
-                _set_winsize(s.master_fd, s.cols, s.rows - 1)
+                s.term.set_size(s.cols, s.rows - 1)
             except OSError:
                 pass
             s.nudge_at = time.time() + NUDGE_DELAY
@@ -660,7 +684,7 @@ class Daemon:
         if s is None:
             self._reply(conn, seq, {'ok': False, 'error': 'no-session'})
             return
-        if s.running and s.pid is not None:
+        if s.running and s.term is not None:
             self._killpg(s, sig)
             if sig == signal.SIGTERM and s.kill_at is None:
                 s.kill_at = time.time() + KILL_GRACE
@@ -706,10 +730,10 @@ class Daemon:
 
     def _winsize(self, s: Session, cols: int, rows: int) -> None:
         s.cols, s.rows = cols, rows
-        if s.master_fd is None:
+        if not s.master_open:
             return
         try:
-            _set_winsize(s.master_fd, cols, rows)
+            s.term.set_size(cols, rows)
         except OSError:
             pass
 
@@ -717,15 +741,15 @@ class Daemon:
 
     def _input(self, conn: Conn, data: bytes) -> None:
         s = conn.attached
-        if s is None or s.master_fd is None:
+        if s is None or not s.master_open:
             return
         s.inq.extend(data)
         self._write_master(s)
 
     def _write_master(self, s: Session) -> None:
-        while s.inq and s.master_fd is not None:
+        while s.inq and s.master_open:
             try:
-                n = os.write(s.master_fd, bytes(s.inq[:READ_SIZE]))
+                n = s.term.write(bytes(s.inq[:READ_SIZE]))
             except (BlockingIOError, InterruptedError):
                 return
             except OSError:
@@ -734,24 +758,20 @@ class Daemon:
             del s.inq[:n]
 
     def _read_master(self, s: Session) -> None:
-        if s.master_fd is None:
+        if not s.master_open:
             return
         try:
-            data = os.read(s.master_fd, READ_SIZE)
+            data = s.term.read(READ_SIZE)
         except (BlockingIOError, InterruptedError):
             return
         except OSError as e:
-            if e.errno == errno.EIO:
-                data = b''
-            else:
-                self._log('read %s: %s' % (s.id, e))
-                data = b''
+            self._log('read %s: %s' % (s.id, e))
+            data = b''
         if not data:
             self._close_master(s)
             if s.eof_at is None:
                 s.eof_at = time.time()
-            if s.pid is not None:
-                self._reap(s)
+            self._reap(s)
             return
         s.append_output(data)
         self._broadcast(s, protocol.encode(protocol.FRAME_D, data))
@@ -759,9 +779,9 @@ class Daemon:
     def _drain_master(self, s: Session) -> None:
         """Drains any output still left on the master after an exit has
         already been detected."""
-        while s.master_fd is not None:
+        while s.master_open:
             try:
-                data = os.read(s.master_fd, READ_SIZE)
+                data = s.term.read(READ_SIZE)
             except (BlockingIOError, InterruptedError, OSError):
                 break
             if not data:
@@ -770,39 +790,38 @@ class Daemon:
             self._broadcast(s, protocol.encode(protocol.FRAME_D, data))
 
     def _close_master(self, s: Session) -> None:
-        if s.master_fd is None:
+        if not s.master_open:
             return
-        try:
-            os.close(s.master_fd)
-        except OSError:
-            pass
-        s.master_fd = None
+        s.term.close()
+        s.master_open = False
         s.inq.clear()
 
     def _killpg(self, s: Session, sig: int) -> None:
-        if s.pid is None:
+        if s.term is None:
             return
         try:
-            os.killpg(s.pid, sig)
-        except ProcessLookupError:
-            pass
+            if sig == signal.SIGTERM:
+                s.term.terminate()
+            elif sig == SIGKILL:
+                s.term.kill()
+            elif not IS_WINDOWS:
+                s.term.signal(sig)
         except OSError as e:
             self._log('kill %s: %s' % (s.id, e))
 
     def _reap(self, s: Session, notify: bool = True) -> bool:
-        """Calls `waitpid(WNOHANG)`. If the child can be reaped, performs
-        exit cleanup and returns True."""
-        if not s.running or s.pid is None:
+        """Polls the child. If it has exited, performs exit cleanup and returns True."""
+        if not s.running or s.term is None:
             return True
         try:
-            pid, status = os.waitpid(s.pid, os.WNOHANG)
-        except ChildProcessError:
-            pid, status = s.pid, None
-        if pid == 0:
+            code = s.term.poll()
+        except OSError:
+            code = -1
+        if code is None:
             return False
-        code = -1 if status is None else os.waitstatus_to_exitcode(status)
         self._drain_master(s)
         self._close_master(s)
+        s.term.release()
         s.exited = code
         s.exited_at = time.time()
         s.kill_at = None

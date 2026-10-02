@@ -11,11 +11,11 @@ for a response (EOF, `ECONNRESET`). Waits for the response with no timeout. `SIG
 
 import os
 import signal
-import socket
+import subprocess
 import sys
 from typing import List
 
-from .. import config, i18n
+from .. import config, i18n, transport
 from ..daemon import protocol
 
 READ_SIZE = 65536
@@ -23,6 +23,10 @@ SOCK_ENV = 'AGENT_SESSIONS_PLUGIN_SOCK'
 
 
 def _fallback(file: str) -> None:
+    if transport.IS_WINDOWS:
+        # No exec on Windows: run the editor and exit with its status.
+        editor = os.environ.get('AGENT_SESSIONS_FALLBACK_EDITOR') or 'notepad'
+        sys.exit(subprocess.call([editor, file]))
     editor = os.environ.get('AGENT_SESSIONS_FALLBACK_EDITOR') or 'vi'
     os.execvp(editor, [editor, file])
 
@@ -34,13 +38,11 @@ def main(args: List[str]) -> int:
     file = os.path.abspath(args[0])
     sock_path = os.environ.get(SOCK_ENV) or config.PLUGIN_SOCK_PATH
 
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
-        sock.connect(sock_path)
+        sock = transport.connect(sock_path)
     except OSError:
         # The plugin isn't running, or the socket doesn't exist. Fall back to the
         # ordinary editor.
-        sock.close()
         _fallback(file)
         return 1   # execvp doesn't normally return; this is a safety net for when it's mocked.
 
@@ -53,7 +55,7 @@ def main(args: List[str]) -> int:
         sys.exit(1)
 
     old_int = signal.signal(signal.SIGINT, _cancel)
-    old_term = signal.signal(signal.SIGTERM, _cancel)
+    old_term = signal.signal(signal.SIGTERM, _cancel)   # never delivered on Windows; harmless
     try:
         req = {
             'op': 'edit',

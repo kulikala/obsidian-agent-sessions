@@ -9,12 +9,12 @@ This only parses arguments and starts the daemon; the daemon itself lives in
 
 import argparse
 import os
-import socket
+import subprocess
 import sys
 import time
 from typing import Any, Dict, List, Optional
 
-from .. import config, i18n
+from .. import config, i18n, transport
 from ..daemon import protocol
 from ..daemon.server import DEFAULT_IDLE_EXIT, AlreadyRunning, Daemon
 
@@ -30,10 +30,11 @@ def _control_request(sock_path: str, op: str, **fields: Any) -> Optional[Dict[st
     `None` if the daemon isn't up (can't connect to the socket), doesn't respond, or
     sends something malformed — the caller may treat that as "already stopped".
     """
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
-        sock.settimeout(_CONTROL_TIMEOUT)
-        sock.connect(sock_path)
+        sock = transport.connect(sock_path, _CONTROL_TIMEOUT)
+    except OSError:
+        return None
+    try:
         decoder = protocol.Decoder()
         seq = 0
 
@@ -67,15 +68,11 @@ def _control_request(sock_path: str, op: str, **fields: Any) -> Optional[Dict[st
 def _is_reachable(sock_path: str) -> bool:
     """Whether the socket is connectable (no `hello` sent — a lightweight check used only
     while `--stop` waits for the daemon to actually go down)."""
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     try:
-        sock.settimeout(0.5)
-        sock.connect(sock_path)
+        transport.connect(sock_path, 0.5).close()
         return True
     except OSError:
         return False
-    finally:
-        sock.close()
 
 
 def _running_sessions(sock_path: str) -> List[Dict[str, Any]]:
@@ -120,6 +117,35 @@ def _redirect_to_log(log_path: str) -> None:
     os.close(log)
 
 
+DETACHED_PROCESS = 0x00000008
+CREATE_NEW_PROCESS_GROUP = 0x00000200
+CREATE_BREAKAWAY_FROM_JOB = 0x01000000
+CREATE_NO_WINDOW = 0x08000000
+
+
+def _detach_windows(args: List[str], log_path: str) -> int:
+    """Starts the daemon as a detached process with no console, out of the caller's job when
+    allowed (so closing Obsidian, whose job the plugin's spawn may sit in, doesn't take the
+    daemon and its sessions down with it)."""
+    argv = [sys.executable, os.path.abspath(sys.argv[0]), 'daemon'] + [a for a in args if a != '--detach']
+    flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
+    log = open(log_path, 'ab')
+    try:
+        for extra in (CREATE_BREAKAWAY_FROM_JOB, 0):
+            try:
+                p = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                                     creationflags=flags | extra, close_fds=True)
+                break
+            except OSError:
+                if not extra:
+                    raise
+    finally:
+        log.close()
+    sys.stdout.write('%d\n' % p.pid)
+    sys.stdout.flush()
+    return 0
+
+
 def main(args: List[str]) -> int:
     ns = parse_args(args)
 
@@ -147,6 +173,11 @@ def main(args: List[str]) -> int:
     except OSError as e:
         sys.stderr.write(i18n.t('cmd.cannot_start_daemon', error=e, path=d.sock_path) + '\n')
         return 1
+    if ns.detach and transport.IS_WINDOWS:
+        # No fork on Windows: release what bind() took, start a detached copy of this
+        # command without --detach, and report its pid.
+        d.close_unstarted()
+        return _detach_windows(args, d.log_path)
     if ns.detach:
         sys.stdout.flush()
         sys.stderr.flush()
