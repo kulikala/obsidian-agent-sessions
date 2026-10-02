@@ -390,3 +390,10 @@ class TestSetupCommand(SkillsTestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class WindowsLauncherTest(unittest.TestCase):
+    def test_a_cmd_launcher_is_written_unquoted_with_forward_slashes(self) -> None:
+        text = skills.render('agent-sessions', r'C:\Users\a\AppData\Local\agent-sessions\bin\agent-sessions.cmd', ['claude'])
+        self.assertIn('C:/Users/a/AppData/Local/agent-sessions/bin/agent-sessions.cmd stats', text)
+        self.assertNotIn('"C:', text)

@@ -129,6 +129,11 @@ def render(name: str, launcher: str, agents: Optional[List[str]] = None) -> str:
     text = '\n'.join(out)
     for key, value in tokens.items():
         text = text.replace('{{%s}}' % key, value)
+    if launcher.lower().endswith('.cmd'):
+        # Windows: the agents run these through PowerShell (or Git Bash), which take the launcher
+        # unquoted, with forward slashes (as the hooks name it; see `claude.setup`).
+        from ..claude.setup import windows_command_path
+        text = text.replace('"{{LAUNCHER}}"', windows_command_path(launcher))
     return text.replace('{{MARKER}}', MARKER).replace('{{LAUNCHER}}', launcher)
 
 
