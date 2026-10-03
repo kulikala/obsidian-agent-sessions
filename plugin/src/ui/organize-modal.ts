@@ -29,8 +29,8 @@ import { sessionDisplayName } from "../sessions/name";
 import { splitName } from "../sessions/tree";
 import { parseEnvLines, type AgentId } from "../settings";
 import { renderCategoryChip } from "./chip";
-import { viewAfterRun, type OrganizeView } from "./organize-view";
-import { buildCategorySuggest, type CategorySuggest } from "./modals";
+import { reviewState, viewAfterRun, type OrganizeView } from "./organize-view";
+import { createRoundCheck, type RoundCheck } from "./round-check";
 import { paletteHueDeg } from "../sessions/category";
 
 const DETAIL_CONCURRENCY = 4;
@@ -44,10 +44,10 @@ interface ReviewRow {
 	/** The first prompt, shown when the model gave no summary. */
 	fallback: string;
 	el: HTMLElement;
-	checkEl: HTMLInputElement;
+	check: RoundCheck;
 	chipEl: HTMLElement;
-	categoryEl: HTMLInputElement;
-	/** The suggested name: shown as text, changed only by a new suggestion. */
+	/** The suggested category and name: shown as text, changed only by a new suggestion. */
+	category: string;
 	name: string;
 	nameEl: HTMLElement;
 	summaryEl: HTMLElement;
@@ -71,7 +71,6 @@ export class OrganizeModal extends Modal {
 	private listEl!: HTMLElement;
 	private abort: AbortController | null = null;
 	private reviewRows: ReviewRow[] = [];
-	private suggests: CategorySuggest[] = [];
 	private ticker: number | null = null;
 
 	constructor(private plugin: AgentSessionsPlugin) {
@@ -156,7 +155,6 @@ export class OrganizeModal extends Modal {
 	onClose(): void {
 		this.abort?.abort();
 		this.stopTicker();
-		this.destroySuggests();
 		this.contentEl.empty();
 	}
 
@@ -170,8 +168,9 @@ export class OrganizeModal extends Modal {
 		this.resultActionsEl.empty();
 		const setting = new Setting(this.resultActionsEl);
 		setting.addButton((b) => b.setButtonText(t("action.cancel")).onClick(() => this.close()));
-		const unchecked = this.reviewRows.filter((r) => !r.checkEl.checked).length;
-		if (unchecked > 0) {
+		const state = reviewState(this.reviewRows.map((r) => r.check.get()));
+		const unchecked = state.unchecked;
+		if (state.showResuggest) {
 			setting.addButton((b) =>
 				b.setButtonText(t("organize.resuggest", { count: unchecked })).onClick(() => void this.resuggest())
 			);
@@ -186,16 +185,10 @@ export class OrganizeModal extends Modal {
 			b
 				.setButtonText(t("organize.apply"))
 				.setCta()
+				.setDisabled(!state.canApply)
 				.onClick(() => void this.applySelected())
 		);
-		this.overallEl.toggle(unchecked > 0);
-	}
-
-	private destroySuggests(): void {
-		for (const s of this.suggests) {
-			s.destroy();
-		}
-		this.suggests = [];
+		this.overallEl.toggle(state.showResuggest);
 	}
 
 	// ---- Progress -----------------------------------------------------------------
@@ -335,7 +328,6 @@ export class OrganizeModal extends Modal {
 				this.log(t("organize.logMissing", { count: rows.length - suggestions.length }));
 			}
 			this.setStatus(rows.length >= ORGANIZE_BATCH_CAP ? t("organize.cap", { count: rows.length }) : "");
-			this.destroySuggests();
 			this.listEl.empty();
 			this.reviewRows = [];
 			this.overallEl.value = "";
@@ -347,7 +339,7 @@ export class OrganizeModal extends Modal {
 	/** Asks again for the unchecked rows only, with the user's comments; the checked ones stay. */
 	private async resuggest(): Promise<void> {
 		const agent = this.agent;
-		const targets = this.reviewRows.filter((r) => !r.checkEl.checked);
+		const targets = this.reviewRows.filter((r) => !r.check.get());
 		if (!agent || targets.length === 0) {
 			return;
 		}
@@ -358,7 +350,7 @@ export class OrganizeModal extends Modal {
 				this.plugin.index.categories(),
 				targets.map((r) => ({
 					id: r.row.id,
-					previous: { category: r.categoryEl.value.trim(), name: r.name },
+					previous: { category: r.category, name: r.name },
 					comment: r.commentEl.value,
 				})),
 				overall
@@ -411,19 +403,18 @@ export class OrganizeModal extends Modal {
 		header.createSpan({ text: t("organize.colCurrent") });
 		header.createSpan({ text: t("organize.colSuggested") });
 		header.createSpan({ text: t("organize.colApply"), cls: "agent-sessions-organize-cell-check" });
-		const categories = this.plugin.index.categories();
 		for (const suggestion of suggestions) {
 			const found = byId.get(suggestion.id);
 			if (!found) {
 				continue;
 			}
-			this.reviewRows.push(this.renderRow(found.row, found.candidate, suggestion, categories));
+			this.reviewRows.push(this.renderRow(found.row, found.candidate, suggestion));
 		}
 		this.refreshChips();
 		this.renderActions();
 	}
 
-	private renderRow(row: Row, candidate: OrganizeCandidate, suggestion: Suggestion, categories: string[]): ReviewRow {
+	private renderRow(row: Row, candidate: OrganizeCandidate, suggestion: Suggestion): ReviewRow {
 		const el = this.listEl.createDiv({ cls: "agent-sessions-organize-row" });
 
 		// Current: chip + name on the first line, the session summary muted below.
@@ -439,52 +430,49 @@ export class OrganizeModal extends Modal {
 		const fallback = excerpt(candidate.firstPrompt, SUMMARY_FALLBACK_MAX);
 		const summaryEl = current.createDiv({ cls: "agent-sessions-organize-summary" });
 
-		// Suggested: chip (the category input inside it) + the name as plain text.
+		// Suggested: the category as a read-only chip + the name as plain text.
 		const suggested = el.createDiv({ cls: "agent-sessions-organize-cell-suggested" });
 		suggested.createSpan({ text: "→", cls: "agent-sessions-organize-arrow" }).setAttr("aria-hidden", "true");
-		const chipEl = suggested.createSpan({ cls: "agent-sessions-row-chip agent-sessions-organize-chip-edit" });
-		const categoryEl = chipEl.createEl("input", { type: "text", cls: "agent-sessions-organize-chip-input" });
-		categoryEl.placeholder = t("organize.categoryPlaceholder");
+		const chipEl = suggested.createSpan({ cls: "agent-sessions-row-chip agent-sessions-organize-chip" });
 		const nameEl = suggested.createSpan({ cls: "agent-sessions-organize-suggested-name" });
 
 		const checkWrap = el.createDiv({ cls: "agent-sessions-organize-cell-check" });
-		const checkEl = checkWrap.createEl("input", { type: "checkbox" });
-
 		const commentEl = el.createEl("input", {
 			type: "text",
 			cls: "agent-sessions-organize-comment",
 			placeholder: t("organize.commentPlaceholder"),
 		});
+		const check = createRoundCheck(checkWrap, {
+			value: true,
+			label: t("organize.applyThis"),
+			onChange: (value) => {
+				el.toggleClass("is-unchecked", !value);
+				this.renderActions();
+			},
+		});
+		// The whole cell is the hit area.
+		checkWrap.addEventListener("click", (evt) => {
+			if (evt.target === checkWrap) {
+				check.el.click();
+			}
+		});
 
-		const entry: ReviewRow = { row, candidate, fallback, el, checkEl, chipEl, categoryEl, name: "", nameEl, summaryEl, commentEl };
+		const entry: ReviewRow = { row, candidate, fallback, el, check, chipEl, category: "", name: "", nameEl, summaryEl, commentEl };
 		this.fillRow(entry, suggestion);
-
-		checkEl.addEventListener("change", () => {
-			el.toggleClass("is-unchecked", !checkEl.checked);
-			this.renderActions();
-		});
-		categoryEl.addEventListener("input", () => {
-			this.sizeChipInput(categoryEl);
-			this.refreshChips();
-		});
-		this.bindCategoryInput(categoryEl, categories);
 		return entry;
 	}
 
-	/** Puts a suggestion into a row's fields, re-ticking it when it would change the name. */
+	/** Puts a suggestion into a row, re-ticking it when it would change the name. */
 	private fillRow(entry: ReviewRow, suggestion: Suggestion): void {
-		entry.categoryEl.value = suggestion.category;
+		entry.category = suggestion.category.trim();
 		entry.name = suggestion.name;
+		entry.chipEl.setText(entry.category || t("organize.noCategory"));
 		entry.nameEl.setText(suggestion.name);
 		entry.summaryEl.setText(suggestion.summary || entry.fallback);
 		entry.summaryEl.setAttr("title", suggestion.summary || entry.fallback);
-		entry.checkEl.checked = changesName(entry.row.name, suggestion);
-		entry.el.toggleClass("is-unchecked", !entry.checkEl.checked);
-		this.sizeChipInput(entry.categoryEl);
-	}
-
-	private sizeChipInput(inputEl: HTMLInputElement): void {
-		inputEl.size = Math.max(6, Array.from(inputEl.value || inputEl.placeholder).length + 1);
+		const on = changesName(entry.row.name, suggestion);
+		entry.check.set(on);
+		entry.el.toggleClass("is-unchecked", !on);
 	}
 
 	/**
@@ -492,7 +480,7 @@ export class OrganizeModal extends Modal {
 	 * its color, new ones get the slots they will be assigned (in row order), nothing is saved.
 	 */
 	private refreshChips(): void {
-		const values = this.reviewRows.map((r) => r.categoryEl.value.trim());
+		const values = this.reviewRows.map((r) => r.category);
 		const colorFor = this.plugin.index.categoryColorPreview(values.filter((v) => v));
 		this.reviewRows.forEach((r, i) => {
 			const category = values[i];
@@ -501,48 +489,14 @@ export class OrganizeModal extends Modal {
 		});
 	}
 
-	private bindCategoryInput(inputEl: HTMLInputElement, categories: string[]): void {
-		const suggest = buildCategorySuggest(
-			inputEl,
-			categories,
-			(c) => this.plugin.index.categoryColorIndex(c),
-			(cat) => {
-				inputEl.value = cat;
-				this.sizeChipInput(inputEl);
-				this.refreshChips();
-				suggest.close();
-			}
-		);
-		this.suggests.push(suggest);
-		inputEl.addEventListener("focus", () => suggest.openFor(inputEl.value));
-		inputEl.addEventListener("input", () => suggest.openFor(inputEl.value));
-		inputEl.addEventListener("keydown", (evt) => {
-			if (!suggest.isOpen()) {
-				return;
-			}
-			if (evt.key === "ArrowDown" || evt.key === "ArrowUp") {
-				evt.preventDefault();
-				suggest.moveHighlight(evt.key === "ArrowDown" ? 1 : -1);
-			} else if (evt.key === "Enter") {
-				evt.preventDefault();
-				suggest.confirmHighlighted();
-			} else if (evt.key === "Escape") {
-				evt.preventDefault();
-				evt.stopPropagation();
-				suggest.close();
-			}
-		});
-		inputEl.addEventListener("blur", () => window.setTimeout(() => suggest.close(), 0));
-	}
-
 	// ---- Applying -----------------------------------------------------------------
 
 	/** One at a time, through `renameSession` (the row menu's path): each may start the session
 	 * headless to send `/rename`, so they are not run in parallel. */
 	private async applySelected(): Promise<void> {
 		const picked = this.reviewRows
-			.filter((r) => r.checkEl.checked)
-			.map((r) => ({ id: r.row.id, name: fullName(r.categoryEl.value, r.name) }))
+			.filter((r) => r.check.get())
+			.map((r) => ({ id: r.row.id, name: fullName(r.category, r.name) }))
 			.filter((p) => p.name);
 		if (picked.length === 0) {
 			return;

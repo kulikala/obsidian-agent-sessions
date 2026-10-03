@@ -2559,15 +2559,33 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	grid-template-areas: "current suggested check";
 	gap: var(--size-4-1) var(--size-4-3);
 	align-items: center;
-	padding: var(--size-4-2) 0;
+	padding: var(--size-4-2) var(--size-4-2) var(--size-4-2) var(--size-4-3);
 	border-bottom: 1px solid var(--background-modifier-border);
+	border-left: 3px solid var(--interactive-accent);
+	background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary));
+}
+
+/* Skipped rows: no tint, no accent edge, the proposal dimmed and its name struck through. */
+.agent-sessions-organize-row.is-unchecked {
+	border-left-color: transparent;
+	background: transparent;
+}
+
+.agent-sessions-organize-row.is-unchecked .agent-sessions-organize-cell-suggested {
+	opacity: 0.45;
+}
+
+.agent-sessions-organize-row.is-unchecked .agent-sessions-organize-suggested-name {
+	text-decoration: line-through;
+	color: var(--text-muted);
 }
 
 .agent-sessions-organize-row.is-header {
 	position: sticky;
 	top: 0;
 	z-index: 1;
-	padding: var(--size-4-1) 0;
+	padding: var(--size-4-1) var(--size-4-2) var(--size-4-1) var(--size-4-3);
+	border-left-color: transparent;
 	background: var(--background-primary);
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
@@ -2627,33 +2645,60 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 
 .agent-sessions-organize-cell-check {
 	grid-area: check;
-	justify-self: center;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	align-self: stretch;
+	min-height: 40px;
+	cursor: pointer;
 }
 
-/* The chip itself holds the category input, colored by the palette slot it will get. */
-.agent-sessions-organize-chip-edit {
+/* The apply toggle: a hollow circle, filled with the accent and a check mark when on. */
+.agent-sessions-round-check {
 	display: inline-flex;
 	align-items: center;
-	padding: 0 var(--size-4-1);
+	justify-content: center;
+	box-sizing: border-box;
+	width: 28px;
+	height: 28px;
+	border: 2px solid var(--background-modifier-border-hover);
+	border-radius: 50%;
+	background: transparent;
+	color: transparent;
+	cursor: pointer;
+	transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
-.agent-sessions-organize-chip-edit.is-empty {
+.agent-sessions-round-check .svg-icon {
+	width: 16px;
+	height: 16px;
+	stroke-width: 3;
+}
+
+.agent-sessions-round-check:hover {
+	border-color: var(--interactive-accent);
+}
+
+.agent-sessions-round-check.is-on {
+	border-color: var(--interactive-accent);
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.agent-sessions-round-check.is-on:hover {
+	background: var(--interactive-accent-hover);
+	border-color: var(--interactive-accent-hover);
+}
+
+.agent-sessions-round-check:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+/* The suggested category: a plain chip, colored by the palette slot it has or will get. */
+.agent-sessions-organize-chip.is-empty {
 	background-color: var(--background-modifier-form-field);
 	color: var(--text-faint);
-}
-
-input.agent-sessions-organize-chip-input[type="text"],
-input.agent-sessions-organize-chip-input[type="text"]:is(:hover, :active, :focus, :focus-visible, :not(:disabled):hover) {
-	height: 1.6em;
-	min-width: 0;
-	margin: 0;
-	padding: 0;
-	border: none;
-	outline: none;
-	background: transparent;
-	box-shadow: none;
-	color: inherit;
-	font-size: inherit;
 }
 
 .agent-sessions-organize-suggested-name {
@@ -2697,6 +2742,10 @@ input.agent-sessions-organize-chip-input[type="text"]:is(:hover, :active, :focus
 }
 
 @media (prefers-reduced-motion: reduce) {
+	.agent-sessions-round-check {
+		transition: none;
+	}
+
 	.agent-sessions-organize-spinner {
 		animation: none;
 		border-top-color: var(--background-modifier-border);
