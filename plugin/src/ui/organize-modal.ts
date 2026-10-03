@@ -103,7 +103,9 @@ export class OrganizeModal extends Modal {
 			el.toggle(name === view);
 		}
 		if (view !== "working") {
-			this.views[view].appendChild(this.logDetailsEl);
+			// Above the view's buttons, which stay the last row of the dialog.
+			const actions = view === "start" ? this.startActionsEl : this.resultActionsEl;
+			this.views[view].insertBefore(this.logDetailsEl, actions);
 			this.logDetailsEl.toggle(this.logCopyEl.childElementCount > 0);
 		}
 	}

@@ -2482,9 +2482,22 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 }
 
 .agent-sessions-organize-status {
-	min-height: 1.4em;
+	margin-bottom: var(--size-4-2);
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
+}
+
+.agent-sessions-organize-status:empty {
+	display: none;
+}
+
+/* Each view ends with its buttons; the space above them is the same in every view. */
+.agent-sessions-organize-actions {
+	margin-top: var(--size-4-3);
+}
+
+.agent-sessions-organize-actions > .setting-item {
+	padding-bottom: 0;
 }
 
 .agent-sessions-organize-status.is-error {
@@ -2493,8 +2506,8 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 
 /* Progress: a spinner with the ticking line, and a timestamped log of the steps. */
 .agent-sessions-organize-progress {
-	margin: var(--size-4-2) 0;
-	padding: var(--size-4-2);
+	margin: 0;
+	padding: var(--size-4-3);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-s);
 	background-color: var(--background-secondary);
@@ -2529,7 +2542,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 }
 
 .agent-sessions-organize-logdetails {
-	margin-top: var(--size-4-2);
+	margin-top: var(--size-4-3);
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 }
@@ -2550,6 +2563,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 .agent-sessions-organize-list {
 	max-height: 50vh;
 	overflow-y: auto;
+	border-top: 1px solid var(--background-modifier-border);
 }
 
 /* One row per session: current (name, summary below) | suggested | tick. Stacked when narrow. */
@@ -2557,9 +2571,9 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	display: grid;
 	grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 3.5em;
 	grid-template-areas: "current suggested check";
-	gap: var(--size-4-1) var(--size-4-3);
+	gap: var(--size-4-2) var(--size-4-4);
 	align-items: center;
-	padding: var(--size-4-2) var(--size-4-2) var(--size-4-2) var(--size-4-3);
+	padding: var(--size-4-3) var(--size-4-3) var(--size-4-3) var(--size-4-4);
 	border-bottom: 1px solid var(--background-modifier-border);
 	border-left: 3px solid var(--interactive-accent);
 	background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary));
@@ -2584,7 +2598,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	position: sticky;
 	top: 0;
 	z-index: 1;
-	padding: var(--size-4-1) var(--size-4-2) var(--size-4-1) var(--size-4-3);
+	padding: var(--size-4-2) var(--size-4-3) var(--size-4-2) var(--size-4-4);
 	border-left-color: transparent;
 	background: var(--background-primary);
 	color: var(--text-muted);
@@ -2721,7 +2735,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 
 .agent-sessions-organize-overall {
 	width: 100%;
-	margin-top: var(--size-4-2);
+	margin-top: var(--size-4-3);
 }
 
 @media (max-width: 640px) {
