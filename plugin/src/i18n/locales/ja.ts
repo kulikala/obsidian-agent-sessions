@@ -35,7 +35,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"organize.noSuggestions": "エージェントから使える提案が返りませんでした。",
 	"organize.failed": "提案を取得できませんでした: {error}",
 	"organize.colCurrent": "現在",
-	"organize.colSummary": "内容の要約",
+	"organize.showLog": "ログを表示",
 	"organize.colSuggested": "提案",
 	"organize.colApply": "適用",
 	"organize.categoryPlaceholder": "カテゴリ",

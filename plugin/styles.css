@@ -2509,10 +2509,6 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	font-size: var(--font-ui-small);
 }
 
-.agent-sessions-organize-progress.is-done .agent-sessions-organize-live {
-	display: none;
-}
-
 .agent-sessions-organize-spinner {
 	flex: 0 0 auto;
 	width: 14px;
@@ -2532,8 +2528,14 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	font-size: var(--font-ui-smaller);
 }
 
-.agent-sessions-organize-progress.is-done .agent-sessions-organize-log {
-	margin-top: 0;
+.agent-sessions-organize-logdetails {
+	margin-top: var(--size-4-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.agent-sessions-organize-logdetails > summary {
+	cursor: pointer;
 }
 
 .agent-sessions-organize-log-line.is-error {
@@ -2550,11 +2552,11 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	overflow-y: auto;
 }
 
-/* One row per session: current | summary | suggested | tick. Two lines of cells when narrow. */
+/* One row per session: current (name, summary below) | suggested | tick. Stacked when narrow. */
 .agent-sessions-organize-row {
 	display: grid;
-	grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1.5fr) 3.5em;
-	grid-template-areas: "current summary suggested check";
+	grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 3.5em;
+	grid-template-areas: "current suggested check";
 	gap: var(--size-4-1) var(--size-4-3);
 	align-items: center;
 	padding: var(--size-4-2) 0;
@@ -2575,20 +2577,21 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	grid-area: current;
 }
 .agent-sessions-organize-row.is-header > :nth-child(2) {
-	grid-area: summary;
-}
-.agent-sessions-organize-row.is-header > :nth-child(3) {
 	grid-area: suggested;
 }
 
 .agent-sessions-organize-cell-current {
 	grid-area: current;
+	min-width: 0;
+}
+
+.agent-sessions-organize-current-line {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
 	gap: var(--size-4-1);
 	min-width: 0;
-	color: var(--text-muted);
+	color: var(--text-normal);
 }
 
 .agent-sessions-organize-current-name {
@@ -2596,11 +2599,12 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	overflow-wrap: anywhere;
 }
 
-.agent-sessions-organize-cell-summary {
-	grid-area: summary;
+/* The session summary sits under the name, quieter and smaller so the two lines contrast. */
+.agent-sessions-organize-summary {
+	margin-top: var(--size-4-1);
 	min-width: 0;
 	color: var(--text-muted);
-	font-size: var(--font-ui-small);
+	font-size: var(--font-ui-smaller);
 	overflow-wrap: anywhere;
 	display: -webkit-box;
 	-webkit-line-clamp: 3;
@@ -2652,9 +2656,10 @@ input.agent-sessions-organize-chip-input[type="text"]:is(:hover, :active, :focus
 	font-size: inherit;
 }
 
-.agent-sessions-organize-input {
-	flex: 1 1 10em;
+.agent-sessions-organize-suggested-name {
+	flex: 1 1 8em;
 	min-width: 0;
+	overflow-wrap: anywhere;
 }
 
 /* The comment field belongs to an unticked row only. */
@@ -2679,7 +2684,6 @@ input.agent-sessions-organize-chip-input[type="text"]:is(:hover, :active, :focus
 		grid-template-columns: minmax(0, 1fr) auto;
 		grid-template-areas:
 			"current check"
-			"summary summary"
 			"suggested suggested";
 	}
 
@@ -2687,7 +2691,7 @@ input.agent-sessions-organize-chip-input[type="text"]:is(:hover, :active, :focus
 		display: none;
 	}
 
-	.agent-sessions-organize-cell-summary {
+	.agent-sessions-organize-summary {
 		-webkit-line-clamp: 2;
 	}
 }

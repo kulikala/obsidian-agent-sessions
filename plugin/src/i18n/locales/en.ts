@@ -34,7 +34,7 @@ export const en = {
 	"organize.noSuggestions": "The agent returned no usable suggestions.",
 	"organize.failed": "Could not get suggestions: {error}",
 	"organize.colCurrent": "Current",
-	"organize.colSummary": "Summary",
+	"organize.showLog": "Show log",
 	"organize.colSuggested": "Suggested",
 	"organize.colApply": "Apply",
 	"organize.categoryPlaceholder": "Category",
