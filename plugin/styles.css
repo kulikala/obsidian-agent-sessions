@@ -2458,6 +2458,8 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	color: var(--text-muted);
 	margin-top: 0;
 	overflow-wrap: anywhere;
+}
+
 /* ---- Organize names and categories dialog ---- */
 
 .agent-sessions-organize {
