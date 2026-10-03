@@ -195,6 +195,19 @@ export class SessionIndex extends EventEmitter {
 	}
 
 	/**
+	 * The palette slot each of `categories` will get once created, previewed without writing:
+	 * the committed ones keep theirs and the others are assigned in the order given, the way
+	 * `ensureCategoryColors` does on the next scan. Returns a lookup for any category name.
+	 */
+	categoryColorPreview(categories: string[]): (category: string) => number {
+		const colors = { ...this.categoryColors };
+		for (const category of categories) {
+			assignCategoryColor(colors, category);
+		}
+		return (category) => colors[category] ?? assignCategoryColor({ ...colors }, category);
+	}
+
+	/**
 	 * Re-reads `sessions.json` and reapplies `archived`/`categoryColors`. Lets archiving and
 	 * folding show up on screen right away without needing a full rescan.
 	 */

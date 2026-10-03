@@ -2461,12 +2461,22 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 /* ---- Organize names and categories dialog ---- */
 
 .agent-sessions-organize {
-	width: min(900px, 94vw);
+	width: min(960px, 94vw);
 }
 
 .agent-sessions-organize-intro {
 	color: var(--text-muted);
 	margin-top: 0;
+}
+
+.agent-sessions-organize-agent {
+	margin: 0 0 var(--size-4-2);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+}
+
+.agent-sessions-organize-agent.is-error {
+	color: var(--text-error);
 }
 
 .agent-sessions-organize-status {
@@ -2479,36 +2489,211 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	color: var(--text-error);
 }
 
+/* Progress: a spinner with the ticking line, and a timestamped log of the steps. */
+.agent-sessions-organize-progress {
+	margin: var(--size-4-2) 0;
+	padding: var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background-color: var(--background-secondary);
+}
+
+.agent-sessions-organize-live {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	min-height: 1.4em;
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+}
+
+.agent-sessions-organize-progress.is-done .agent-sessions-organize-live {
+	display: none;
+}
+
+.agent-sessions-organize-spinner {
+	flex: 0 0 auto;
+	width: 14px;
+	height: 14px;
+	border: 2px solid var(--background-modifier-border);
+	border-top-color: var(--interactive-accent);
+	border-radius: 50%;
+	animation: agent-sessions-spin 0.9s linear infinite;
+}
+
+.agent-sessions-organize-log {
+	max-height: 7.5em;
+	overflow-y: auto;
+	margin-top: var(--size-4-1);
+	color: var(--text-muted);
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-smaller);
+}
+
+.agent-sessions-organize-progress.is-done .agent-sessions-organize-log {
+	margin-top: 0;
+}
+
+.agent-sessions-organize-log-line.is-error {
+	color: var(--text-error);
+}
+
+.agent-sessions-organize-log-time {
+	margin-right: var(--size-4-2);
+	color: var(--text-faint);
+}
+
 .agent-sessions-organize-list {
 	max-height: 50vh;
 	overflow-y: auto;
 }
 
+/* One row per session: current | summary | suggested | tick. Two lines of cells when narrow. */
 .agent-sessions-organize-row {
 	display: grid;
-	grid-template-columns: auto minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 1.4fr);
-	gap: var(--size-4-2);
+	grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1.5fr) 3.5em;
+	grid-template-areas: "current summary suggested check";
+	gap: var(--size-4-1) var(--size-4-3);
 	align-items: center;
-	padding: var(--size-4-1) 0;
+	padding: var(--size-4-2) 0;
 	border-bottom: 1px solid var(--background-modifier-border);
 }
 
 .agent-sessions-organize-row.is-header {
 	position: sticky;
 	top: 0;
+	z-index: 1;
+	padding: var(--size-4-1) 0;
 	background: var(--background-primary);
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 }
 
-.agent-sessions-organize-current {
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+.agent-sessions-organize-row.is-header > :nth-child(1) {
+	grid-area: current;
+}
+.agent-sessions-organize-row.is-header > :nth-child(2) {
+	grid-area: summary;
+}
+.agent-sessions-organize-row.is-header > :nth-child(3) {
+	grid-area: suggested;
+}
+
+.agent-sessions-organize-cell-current {
+	grid-area: current;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--size-4-1);
+	min-width: 0;
 	color: var(--text-muted);
 }
 
+.agent-sessions-organize-current-name {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
+.agent-sessions-organize-cell-summary {
+	grid-area: summary;
+	min-width: 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+	overflow-wrap: anywhere;
+	display: -webkit-box;
+	-webkit-line-clamp: 3;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
+.agent-sessions-organize-cell-suggested {
+	grid-area: suggested;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--size-4-1);
+	min-width: 0;
+}
+
+.agent-sessions-organize-arrow {
+	color: var(--text-faint);
+}
+
+.agent-sessions-organize-cell-check {
+	grid-area: check;
+	justify-self: center;
+}
+
+/* The chip itself holds the category input, colored by the palette slot it will get. */
+.agent-sessions-organize-chip-edit {
+	display: inline-flex;
+	align-items: center;
+	padding: 0 var(--size-4-1);
+}
+
+.agent-sessions-organize-chip-edit.is-empty {
+	background-color: var(--background-modifier-form-field);
+	color: var(--text-faint);
+}
+
+input.agent-sessions-organize-chip-input[type="text"],
+input.agent-sessions-organize-chip-input[type="text"]:is(:hover, :active, :focus, :focus-visible, :not(:disabled):hover) {
+	height: 1.6em;
+	min-width: 0;
+	margin: 0;
+	padding: 0;
+	border: none;
+	outline: none;
+	background: transparent;
+	box-shadow: none;
+	color: inherit;
+	font-size: inherit;
+}
+
 .agent-sessions-organize-input {
+	flex: 1 1 10em;
+	min-width: 0;
+}
+
+/* The comment field belongs to an unticked row only. */
+.agent-sessions-organize-comment {
+	grid-column: 1 / -1;
+	display: none;
 	width: 100%;
 	min-width: 0;
+}
+
+.agent-sessions-organize-row.is-unchecked .agent-sessions-organize-comment {
+	display: block;
+}
+
+.agent-sessions-organize-overall {
+	width: 100%;
+	margin-top: var(--size-4-2);
+}
+
+@media (max-width: 640px) {
+	.agent-sessions-organize-row {
+		grid-template-columns: minmax(0, 1fr) auto;
+		grid-template-areas:
+			"current check"
+			"summary summary"
+			"suggested suggested";
+	}
+
+	.agent-sessions-organize-row.is-header {
+		display: none;
+	}
+
+	.agent-sessions-organize-cell-summary {
+		-webkit-line-clamp: 2;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.agent-sessions-organize-spinner {
+		animation: none;
+		border-top-color: var(--background-modifier-border);
+		border-right-color: var(--interactive-accent);
+	}
 }
