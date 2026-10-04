@@ -53,6 +53,8 @@ import {
 import { readObsidianTheme } from "../terminal/theme";
 import type { DaemonSession } from "../types";
 import { EditorPane, type EditResult } from "./editor-pane";
+import { planEditorSend } from "../terminal/model-switch";
+import { submitsAfterEdit } from "../backend/edit-server";
 
 export { VIEW_TYPE_TERMINAL };
 
@@ -126,6 +128,7 @@ export class TerminalView extends ItemView {
 	private exitEl!: HTMLElement;
 	/** The in-progress edit, if any. Every closing path resolves this. */
 	private pendingEdit: EditorPane | null = null;
+	private editorSwitch: { commands: string[]; text: string } | null = null;
 	private opened = false;
 	private closed = false;
 	private lastSize = { width: 0, height: 0 };
@@ -849,7 +852,12 @@ export class TerminalView extends ItemView {
 		// A prompt file the agent hasn't written yet (an empty prompt) starts the pane empty.
 		const initial = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
 		const s = this.plugin.settings;
+		// A Claude prompt edit offers the model and effort dropdowns (other edits — /memory, … — don't submit).
+		const offerModel = this.agent === "claude" && submitsAfterEdit(file, this.agent);
+		const status = offerModel ? this.plugin.index.statusline.get(this.id) : null;
+		const model = offerModel ? { display: status?.model ?? null, effort: status?.effort ?? null } : undefined;
 		const pane = new EditorPane(this.editorEl, {
+			model,
 			app: this.app,
 			vaultPath: this.plugin.vaultPath(),
 			fontFamily: s.fontFamily,
@@ -862,8 +870,16 @@ export class TerminalView extends ItemView {
 		this.editorEl.show();
 		this.scheduleFit();
 		this.updateIcon();
+		this.editorSwitch = null;
 		try {
-			return await pane.open(file, cwd, initial);
+			const result = await pane.open(file, cwd, initial);
+			if (result === "send" && model && pane.lastSend) {
+				const plan = planEditorSend(model, pane.lastSend.choice);
+				if (plan.kind === "switch") {
+					this.editorSwitch = { commands: plan.commands, text: pane.lastSend.text };
+				}
+			}
+			return result;
 		} finally {
 			if (this.pendingEdit === pane) {
 				this.pendingEdit = null;
@@ -876,6 +892,16 @@ export class TerminalView extends ItemView {
 				this.terminal.focus();
 			}
 		}
+	}
+
+	/**
+	 * The model/effort commands the last Send asked for, with its text; null for a plain send.
+	 * `main.ts`'s `handleEdit` takes it once, after the reply.
+	 */
+	takeEditorSwitch(): { commands: string[]; text: string } | null {
+		const pending = this.editorSwitch;
+		this.editorSwitch = null;
+		return pending;
 	}
 
 	/** claude's side disconnected: closes the editor pane and resolves `pendingEdit` with `cancel` (no reply is sent). */

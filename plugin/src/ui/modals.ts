@@ -8,6 +8,17 @@ import { t, type MessageKey } from "../i18n";
 import { applyChipEditResult, composeName, filterCategories, tokenizeNameInput } from "../sessions/name";
 import { AGENT_IDS, type AgentId } from "../settings";
 import { splitName } from "../sessions/tree";
+import { effortLabel, modelAliasLabel } from "./modal-labels";
+import {
+	EFFORT_CHOICES,
+	KEEP,
+	MODEL_ALIASES,
+	OTHER_MODEL,
+	planModelChange,
+	preselectedEffort,
+	preselectedModel,
+	type CurrentModel,
+} from "../terminal/model-switch";
 import { computeSuggestPosition } from "./suggest-position";
 
 const AGENT_NAME_KEY: Record<AgentId, MessageKey> = {
@@ -750,6 +761,92 @@ export class ConfirmModal extends Modal {
 						this.close();
 					})
 			);
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+}
+
+/**
+ * Model and effort for a running Claude session: a dropdown each (the current value
+ * preselected), "Other…" for a full model id. Apply hands back only the commands that differ
+ * from the current values (`planModelChange`).
+ */
+export class ChangeModelModal extends Modal {
+	private model: string;
+	private effort: string;
+	private otherId = "";
+
+	constructor(
+		plugin: AgentSessionsPlugin,
+		private current: CurrentModel,
+		private onApply: (commands: string[]) => void
+	) {
+		super(plugin.app);
+		this.model = preselectedModel(current);
+		this.effort = preselectedEffort(current);
+	}
+
+	onOpen(): void {
+		this.setTitle(t("modal.changeModel.title"));
+		const { current } = this;
+		const modelRow = new Setting(this.contentEl).setName(t("modal.changeModel.model"));
+		const otherEl = this.contentEl.createEl("input", { type: "text", cls: "agent-sessions-model-other" });
+		otherEl.placeholder = t("modal.changeModel.otherPlaceholder");
+		otherEl.hide();
+		otherEl.addEventListener("input", () => {
+			this.otherId = otherEl.value;
+		});
+		modelRow.addDropdown((dd) => {
+			if (this.model === KEEP) {
+				dd.addOption(KEEP, current.display ?? t("common.default"));
+			}
+			for (const alias of MODEL_ALIASES) {
+				dd.addOption(alias, modelAliasLabel(alias));
+			}
+			dd.addOption(OTHER_MODEL, t("modal.changeModel.other"));
+			dd.setValue(this.model);
+			dd.onChange((value) => {
+				this.model = value;
+				if (value === OTHER_MODEL) {
+					otherEl.show();
+					otherEl.focus();
+				} else {
+					otherEl.hide();
+				}
+			});
+		});
+		new Setting(this.contentEl).setName(t("modal.changeModel.effort")).addDropdown((dd) => {
+			if (this.effort === KEEP) {
+				dd.addOption(KEEP, current.effort ?? t("common.default"));
+			}
+			for (const level of EFFORT_CHOICES) {
+				dd.addOption(level, effortLabel(level));
+			}
+			dd.setValue(this.effort);
+			dd.onChange((value) => {
+				this.effort = value;
+			});
+		});
+		this.contentEl.createEl("p", { cls: "setting-item-description", text: t("modal.changeModel.note") });
+		new Setting(this.contentEl)
+			.addButton((button) => button.setButtonText(t("action.cancel")).onClick(() => this.close()))
+			.addButton((button) =>
+				button
+					.setButtonText(t("action.apply"))
+					.setCta()
+					.onClick(() => this.submit())
+			);
+	}
+
+	private submit(): void {
+		const model = this.model === OTHER_MODEL ? this.otherId.trim() : this.model;
+		const commands = planModelChange(this.current, { model, effort: this.effort });
+		this.close();
+		if (commands.length > 0) {
+			this.onApply(commands);
+		}
 	}
 
 	onClose(): void {

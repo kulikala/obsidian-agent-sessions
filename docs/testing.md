@@ -262,7 +262,9 @@ Use a test vault. For the first-run items, a vault where the plugin was never en
 - [ ] Rename: the row menu's Rename changes the name in the panel, the manager and the tab title.
 - [ ] Move to category: the dialog shows the session's name, offers the existing categories in a dropdown and accepts a new one; the row moves to that category.
 - [ ] Archive: the row leaves the side panel; in the Session Manager with archived sessions shown, "Remove from archive" brings it back.
+- [ ] The menu order is: Rename, Move to category | Change model, Compact session, Restart session | Session analytics, Copy ID | Archive, End session, with a separator between the groups (Change model, Restart and End session appear for running sessions; Change model is disabled with a tooltip for Codex and OpenCode).
 - [ ] End session and copy ID work from the menu.
+- [ ] Change model…: the dialog shows the current model and effort preselected; choosing another model and/or effort and pressing Apply sends only `/model <x>` and/or `/effort <y>` to the session, and the status line (detail pane badges) shows the new values. "Other…" takes a full model ID. A draft being typed in the prompt is kept.
 
 ### Built-in editor
 
@@ -270,6 +272,8 @@ Use a test vault. For the first-run items, a vault where the plugin was never en
 - [ ] `@` completes file names; Japanese input works in the editor.
 - [ ] Send (or the save action) returns the edited text to the agent's prompt; Esc returns to the input without sending.
 - [ ] `Ctrl+W`/`Cmd+W` while the editor is open does not close the tab.
+- [ ] A Claude prompt edit shows Model and Effort dropdowns in the bar, set to the current values; other edits (`/memory`, …) and other agents do not.
+- [ ] Changing the model or effort and pressing Send returns the text to the prompt, runs `/model` / `/effort`, and then submits the text; the prompt text arrives intact. Without a change, Send behaves as before.
 
 ### Restart session
 

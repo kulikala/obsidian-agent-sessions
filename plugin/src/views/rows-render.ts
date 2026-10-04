@@ -7,7 +7,7 @@
 // only its `rename`/`moveToCategory` closures ever touch `obsidian`, so those stay lazily
 // required — see the comment there).
 
-import { Platform, setIcon, setTooltip, Menu } from "obsidian";
+import { Platform, setIcon, setTooltip, Menu, type MenuItem } from "obsidian";
 import { moreIconId } from "../ui/icons";
 import { renderCategoryChip } from "../ui/chip";
 import type { Row } from "../sessions/index";
@@ -31,6 +31,7 @@ import {
 	type RenderRowOptions,
 	type RowActions,
 } from "./rows";
+import { rowMenuGroups, type RowMenuId } from "./row-menu";
 
 const HOVER_DELAY_MS = 300;
 
@@ -68,75 +69,58 @@ export function renderAgentMark(container: HTMLElement, agent: string): void {
 	setTooltip(mark, t(AGENT_NAME_KEY[agent]));
 }
 
-/** The row menu (rename, move to category, compact session, archive, restart session, end session, session
- * analytics, copy ID). `manager.ts`'s table opens the same menu — shared by both the `⋯` button
- * and right-click. */
+/** The row menu, in the groups `rowMenuGroups` lays out (rename and category; the running session;
+ * analytics and ID; archive and end session). `manager.ts`'s table opens the same menu — shared by
+ * both the `⋯` button and right-click. */
 export function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): void {
 	const menu = new Menu();
-	menu.addItem((item) =>
-		item
-			.setTitle(t("action.rename"))
-			.setIcon("pencil")
-			.onClick(() => actions.rename(row.id, row.name ?? ""))
-	);
-	menu.addItem((item) => {
-		item
-			.setTitle(t("action.moveToCategory"))
-			.setIcon("folder-input")
-			.onClick(() => actions.moveToCategory(row));
-		// Nothing to attach a category to yet — see `categorizableLabel`.
-		if (!categorizableLabel(row)) {
-			item.setDisabled(true);
-		}
-	});
-	const alreadyCompacted = actions.isJustCompacted?.(row.id) === true;
-	menu.addItem((item) => {
-		item
-			.setTitle(t("action.compact"))
-			.setIcon("scissors")
-			.onClick(() => actions.compact(row.id));
-		if (alreadyCompacted) {
-			item.setDisabled(true);
-		}
-	});
-	menu.addItem((item) =>
-		item
-			.setTitle(row.archived ? t("action.unarchive") : t("action.archive"))
-			.setIcon(row.archived ? "archive-restore" : "archive")
-			.onClick(() => actions.toggleArchive(row))
-	);
-	if (row.daemon) {
-		menu.addItem((item) => {
-			item
-				.setTitle(t("action.restartSession"))
-				.setIcon("rotate-cw")
-				.onClick(() => actions.restartSession(row));
-			// `MenuItem.dom` exists at runtime but isn't in the public typings.
-			setTooltip((item as unknown as { dom: HTMLElement }).dom, t("action.restartSession.hint"));
-			if (!actions.canRestart(row)) {
-				item.setDisabled(true);
+	const items: Record<RowMenuId, (item: MenuItem) => void> = {
+		rename: (item) => item.setTitle(t("action.rename")).setIcon("pencil").onClick(() => actions.rename(row.id, row.name ?? "")),
+		moveToCategory: (item) => item.setTitle(t("action.moveToCategory")).setIcon("folder-input").onClick(() => actions.moveToCategory(row)),
+		changeModel: (item) => {
+			item.setTitle(t("action.changeModel")).setIcon("cpu").onClick(() => actions.changeModel(row));
+			if (row.agent !== "claude") {
+				setItemTooltip(item, t("action.changeModel.hint"));
 			}
-		});
-		menu.addItem((item) =>
+		},
+		compact: (item) => item.setTitle(t("action.compact")).setIcon("scissors").onClick(() => actions.compact(row.id)),
+		restartSession: (item) => {
+			item.setTitle(t("action.restartSession")).setIcon("rotate-cw").onClick(() => actions.restartSession(row));
+			setItemTooltip(item, t("action.restartSession.hint"));
+		},
+		usage: (item) => item.setTitle(t("action.usage")).setIcon("bar-chart-2").onClick(() => actions.showUsage(row.id)),
+		copyId: (item) => item.setTitle(t("action.copyId")).setIcon("copy").onClick(() => actions.copyId(row.id)),
+		archive: (item) =>
 			item
-				.setTitle(t("action.endSession"))
-				.setIcon("square-x")
-				.onClick(() => actions.endSession(row.id))
-		);
-	}
-	menu.addItem((item) =>
-		item
-			.setTitle(t("action.usage"))
-			.setIcon("bar-chart-2")
-			.onClick(() => actions.showUsage(row.id))
-	);
-	menu.addItem((item) =>
-		item
-			.setTitle(t("action.copyId"))
-			.setIcon("copy")
-			.onClick(() => actions.copyId(row.id))
-	);
+				.setTitle(row.archived ? t("action.unarchive") : t("action.archive"))
+				.setIcon(row.archived ? "archive-restore" : "archive")
+				.onClick(() => actions.toggleArchive(row)),
+		endSession: (item) => item.setTitle(t("action.endSession")).setIcon("square-x").onClick(() => actions.endSession(row.id)),
+	};
+	const groups = rowMenuGroups(row, {
+		categorizable: categorizableLabel(row) !== null,
+		justCompacted: actions.isJustCompacted?.(row.id) === true,
+		canRestart: row.daemon ? actions.canRestart(row) : false,
+	});
+	groups.forEach((group, i) => {
+		if (i > 0) {
+			menu.addSeparator();
+		}
+		for (const entry of group) {
+			menu.addItem((item) => {
+				items[entry.id](item);
+				if (!entry.enabled) {
+					item.setDisabled(true);
+				}
+			});
+		}
+	});
 	menu.showAtMouseEvent(evt);
+}
+
+/** `MenuItem.dom` exists at runtime but isn't in the public typings. */
+function setItemTooltip(item: MenuItem, text: string): void {
+	setTooltip((item as unknown as { dom: HTMLElement }).dom, text);
 }
 
 /** Renders one row: `status-marker  name  time  ▣  ⋯`. `⋯` is always shown. */

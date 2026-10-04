@@ -18,6 +18,8 @@ export interface RowActions {
 	rename(id: string, currentName: string): void;
 	moveToCategory(row: Row): void;
 	compact(id: string): void;
+	/** Opens the model/effort dialog (Claude sessions running in the daemon). */
+	changeModel(row: Row): void;
 	toggleArchive(row: Row): void;
 	endSession(id: string): void;
 	restartSession(row: Row): void;
@@ -336,6 +338,13 @@ export function createRowActions(
 			new MoveToCategoryModal(plugin, category ?? "", label, sessionDisplayName(row), (name) => void plugin.renameSession(row.id, name)).open();
 		},
 		compact: (id) => void plugin.compactSession(id),
+		changeModel: (row) => {
+			// See `rename`'s comment on why `../ui/modals` is required lazily here.
+			// eslint-disable-next-line @typescript-eslint/no-require-imports -- see rename's comment above
+			const { ChangeModelModal } = require("../ui/modals") as typeof import("../ui/modals");
+			const current = { display: plugin.index.statusline.get(row.id)?.model ?? null, effort: plugin.index.statusline.get(row.id)?.effort ?? null };
+			new ChangeModelModal(plugin, current, (commands) => void plugin.applyModelCommands(row.id, commands)).open();
+		},
 		toggleArchive: (row) => {
 			if (row.archived) {
 				plugin.unarchive(row.id);

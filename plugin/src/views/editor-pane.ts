@@ -15,6 +15,16 @@ import { t } from "../i18n";
 import { indentEdit } from "../terminal/indent";
 import { classifyEnter, submitKeyButtonLabel } from "../terminal/keys";
 import type { SubmitKey } from "../settings";
+import {
+	EFFORT_CHOICES,
+	KEEP,
+	MODEL_ALIASES,
+	preselectedEffort,
+	preselectedModel,
+	type CurrentModel,
+	type ModelChoice,
+} from "../terminal/model-switch";
+import { effortLabel, modelAliasLabel } from "../ui/modal-labels";
 
 export type EditResult = "send" | "return" | "cancel";
 
@@ -27,6 +37,8 @@ export interface EditorPaneDeps {
 	submitKey: SubmitKey;
 	/** How to label "send": macOS gets a symbol, non-macOS gets spelled-out text. */
 	isMac: boolean;
+	/** Claude prompt edits only: shows the model and effort dropdowns, preselected from these. */
+	model?: CurrentModel;
 }
 
 /** How long to wait after input settles before writing to the temp file. Held by `SaveDebouncer`. */
@@ -51,6 +63,10 @@ function writeAtomic(file: string, text: string): void {
 
 export class EditorPane {
 	private textarea: HTMLTextAreaElement | null = null;
+	private modelSelect: HTMLSelectElement | null = null;
+	private effortSelect: HTMLSelectElement | null = null;
+	/** The text and the dropdowns' values as of the last Send (read by the caller after `open` resolves). */
+	lastSend: { text: string; choice: ModelChoice } | null = null;
 	private listEl: HTMLElement | null = null;
 	/** Autosave debounce (`schedule` extends it on every keystroke, `flush` writes immediately on commit). */
 	private saveDebouncer = new SaveDebouncer(AUTOSAVE_MS, () => this.writeCurrent());
@@ -115,6 +131,10 @@ export class EditorPane {
 			return;
 		}
 		this.saveDebouncer.flush();
+		this.lastSend = {
+			text: this.textarea?.value ?? "",
+			choice: { model: this.modelSelect?.value ?? KEEP, effort: this.effortSelect?.value ?? KEEP },
+		};
 		this.finish("send");
 	}
 
@@ -162,6 +182,11 @@ export class EditorPane {
 
 		const bar = root.createDiv({ cls: "agent-sessions-editor-bar" });
 		bar.createSpan({ cls: "agent-sessions-editor-file", text: path.basename(this.file) });
+		const current = this.deps.model;
+		if (current) {
+			this.modelSelect = this.addSelect(bar, t("editor.model"), preselectedModel(current), current.display, MODEL_ALIASES, modelAliasLabel);
+			this.effortSelect = this.addSelect(bar, t("editor.effort"), preselectedEffort(current), current.effort, EFFORT_CHOICES, effortLabel);
+		}
 		const send = bar.createEl("button", {
 			text: t("action.send", { key: submitKeyButtonLabel(this.deps.submitKey, this.deps.isMac) }),
 			cls: "mod-cta",
@@ -194,7 +219,31 @@ export class EditorPane {
 		this.listEl.hide();
 	}
 
+	/** A labelled dropdown in the bar; a "keep current" entry leads when the current value isn't one of the options. */
+	private addSelect(
+		bar: HTMLElement,
+		label: string,
+		selected: string,
+		currentText: string | null,
+		options: readonly string[],
+		labelOf: (value: string) => string
+	): HTMLSelectElement {
+		const wrap = bar.createEl("label", { cls: "agent-sessions-editor-select" });
+		wrap.createSpan({ text: label });
+		const select = wrap.createEl("select", { cls: "dropdown" });
+		if (selected === KEEP) {
+			select.createEl("option", { value: KEEP, text: currentText ?? t("editor.keepCurrent") });
+		}
+		for (const value of options) {
+			select.createEl("option", { value, text: labelOf(value) });
+		}
+		select.value = selected;
+		return select;
+	}
+
 	private teardown(): void {
+		this.modelSelect = null;
+		this.effortSelect = null;
 		window.removeEventListener("keydown", this.captureKeyDown, true);
 		this.closeSuggestions();
 		this.textarea = null;

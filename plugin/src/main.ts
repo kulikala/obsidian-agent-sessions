@@ -170,6 +170,11 @@ const PASTE_BEGIN = "\x1b[200~";
 const PASTE_END = "\x1b[201~";
 /** Gap between the built-in editor's "send" and the submit sequence (lets Claude read the temp file back first). */
 const SUBMIT_AFTER_EDIT_MS = 300;
+/** After a `/model` or `/effort`, how long to let the line settle before the next step. */
+const MODEL_COMMAND_SETTLE_MS = 600;
+/** How long the built-in editor's switch waits for the returned text to show in the prompt, and how often it looks. */
+const DRAFT_WAIT_MS = 3000;
+const DRAFT_POLL_MS = 150;
 /** Upper bound while waiting for `registry`'s state. */
 const WAIT_IDLE_MS = 60000;
 /** Upper bound while waiting to see `busy` after sending. Commands that never go busy (like `/rename`) give up after this. */
@@ -831,7 +836,12 @@ export default class AgentSessionsPlugin extends Plugin {
 				const { ok, error } = editReplyFor(result);
 				reply(ok, error);
 				if (result === "send" && submitsAfterEdit(req.file, view.sessionAgent)) {
-					window.setTimeout(() => view.submitPrompt(), SUBMIT_AFTER_EDIT_MS);
+					const change = view.takeEditorSwitch();
+					if (change) {
+						void this.switchThenSubmit(view, change.commands, change.text);
+					} else {
+						window.setTimeout(() => view.submitPrompt(), SUBMIT_AFTER_EDIT_MS);
+					}
 				}
 			})
 			.catch((err) => {
@@ -1695,6 +1705,56 @@ export default class AgentSessionsPlugin extends Plugin {
 			await this.sendCommand(id, "/compact", t("progress.compacting"));
 		} catch (err) {
 			new Notice(t("notice.compactFailed", { error: messageOf(err) }));
+		}
+	}
+
+	/** Sends `/model` / `/effort` commands (`planModelChange`) one after another, letting each settle. */
+	async applyModelCommands(id: string, commands: string[]): Promise<void> {
+		try {
+			await this.applyModelCommandsOrThrow(id, commands);
+		} catch (err) {
+			new Notice(t("notice.modelChangeFailed", { error: messageOf(err) }));
+		}
+	}
+
+	/**
+	 * The built-in editor's Send with a model/effort change: the text is already back in the
+	 * prompt (the reply was a return), so the commands run over it — `sendCommand` stashes a
+	 * draft around each — and the prompt is submitted last. If the draft hasn't come back by
+	 * then, it is pasted again from `text`. Without a visible draft to stash, nothing is sent:
+	 * a command typed after the text would be submitted with it.
+	 */
+	private async switchThenSubmit(view: TerminalView, commands: string[], text: string): Promise<void> {
+		await sleep(SUBMIT_AFTER_EDIT_MS);
+		const hasDraft = async (): Promise<boolean> => {
+			for (let waited = 0; waited < DRAFT_WAIT_MS; waited += DRAFT_POLL_MS) {
+				if (view.promptHasDraft() === true) {
+					return true;
+				}
+				await sleep(DRAFT_POLL_MS);
+			}
+			return view.promptHasDraft() === true;
+		};
+		try {
+			if (!(await hasDraft())) {
+				throw new Error(t("error.draftNotShown"));
+			}
+			await this.applyModelCommandsOrThrow(view.sessionId, commands);
+			if (!(await hasDraft())) {
+				view.sendBytes(Buffer.from(PASTE_BEGIN + text + PASTE_END, "utf8"));
+				await sleep(SUBMIT_AFTER_EDIT_MS);
+			}
+			view.submitPrompt();
+		} catch (err) {
+			new Notice(t("notice.modelChangeFailed", { error: messageOf(err) }));
+		}
+	}
+
+	private async applyModelCommandsOrThrow(id: string, commands: string[]): Promise<void> {
+		for (const command of commands) {
+			await this.sendCommand(id, command, t("progress.changingModel"));
+			await sleep(MODEL_COMMAND_SETTLE_MS);
+			await this.index.registry.waitFor(id, "idle", WAIT_BUSY_MS);
 		}
 	}
 

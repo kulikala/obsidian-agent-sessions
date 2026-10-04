@@ -2907,3 +2907,15 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 		border-right-color: var(--interactive-accent);
 	}
 }
+
+.agent-sessions-editor-select {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	flex: 0 0 auto;
+}
+
+.agent-sessions-model-other {
+	width: 100%;
+	margin-bottom: var(--size-4-2);
+}
