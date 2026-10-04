@@ -13,7 +13,9 @@ Run and manage [Claude Code](https://claude.com/claude-code), [Codex](https://gi
 - **Side panel** — a right-sidebar list of open tabs, running sessions, and recent sessions, plus a details pane and a 5‑hour/7‑day rate‑limit view with a live countdown.
 - **Session Manager** — a full session tree grouped by category, a sortable table (last activity, model, effort, 5h/7d cost, folder), and a usage-analytics panel: 5‑hour/7‑day stat cards, a weekly-pace projection ("on track" vs. "will run out at ‑‑"), and a per-category cost breakdown — split into a section per enabled agent when more than one is enabled.
 - **State-aware tabs and rows** — icons, colors, and motion for each session state (working, running a shell command, waiting for your answer, unread response, editing, compacted, detached, exited, error), shared between the terminal tab, the side panel, and the manager.
-- **Naming and categories** — name a session as `Category: Name`; categories get a stable color and their own group in the manager.
+- **Naming and categories** — name a session as `Category: Name`; categories get a stable color and their own group in the manager. **Organize names and categories** (⋯ menu) proposes names and categories for recent sessions from their latest prompt and reply, using the agent you already have (Claude Code, else Codex, else OpenCode); you review the proposals, and nothing changes until you press Apply. It sends session excerpts to that agent — see [Disclosures](#disclosures).
+- **Restart session** — in a session's row menu: ends the agent and resumes the same conversation in the same tab, to pick up changed settings, hooks, skills, or environment.
+- **Welcome guide** — a short guide on first install and after updates: what Agent Sessions is, how to use sessions, installing the program, and the first settings.
 - **Built‑in editor** — press Ctrl+G inside a session to edit the current prompt (or `/memory`, `/keybindings`, etc.) in a split pane under the terminal, with `@`-file completion, autosave, and paste/IME/undo handled natively. The terminal output stays visible while you edit.
 - **Navigation helpers** — file paths printed in the output become clickable links into the vault, "insert current note as `@path`", and jump buttons for the previous/next prompt and the last response.
 - **Session and usage analytics** — per-session token/cost breakdown with a turn-by-turn table, and account-wide 5‑hour/7‑day usage totals, computed from each agent's own transcripts.
@@ -26,11 +28,34 @@ Run and manage [Claude Code](https://claude.com/claude-code), [Codex](https://gi
 
 ![A Codex session waiting for approval, while a notice reports that a Claude Code session in another tab has finished](docs/images/codex.png)
 
+<!-- Images for the welcome guide and the organize dialog: adjust or remove here. -->
+![The welcome guide](docs/images/welcome.png)
+
+![The Organize names and categories dialog, with a suggested category and name for each session](docs/images/organize.png)
+
 ## Supported environments
+
+| Setup | Supported | Verification |
+|---|---|---|
+| macOS | Yes | Smoke test (all 15 steps) passed on macOS 26.6, Python 3.14 |
+| Linux (Ubuntu Desktop) | Yes | Smoke test passed on Ubuntu 24.04 (kernel 6.8), Python 3.12 |
+| Windows ①: Windows Obsidian + Windows Claude Code | Yes, Claude Code only | Smoke test passed on Windows 11 build 26300, Python 3.13 |
+| Windows ②: Windows Obsidian + WSL1 Claude Code | No | — |
+| Windows ③: Windows Obsidian + WSL2 Claude Code | No | — |
+| Windows ④: WSLg Linux Obsidian + WSL2 Claude Code | Yes | Supported; not yet verified — steps in [`docs/testing.md`](docs/testing.md#4-platform--checks) |
+
+The smoke test ran on 2026-10-04 on arm64 virtual machines with Obsidian 1.13.7 and a fake agent ([`docs/testing.md`](docs/testing.md)). Windows 10 1809 and later has the ConPTY the daemon needs, but is untested. On Windows ① Codex and OpenCode show "Not available on Windows yet" in the settings and stay off.
+
+The plugin, the program and the agent have to run in the same operating system ([`docs/principles.md`](docs/principles.md#4-supported-platforms-are-the-ones-where-agent-and-plugin-share-an-os)):
+
+- **②** WSL1 shares `localhost` with Windows, but the agent runs inside WSL, so its hooks, status line, transcripts and processes live on the Linux side, and the plugin cannot start, observe or reattach the session.
+- **③** The same applies. In addition, under WSL2's default NAT networking WSL cannot reach Windows' `127.0.0.1`, so the built-in editor round trip fails (mirrored networking is untested).
+- **For WSL users**, run Obsidian itself in WSL through WSLg (④): it is Linux on both sides.
+
+### Requirements
 
 | | |
 |---|---|
-| **OS** | macOS — tested. Windows 10/11 desktop (native) — supported for Claude Code only, tested on Windows 11 (Windows 10 1809 and later has the ConPTY the daemon needs, but is untested); Codex and OpenCode show "Not available on Windows yet" in the settings and stay off. Linux, including Linux Obsidian running under WSLg on Windows — supported (the terminal keybindings and the Python side both have platform branches for it, exercised in CI and in Linux containers by hand); tested on Ubuntu 24.04 Desktop (arm64, GNOME on Xorg) with Obsidian 1.13.7 and Claude Code. Under WSLg it is untested. |
 | **Obsidian** | Desktop only (`isDesktopOnly`, since the plugin spawns processes and opens local sockets — neither is available to a mobile or web build), version 1.8.7 or later (`minAppVersion`). |
 | **Python** | 3.9+, standard library only. macOS: the Command Line Tools' `python3` (`xcode-select --install`), python.org, or Homebrew; Linux: your distribution's `python3`. Windows: the `py` launcher, a python.org install, or `python.exe` on `PATH` (the Microsoft Store's empty `python.exe` alias is never used); the install dialog can install Python for you with WinGet. |
 | **Claude Code, Codex, and/or OpenCode** | At least one of the three, either on your `PATH` or pointed to from the plugin's Agents settings (auto-detected on first run). Claude Code: the plugin relies on its hooks (`Stop`, `SessionEnd`, `SessionStart` with matcher `compact`, `UserPromptSubmit`), its `statusLine`, and — only if you change the submit-key setting away from the default — its `keybindings.json`. Codex: no hooks/statusLine equivalent is used yet; hands-on verification is still pending (see [`docs/design.md`](docs/design.md) §7.7, §25). OpenCode: sessions are read from its SQLite database, and busy/idle/waiting comes from a small OpenCode plugin the program installs when OpenCode is enabled. To start a session through `ollama launch opencode`, [Ollama](https://ollama.com) has to be installed as well. On Windows only Claude Code is available; its hooks and `statusLine` are run by Claude Code through Git Bash when that is installed, otherwise through PowerShell (Git for Windows is optional), and the install dialog can install Claude Code with WinGet. |
@@ -130,6 +155,8 @@ Font family and size, padding (comfortable/compact/none), submit key, editor key
 
 - **"agent-sessions was not found"** — the plugin is installed but the `agent-sessions` program isn't: run step 2 of [Installation](#installation). If you keep it somewhere other than `~/bin`, set its path under the plugin's settings.
 - **A Claude Code hook fails with something like `node: not found`** (often another plugin's own hook script) — node is likely installed through a version manager (mise, nvm, asdf, volta) whose shell integration only loads in an interactive shell (`.zshrc`/`.bashrc`), not the login-but-non-interactive shell a session's environment is normally built from. The plugin also probes an interactive shell's `PATH` and merges it in (`docs/design.md`'s §4.2), so this should self-correct on the next session; if it doesn't, check that `$SHELL -i -c 'echo $PATH'` actually includes node's directory from a regular terminal.
+- **The program cannot be installed on Windows (Python or Claude Code not found)** — the install dialog offers **Install Python with WinGet** / **Install Claude Code with WinGet**; each runs `winget install` per user, with no administrator prompt, once you click. If the dialog says WinGet is missing, update "App Installer" from the Microsoft Store. A `python.exe` that is only the Microsoft Store's empty alias is not used; install Python with WinGet or from python.org.
+- **Claude Code in WSL, Obsidian on Windows** — not supported (setups ② and ③ in [Supported environments](#supported-environments)). Run Obsidian in WSL through WSLg (④) instead.
 
 ## CLI
 
@@ -157,7 +184,7 @@ A small daemon (`agent-sessions daemon`, started on demand by the plugin) holds 
 
 Session bookkeeping (folded groups, archive, category colors) lives in `<vault>/.agents/sessions/sessions.json`; daemon and runtime state (socket, logs, status snapshots, caches) live under `~/.agents/sessions/`. Claude Code's own files (`~/.claude/projects/*/*.jsonl`, `~/.claude/sessions/*.json`) are only ever read, never written.
 
-See [`docs/design.md`](docs/design.md) for the full design and [`docs/requirements.md`](docs/requirements.md) for the requirements this plugin is built against.
+See [`docs/design.md`](docs/design.md) for the full design, [`docs/principles.md`](docs/principles.md) for the principles behind it, and [`docs/requirements.md`](docs/requirements.md) for the requirements this plugin is built against.
 
 ## Uninstall
 
@@ -193,6 +220,8 @@ AGENT_SESSIONS_BIN=$PWD/../bin/agent-sessions npm test   # also run the tests th
 cd ..
 python3 -W error -m unittest discover -s tests -t .   # Python (standard library only)
 ```
+
+Beyond the unit tests, a smoke test drives the daemon, CLI and hooks inside a running Obsidian with a fake agent on a virtual machine per supported OS (`tools/smoke`), and a short UI checklist is run by hand before a release. How to run each, and the extra checks for WSLg, is in [`docs/testing.md`](docs/testing.md). The reasoning behind the design choices, including the platform scope, is in [`docs/principles.md`](docs/principles.md).
 
 ### Screenshots
 

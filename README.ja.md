@@ -13,7 +13,9 @@
 - **サイドパネル** — 右サイドバーに「開いているタブ」「起動中」「最近」の一覧、詳細欄、5 時間／7 日のレート制限（リセットまでのカウントダウン付き）。
 - **セッションマネージャー** — カテゴリでまとまったセッションの木、並べ替えられる表（最終更新・モデル・エフォート・5h／7d のコスト・フォルダ）、利用状況の分析パネル：5 時間／7 日枠の統計カード、7 日枠のペース判定（「順調」か「このままでは使い切る」）、カテゴリ別のコスト内訳——有効なエージェントが複数あれば、エージェントごとの節に分かれる。
 - **状態が分かるタブと行** — 処理中・シェルコマンド実行中・回答待ち・未読の応答・編集中・compact 済み・未接続・終了・エラーなど、セッションの状態ごとにアイコン・色・動きを出す。ターミナルタブ・サイドパネル・マネージャーで表示を揃える。
-- **命名とカテゴリ** — 「カテゴリ: 名前」の形で名付けると、カテゴリごとに固定の色が付き、マネージャーで専用のグループになる。
+- **命名とカテゴリ** — 「カテゴリ: 名前」の形で名付けると、カテゴリごとに固定の色が付き、マネージャーで専用のグループになる。**セッション名とカテゴリを整理**（⋯ メニュー）は、最近のセッションの最新の指示と応答から名前とカテゴリを提案する。使うのは手元のエージェント（Claude Code、なければ Codex、OpenCode の順）。提案を確かめてから適用でき、適用を押すまで何も変わらない。セッションの抜粋がそのエージェントへ送られる——[開示事項](#開示事項)を参照。
+- **セッションの再起動** — セッションの行メニューから。エージェントを終了し、同じ会話を同じタブで再開する。設定・フック・スキル・環境変数の変更を反映したいときに使う。
+- **ようこそガイド** — 初回インストール時とアップデート後に開く短いガイド：Agent Sessions とは何か、セッションの使い方、プログラムのインストール、最初の設定。
 - **内蔵エディタ** — セッション中に Ctrl+G を押すと、ターミナルの下に分割された編集領域が開き、今のプロンプト（または `/memory`・`/keybindings` 等）を編集できる。`@` によるファイル補完・自動保存・ネイティブのペースト／IME／Undo に対応。編集中もターミナルの出力は見えたまま。
 - **移動の補助** — 出力中に現れるファイルパスは vault 内に実在すればクリックできるリンクになり、「現在のノートを `@path` として挿入」、前の指示・次の指示・最後の応答へのジャンプボタンを持つ。
 - **セッション解析と利用状況** — セッション単位のトークン・コストをターン表付きで、アカウント全体の 5 時間／7 日の利用量を、どちらも各エージェント自身の transcript から算出する。
@@ -26,11 +28,34 @@
 
 ![承認を待つ Codex のセッションと、別タブの Claude Code のセッションが応答を終えたことを知らせる通知](docs/images/codex.png)
 
+<!-- ようこそガイドと整理ダイアログの画像：ここで差し替え・削除する。 -->
+![ようこそガイド](docs/images/welcome.png)
+
+![セッション名とカテゴリを整理するダイアログ。セッションごとに提案されたカテゴリと名前が並ぶ](docs/images/organize.png)
+
 ## 対応環境
+
+| 構成 | 対応 | 動作確認 |
+|---|---|---|
+| macOS | 対応 | macOS 26.6（Python 3.14）でスモークテスト（全 15 ステップ）に合格 |
+| Linux（Ubuntu Desktop） | 対応 | Ubuntu 24.04（カーネル 6.8、Python 3.12）でスモークテストに合格 |
+| Windows ①：Windows 版 Obsidian ＋ Windows 版 Claude Code | 対応（Claude Code のみ） | Windows 11 ビルド 26300（Python 3.13）でスモークテストに合格 |
+| Windows ②：Windows 版 Obsidian ＋ WSL1 の Claude Code | 非対応 | — |
+| Windows ③：Windows 版 Obsidian ＋ WSL2 の Claude Code | 非対応 | — |
+| Windows ④：WSLg 上の Linux 版 Obsidian ＋ WSL2 の Claude Code | 対応 | 対応。未検証——手順は [`docs/testing.md`](docs/testing.md#4-platform--checks) |
+
+スモークテストは 2026-10-04 に、arm64 の仮想マシン上で Obsidian 1.13.7 と偽のエージェントを使って実施した（[`docs/testing.md`](docs/testing.md)）。Windows 10 1809 以降にもデーモンが使う ConPTY はあるが、未確認。Windows ① では、Codex と OpenCode は設定に「Windows ではまだ使えません」と出て、オフのまま。
+
+プラグイン・プログラム・エージェントは、同じ OS の上で動いている必要がある（[`docs/principles.md`](docs/principles.md#4-supported-platforms-are-the-ones-where-agent-and-plugin-share-an-os)）：
+
+- **②** WSL1 は Windows と `localhost` を共有するが、エージェントは WSL の中で動くため、フック・ステータスライン・transcript・プロセスは Linux 側にあり、プラグインはセッションを起動することも、観測することも、つなぎ直すこともできない。
+- **③** 同じ理由で非対応。さらに WSL2 の既定の NAT ネットワークでは、WSL から Windows の `127.0.0.1` に届かないため、内蔵エディタの往復が失敗する（ミラーモードは未検証）。
+- **WSL を使う人へ**：WSLg で Obsidian 自体を WSL の中で動かす（④）。両側とも Linux になる。
+
+### 動作要件
 
 | | |
 |---|---|
-| **OS** | macOS——動作確認済み。Windows 10／11 のデスクトップ版（ネイティブ）——Claude Code のみ対応。動作確認は Windows 11 で行った（Windows 10 1809 以降にもデーモンが使う ConPTY はあるが、未確認）。Codex と OpenCode は設定に「Windows ではまだ使えません」と出て、オフのまま。Linux（WSLg 上の Linux 版 Obsidian を含む）——対応（ターミナルのキー割当と Python 側の両方にプラットフォーム分岐を持ち、CI と手動での Linux コンテナ検証を通している）。Ubuntu 24.04 Desktop（arm64、GNOME・Xorg）上の Obsidian 1.13.7 と Claude Code で動作確認済み。WSLg 上は未確認。 |
 | **Obsidian** | デスクトップ版のみ（`isDesktopOnly`。プロセスの起動と ローカルのソケットを使うため——どちらもモバイル版・Web 版では使えない）、バージョン 1.8.7 以降（`minAppVersion`）。 |
 | **Python** | 3.9 以降、標準ライブラリのみ。macOS：Command Line Tools の `python3`（`xcode-select --install`）・python.org・Homebrew のいずれか。Linux：ディストリビューションの `python3`。 Windows：`py` ランチャー・python.org のインストール・`PATH` 上の `python.exe` のいずれか（Microsoft Store の空の `python.exe` エイリアスは使わない）。Python が無ければ、インストール画面から WinGet で入れられる。 |
 | **Claude Code／Codex／OpenCode（いずれか 1 つ以上）** | いずれか 1 つ以上をインストール済みで、`PATH` にあるか、プラグインの「エージェント」設定でパスを指定する（初回起動時に自動検出）。Claude Code：本プラグインは Claude Code のフック（`Stop`・`SessionEnd`・`SessionStart`（matcher `compact`）・`UserPromptSubmit`）と `statusLine`、そして送信キーの設定を既定から変えた場合のみ `keybindings.json` に依存する。Codex：hooks／statusLine 相当はまだ使っていない。実機での確認はまだ済んでいない（[`docs/design.md`](docs/design.md) §7.7・§25 参照）。OpenCode：セッションは SQLite のデータベースから読み、busy／idle／waiting は OpenCode を有効にしたときにプログラムが入れる小さな OpenCode プラグインが伝える。`ollama launch opencode` で起動するには [Ollama](https://ollama.com) も必要。 Windows では Claude Code のみ。フックと `statusLine` は、Git Bash があればそれ、無ければ PowerShell で Claude Code が実行する（Git for Windows は必須ではない）。Claude Code が見つからないときは、インストール画面から WinGet で入れられる。 |
@@ -130,6 +155,8 @@ cd obsidian-agent-sessions
 
 - **「agent-sessions が見つからない」と出る** — プラグインは入っているが、`agent-sessions` プログラムが入っていない。[インストール](#インストール)の手順 2 を実行する。`~/bin` 以外に置く場合は、プラグインの設定でパスを指定する。
 - **Claude Code のフック（他のプラグイン自身のフックスクリプトなど）が `node: not found` のようなエラーで失敗する** — node が mise／nvm／asdf／volta などのバージョンマネージャー経由で入っており、そのシェル統合が対話シェル（`.zshrc`／`.bashrc`）でしか読み込まれない環境である可能性が高い。通常、セッションの起動環境は login-but-non-interactive なシェルから組み立てている。プラグインは対話シェルの `PATH` も探ってこれに合流させている（`docs/design.md` §4.2）ので、次のセッションからは直るはず。直らない場合は、普通のターミナルで `$SHELL -i -c 'echo $PATH'` に node のディレクトリが実際に含まれているか確認してほしい。
+- **Windows でプログラムをインストールできない（Python や Claude Code が見つからない）** — インストール画面の **WinGet で Python をインストール**／**WinGet で Claude Code をインストール** を押す。ユーザー単位で `winget install` を実行し、管理者権限の確認は出ず、押したときだけ動く。WinGet が無いと出たら、Microsoft Store の「アプリ インストーラー」を更新する。Microsoft Store の空の `python.exe` エイリアスしか無い場合は使われないので、WinGet か python.org から Python を入れる。
+- **Windows 版 Obsidian で WSL 内の Claude Code を使いたい** — 非対応（[対応環境](#対応環境)の構成 ② と ③）。代わりに WSLg で Obsidian 自体を WSL の中で動かす（④）。
 
 ## CLI
 
@@ -157,7 +184,7 @@ Windows では、TUI（引数なしの `agent-sessions`）と `agent-sessions at
 
 セッションの管理情報（折畳・アーカイブ・カテゴリの色）は `<vault>/.agents/sessions/sessions.json` に、デーモンと実行時の状態（ソケット・ログ・status のスナップショット・キャッシュ）は `~/.agents/sessions/` 配下に置く。Claude Code 自身のファイル（`~/.claude/projects/*/*.jsonl`・`~/.claude/sessions/*.json`）は読むだけで、書き換えることはない。
 
-設計の全体は [`docs/design.md`](docs/design.md)、本プラグインが拠って立つ要件は [`docs/requirements.md`](docs/requirements.md) を参照。
+設計の全体は [`docs/design.md`](docs/design.md)、その背後にある設計原則は [`docs/principles.md`](docs/principles.md)、本プラグインが拠って立つ要件は [`docs/requirements.md`](docs/requirements.md) を参照。
 
 ## アンインストール
 
@@ -191,6 +218,8 @@ AGENT_SESSIONS_BIN=$PWD/../bin/agent-sessions npm test   # 実デーモンを使
 cd ..
 python3 -W error -m unittest discover -s tests -t .   # Python（標準ライブラリのみ）
 ```
+
+単体テストのほかに、対応する OS ごとの仮想マシンで、動いている Obsidian の中から偽のエージェントを使ってデーモン・CLI・フックを通しで動かすスモークテスト（`tools/smoke`）と、リリース前に手で行う短い UI チェックリストがある。実行方法と WSLg の追加確認は [`docs/testing.md`](docs/testing.md)、プラットフォームの範囲を含む設計判断の理由は [`docs/principles.md`](docs/principles.md) にある。
 
 ### スクリーンショット
 
