@@ -29,7 +29,10 @@ vault that Obsidian has open, then asks you to restart Obsidian with
 ## Targets file
 
 JSON, `{"targets": {"<name>": {...}}}`. Per target: `push` (needs `{files}` and `{dest}`),
-`pluginDir`, `workDir`, `exec` (needs `{command}`), `restartObsidian`, `tunnel` (optional), `cdpPort`.
+`pluginDir`, `workDir`, `exec` (needs `{command}`), `restartObsidian`, `tunnel` (optional), `before` (optional), `cdpPort`.
+`before` is a plain host command that runs after the push and before the first Obsidian restart;
+if it fails the target fails with its output. Use it to stop the daemon on a test VM, so step 2 does
+not meet a daemon older than the program just pushed.
 Commands run on the host through `sh`; the placeholders are filled in quoted.
 
 ## Results

@@ -65,3 +65,9 @@ test("mkdirCommand follows the target's shell", () => {
 	assert.equal(mkdirCommand("/home/a b"), "mkdir -p '/home/a b'");
 	assert.equal(mkdirCommand("C:/Users/a b"), "New-Item -ItemType Directory -Force -Path 'C:/Users/a b' | Out-Null");
 });
+
+test("before is optional, a string, and defaults to absent", () => {
+	assert.equal(parseTargets(file({ a: target() })).a.before, undefined);
+	assert.equal(parseTargets(file({ a: target({ before: "vm ssh stop" }) })).a.before, "vm ssh stop");
+	assert.throws(() => parseTargets(file({ a: target({ before: 3 }) })), /"before" must be a string/);
+});

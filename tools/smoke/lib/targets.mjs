@@ -1,7 +1,7 @@
 // The targets file (default tools/smoke/targets.json) and the command templates in it.
 
 const REQUIRED = ["push", "pluginDir", "workDir", "exec", "restartObsidian", "cdpPort"];
-const STRING_KEYS = ["push", "pluginDir", "workDir", "exec", "restartObsidian", "tunnel"];
+const STRING_KEYS = ["push", "pluginDir", "workDir", "exec", "restartObsidian", "tunnel", "before"];
 
 /** Parses the targets file's text. Throws an Error naming what is wrong. */
 export function parseTargets(text) {

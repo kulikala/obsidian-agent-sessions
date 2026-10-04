@@ -208,6 +208,10 @@ async function runTarget(target, ctx) {
 		}
 		await pushFiles(target, files, target.pluginDir);
 		await pushFiles(target, [path.join(HERE, "fake_agent.py")], target.workDir);
+		if (target.before) {
+			log(`[${target.name}] before: ${target.before}`);
+			await shOk(target.before, "the \"before\" command");
+		}
 
 		log(`[${target.name}] restarting Obsidian`);
 		await restartObsidian(target, state);
