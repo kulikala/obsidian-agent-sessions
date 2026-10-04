@@ -2,6 +2,7 @@
 
 import { allLangs, type Lang, type LanguageSetting } from "./i18n";
 import { MANAGER_STATUS_FILTERS, type ManagerStatusFilter } from "./sessions/terminal-status";
+import { sanitizeProgress, type OnboardingProgress } from "./ui/onboarding-model";
 
 export type Padding = "comfortable" | "compact" | "none";
 
@@ -184,6 +185,11 @@ export interface AgentSessionsSettings {
 	onboardingShownVersion: string;
 	/** Whether the welcome guide is shown again after an update. */
 	onboardingOnUpdate: boolean;
+	/** How far the welcome guide got, so it can be picked up again after a restart. `null` when it
+	 * has never run. */
+	onboardingProgress: OnboardingProgress | null;
+	/** Whether the welcome guide shows its screenshots. */
+	onboardingImages: boolean;
 }
 
 export const DEFAULT_SETTINGS: AgentSessionsSettings = {
@@ -208,6 +214,8 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	agentSkillsStamp: "",
 	onboardingShownVersion: "",
 	onboardingOnUpdate: true,
+	onboardingProgress: null,
+	onboardingImages: true,
 };
 
 /** Validates a saved `agents` value, entry by entry — an invalid or missing field falls back to
@@ -291,6 +299,12 @@ export function mergeSettings(data: unknown, isMac = true, platform: string = pr
 	}
 	if (typeof saved.onboardingOnUpdate !== "boolean") {
 		delete saved.onboardingOnUpdate;
+	}
+	// Progress saved by another version of the guide (or mangled by hand) reads as no progress at
+	// all, which starts the guide from the top rather than carrying a half-understood record along.
+	saved.onboardingProgress = sanitizeProgress(saved.onboardingProgress);
+	if (typeof saved.onboardingImages !== "boolean") {
+		delete saved.onboardingImages;
 	}
 	if (!SUBMIT_KEYS.includes(saved.submitKey as SubmitKey)) {
 		delete saved.submitKey;

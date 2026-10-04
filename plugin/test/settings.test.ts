@@ -38,6 +38,8 @@ describe("DEFAULT_SETTINGS", () => {
 			agentSkillsStamp: "",
 			onboardingShownVersion: "",
 			onboardingOnUpdate: true,
+			onboardingProgress: null,
+			onboardingImages: true,
 		});
 	});
 });
@@ -178,6 +180,54 @@ describe("mergeSettings (managerAnalysisFolded, T-104 additional feature)", () =
 
 	it("defaults to unfolded when there's no saved data at all", () => {
 		expect(mergeSettings(null).managerAnalysisFolded).toEqual({ claude: false, codex: false, opencode: false });
+	});
+});
+
+describe("mergeSettings (onboarding)", () => {
+	const saved = {
+		version: 1,
+		mode: "first",
+		steps: ["language", "about"],
+		current: 1,
+		states: { language: "done" },
+		sessionId: "s1",
+	};
+
+	it("keeps saved progress that is a well-formed record", () => {
+		expect(mergeSettings({ onboardingProgress: saved }).onboardingProgress).toEqual(saved);
+	});
+
+	it("reads a record with no session (nothing started yet) as progress, not as nothing", () => {
+		expect(mergeSettings({ onboardingProgress: { ...saved, sessionId: null } }).onboardingProgress).toEqual({
+			...saved,
+			sessionId: null,
+		});
+	});
+
+	it("drops malformed progress, so the guide starts from the top rather than on a half-record", () => {
+		for (const bad of [
+			{ ...saved, version: 2 },
+			{ ...saved, mode: "later" },
+			{ ...saved, steps: ["about", "install-everything"] },
+			{ ...saved, current: 9 },
+			{ ...saved, states: { language: "finished" } },
+			"progress",
+			42,
+		]) {
+			expect(mergeSettings({ onboardingProgress: bad }).onboardingProgress).toBeNull();
+		}
+	});
+
+	it("falls back to the default when there is no saved progress at all", () => {
+		expect(mergeSettings({}).onboardingProgress).toBeNull();
+		expect(mergeSettings(null).onboardingProgress).toBeNull();
+	});
+
+	it("keeps a saved screenshot preference and drops a non-boolean one", () => {
+		expect(mergeSettings({ onboardingImages: false }).onboardingImages).toBe(false);
+		expect(mergeSettings({ onboardingImages: true }).onboardingImages).toBe(true);
+		expect(mergeSettings({ onboardingImages: "no" }).onboardingImages).toBe(true);
+		expect(mergeSettings({}).onboardingImages).toBe(true);
 	});
 });
 

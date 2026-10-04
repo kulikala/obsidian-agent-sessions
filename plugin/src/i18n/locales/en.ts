@@ -254,6 +254,9 @@ export const en = {
 	"onboarding.settings.detecting": "Looking for the agents…",
 	"onboarding.settings.submitKey.desc": "The key that sends your prompt. Any other choice makes Enter insert a newline.",
 	"onboarding.afterUpdates": "Show this guide after updates",
+	"onboarding.whatsNew.guide.title": "A welcome guide you can see",
+	"onboarding.whatsNew.guide.body":
+		"The welcome guide is now a walkthrough with pictures: creating a session, switching tabs, renaming it, the built-in editor, and where the rest of the settings live.",
 	"settings.onboarding.name": "Welcome guide",
 	"settings.onboarding.desc": "A short tour of what Agent Sessions does and how to set it up.",
 	"settings.onboardingOnUpdate.name": "Show the welcome guide after updates",

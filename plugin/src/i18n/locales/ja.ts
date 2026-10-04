@@ -255,6 +255,9 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"onboarding.settings.detecting": "エージェントを探しています…",
 	"onboarding.settings.submitKey.desc": "プロンプトを送信するキーです。Enter 以外を選ぶと、Enter は改行になります。",
 	"onboarding.afterUpdates": "アップデート後にもこのガイドを表示する",
+	"onboarding.whatsNew.guide.title": "図つきのようこそガイド",
+	"onboarding.whatsNew.guide.body":
+		"ようこそガイドが図解つきの道案内になりました。セッションの作成、タブの切り替え、名前変更、内蔵エディタ、そして各種設定の場所までを一通り尝えます。",
 	"settings.onboarding.name": "ようこそガイド",
 	"settings.onboarding.desc": "Agent Sessions でできることと、設定の流れを短く案内します。",
 	"settings.onboardingOnUpdate.name": "アップデート後にようこそガイドを表示",
