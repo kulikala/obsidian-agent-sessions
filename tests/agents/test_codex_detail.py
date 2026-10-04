@@ -13,6 +13,7 @@ ID1 = '04000000-0000-0000-0000-000000000001'
 class TestCodexDetail(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.home = self.tmp.name
 
     def test_model_and_effort_come_from_most_recent_turn_context(self):

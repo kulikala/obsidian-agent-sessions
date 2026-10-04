@@ -53,6 +53,7 @@ class TestPickFallback(unittest.TestCase):
 class TestResolveEndToEnd(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.home = self.tmp.name
 
     def test_falls_back_to_session_meta_when_no_open_fd_found(self):

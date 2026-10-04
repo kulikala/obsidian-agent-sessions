@@ -39,6 +39,24 @@ class CmdDaemonTestCase(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.tmpdir, ignore_errors=True)
 
+    def _release_bound_daemons(self):
+        """Releases the listener of every Daemon that `main()` binds but never serves.
+
+        `os.fork` and `os._exit` are mocked in the detach tests, so the parent process that
+        would normally exit right after the fork carries on and keeps the socket open."""
+        bound = []
+        real = cmd_daemon.Daemon
+
+        def make(*args, **kwargs):
+            d = real(*args, **kwargs)
+            bound.append(d)
+            return d
+
+        patcher = mock.patch.object(cmd_daemon, 'Daemon', side_effect=make)
+        patcher.start()
+        self.addCleanup(lambda: [d.close_unstarted() for d in bound])
+        self.addCleanup(patcher.stop)
+
     def _run(self, argv):
         out = io.StringIO()
         with redirect_stdout(out):
@@ -78,6 +96,7 @@ class TestWithRunningDaemon(CmdDaemonTestCase):
 
         from agentsessions.daemon import protocol
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.addCleanup(sock.close)
         sock.settimeout(TIMEOUT)
         sock.connect(self.harness.sock_path)
         dec = protocol.Decoder()
@@ -113,7 +132,6 @@ class TestWithRunningDaemon(CmdDaemonTestCase):
         rc, out = self._run(['--running-count', '--sock', self.harness.sock_path])
         self.assertEqual(rc, 0)
         self.assertEqual(out, '0\n')  # exited sessions aren't counted
-        sock.close()
 
     def test_stop_shuts_the_daemon_down(self):
         rc, _ = self._run(['--stop', '--sock', self.harness.sock_path])
@@ -154,6 +172,7 @@ class TestScopeDetach(CmdDaemonTestCase):
             self.assertIsNone(cmd_daemon._detach_scope('/usr/bin/systemd-run', [], log))
 
     def test_main_falls_back_to_fork_when_the_scope_fails(self):
+        self._release_bound_daemons()
         args = ['--detach', '--runtime-dir', self.tmpdir, '--sock', os.path.join(self.tmpdir, 's.sock')]
         with mock.patch.object(cmd_daemon.sys, 'platform', 'linux'), \
                 mock.patch.object(cmd_daemon.shutil, 'which', return_value='/usr/bin/systemd-run'), \
@@ -168,6 +187,7 @@ class TestScopeDetach(CmdDaemonTestCase):
         self.assertEqual(out.getvalue(), '777\n')
 
     def test_main_skips_the_scope_off_linux(self):
+        self._release_bound_daemons()
         args = ['--detach', '--runtime-dir', self.tmpdir, '--sock', os.path.join(self.tmpdir, 's.sock')]
         with mock.patch.object(cmd_daemon.sys, 'platform', 'darwin'), \
                 mock.patch.object(cmd_daemon, '_detach_scope') as scope, \

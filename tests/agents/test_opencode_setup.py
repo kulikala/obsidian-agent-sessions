@@ -202,12 +202,14 @@ class TestSetupCommand(unittest.TestCase):
         self._run('--opencode')
         with open(self.settings, 'w') as f:
             f.write('{"hooks": {}}')
-        before = open(self.settings).read()
+        with open(self.settings) as f:
+            before = f.read()
         rc, out = self._run('--remove-opencode')
         self.assertEqual(rc, 0)
         self.assertFalse(os.path.exists(self.plugin))
         self.assertEqual(out.splitlines()[-1], 'opencode-plugin: removed')
-        self.assertEqual(open(self.settings).read(), before)
+        with open(self.settings) as f:
+            self.assertEqual(f.read(), before)
         self.assertEqual(self._run('--remove-opencode')[1].splitlines()[-1], 'opencode-plugin: absent')
 
     def test_remove_opencode_leaves_a_foreign_file(self):

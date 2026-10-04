@@ -40,6 +40,7 @@ class TestConnectFallback(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.home = self.tmp.name
         self.cache_path = os.path.join(self.home, 'codex-names-cache.json')
 

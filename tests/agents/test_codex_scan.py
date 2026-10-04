@@ -26,6 +26,7 @@ ID3 = '01000000-0000-0000-0000-000000000003'
 class TestCodexScan(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.home = self.tmp.name
         # T-105's last-known-name fallback persists to a file on disk by
         # default (config.CODEX_NAMES_CACHE_PATH) -- isolate it per test so
@@ -142,6 +143,7 @@ class TestCodexPromptFiltering(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.home = self.tmp.name
         # T-105's last-known-name fallback persists to a file on disk by
         # default (config.CODEX_NAMES_CACHE_PATH) -- isolate it per test so
@@ -216,6 +218,7 @@ class TestCodexNewerCliVersion(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.home = self.tmp.name
         # T-105's last-known-name fallback persists to a file on disk by
         # default (config.CODEX_NAMES_CACHE_PATH) -- isolate it per test so
@@ -299,6 +302,7 @@ class TestCodexModelEffort(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.home = self.tmp.name
         self._names_cache_patch = mock.patch.object(
             config, 'CODEX_NAMES_CACHE_PATH', os.path.join(self.home, 'codex-names-cache.json'))

@@ -21,6 +21,7 @@ def task_complete(ts: str) -> dict:
 class TestCodexUsage(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.home = self.tmp.name
 
     def test_collect_computes_per_turn_deltas_from_running_totals(self):

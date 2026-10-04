@@ -128,7 +128,13 @@ class TestCodexDaemonRelabeling(unittest.TestCase):
         server.listen(1)
 
         def serve_one():
-            conn, _ = server.accept()
+            try:
+                server.settimeout(5.0)   # no client ever connecting must not leave the thread (and socket) hanging
+                conn, _ = server.accept()
+            except OSError:
+                return
+            finally:
+                server.close()
             try:
                 decoder = protocol.Decoder()
                 while True:

@@ -45,6 +45,7 @@ class TestWindowDefs(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.home = self.tmp.name
         self.now = 1_700_100_000.0
 
@@ -199,6 +200,7 @@ class TestWindowDefs(unittest.TestCase):
 class TestTokenAggregation(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
         self.home = self.tmp.name
 
     def test_compute_places_usage_in_the_right_window_and_session(self):
