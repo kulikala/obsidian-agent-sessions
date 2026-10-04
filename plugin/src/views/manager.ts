@@ -794,6 +794,7 @@ export class ManagerView extends ItemView {
 			}
 		});
 
+		this.iconButton(toolbarEl, "calendar-days", t("action.openActivity"), () => void this.plugin.openActivityTab());
 		this.statusFilterBtn = this.iconButton(toolbarEl, "filter", t("toolbar.filterByStatus"), (evt) =>
 			this.showStatusFilterMenu(evt)
 		);

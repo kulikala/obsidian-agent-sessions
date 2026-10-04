@@ -102,3 +102,13 @@ export function formatWeekdayTimeShort(epochSeconds: number, lang: Lang): string
 export function formatTimeShort(epochSeconds: number, lang: Lang): string {
 	return TIME_SHORT[lang].format(new Date(epochSeconds * 1000));
 }
+
+/** Weekday only — ja "土", en "Sat". */
+export function formatWeekdayShort(date: Date, lang: Lang): string {
+	return WEEKDAY_ONLY[lang].format(date);
+}
+
+/** A date range in the locale's own style — ja "2026/9/14～20", en "Sep 14 – 20, 2026". */
+export function formatDateRange(from: Date, to: Date, lang: Lang): string {
+	return new Intl.DateTimeFormat(LOCALE_TAG[lang], { year: "numeric", month: "short", day: "numeric" }).formatRange(from, to);
+}

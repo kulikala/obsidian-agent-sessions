@@ -8,6 +8,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"action.openSidePanel": "一覧を開く",
 	"action.newSession": "新規セッション",
 	"action.sessionManager": "セッションマネージャー",
+	"action.openActivity": "稼働カレンダーを開く",
 	"action.insertNoteAt": "現在のノートを @ で挿入",
 	"action.more": "その他",
 	"action.organize": "セッション名とカテゴリを整理",
@@ -547,6 +548,22 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"error.opencodeTuiNotJson": "{path} が通常の JSON ではない（コメントや末尾のカンマ？）ため、書き換えませんでした。OpenCode の送信キー・エディタキーは \"keybinds\" を、ステータスラインは \"plugin\" に \"./agent-sessions-tui.jsx\" を手で設定してください。",
 	"error.codexConfigMalformed": "{path} の書式が正しくないため、書き換えませんでした。手で直してください。",
 	"warning.codexConfigManualFix": "{keys} にはご自身で設定した値があるため、書き換えませんでした。",
+
+	// ---- views/activity.ts ----
+	"activity.title": "稼働カレンダー",
+	"activity.subtitle": "会話ログの記録時刻から、各エージェントが動いていた時間帯を週ごとに並べます（ローカル時刻・30分以上の空きで区切り）。",
+	"activity.prevWeek": "前の週",
+	"activity.nextWeek": "次の週",
+	"activity.thisWeek": "今週",
+	"activity.filterPlaceholder": "題名で絞り込み",
+	"activity.refresh": "再読み込み",
+	"activity.hours": "{n} 時間",
+	"activity.cardStats": "{sessions}件 · 同時最大 {max}本",
+	"activity.loading": "読み込み中…",
+	"activity.loadFailed": "稼働データを読み込めませんでした: {message}",
+	"activity.empty": "この週の稼働はありません。",
+	"activity.blockTooltip": "{from}–{to} {name}",
+	"activity.untitled": "無題",
 
 	// ---- sessions/store.ts ----
 	"error.lockFailed": "ロックが取れない: {path}",

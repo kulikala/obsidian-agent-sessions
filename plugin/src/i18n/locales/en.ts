@@ -7,6 +7,7 @@ export const en = {
 	"action.openSidePanel": "Open session list",
 	"action.newSession": "New session",
 	"action.sessionManager": "Session manager",
+	"action.openActivity": "Open activity calendar",
 	"action.insertNoteAt": "Insert current note with @",
 	"action.more": "More",
 	"action.organize": "Organize names and categories",
@@ -546,6 +547,22 @@ export const en = {
 	"error.opencodeTuiNotJson": "{path} isn't plain JSON (comments or trailing commas?), so it was left unchanged. OpenCode's submit and editor keys need its \"keybinds\" set by hand, and its status line needs \"./agent-sessions-tui.jsx\" in \"plugin\".",
 	"error.codexConfigMalformed": "{path} isn't valid TOML, so it was left unchanged. Please fix it by hand.",
 	"warning.codexConfigManualFix": "{keys} already has a value you set yourself, so it was left unchanged.",
+
+	// ---- views/activity.ts ----
+	"activity.title": "Activity calendar",
+	"activity.subtitle": "When each agent was working, week by week, from the transcripts' timestamps (local time; a new block starts after a gap of 30 minutes or more).",
+	"activity.prevWeek": "Previous week",
+	"activity.nextWeek": "Next week",
+	"activity.thisWeek": "This week",
+	"activity.filterPlaceholder": "Filter by title",
+	"activity.refresh": "Reload",
+	"activity.hours": "{n} h",
+	"activity.cardStats": "{sessions} sessions · up to {max} at once",
+	"activity.loading": "Loading…",
+	"activity.loadFailed": "Couldn't load the activity: {message}",
+	"activity.empty": "No activity this week.",
+	"activity.blockTooltip": "{from}–{to} {name}",
+	"activity.untitled": "Untitled",
 
 	// ---- sessions/store.ts ----
 	"error.lockFailed": "Couldn't get the lock: {path}",

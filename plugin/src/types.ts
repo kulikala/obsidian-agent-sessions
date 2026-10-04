@@ -200,3 +200,20 @@ export interface StatsResult {
 	windows: StatsWindows;
 	agents?: Record<string, { windows: StatsWindows }>;
 }
+
+/** One session's working time from `json activity`: `spans` are `[start, end]` epoch seconds. */
+export interface ActivitySession {
+	id: string;
+	agent: string;
+	name: string | null;
+	label: string | null;
+	/** The part of the name before `': '`, if any. */
+	category: string | null;
+	child: boolean;
+	spans: [number, number][];
+}
+
+/** The full output of `json activity`. */
+export interface ActivityResult {
+	sessions: ActivitySession[];
+}

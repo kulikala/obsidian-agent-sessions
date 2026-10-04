@@ -7,7 +7,7 @@ import { homedir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { t } from "../i18n";
 import { AGENT_IDS, parseEnvLines, type AgentId, type AgentSettings } from "../settings";
-import type { Detail, LiveResult, ScanResult, StatsResult, UsageResult } from "../types";
+import type { ActivityResult, Detail, LiveResult, ScanResult, StatsResult, UsageResult } from "../types";
 import { locateWindowsProgram, programInvocation, windowsEnv } from "./windows";
 
 const IS_WINDOWS = process.platform === "win32";
@@ -156,6 +156,28 @@ export async function usage(
 /** `json stats`: usage within the 5-hour and 7-day windows. */
 export async function stats(agentSessionsPath: string, vaultPath: string): Promise<StatsResult> {
 	return runJson(agentSessionsPath, vaultPath, ["stats"]) as Promise<StatsResult>;
+}
+
+/**
+ * `json activity --from ISO --to ISO`: each session's working spans inside the range, split at
+ * gaps of 30 minutes or more (`gapMinutes`).
+ */
+export async function activity(
+	agentSessionsPath: string,
+	vaultPath: string,
+	from: Date,
+	to: Date,
+	gapMinutes = 30
+): Promise<ActivityResult> {
+	return runJson(agentSessionsPath, vaultPath, [
+		"activity",
+		"--from",
+		from.toISOString(),
+		"--to",
+		to.toISOString(),
+		"--gap-minutes",
+		String(gapMinutes),
+	]) as Promise<ActivityResult>;
 }
 
 export interface ResolveResult {

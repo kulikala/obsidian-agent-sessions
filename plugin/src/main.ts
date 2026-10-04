@@ -143,6 +143,7 @@ import {
 } from "./ui/onboarding-model";
 import { UsageModal } from "./usage/usage-modal";
 import { writeVaultState } from "./backend/vault-state";
+import { ActivityView, VIEW_TYPE_ACTIVITY } from "./views/activity";
 import { ManagerView, VIEW_TYPE_MANAGER } from "./views/manager";
 import { SideView, VIEW_TYPE_SIDE } from "./views/side";
 import { TerminalView } from "./views/terminal";
@@ -376,6 +377,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.registerView(VIEW_TYPE_SIDE, (leaf) => new SideView(leaf, this));
 		this.registerView(VIEW_TYPE_MANAGER, (leaf) => new ManagerView(leaf, this));
 		this.registerView(VIEW_TYPE_TERMINAL, (leaf) => new TerminalView(leaf, this));
+		this.registerView(VIEW_TYPE_ACTIVITY, (leaf) => new ActivityView(leaf, this));
 
 		// Deferred tabs' icon and title (a tab restored but not yet brought to front, so its
 		// `TerminalView` hasn't loaded): with no view to call `updateIcon()`/`updateHeader()`,
@@ -414,6 +416,14 @@ export default class AgentSessionsPlugin extends Plugin {
 			name: t("action.sessionManager"),
 			callback: () => {
 				void this.openManagerTab();
+			},
+		});
+
+		this.addCommand({
+			id: "open-activity",
+			name: t("action.openActivity"),
+			callback: () => {
+				void this.openActivityTab();
 			},
 		});
 
@@ -1289,6 +1299,20 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 		const leaf = workspace.getLeaf("tab");
 		await leaf.setViewState({ type: VIEW_TYPE_MANAGER, active: true });
+		await workspace.revealLeaf(leaf);
+		return leaf;
+	}
+
+	/** Opens the activity calendar tab (brings the existing one to front). */
+	async openActivityTab(): Promise<WorkspaceLeaf> {
+		const { workspace } = this.app;
+		const existing = workspace.getLeavesOfType(VIEW_TYPE_ACTIVITY)[0];
+		if (existing) {
+			await workspace.revealLeaf(existing);
+			return existing;
+		}
+		const leaf = workspace.getLeaf("tab");
+		await leaf.setViewState({ type: VIEW_TYPE_ACTIVITY, active: true });
 		await workspace.revealLeaf(leaf);
 		return leaf;
 	}

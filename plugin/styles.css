@@ -2919,3 +2919,274 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	width: 100%;
 	margin-bottom: var(--size-4-2);
 }
+
+/* ---- Activity calendar (views/activity.ts) ---- */
+.agent-sessions-activity {
+	--as-agent-claude: hsl(24 72% 58%);
+	--as-agent-codex: hsl(158 42% 50%);
+	--as-agent-opencode: hsl(215 66% 62%);
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	padding: var(--size-4-3) var(--size-4-4);
+	overflow: hidden;
+}
+
+.theme-light .agent-sessions-activity {
+	--as-agent-claude: hsl(22 78% 48%);
+	--as-agent-codex: hsl(160 55% 33%);
+	--as-agent-opencode: hsl(215 62% 48%);
+}
+
+.agent-sessions-activity-head h2 {
+	margin: 0 0 var(--size-4-1);
+}
+
+.agent-sessions-activity-subtitle {
+	margin: 0 0 var(--size-4-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.agent-sessions-activity-nav {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--size-4-2);
+	margin-bottom: var(--size-4-3);
+}
+
+.agent-sessions-activity-range {
+	font-weight: var(--font-semibold);
+	min-width: 9em;
+	text-align: center;
+}
+
+.agent-sessions-activity-filter {
+	flex: 1 1 10em;
+	max-width: 18em;
+}
+
+.agent-sessions-activity-body {
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	gap: var(--size-4-3);
+	min-height: 0;
+}
+
+.agent-sessions-activity-message {
+	padding: var(--size-4-6);
+	color: var(--text-muted);
+	text-align: center;
+}
+
+.agent-sessions-activity-cards {
+	display: grid;
+	flex: 0 0 auto;
+	grid-template-columns: repeat(auto-fit, minmax(11em, 1fr));
+	gap: var(--size-4-3);
+}
+
+.agent-sessions-activity-card {
+	padding: var(--size-4-2) var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+}
+
+.agent-sessions-activity-card-title {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	color: var(--text-muted);
+}
+
+.agent-sessions-activity-swatch {
+	width: 10px;
+	height: 10px;
+	border-radius: 3px;
+	background-color: var(--as-agent-claude);
+}
+
+.is-agent-codex .agent-sessions-activity-swatch {
+	background-color: var(--as-agent-codex);
+}
+
+.is-agent-opencode .agent-sessions-activity-swatch {
+	background-color: var(--as-agent-opencode);
+}
+
+.agent-sessions-activity-card-hours {
+	font-size: var(--font-ui-large);
+	font-weight: var(--font-semibold);
+	font-variant-numeric: tabular-nums;
+}
+
+.agent-sessions-activity-card-stats {
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+}
+
+.agent-sessions-activity-scroll {
+	flex: 1 1 auto;
+	min-height: 160px;
+	overflow: auto;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+}
+
+.agent-sessions-activity-grid {
+	min-width: 720px;
+}
+
+.agent-sessions-activity-row {
+	display: grid;
+	grid-template-columns: 3.4em repeat(7, minmax(0, 1fr));
+}
+
+.agent-sessions-activity-header {
+	position: sticky;
+	top: 0;
+	z-index: 2;
+	border-bottom: 1px solid var(--background-modifier-border);
+	background-color: var(--background-primary);
+}
+
+.agent-sessions-activity-day-head {
+	padding: var(--size-4-1) var(--size-4-2);
+	border-left: 1px solid var(--background-modifier-border);
+}
+
+.agent-sessions-activity-day-head.is-today .agent-sessions-activity-day-title {
+	color: var(--text-accent);
+}
+
+.agent-sessions-activity-day-title {
+	font-weight: var(--font-semibold);
+}
+
+.agent-sessions-activity-day-title .is-saturday {
+	color: var(--color-blue);
+}
+
+.agent-sessions-activity-day-title .is-sunday {
+	color: var(--color-red);
+}
+
+.agent-sessions-activity-lane-names {
+	display: flex;
+	margin-top: 2px;
+}
+
+.agent-sessions-activity-lane-name {
+	display: flex;
+	flex: 1 1 0;
+	flex-direction: column;
+	min-width: 0;
+	overflow: hidden;
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.agent-sessions-activity-lane-count {
+	font-variant-numeric: tabular-nums;
+	color: var(--text-muted);
+}
+
+.agent-sessions-activity-main {
+	height: calc(24 * var(--as-cal-hour));
+}
+
+.agent-sessions-activity-axis {
+	position: relative;
+}
+
+.agent-sessions-activity-tick {
+	position: absolute;
+	right: var(--size-4-2);
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+	transform: translateY(-50%);
+}
+
+.agent-sessions-activity-tick:first-child {
+	transform: none;
+}
+
+.agent-sessions-activity-day {
+	display: flex;
+	border-left: 1px solid var(--background-modifier-border);
+	background-image: repeating-linear-gradient(
+		to bottom,
+		transparent 0,
+		transparent calc(2 * var(--as-cal-hour) - 1px),
+		var(--background-modifier-border) calc(2 * var(--as-cal-hour) - 1px),
+		var(--background-modifier-border) calc(2 * var(--as-cal-hour))
+	);
+}
+
+.agent-sessions-activity-day.is-today {
+	background-color: var(--background-modifier-hover);
+}
+
+.agent-sessions-activity-lane {
+	position: relative;
+	flex: 1 1 0;
+	min-width: 0;
+}
+
+.agent-sessions-activity-lane + .agent-sessions-activity-lane {
+	border-left: 1px dashed var(--background-modifier-border);
+}
+
+/* A block is colored by its session's category (the same hue as the category chip), or by its
+   agent's lane color when it has none. */
+.agent-sessions-activity-block {
+	position: absolute;
+	box-sizing: border-box;
+	overflow: hidden;
+	border-radius: 2px;
+	background-color: var(--as-agent-claude);
+	box-shadow: 0 0 0 1px var(--background-primary);
+	color: var(--background-primary);
+	font-size: 10px;
+	line-height: 1.2;
+	cursor: pointer;
+}
+
+.is-agent-codex .agent-sessions-activity-block {
+	background-color: var(--as-agent-codex);
+}
+
+.is-agent-opencode .agent-sessions-activity-block {
+	background-color: var(--as-agent-opencode);
+}
+
+.agent-sessions-activity-block.has-category {
+	background-color: hsl(var(--as-chip-hue) 45% 60%);
+}
+
+.theme-light .agent-sessions-activity-block {
+	color: #fff;
+}
+
+.theme-light .agent-sessions-activity-block.has-category {
+	background-color: hsl(var(--as-chip-hue) 45% 40%);
+}
+
+.agent-sessions-activity-block:hover {
+	filter: brightness(1.15);
+	z-index: 1;
+}
+
+.agent-sessions-activity-block-label {
+	display: block;
+	padding: 1px 3px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}

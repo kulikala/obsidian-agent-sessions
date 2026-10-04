@@ -215,6 +215,12 @@ export class SideView extends ItemView {
 		);
 		menu.addItem((item) =>
 			item
+				.setTitle(t("action.openActivity"))
+				.setIcon("calendar-days")
+				.onClick(() => void this.plugin.openActivityTab())
+		);
+		menu.addItem((item) =>
+			item
 				.setTitle(t("action.organize"))
 				.setIcon("wand-sparkles")
 				.onClick(() => new OrganizeModal(this.plugin).open())
