@@ -311,7 +311,7 @@ export const en = {
 	"onboarding.afterUpdates": "Show this guide after updates",
 	"onboarding.whatsNew.guide.title": "A welcome guide you can see",
 	"onboarding.whatsNew.guide.body":
-		"The welcome guide is now a walkthrough with pictures: creating a session, switching tabs, renaming it, the built-in editor, and where the rest of the settings live.",
+		"The welcome guide shows each step with pictures and lets you try it with your real agent: start a session, switch tabs, rename it and send a prompt from the built-in editor. Open it any time with the \"Continue the welcome guide\" or \"Start the welcome guide from the beginning\" command.",
 	"settings.onboarding.name": "Welcome guide",
 	"settings.onboardingOnUpdate.name": "Show the welcome guide after updates",
 

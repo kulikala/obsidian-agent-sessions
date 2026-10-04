@@ -312,7 +312,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"onboarding.afterUpdates": "アップデート後にもこのガイドを表示する",
 	"onboarding.whatsNew.guide.title": "図つきのようこそガイド",
 	"onboarding.whatsNew.guide.body":
-		"ようこそガイドが図解つきの道案内になりました。セッションの作成、タブの切り替え、名前変更、内蔵エディタ、そして各種設定の場所までを一通りたどれます。",
+		"ようこそガイドが、各手順を図で見せ、本物のエージェントで実際に試せるようになりました。セッションを始める、タブを切り替える、名前を変える、内蔵エディタから送る、を一通りたどれます。コマンドからいつでも開けます。",
 	"settings.onboarding.name": "ようこそガイド",
 	"settings.onboardingOnUpdate.name": "アップデート後にようこそガイドを表示",
 
