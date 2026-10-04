@@ -37,7 +37,6 @@ export class OnboardingCoachWindow implements OnboardingCoach {
 	private tracker: TrackerState = initialTracker(null);
 	/** Kept across steps: whether the window is folded to its title bar. */
 	private collapsed = false;
-	private pictureOpen = false;
 	private done = false;
 	private categoryDone = false;
 	private hint = false;
@@ -63,7 +62,6 @@ export class OnboardingCoachWindow implements OnboardingCoach {
 		this.step = step;
 		this.done = false;
 		this.categoryDone = progress.renameCategoryDone === true && step === "rename";
-		this.pictureOpen = false;
 		this.hint = false;
 		this.hintSince = null;
 		this.startPolling();
@@ -309,18 +307,8 @@ export class OnboardingCoachWindow implements OnboardingCoach {
 			new ButtonRow(body).add(t("onboarding.op.start"), () => this.startSession(), true);
 		}
 
-		const picture = body.createEl("button", {
-			cls: "agent-sessions-coach-picture-toggle",
-			text: t(this.pictureOpen ? "onboarding.coach.hidePicture" : "onboarding.coach.showPicture"),
-		});
-		picture.addEventListener("click", () => {
-			this.pictureOpen = !this.pictureOpen;
-			this.render();
-		});
-		if (this.pictureOpen) {
-			for (const scene of STEP_SCENES[step]) {
-				renderPluginScene(body, this.plugin, scene, () => this.render());
-			}
+		for (const scene of STEP_SCENES[step]) {
+			renderPluginScene(body, this.plugin, scene, () => this.render());
 		}
 
 		const footer = el.createDiv({ cls: "agent-sessions-coach-footer" });

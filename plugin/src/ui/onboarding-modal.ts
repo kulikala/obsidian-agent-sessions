@@ -9,8 +9,6 @@
 import { App, getLanguage, Modal, Notice, Platform, Setting, setIcon } from "obsidian";
 import { detectAgents } from "../backend/backend";
 import { languageOptions, resolveLang, t, type LanguageSetting, type MessageKey } from "../i18n";
-import { en } from "../i18n/locales/en";
-import { ja } from "../i18n/locales/ja";
 import type AgentSessionsPlugin from "../main";
 import { agentsSupportedOn, SUBMIT_KEY_LABELS, submitKeyChoices, type AgentId, type SubmitKey } from "../settings";
 import { editorKeyLabel } from "../terminal/keys";
@@ -61,11 +59,6 @@ export interface OnboardingModalOptions {
 	hasEarlierRun: boolean;
 	/** What the `whats-new` step lists. */
 	whatsNew: readonly WhatsNewItem[];
-}
-
-/** `key` in English and in Japanese, for the pages shown before the user has picked a language. */
-function bilingual(key: MessageKey): [string, string] {
-	return [en[key], ja[key] ?? en[key]];
 }
 
 export class OnboardingModal extends Modal {
@@ -130,7 +123,7 @@ export class OnboardingModal extends Modal {
 		});
 		header.createSpan({ text: t("onboarding.step", { step: p.current + 1, total: p.steps.length }) });
 
-		const heading = step === "language" ? bilingual("onboarding.language.heading").join(" / ") : t(STEP_HEADING_KEY[step]);
+		const heading = t(step === "language" ? "onboarding.language.heading" : STEP_HEADING_KEY[step]);
 		contentEl.createEl("h3", { cls: "agent-sessions-onboarding-heading", text: heading });
 		const body = contentEl.createDiv({ cls: "agent-sessions-onboarding-body" });
 		switch (step) {
@@ -222,25 +215,6 @@ export class OnboardingModal extends Modal {
 		renderPluginScene(parent, this.plugin, scene, () => this.render());
 	}
 
-	/** The sentence saying what the pictures cost (a request to GitHub for images) and the checkbox that
-	 * turns them off. `both` writes it in English and Japanese, for before the user has chosen. */
-	private renderImagesConsent(parent: HTMLElement, both: boolean): void {
-		const box = parent.createDiv({ cls: "agent-sessions-onboarding-consent" });
-		const sentences = both ? bilingual("onboarding.images.notice") : [t("onboarding.images.notice")];
-		for (const sentence of sentences) {
-			box.createEl("p", { cls: "agent-sessions-onboarding-muted", text: sentence });
-		}
-		const label = box.createEl("label", { cls: "agent-sessions-onboarding-consent-label" });
-		const checkbox = label.createEl("input", { type: "checkbox" });
-		checkbox.checked = this.plugin.settings.onboardingImages;
-		label.createSpan({ text: both ? bilingual("onboarding.images.label").join(" / ") : t("onboarding.images.label") });
-		checkbox.addEventListener("change", () => {
-			this.plugin.settings.onboardingImages = checkbox.checked;
-			void this.plugin.saveSettings();
-			this.render();
-		});
-	}
-
 	// ---- Steps ----
 
 	private renderLanguage(body: HTMLElement): void {
@@ -251,13 +225,12 @@ export class OnboardingModal extends Modal {
 			["en", options.en],
 			["ja", options.ja],
 		];
-		const list = body.createDiv({ cls: "agent-sessions-onboarding-choices" });
-		for (const [value, label] of choices) {
-			const button = list.createEl("button", { text: label });
-			button.toggleClass("mod-cta", this.plugin.settings.language === value);
-			button.addEventListener("click", () => void this.chooseLanguage(value));
-		}
-		this.renderImagesConsent(body, true);
+		new Setting(body).addDropdown((dropdown) => {
+			for (const [value, label] of choices) {
+				dropdown.addOption(value, label);
+			}
+			dropdown.setValue(this.plugin.settings.language).onChange((value) => void this.chooseLanguage(value as LanguageSetting));
+		});
 	}
 
 	private async chooseLanguage(value: LanguageSetting): Promise<void> {
@@ -505,7 +478,6 @@ export class OnboardingModal extends Modal {
 			text.createDiv({ cls: "agent-sessions-onboarding-item-body", text: t(item.body) });
 			this.image(text, item.scene);
 		}
-		this.renderImagesConsent(body, false);
 		if (this.options.hasEarlierRun) {
 			body.createEl("p", { cls: "agent-sessions-onboarding-muted", text: t("onboarding.whatsNew.continue") });
 			new Setting(body).addButton((button) =>

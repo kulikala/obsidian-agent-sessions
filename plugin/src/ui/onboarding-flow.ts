@@ -122,7 +122,7 @@ export function imageFrameNext(state: ImageFrameState, event: "load" | "error" |
 
 // ---- Text of the steps, shared by the modal and the coach window ----
 
-/** The heading of each step but the language step, which is written in both languages. */
+/** The heading of each step but the language step. */
 export const STEP_HEADING_KEY: Record<Exclude<OnboardingStepId, "language">, MessageKey> = {
 	about: "onboarding.step.about",
 	setup: "onboarding.step.setup",
