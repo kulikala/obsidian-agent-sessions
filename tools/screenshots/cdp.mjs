@@ -112,9 +112,29 @@ export async function connectPage(port, { timeoutMs = 30000 } = {}) {
 				await send("Input.dispatchMouseEvent", { type, ...at, button: "left", clickCount: 1 }, sessionId);
 			}
 		},
-		/** A PNG of the whole window, as a Buffer. */
-		async screenshot() {
-			const { data } = await send("Page.captureScreenshot", { format: "png" }, sessionId);
+		/** Moves the real mouse over the first element matching `selector` (hover styles, tooltips). */
+		async hover(selector) {
+			const at = await page.evaluate(`(() => {
+				const r = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect();
+				return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+			})()`);
+			if (!at) {
+				throw new Error(`nothing to hover: ${selector}`);
+			}
+			await send("Input.dispatchMouseEvent", { type: "mouseMoved", ...at }, sessionId);
+		},
+		/** Types `text` into whatever has focus. */
+		async type(text) {
+			await send("Input.insertText", { text }, sessionId);
+		},
+		/** A PNG of the whole window, or of `clip` ({ x, y, width, height } in CSS pixels), as a Buffer.
+		 * `scale` shrinks the capture (0.5 turns a 2x render into 1x pixels); it needs a clip. */
+		async screenshot(clip, scale = 1) {
+			const { data } = await send(
+				"Page.captureScreenshot",
+				{ format: "png", ...(clip ? { clip: { ...clip, scale } } : {}) },
+				sessionId
+			);
 			return Buffer.from(data, "base64");
 		},
 		/** Collects `console.error`/exceptions from the page, for the end-of-run report. */

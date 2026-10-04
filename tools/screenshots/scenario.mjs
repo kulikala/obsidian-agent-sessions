@@ -296,3 +296,34 @@ export const ORGANIZE_SUGGESTIONS = [
 	},
 ];
 export const ORGANIZE_COMMENT = "Name it after the two systems being compared";
+
+/**
+ * The scenario in `lang`: English is the one above; Japanese swaps the words (names, last
+ * exchange, notes, organize suggestions) and keeps every number and state.
+ */
+export async function scenarioFor(lang) {
+	if (lang !== "ja") {
+		return {
+			sessions: SESSIONS,
+			notes: NOTES,
+			suggestions: ORGANIZE_SUGGESTIONS,
+			comment: ORGANIZE_COMMENT,
+			organizeCategory: "Vector search",
+			newSessionName: "Docs: Release notes",
+			editorDraft: "Please write the v4.2 release notes from the merged pull requests.\n\n- Group them as features, fixes and breaking changes\n- Keep each line to one sentence\n- Link the pull request after each line\n",
+		};
+	}
+	const ja = await import("./scenario-ja.mjs");
+	return {
+		sessions: SESSIONS.map((s) => {
+			const text = ja.SESSION_TEXT_JA[s.id];
+			return { ...s, name: text.name, detail: { ...s.detail, last_user: text.last_user, last_assistant: text.last_assistant } };
+		}),
+		notes: ja.NOTES_JA,
+		suggestions: ja.ORGANIZE_SUGGESTIONS_JA,
+		comment: ja.ORGANIZE_COMMENT_JA,
+		organizeCategory: "ベクトル",
+		newSessionName: "ドキュメント: リリースノート",
+		editorDraft: "マージ済みのプルリクエストから、v4.2 のリリースノートを書いてください。\n\n- 新機能・修正・破壊的変更に分ける\n- 各行は1文にする\n- 行の最後にプルリクエストへのリンクを付ける\n",
+	};
+}

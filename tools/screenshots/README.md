@@ -1,3 +1,30 @@
+# Screenshots
+
+Two sets come from the same sandbox: the README images (`docs/images/`, dark) and the welcome
+guide's scenes (`docs/onboarding/<lang>/<scene>.png`, Obsidian's light theme, English and Japanese).
+
+## Re-shooting the welcome guide's scenes
+
+```sh
+SCRATCH=$(mktemp -d)                                    # never build into plugin/main.js
+(cd plugin && AGENT_SESSIONS_OUTFILE=$SCRATCH/main.js node esbuild.config.mjs production)
+node tools/screenshots/shoot.mjs --onboarding --plugin-js $SCRATCH/main.js            # en and ja
+node tools/screenshots/shoot.mjs --onboarding --lang ja --plugin-js $SCRATCH/main.js  # one language
+git add docs/onboarding && git commit                   # only the images that changed are rewritten
+```
+
+The run prints each image with its size and ends with the list of files whose bytes changed;
+unchanged images are left alone. Images are 16:10 at 1x (full window 1600x1000, or a crop of it
+for dialogs and menus), about 40-250 KB each. A run takes about a minute per language.
+
+**Adding a scene:** add its id to `ONBOARDING_SCENES` in `plugin/src/ui/onboarding-model.ts`, then
+add a `shoot("<id>", rect)` call in `onboardingScenes` in `shoot.mjs` (`rect` is the element or
+union of elements to frame, or none for the whole window). `scenes.mjs` reads the list straight
+from that TypeScript array, and `plugin/test/onboarding-images.test.ts` fails until both
+`docs/onboarding/en/<id>.png` and `ja/<id>.png` exist (and checks the parser agrees with the real
+constant). Japanese text comes from `scenario-ja.mjs` and the `ja` branches in `transcripts.mjs`;
+UI labels are read from the plugin's own locale files.
+
 # README screenshots
 
 `shoot.mjs` produces `docs/images/overview.png`, `manager.png`, `codex.png`, `welcome.png` (the
