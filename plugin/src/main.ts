@@ -124,10 +124,14 @@ import {
 import { agentLaunchFor, writeUiState } from "./backend/ui-state";
 import { InstallBackendModal } from "./ui/install-modal";
 import { OnboardingModal } from "./ui/onboarding-modal";
-import { canContinue, startProgress } from "./ui/onboarding-flow";
+import { OnboardingCoachWindow } from "./ui/onboarding-coach";
+import { canContinue, guideAgent, startProgress } from "./ui/onboarding-flow";
+import { activeTabSession } from "./sessions/onboarding-watch";
 import {
 	resumeProgress,
+	SESSION_STEPS,
 	shouldOpenOnStartup,
+	stepState,
 	WHATS_NEW,
 	whatsNewSince,
 	type OnboardingCoach,
@@ -310,6 +314,24 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.opener = new SessionOpener<WorkspaceLeaf>(this.app.workspace);
 
 		this.register(this.index.registry.onIdle((id) => void this.notifyIdle(id)));
+
+		// The welcome guide's floating window and what it watches the guide's session for.
+		const coach = new OnboardingCoachWindow(this);
+		this.coach = coach;
+		this.onboardingCoach = coach;
+		this.register(() => coach.destroy());
+		this.register(this.index.registry.onIdle((id) => coach.feed({ kind: "idle", sessionId: id })));
+		this.register(this.index.onChange(() => coach.onIndexChange()));
+		this.registerEvent(
+			this.app.workspace.on("active-leaf-change", (leaf) => {
+				const view = leaf?.view instanceof TerminalView ? leaf.view : null;
+				const tab = view ? { sessionId: view.sessionId, daemonId: view.daemonSessionId } : null;
+				coach.feed({
+					kind: "active-tab",
+					sessionId: activeTabSession(tab, this.settings.onboardingProgress?.sessionId ?? null),
+				});
+			})
+		);
 		this.register(this.index.onDaemonSessions((sessions) => this.adoptOrphanSessions(sessions)));
 
 		// Remember the last-frontmost Markdown view (the target for `@` insertion).
@@ -433,6 +455,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	/** The floating window that guides the operation steps. Set by whatever provides it (null-safe:
 	 * without it the welcome guide shows those steps in its own dialog). */
 	onboardingCoach?: OnboardingCoach;
+	/** The same window, as the class the plugin feeds events to. */
+	private coach: OnboardingCoachWindow | null = null;
 	/** A folder to read the guide's pictures from instead of the version's tag on GitHub. Only ever
 	 * set in a development build (`__AGENT_SESSIONS_DEV__`); the production bundle has no code that
 	 * reads it. */
@@ -769,6 +793,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			tabOwnsEditSession({ sessionId: v.sessionId, daemonId: v.daemonSessionId }, req.session)
 		);
 		if (!view) {
+			this.coach?.feed({ kind: "editor-result", sessionId: req.session, result: "no-tab" });
 			reply(false, "no-tab");
 			return;
 		}
@@ -782,6 +807,9 @@ export default class AgentSessionsPlugin extends Plugin {
 			.then((result) => {
 				if (aborted) {
 					return;
+				}
+				if (result !== "busy") {
+					this.coach?.feed({ kind: "editor-result", sessionId: view.sessionId, result });
 				}
 				const { ok, error } = editReplyFor(result);
 				reply(ok, error);
@@ -1079,13 +1107,20 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * what an update brought, leaving an unfinished earlier run alone for its "Continue" button.
 	 */
 	openOnboarding(how: "restart" | "continue" | "update" = "restart"): void {
+		// The guide lives in the main window only; a command run from a popout does nothing there.
+		if (activeWindow !== window) {
+			return;
+		}
 		const saved = this.settings.onboardingProgress;
 		const backendInstalled = this.backendAvailable();
 		let progress: OnboardingProgress;
 		let persist = true;
 		let hasEarlierRun = false;
 		if (how === "continue" && canContinue(saved)) {
-			progress = resumeProgress(saved, (id) => this.index.sessions.has(id));
+			// Only steps still waiting on the guide's session can need redoing; a run whose session
+			// steps are all through has nothing to put back.
+			const waiting = SESSION_STEPS.some((step) => saved.steps.includes(step) && stepState(saved, step) === "pending");
+			progress = waiting ? resumeProgress(saved, (id) => this.index.sessions.has(id)) : saved;
 		} else if (how === "update") {
 			progress = startProgress("update", { backendInstalled, whatsNew: true });
 			hasEarlierRun = canContinue(saved);
@@ -1101,6 +1136,16 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 		const whatsNew: readonly WhatsNewItem[] = this.whatsNewItems;
 		new OnboardingModal(this.app, this, { progress, persist, hasEarlierRun, whatsNew }).open();
+	}
+
+	/** The agent the guide's session runs (see `guideAgent`). */
+	onboardingAgent(): AgentId {
+		const agents = this.settings.agents;
+		return guideAgent(
+			this.settings.lastNewSessionAgent,
+			{ claude: agents.claude.enabled, codex: agents.codex.enabled, opencode: agents.opencode.enabled },
+			process.platform
+		);
 	}
 
 	/** What the what's-new step lists: the entries since the version last shown, found at startup. A

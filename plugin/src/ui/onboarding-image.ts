@@ -3,7 +3,8 @@
 // picture doesn't come (an error, or `IMAGE_TIMEOUT_MS` without an answer) it says so and offers to
 // stop loading pictures. With pictures turned off there is no `<img>` at all, only the description.
 
-import { t, type MessageKey } from "../i18n";
+import { getLang, t, type MessageKey } from "../i18n";
+import type AgentSessionsPlugin from "../main";
 import { IMAGE_TIMEOUT_MS, imageFrameNext, type ImageFrameState } from "./onboarding-flow";
 import { onboardingImageUrl, type OnboardingScene } from "./onboarding-model";
 
@@ -85,4 +86,27 @@ export function renderSceneImage(parent: HTMLElement, opts: SceneImageOptions): 
 	img.addEventListener("error", () => settle("error"));
 	timer = window.setTimeout(() => settle("timeout"), IMAGE_TIMEOUT_MS);
 	return frame;
+}
+
+/** A scene's frame with the plugin's settings applied: the display language, this version's tag (or
+ * the development folder), and the `onboardingImages` switch. `onTurnOff` runs after the setting was
+ * turned off from a failed frame, so the caller can redraw. */
+export function renderPluginScene(
+	parent: HTMLElement,
+	plugin: AgentSessionsPlugin,
+	scene: OnboardingScene,
+	onTurnOff: () => void
+): HTMLElement {
+	return renderSceneImage(parent, {
+		scene,
+		lang: getLang(),
+		version: plugin.manifest.version,
+		base: plugin.devImageBase,
+		enabled: plugin.settings.onboardingImages,
+		onTurnOff: () => {
+			plugin.settings.onboardingImages = false;
+			void plugin.saveSettings();
+			onTurnOff();
+		},
+	});
 }

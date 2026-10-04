@@ -8,7 +8,7 @@
 
 import { App, getLanguage, Modal, Notice, Platform, Setting, setIcon } from "obsidian";
 import { detectAgents } from "../backend/backend";
-import { getLang, languageOptions, resolveLang, t, type LanguageSetting, type MessageKey } from "../i18n";
+import { languageOptions, resolveLang, t, type LanguageSetting, type MessageKey } from "../i18n";
 import { en } from "../i18n/locales/en";
 import { ja } from "../i18n/locales/ja";
 import type AgentSessionsPlugin from "../main";
@@ -18,13 +18,14 @@ import { AGENT_ICON_ID } from "./icons";
 import {
 	agentInstallHelp,
 	currentStep,
-	guideAgent,
 	isLastPage,
+	OP_BODY_KEY,
 	skipIfUnavailable,
 	stepBack,
+	STEP_HEADING_KEY,
 	stepForward,
 } from "./onboarding-flow";
-import { renderSceneImage } from "./onboarding-image";
+import { renderPluginScene } from "./onboarding-image";
 import {
 	completeStep,
 	installPageState,
@@ -42,24 +43,6 @@ const AGENT_NAME_KEY: Record<AgentId, MessageKey> = {
 	claude: "settings.agents.claude.name",
 	codex: "settings.agents.codex.name",
 	opencode: "settings.agents.opencode.name",
-};
-
-const STEP_HEADING_KEY: Record<Exclude<OnboardingStepId, "language">, MessageKey> = {
-	about: "onboarding.step.about",
-	setup: "onboarding.step.setup",
-	"first-session": "onboarding.step.first-session",
-	tabs: "onboarding.step.tabs",
-	rename: "onboarding.step.rename",
-	editor: "onboarding.step.editor",
-	more: "onboarding.step.more",
-	"whats-new": "onboarding.step.whats-new",
-};
-
-const OP_BODY_KEY: Record<string, MessageKey> = {
-	"first-session": "onboarding.op.first-session",
-	tabs: "onboarding.op.tabs",
-	rename: "onboarding.op.rename",
-	editor: "onboarding.op.editor",
 };
 
 const MORE_ITEMS: readonly { icon: string; title: MessageKey; body: MessageKey; scene: OnboardingScene }[] = [
@@ -120,12 +103,7 @@ export class OnboardingModal extends Modal {
 	}
 
 	private agent(): AgentId {
-		const agents = this.plugin.settings.agents;
-		return guideAgent(
-			this.plugin.settings.lastNewSessionAgent,
-			{ claude: agents.claude.enabled, codex: agents.codex.enabled, opencode: agents.opencode.enabled },
-			process.platform
-		);
+		return this.plugin.onboardingAgent();
 	}
 
 	private render(): void {
@@ -205,7 +183,7 @@ export class OnboardingModal extends Modal {
 				return;
 			}
 			button.setButtonText(t("action.next")).onClick(() => this.next(step));
-			if (operation && pending && !this.hasStarted(step)) {
+			if (operation && pending && (this.plugin.onboardingCoach || !this.hasStarted(step))) {
 				button.setDisabled(true);
 			}
 		});
@@ -220,10 +198,11 @@ export class OnboardingModal extends Modal {
 		this.render();
 	}
 
-	/** Next. An operation step that was started here and isn't tracked (no coach) counts as done. */
+	/** Next. An operation step is done by the user doing it (the coach window watches for that); only
+	 * without a coach does starting it count as doing it. */
 	private next(step: OnboardingStepId): void {
 		let p = this.progress;
-		if (OPERATION_STEPS.includes(step) && stepState(p, step) === "pending" && this.hasStarted(step)) {
+		if (!this.plugin.onboardingCoach && OPERATION_STEPS.includes(step) && stepState(p, step) === "pending" && this.hasStarted(step)) {
 			p = completeStep(p, step);
 		}
 		this.setStep(stepForward(p));
@@ -240,18 +219,7 @@ export class OnboardingModal extends Modal {
 	// ---- Pictures ----
 
 	private image(parent: HTMLElement, scene: OnboardingScene): void {
-		renderSceneImage(parent, {
-			scene,
-			lang: getLang(),
-			version: this.plugin.manifest.version,
-			base: this.plugin.devImageBase,
-			enabled: this.plugin.settings.onboardingImages,
-			onTurnOff: () => {
-				this.plugin.settings.onboardingImages = false;
-				void this.plugin.saveSettings();
-				this.render();
-			},
-		});
+		renderPluginScene(parent, this.plugin, scene, () => this.render());
 	}
 
 	/** The sentence saying what the pictures cost (a request to GitHub for images) and the checkbox that
@@ -486,7 +454,7 @@ export class OnboardingModal extends Modal {
 		if (step === "first-session") {
 			body.createEl("p", { cls: "agent-sessions-onboarding-muted", text: t("onboarding.op.startFirst") });
 		}
-		if (this.hasStarted(step)) {
+		if (this.hasStarted(step) && !this.plugin.onboardingCoach) {
 			body.createEl("p", { cls: "agent-sessions-onboarding-muted", text: t("onboarding.op.started") });
 			return;
 		}

@@ -2,6 +2,7 @@
 // in plain Node: starting a run, moving between steps, steps an agent can't do, the install command
 // to show for a missing agent, and when a picture counts as not loading.
 
+import type { MessageKey } from "../i18n";
 import { AGENT_IDS, agentsSupportedOn, type AgentId } from "../settings";
 import {
 	completeStep,
@@ -118,3 +119,25 @@ export function imageFrameNext(state: ImageFrameState, event: "load" | "error" |
 	}
 	return event === "load" ? "loaded" : "failed";
 }
+
+// ---- Text of the steps, shared by the modal and the coach window ----
+
+/** The heading of each step but the language step, which is written in both languages. */
+export const STEP_HEADING_KEY: Record<Exclude<OnboardingStepId, "language">, MessageKey> = {
+	about: "onboarding.step.about",
+	setup: "onboarding.step.setup",
+	"first-session": "onboarding.step.first-session",
+	tabs: "onboarding.step.tabs",
+	rename: "onboarding.step.rename",
+	editor: "onboarding.step.editor",
+	more: "onboarding.step.more",
+	"whats-new": "onboarding.step.whats-new",
+};
+
+/** What to do in each operation step (the editor's takes the editor key as `{key}`). */
+export const OP_BODY_KEY: Record<string, MessageKey> = {
+	"first-session": "onboarding.op.first-session",
+	tabs: "onboarding.op.tabs",
+	rename: "onboarding.op.rename",
+	editor: "onboarding.op.editor",
+};

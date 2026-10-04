@@ -2524,6 +2524,80 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	overflow-wrap: anywhere;
 	user-select: text;
 }
+.agent-sessions-coach {
+	position: fixed;
+	right: var(--size-4-4);
+	bottom: calc(var(--size-4-4) + 24px);
+	z-index: var(--layer-popover);
+	width: 320px;
+	max-width: calc(100vw - 2 * var(--size-4-4));
+	max-height: 70vh;
+	overflow-y: auto;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background: var(--background-primary);
+	box-shadow: var(--shadow-l);
+	font-size: var(--font-ui-small);
+	user-select: none;
+}
+.agent-sessions-coach-header {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding: var(--size-4-2) var(--size-4-3);
+	background: var(--background-secondary);
+	cursor: move;
+}
+.agent-sessions-coach-title {
+	flex: 1;
+	min-width: 0;
+	font-weight: var(--font-semibold);
+}
+.agent-sessions-coach-fold {
+	flex: none;
+}
+.agent-sessions-coach-done-icon {
+	flex: none;
+	color: var(--color-green);
+}
+.agent-sessions-coach-done-icon svg {
+	width: 14px;
+	height: 14px;
+}
+.agent-sessions-coach-body {
+	padding: var(--size-4-2) var(--size-4-3);
+}
+.agent-sessions-coach-body p {
+	margin: 0 0 var(--size-4-2);
+}
+.agent-sessions-coach-hint {
+	color: var(--text-warning);
+	font-weight: var(--font-semibold);
+}
+.agent-sessions-coach-picture-toggle {
+	margin-bottom: var(--size-4-2);
+}
+.agent-sessions-coach-footer {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--size-4-2);
+	padding: var(--size-4-2) var(--size-4-3);
+	border-top: 1px solid var(--background-modifier-border);
+}
+.agent-sessions-coach.is-collapsed .agent-sessions-coach-footer {
+	display: none;
+}
+.agent-sessions-coach-status {
+	color: var(--text-muted);
+}
+.agent-sessions-coach-status.is-done {
+	color: var(--color-green);
+}
+.agent-sessions-coach-buttons {
+	display: flex;
+	gap: var(--size-4-2);
+}
 .agent-sessions-onboarding-footer {
 	border-top: none;
 	justify-content: flex-end;
