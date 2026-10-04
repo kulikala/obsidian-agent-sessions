@@ -981,8 +981,24 @@
 		}
 	}
 
+	/** Resolves once Obsidian has restored the workspace layout (tabs cannot be opened before), or after `ms`. */
+	function layoutReady(ms = 30000) {
+		const ws = app.workspace;
+		if (ws.layoutReady) {
+			return Promise.resolve(true);
+		}
+		return new Promise((resolve) => {
+			const timer = setTimeout(() => resolve(false), ms);
+			ws.onLayoutReady(() => {
+				clearTimeout(timer);
+				resolve(true);
+			});
+		});
+	}
+
 	async function run(opts = {}) {
 		return guarded("run", async () => {
+			await layoutReady();
 			const ctx = { kept: null };
 			const defs = buildRunSteps(opts);
 			let steps = [];
@@ -1012,6 +1028,7 @@
 
 	async function verify(opts = {}) {
 		return guarded("verify", async () => {
+			await layoutReady();
 			const ctx = {};
 			return { steps: await runSteps(buildVerifySteps(opts), ctx) };
 		});
