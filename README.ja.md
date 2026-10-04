@@ -71,7 +71,7 @@ Agent Sessions は、エージェントの CLI をターミナルで動かすの
 1. Obsidian の **設定 → コミュニティプラグイン → 閲覧** で **Agent Sessions** を探し、インストールして有効にする。
 2. サイドパネル（リボンの **Agent Sessions** アイコン）を開く。初回はようこそガイドが開き、残りを案内する：Python とエージェントを確認し、書き込む内容を見せたうえで、`agent-sessions` プログラムをワンクリックで入れる。ガイドはいつ閉じてもよく、コマンドパレットから再開できる。
 
-ソースからの導入は[インストールの詳細](#インストールの詳細)にある。
+ソースからの導入と、プログラムの置き場所は [`docs/installation.md`](docs/installation.md)（英語）にある。
 
 ## 対応環境
 
@@ -103,130 +103,33 @@ Agent Sessions は、エージェントの CLI をターミナルで動かすの
 
 ## 機能の詳細
 
-### セッションとタブ
+各機能の詳しい説明は [`docs/usage.md`](docs/usage.md)（英語）にある。
 
-- 1 セッション＝1 Obsidian タブ、実体は PTY（Windows では ConPTY。xterm.js）。タブを閉じても Obsidian を終了してもセッションは動き続け、開き直すと直前の画面が再生される。
-- Claude Code・Codex・OpenCode のセッションを同じ一覧に混在させ、並べ替え・絞り込みも一緒に行う。初回起動時にエージェントを自動検出し、好きなものを有効化でき、エージェントごとにパスと環境変数を設定できる。複数を有効にしているときは「新規セッション」でどれを起動するか選べる。OpenCode は `ollama launch opencode` 経由でも起動でき、ローカルモデルを使える。
-- 状態ごとにアイコン・色・動きを出す（[セッションの状態](#セッションの状態)を参照）。ターミナルタブ・サイドパネル・マネージャーで表示は揃う。別タブのセッションが終わったとき、または回答を待っているときは通知で知らせる。
-- 出力中のファイルパスは vault 内に実在すればクリックできるリンクになる。タブのヘッダには、現在のノートを `@path` として挿入するボタンと、前の指示・次の指示・最後の応答へのジャンプボタンがある。
-- `Cmd +`／`Cmd −`／`Cmd 0`（macOS）または `Ctrl+Shift+=`／`Ctrl+Shift+-`／`Ctrl+Shift+0`（それ以外）でそのタブのフォントサイズを変える。macOS 以外では `Ctrl+Shift+C`／`Ctrl+Shift+V` でコピー・貼り付け、`Ctrl+Shift+W` でタブを閉じ、`Ctrl+Shift+P` でコマンドパレットを開く。素の `Ctrl+<キー>` の組み合わせは、Obsidian ではなく常にエージェントへ届く。
-
-### サイドパネルとセッションマネージャー
-
-- **サイドパネル**（右サイドバー）は「開いているタブ」「起動中」（デーモンには居るがタブが無い）「最近」に分かれ、各行は状態の印・カテゴリのチップ・名前を出す。詳細欄にはモデル・エフォート・接続状況・コンテキスト使用率・合計トークンとコスト・最後の指示と応答が出る。レート制限の欄には、有効なエージェントごとに 5 時間／7 日のバーとリセットまでのカウントダウンが出る。
-- **セッションマネージャー**は新しいタブの既定の画面。カテゴリでまとめたセッションの木（「その他」区分とアーカイブを含む）の下に、折畳・リサイズ可能な利用状況の分析パネルがある：5 時間／7 日のカード、7 日枠のペース判定（「順調」か「このままでは ‑‑ に使い切る」）、カテゴリ別のコストの帯。有効なエージェントが複数あれば、エージェントごとの節に分かれる。並べ替えられる表には、最終更新・モデル・エフォート・5h／7d のコスト・フォルダが並ぶ。開いてもセッションは始まらない。ツールバーには状態の絞り込み（すべて／入力待ち／レビュー待ち／実行中／完了／アーカイブ済み）がある。
-- 行メニュー（⋯／右クリック）から、名前の変更とカテゴリへの移動・モデルの変更・圧縮（`/compact`）・再起動・セッション解析・ID のコピー・アーカイブ・セッションの終了ができる。
-
-### 命名・カテゴリ・整理
-
-`カテゴリ: 名前` の形で名付けると、カテゴリごとに固定の色が付き、マネージャーで専用のグループになる。名前の変更ダイアログは 1 つの入力欄で、既存カテゴリのドロップダウンと、新しいカテゴリの自由入力の両方に対応する。
-
-**セッション名とカテゴリを整理**（サイドパネル・マネージャーの ⋯ メニュー）は、直近のアーカイブしていないセッション（最大 30 件。既定では名前かカテゴリが未設定のものだけ）について、最新の指示と応答から `カテゴリ: 名前` を提案する。既存のカテゴリは、合うものがあれば再利用される。使うのは手元のエージェント（Claude Code、なければ Codex、OpenCode の順。ダイアログに表示される）。気に入らない行はチェックを外してコメントを書き、**チェックを外した行だけ再提案**を押す。**選択した提案を適用**は行メニューと同じ経路で名前を変え、押すまで何も変わらない。セッションの抜粋がそのエージェントへ送られる——[開示事項](#開示事項)を参照。
-
-![セッション名とカテゴリを整理するダイアログ。セッションごとに提案されたカテゴリと名前が並ぶ](docs/images/organize.png)
-
-### 再起動・モデル・エフォート
-
-- **セッションを再起動**（行メニュー。起動中のセッションのみで、処理中なら先に確認する）は、エージェントを終了し、同じ会話を同じタブで再開する。設定・フック・スキル・環境変数の変更を反映したいときに使う。
-- **モデルを変更…**（行メニュー。起動中の Claude Code セッション）で、モデル（Opus・Sonnet・Haiku などの別名か、完全なモデル ID）とエフォートを選ぶと、変えたものについて `/model` と `/effort` を送る。`/model` は新しいセッションの Claude Code の既定にもなる。
-
-### 内蔵エディタ
-
-セッション中に Ctrl+G を押すと、ターミナルの下に分割された編集領域が開き、今のプロンプト（または `/memory`・`/keybindings` 等）を編集できる。`@` によるファイル補完・自動保存・ネイティブのペースト／IME／Undo に対応し、編集中もターミナルの出力は見えたまま。Claude Code のプロンプトでは、バーにモデルとエフォートのドロップダウン（現在の値が入る）があり、変えると**送信**が先に `/model`・`/effort` で反映してからプロンプトを送る。Esc で送らずに入力へ戻る。キーは**エディタキー**の設定（Ctrl+G・Ctrl+Q・Option／Alt+G）で、各エージェントがそのキーでエディタを開くよう設定される。
-
-### 稼働カレンダー
-
-1 週間（月〜日・ローカル時刻）の稼働を一望できる。日ごと・エージェントごとのレーンに、セッションが動いていた時間帯を色付きのブロックで描く（transcript の記録時刻から算出。30 分以上の空きで区切る）。重なるセッションは横に並ぶ。題名での絞り込みと、エージェントごとの稼働時間・セッション数・同時最大数のカードを備える。ブロックにホバーすると時間帯と名前、クリックするとそのセッションを開く。セッションマネージャーのツールバー、サイドパネルの ⋯ メニュー、コマンドパレットから開ける。
+- **セッションとタブ**：1 セッション＝1 Obsidian タブ、実体は PTY（Windows では ConPTY。xterm.js）。Claude Code・Codex・OpenCode のセッションを 1 つの一覧に混在させる。エージェントは自動検出し、OpenCode は `ollama launch opencode` 経由でも起動できてローカルモデルを使える。状態ごとにアイコン・色・動きを出し、別タブのセッションが終わったとき、または回答を待っているときは通知で知らせる。出力中のファイルパスは vault 内に実在すればクリックできるリンクになる。
+- **サイドパネルとセッションマネージャー**：右サイドバーに「開いているタブ」「起動中」「最近」の一覧、詳細欄、リセットまでのカウントダウン付きの 5 時間／7 日のレート制限を出す。セッションマネージャーは、カテゴリでまとめたセッションを並べ替えられる表で見せ、状態の絞り込みと、その下に利用状況の分析パネルを持つ。
+- **命名・カテゴリ・整理**：`カテゴリ: 名前` の形で名付けると、カテゴリごとに固定の色が付き、専用のグループになる。**セッション名とカテゴリを整理**は、最近のセッションの最新の指示と応答から名前とカテゴリを提案する。使うのは手元のエージェント（Claude Code、なければ Codex、OpenCode の順）。提案を確かめてから適用でき、適用を押すまで何も変わらない。セッションの抜粋がそのエージェントへ送られる——[開示事項](#開示事項)を参照。
+- **再起動・モデル・エフォート**：**セッションを再起動**は、エージェントを終了し、同じ会話を同じタブで再開する。設定・フック・スキル・環境変数の変更を反映したいときに使う。**モデルを変更…**は、`/model`・`/effort` を打たずに、実行中の Claude Code セッションのモデルとエフォートを切り替える。
+- **内蔵エディタ**：Ctrl+G で、ターミナルの下に分割された編集領域が開き、今のプロンプトを編集できる。`@` によるファイル補完・自動保存・ネイティブのペースト／IME／Undo に対応し、編集中もターミナルの出力は見えたまま。Claude Code のプロンプトでは、バーでモデルとエフォートを切り替えられる。
+- **稼働カレンダー**：1 週間の稼働を一望できる。日ごと・エージェントごとのレーンに、セッションが動いていた時間帯を色付きのブロックで描く（transcript の記録時刻から算出）。ブロックにホバーすると時間帯と名前、クリックするとそのセッションを開く。
+- **利用状況と枠**：エージェントごとのアカウント全体の 5 時間／7 日の利用枠を、カウントダウンと 7 日枠のペース判定つきで見せる。セッション別・カテゴリ別のコストと、Markdown としてコピーできるターンごとの**セッション解析**もある。すべて各エージェント自身の transcript から算出する。
+- **エージェント用スキル**：プログラムと一緒に 2 つのスキルが vault に入る。`agent-sessions` は、vault のエージェントから利用状況の取得・他のセッションの一覧、頼んだときだけ新しいセッションの開始を行えるようにする。`agent-sessions-help` は、プラグインの使い方を質問した言語で答える。
+- **Remote Control**：Remote Control つきで始めた Claude Code セッションの名前を変えると、その Remote Control のセッション（claude.ai と Claude アプリ）の名前も変わる。
+- **ようこそガイド**：初回インストール時と、アップデート後に新しい版で見せるものがあるときに開く。プログラムとエージェントの準備のあと、本物のセッションの開始・タブの切り替え・名前の変更・内蔵エディタの使用を、操作するたびに確かめながら案内する。
+- **CLI と TUI**：Obsidian の外やスクリプトから使える単体の `agent-sessions` コマンド。
 
 ![稼働カレンダー。1 週間のセッションを色付きのブロックで描き、日ごとにエージェント別のレーンに分ける。エージェントごとの稼働時間と同時数も並ぶ](docs/images/calendar.png)
 
-### 利用状況と枠
-
-- エージェントごとのアカウント全体の 5 時間／7 日の利用枠を、リセットまでのカウントダウンと 7 日枠のペース判定つきで見せる。
-- **セッション解析**（行メニュー）：コスト・トークン・ターン数・期間のカード、入力／出力／ツール使用のバー、ターン表。行をクリックして区間を選び、結果を Markdown としてコピーできる。
-- どちらも各エージェント自身の transcript から算出する。
-
-### エージェント用スキル
-
-プログラムと一緒に、2 つのスキルが vault の中にだけ入る。
-
-- `agent-sessions`：vault で起動した Claude Code・Codex・OpenCode のセッションから、5 時間／7 日の利用枠やセッションのトークン・コストの取得、他のセッションの状態と直近のやり取りの一覧、そして頼んだときだけ新しいセッションの開始（フォルダ・名前・有効なエージェントを指定でき、Claude Code は Remote Control も指定可）を行えるようにする。
-- `agent-sessions-help`：プラグインの使い方（機能の場所、名前の変更・整理・再起動、内蔵エディタ、対応環境など）を、質問した言語で、プラグイン自身のメニューと設定の名前に合わせた資料から答える。
-
-### Remote Control
-
-Remote Control つきで始めた Claude Code セッションは、Agent Sessions で名前を変えると、起動中のセッションへ `/rename` を送るので、Remote Control のセッション（claude.ai と Claude アプリ）の名前も変わる。
-
-### セッションの状態
-
-ターミナルタブ・サイドパネルの行・マネージャーの行は、セッションの状態について同じアイコン・色・動きを共有する：接続中、処理中（応答を生成中）、シェルコマンド実行中、回答待ち（質問または許可プロンプト）、未読（応答が終わったがまだタブを前面にしていない）、編集中（内蔵エディタが開いている）、待機、未接続（タブはあるがまだ接続していない）、compact 済み（`/compact` の直後で文脈がリセットされている）、終了、エラー。動きのある状態は `prefers-reduced-motion` を尊重する。
-
-これらはさらに、Claude 本体のアプリがセッションを絞り込む際と同じ区分にまとめられる——入力待ち・レビュー待ち・実行中・完了、それぞれ対応するアイコンと色を揃え、加えてアーカイブ済みの区分もある。セッションマネージャーのツールバーには、この同じ6区分（すべて／入力待ち／レビュー待ち／実行中／完了／アーカイブ済み）で絞り込むメニューがある。
-
-状態マークの横の小さなアイコンで、そのセッションがどのエージェント（Claude Code／Codex／OpenCode）かが分かる——各エージェント自身のマーク（単色、他のアイコンと揃えた色）で、色付きのブランドロゴではない。
-
-### ようこそガイド
-
-初回インストール時に自動で開きます。アップデート後は、新しい版で見せるものがあるときだけ開きます。言語の選択に始まり、プログラムとエージェントの準備（エージェントが無いときは、公式の導入コマンドをコピーできるように示し、公式ドキュメントへのリンクと**検出し直す**ボタンを出します）、本物のセッションの開始、タブの切り替え、名前の変更、内蔵エディタからの送信までを、操作するたびに印を付けながら案内します（**飛ばす**で段を飛ばせます）。最後に再起動・整理・セッションマネージャーを紹介します。閉じても位置は保たれ、**ようこそガイドの続きから**（コマンドパレットか設定）で再開、**ようこそガイドを最初から始める**で最初からやり直せます。図はガイドを開いているあいだ GitHub から読み込みます（[開示事項](#開示事項)参照）。設定の**ガイドの図を GitHub から読み込む**でオフにでき、**アップデート後にようこそガイドを表示**で更新後の自動表示を止められます。
+![セッション名とカテゴリを整理するダイアログ。セッションごとに提案されたカテゴリと名前が並ぶ](docs/images/organize.png)
 
 ![ようこそガイド](docs/images/welcome.png)
 
-### そのほか
-
-- **OpenCode のステータスライン**：OpenCode のセッション画面の最下行に、OpenCode 自身の画面に無いもの——送信キーの記号と、動作中／待機／許可待ちの別——を出す。OpenCode を有効にすると入り、設定は不要。
-- **日英 2 言語の UI**：「自動」（Obsidian の言語設定に合わせる）・日本語・English を選べる。
-
-## 設定
-
-フォント名とサイズ、余白（ゆったり／小さめ／なし）、送信キー、エディタキー、最近の件数、指示待ちの通知、エージェント（Claude Code／Codex／OpenCode——有効化・パス・環境変数。OpenCode はさらに、直接起動か `ollama launch opencode` 経由かと、使う Ollama のモデル（`ollama list` から選ぶか直接入力））、`agent-sessions` のパス、ターミナルのスクロールバック行数、内蔵エディタの高さ、表示言語（自動／日本語／English）、アップデート後にようこそガイドを表示するか、サイドパネルの詳細欄とマネージャーの分析パネルの保存された高さ。
-
-## インストールの詳細
-
-プラグインは、セッションを保持しエージェントの記録を読む小さな Python プログラム `agent-sessions` を使って動く。プログラムは読めるソースのままプラグインに同梱されており、ワンクリックで入る。Python 3.9 以降はあらかじめ入っている必要がある。
-
-### プログラムの置き場所
-
-置き場所は、`$XDG_DATA_HOME/agent-sessions`・`~/.local/share/agent-sessions`・`~/.agents/sessions/app` のうち最初に使えるもの。空白やシェルの特殊文字を含むパス（フックのコマンドと `$VISUAL` に入るため）、vault の中、書き込めない場所は飛ばす。Python は、ログインシェルが `python3` として見つけるもの、無ければ `/opt/homebrew/bin`・`/usr/local/bin`・`/usr/bin` の順に探す（macOS の `/usr/bin` は Command Line Tools が入っている場合だけ使い、仮の入口のインストール画面を出さない）。
-
-Windows では、プログラムは `%LOCALAPPDATA%\agent-sessions`（無ければ `~\.agents\sessions\app`）に入る。ランチャーは `bin\agent-sessions.cmd`（`PYTHONUTF8=1` を設定し、インストール時に見つけた Python で動かす）、エディタ用の中継は `bin\agent-sessions-code.cmd`。プラグイン自身は `python <スクリプト>` を直接実行し、コンソール窓は出ない。パスに空白は含められるが、`"`・`%`・`!`・`^`・`&`・`|`・`<`・`>`・`` ` ``・`$`・`;` は含められない。Python は `py` ランチャー（`py -3`）、python.org のフォルダ（`%LOCALAPPDATA%\Programs\Python\Python3xx`・`%ProgramFiles%\Python3xx`）、`PATH` 上の `python.exe` の順に探す。`PATH` はレジストリ（ユーザーとマシン）から読み直し、WinGet の `Links` フォルダ・`~\.local\bin`・`%APPDATA%\npm` も足す。Python や Claude Code が見つからないときは、インストール画面に **WinGet で Python をインストール**／**WinGet で Claude Code をインストール** が出る（`winget install --exact --id Python.Python.3.13`、または `Anthropic.ClaudeCode`、`--scope user --silent`。ユーザー単位で管理者権限の確認は出ず、ボタンを押したときだけ実行する）。WinGet 自体が無いときは、Microsoft Store の「アプリ インストーラー」の更新を案内する。出力は一貫して UTF-8（日本語版 Windows の既定は cp932）。
-
-プラグインを更新するとプログラムも更新される。入れ直し・削除は **設定 → agent-sessions プログラム** から。
-
-### clone から入れる
-
-自分のターミナルで `agent-sessions` コマンド（TUI・スクリプト）を使う場合や、チェックアウトからそのまま動かす場合は、このリポジトリから入れる——`~/bin/agent-sessions` があれば、プラグインは常にそちらを使う：
-
-```sh
-git clone https://github.com/kulikala/obsidian-agent-sessions.git
-cd obsidian-agent-sessions
-./scripts/install.sh
-```
-
-プラグイン本体もソースから入れる場合は、ビルドしてから `install.sh` に vault を渡す。この clone の `plugin/` も vault にリンクされる（その後、「コミュニティプラグイン」で **Agent Sessions** を有効にする）：
-
-```sh
-(cd plugin && npm install && npm run build)
-./scripts/install.sh /path/to/your/vault   # または AGENT_SESSIONS_VAULT=/path/to/your/vault ./scripts/install.sh
-```
-
-`install.sh` が行うこと：
-
-- `bin/agent-sessions`・`bin/agent-sessions-code` を `~/bin` に symlink する。
-- vault を渡した場合、`plugin/` を `<vault>/.obsidian/plugins/agent-sessions` に symlink する。
-- `agent-sessions setup` を実行する。これは **`~/.claude/settings.json` を書き換える**（先に `settings.json.bak-<時刻>` としてバックアップを残す）：`Stop`・`SessionEnd`・`SessionStart`（matcher `compact`）・`UserPromptSubmit` の各フックを `agent-sessions hook` に向けて追加・更新し、`statusLine` を `agent-sessions status` に設定する。自分が付けたと分かるエントリだけを触り、他のフックはそのまま残す。
-
-**送信キー**の設定を既定（Enter）以外に変えると、Claude Code 自身のキー割当と揃えるため、プラグインは `~/.claude/keybindings.json`（`Chat` コンテキスト）にも書き込む——これは Obsidian の外で起動した Claude Code を含め、Claude Code 全体に効く（ただし、選んだキーが確実に働くのはこのプラグイン自身のターミナルタブだけで、他のターミナルアプリがそのキーを素の Enter と区別できるかはターミナル次第）。設定を元に戻すと、この設定のためにプラグインが管理しているキーが消える。
-
-**エディタキー**（既定は Ctrl+G。ほかに Ctrl+Q、Option／Alt+G——Claude Code・Codex・OpenCode のどれでも使われていないキー）も同じ扱い。Claude Code と Codex は最初から Ctrl+G でエディタを開くので、既定のままなら何も書かない。別のキーにすると、`~/.claude/keybindings.json` でそのキーを `chat:externalEditor` に割り当て（Ctrl+G は空ける）、`~/.codex/config.toml` の `[tui.keymap.global]` に `open_external_editor` を設定する。Obsidian の外で使うこれらのエージェントにも効く。OpenCode 本来のキーは別（Ctrl+X, E）なので、OpenCode を有効にしていれば `tui.json` にはどの選択でもエディタキー（Ctrl+G を含む）を書く。
-
-プラグインが一度でも起動していれば、Obsidian の外で `agent-sessions` CLI を使うときも vault のパスを重ねて指定する必要はない——`~/.agents/sessions/vault.json`（プラグインが最新に保つ）から vault の場所を読む。
+セッションの状態・設定・CLI・まれなトラブルシューティングは [`docs/usage.md`](docs/usage.md)（英語）にある。
 
 ## トラブルシューティング
 
-- **「agent-sessions が見つからない」と出る** — プラグインは入っているが、`agent-sessions` プログラムが入っていない。サイドパネルの **agent-sessions をインストール** を押す（[インストール](#インストール)）。`~/bin` 以外に置く場合は、プラグインの設定でパスを指定する。
-- **Claude Code のフック（他のプラグイン自身のフックスクリプトなど）が `node: not found` のようなエラーで失敗する** — node が mise／nvm／asdf／volta などのバージョンマネージャー経由で入っており、そのシェル統合が対話シェル（`.zshrc`／`.bashrc`）でしか読み込まれない環境である可能性が高い。通常、セッションの起動環境は login-but-non-interactive なシェルから組み立てている。プラグインは対話シェルの `PATH` も探ってこれに合流させている（`docs/design.md` §4.2）ので、次のセッションからは直るはず。直らない場合は、普通のターミナルで `$SHELL -i -c 'echo $PATH'` に node のディレクトリが実際に含まれているか確認してほしい。
-- **Windows でプログラムをインストールできない（Python や Claude Code が見つからない）** — インストール画面の **WinGet で Python をインストール**／**WinGet で Claude Code をインストール** を押す。ユーザー単位で `winget install` を実行し、管理者権限の確認は出ず、押したときだけ動く。WinGet が無いと出たら、Microsoft Store の「アプリ インストーラー」を更新する。Microsoft Store の空の `python.exe` エイリアスしか無い場合は使われないので、WinGet か python.org から Python を入れる。
-- **Windows 版 Obsidian で WSL 内の Claude Code を使いたい** — 非対応（[対応環境](#対応環境)の構成 ② と ③）。代わりに WSLg で Obsidian 自体を WSL の中で動かす（④）。
+- **「agent-sessions が見つからない」と出る**：プラグインは入っているが、`agent-sessions` プログラムが入っていない。サイドパネルの **agent-sessions をインストール** を押す（[インストール](#インストール)）。`~/bin` 以外に置く場合は、プラグインの設定でパスを指定する。
+- **Windows 版 Obsidian で WSL の Claude Code を使う**：非対応（[対応環境](#対応環境)の構成 ②・③）。WSLg で Obsidian 自体を WSL の中で動かす（④）。
+- フックの `node: not found`、Windows での Python や Claude Code の導入など：[`docs/usage.md`](docs/usage.md#more-troubleshooting)（英語）。
 
 ## 開示事項
 
@@ -236,7 +139,7 @@ cd obsidian-agent-sessions
 - **vault の外のファイルを読み書きする。** エージェントと `agent-sessions` が状態をそこに置くため：
   - セッション一覧と使用量のために、Claude Code の `~/.claude/projects/`・`~/.claude/sessions/`・`~/.claude/settings.json` 、Codex の `~/.codex/`（または `$CODEX_HOME`）、OpenCode のデータベース `~/.local/share/opencode/opencode.db`（`$XDG_DATA_HOME` 配下の場合もある。読み取り専用で開く）を読む。
   - `~/.agents/sessions/`（デーモンのソケット——Windows ではループバックのポートとトークンを書いたエンドポイントファイル——・ログ・状態のスナップショット・キャッシュ）に書く。
-  - プログラムのインストールで、ホームフォルダ内のフォルダに書き出す（[インストールの詳細](#インストールの詳細)を参照）。インストールと `install.sh` は `~/.claude/settings.json` にフックと `statusLine` を足す（先にバックアップを残す）。送信キーまたはエディタキーの設定を変えると `~/.claude/keybindings.json` に書く。
+  - プログラムのインストールで、ホームフォルダ内のフォルダに書き出す（[インストールの詳細](docs/installation.md)を参照）。インストールと `install.sh` は `~/.claude/settings.json` にフックと `statusLine` を足す（先にバックアップを残す）。送信キーまたはエディタキーの設定を変えると `~/.claude/keybindings.json` に書く。
   - Codex を有効にしている場合、`~/.codex/config.toml` に送信キーのキーマップ、エディタキーの行（Ctrl+G 以外のときだけ `open_external_editor`）、既定の `[tui].status_line` を足す（先にバックアップを残す。足した行には印が付き、`agent-sessions setup --remove` はその行だけを取り除く）。
   - OpenCode を有効にしている場合、ステータス用プラグイン `~/.config/opencode/plugins/agent-sessions.js`（`$XDG_CONFIG_HOME` 配下の場合もある）を書き、そのプラグインがセッションごとの状態ファイルを `~/.agents/sessions/opencode/` に書く。プラグインファイルの先頭には印の行があり、印のあるファイルだけを上書きする。「設定 → agent-sessions プログラム → 削除」または `agent-sessions setup --remove` で取り除かれ、設定で OpenCode を無効にしたときにも取り除かれる。OpenCode を有効にしているとき、インストールのダイアログにこのファイルが並び、プログラムの通常の更新は、すでにあるプラグインファイルを更新するだけで新しく作ることはない。これと並べて、OpenCode のステータスライン `~/.config/opencode/agent-sessions-tui.jsx`（印の行も、インストール・更新・削除も同じ）を書く。JSX の小さなファイルで、`opencode` が読み込むときに自分でコンパイルする。OpenCode の画面上の状態（動作中か待機か、許可待ちか）から、セッション画面の最下行を 1 行描き、プラグインが起動したセッションでは `~/.agents/sessions/ui.json` の送信キーの記号も出す。ほかは何も読み書きしない。
   - OpenCode を有効にしているとき、OpenCode の `~/.config/opencode/tui.json`（`$XDG_CONFIG_HOME` 配下の場合もある）の `keybinds.editor_open`（エディタキー。OpenCode 本来のキーは Ctrl+X, E）を設定し、送信キーが Enter 以外なら `keybinds.input_submit` と `keybinds.input_newline` も設定して Return が改行になるようにする。ステータスライン `"./agent-sessions-tui.jsx"` も `plugin` の一覧に足す（OpenCode はこの一覧からしかこの種のプラグインを読み込まない）。ほかのキーは触らず、通常の JSON でないファイルは書き換えない。元の値は `~/.agents/sessions/opencode-tui-backup.json` に控え、OpenCode を無効にしたとき・削除したときに元へ戻す（送信キーの分は Enter に戻したときにも戻す。`agent-sessions setup --remove` も同じ）。
@@ -248,55 +151,14 @@ cd obsidian-agent-sessions
 - **クリップボードを使う**のは、操作したときだけ：セッション ID や解析表のコピーと、ターミナルタブでの Ctrl+Shift+C／Ctrl+Shift+V（Linux のキー割当）。
 - **独自のアカウント・支払い・広告・テレメトリは無い。** すべて MIT ライセンスのオープンソース。
 
+
 ## アンインストール
 
-プラグインからプログラムを入れた場合は、先に **設定 → agent-sessions プログラム → 削除** を押す。デーモンを止め（動いているセッションは終了する）、`~/.claude/settings.json` のフックと `statusLine`、`~/.codex/config.toml` の管理行、`~/.config/opencode/tui.json` に入れた送信キー・エディタキーの設定とステータスラインの項目、`~/.config/opencode/plugins/` のステータス用プラグインと `~/.config/opencode/` のステータスラインのファイル、Vault のエージェント用スキルを取り除き、フォルダを消す。その後、「コミュニティプラグイン」で **Agent Sessions** を無効化・削除する。
-
-clone から入れた場合：
-
-```sh
-"<このリポジトリのパス>/scripts/uninstall.sh"            # コミュニティプラグインから入れた場合
-"<このリポジトリのパス>/scripts/uninstall.sh" "<vault>"  # ソースから入れた場合
-```
-
-`uninstall.sh` は、デーモンを止め（動いているセッションが残っていれば確認を求める——飛ばすには
-`--force`）、`~/.claude/settings.json` から自分が足したフックと `statusLine` を取り除き
-（`install.sh` と同じやり方で先に backup を残す）、送信キー・エディタキーを既定以外に変えていた場合は
-`~/.claude/keybindings.json` の `Chat` に足した `enter`／`meta+enter`（送信キー）と `chat:externalEditor`・空けた `ctrl+g`（エディタキー）を取り除き、
-`~/bin/agent-sessions`・`~/bin/agent-sessions-code` と、vault を渡した場合は
-`<vault>/.obsidian/plugins/agent-sessions` の symlink を外す（symlink でなければ——手で置き換えている等——消さずに案内だけ出す）。他の
-ツールのフック・`statusLine`・キーバインドには触れず、何度実行しても安全（冪等）。
-
-`--purge` を付けると `~/.agents/sessions/`（デーモンの実行時状態）と、vault を渡した場合は
-`<vault>/.agents/sessions/`（折畳・アーカイブ・カテゴリの色などのセッション管理情報）も消す。
+先に **設定 → agent-sessions プログラム → 削除** でプログラムを取り除く。デーモンを止め（動いているセッションは終わる）、エージェントの設定に足したフック・ステータスライン・キー割当・行を取り除き、vault のエージェント用スキルを消し、フォルダを削除する。そのあと Obsidian のコミュニティプラグインで **Agent Sessions** を無効にして削除する。clone から入れた場合は [`docs/installation.md`](docs/installation.md#uninstall)（英語）を参照。
 
 ## 仕組み
 
-小さなデーモン（`agent-sessions daemon`。プラグインが必要なときに起動する）が各セッションの PTY（Windows では ConPTY）をローカルのソケット（Unix ドメインソケット。Windows ではトークン付きのループバック TCP）越しに保持するので、タブが attach していなくてもセッションは動き続ける。プラグインはターミナルの入出力についてデーモンと直接やり取りし、それ以外（transcript の走査、利用状況・コストの計算、セッションの木の構築）は `agent-sessions json …` を呼ぶ——このロジックはすべて Python 側にあり、プラグインと CLI／TUI が同じデータを見る。
-
-セッションの管理情報（折畳・アーカイブ・カテゴリの色）は `<vault>/.agents/sessions/sessions.json` に、デーモンと実行時の状態（ソケット・ログ・status のスナップショット・キャッシュ）は `~/.agents/sessions/` 配下に置く。Claude Code 自身のファイル（`~/.claude/projects/*/*.jsonl`・`~/.claude/sessions/*.json`）は読むだけで、書き換えることはない。
-
-設計の全体は [`docs/design.md`](docs/design.md)、その背後にある設計原則は [`docs/principles.md`](docs/principles.md)、本プラグインが拠って立つ要件は [`docs/requirements.md`](docs/requirements.md) を参照。
-
-## CLI
-
-```sh
-agent-sessions                 # TUI：セッションを選んで attach／再開
-agent-sessions attach ID       # 端末から attach（Ctrl+\ で detach）
-agent-sessions daemon [--detach]
-agent-sessions json scan|live|detail ID|usage ID [--from ISO --to ISO]|stats
-agent-sessions setup [--dry-run]
-agent-sessions setup --opencode   # OpenCode のステータス用プラグインとステータスラインだけを入れる（--remove-opencode でそのファイルを取り除き、tui.json の送信キー設定を元に戻す）
-agent-sessions setup --skills     # エージェント用スキルを Vault に入れる（--remove-skills でそれだけ取り除く）
-agent-sessions new [--agent A] [--cwd DIR] [--name N] [--remote-control] [--prompt TEXT]   # デーモンでセッションを開始（終了コード 0 確認済み・1 未確認・2 失敗）
-agent-sessions sessions [--query TEXT] [--agent A] [--limit N] [--json]   # セッションを状態付きで一覧
-agent-sessions show [ID|NAME] [--json]   # 1 つのセッションの利用状況と直近のやり取り（省略時はこのセッション）
-agent-sessions stats [--json]     # エージェントごとの 5 時間／7 日の利用枠
-```
-
-`agent-sessions json` はプラグイン自身が使う機械可読の窓口（`scan`・`live`・`detail`・`usage`・`stats`）。`hook`・`status` は上記の Claude Code のフックと `statusLine` の受け口。`edit` は内蔵エディタの受け口。
-
-Windows では、TUI（引数なしの `agent-sessions`）と `agent-sessions attach` は使えない（`curses` と `termios` が要るため）。それ以外のコマンドは、内蔵エディタを含めて動く。
+小さなデーモン（プラグインが必要に応じて起動する）が各セッションの PTY をローカルのソケットで保持するので、タブが無くてもセッションは動き続ける。プラグインは端末の入出力ではデーモンと直接やり取りし、それ以外（transcript の走査・利用量とコスト・セッションの木）は `agent-sessions json …` に任せるので、プラグインと CLI は同じデータを見る。Claude Code 自身のファイルは読むだけで書かない。[`docs/principles.md`](docs/principles.md)・[`docs/design.md`](docs/design.md)・[`docs/architecture.md`](docs/architecture.md)（英語）を参照。
 
 ## 開発
 
@@ -306,7 +168,7 @@ npm test && npm run typecheck && npm run build   # プラグイン（vitest・ts
 cd .. && python3 -W error -m unittest discover -s tests -t .   # Python（標準ライブラリのみ）
 ```
 
-ビルドとテストの詳細、スクリーンショットの撮り方、言語の追加、リリースの手順は [`docs/development.md`](docs/development.md)（英語）にある。テストは [`docs/testing.md`](docs/testing.md)、設計判断の理由は [`docs/principles.md`](docs/principles.md) に書いてある。
+ビルドとテストの詳細、スクリーンショットの撮り方、言語の追加、リリースの手順は [`docs/development.md`](docs/development.md)（英語）、テストは [`docs/testing.md`](docs/testing.md)（英語）にある。
 
 ## ライセンス
 
