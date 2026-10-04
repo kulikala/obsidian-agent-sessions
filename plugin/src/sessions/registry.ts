@@ -131,6 +131,9 @@ function readOpencodeEntries(dir: string): Map<string, RegistryEntry> {
 	return out;
 }
 
+/** How often `watch()` retries a sessions folder that doesn't exist yet. */
+const RETRY_WATCH_MS = 5000;
+
 function isBusyLike(status: string): boolean {
 	return status === "busy" || status === "shell";
 }
@@ -145,11 +148,15 @@ export class Registry extends EventEmitter {
 	private entries: Map<string, RegistryEntry>;
 	private watchers: fs.FSWatcher[] = [];
 	private debounceTimer: number | null = null;
+	/** Retries watching `sessionsDir` while it doesn't exist yet (an agent installed after the
+	 * plugin loaded creates it on its first run). */
+	private retryTimer: number | null = null;
 
 	constructor(
 		private sessionsDir: string,
 		private debounceMs = 200,
-		private opencodeDir: string | null = null
+		private opencodeDir: string | null = null,
+		private retryWatchMs = RETRY_WATCH_MS
 	) {
 		super();
 		this.entries = this.read();
@@ -247,7 +254,9 @@ export class Registry extends EventEmitter {
 	/** Starts `fs.watch` (200ms debounce). Returns a function to stop it. */
 	watch(): () => void {
 		if (this.watchers.length === 0) {
-			this.watchDir(this.sessionsDir);
+			if (!this.watchDir(this.sessionsDir)) {
+				this.retryWatch();
+			}
 			if (this.opencodeDir) {
 				// The plugin creates this folder on its first write; watching needs it to exist.
 				try {
@@ -261,11 +270,30 @@ export class Registry extends EventEmitter {
 		return () => this.stopWatch();
 	}
 
-	private watchDir(dir: string): void {
+	private watchDir(dir: string): boolean {
 		try {
 			this.watchers.push(fs.watch(dir, () => this.scheduleRefresh()));
+			return true;
 		} catch {
 			// A folder that can't be watched just isn't watched.
+			return false;
+		}
+	}
+
+	/** Tries again every few seconds until `sessionsDir` can be watched, then reads it at once. */
+	private retryWatch(): void {
+		this.retryTimer = window.setInterval(() => {
+			if (this.watchDir(this.sessionsDir)) {
+				this.clearRetry();
+				this.refresh();
+			}
+		}, this.retryWatchMs);
+	}
+
+	private clearRetry(): void {
+		if (this.retryTimer) {
+			window.clearInterval(this.retryTimer);
+			this.retryTimer = null;
 		}
 	}
 
@@ -280,6 +308,7 @@ export class Registry extends EventEmitter {
 	}
 
 	private stopWatch(): void {
+		this.clearRetry();
 		for (const watcher of this.watchers) {
 			watcher.close();
 		}

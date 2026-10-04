@@ -231,6 +231,25 @@ describe("Registry", () => {
 			expect(events).toEqual(["busy:ses_a", "idle:ses_a"]);
 		});
 
+		it("watch() starts watching a Claude sessions folder that only appears later", async () => {
+			const later = join(dir, "not-yet");
+			const registry = new Registry(later, 20, null, 50);
+			const stop = registry.watch();
+			try {
+				mkdirSync(later, { recursive: true });
+				let n = 0;
+				await vi.waitFor(
+					() => {
+						writeFileSync(join(later, "1.json"), JSON.stringify({ sessionId: "s1", status: "idle", pid: process.pid, updatedAt: n++ }));
+						expect(registry.get("s1")?.status).toBe("idle");
+					},
+					{ timeout: 5000, interval: 100 }
+				);
+			} finally {
+				stop();
+			}
+		});
+
 		it("watch() sees a file written after it started, even when the folder didn't exist yet", async () => {
 			rmSync(ocDir, { recursive: true, force: true });
 			const registry = new Registry(dir, 20, ocDir);
