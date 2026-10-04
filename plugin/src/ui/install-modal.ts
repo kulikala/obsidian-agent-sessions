@@ -22,7 +22,8 @@ export class InstallBackendModal extends Modal {
 	constructor(
 		app: App,
 		private plugin: AgentSessionsPlugin,
-		private onDone?: () => void
+		private onDone?: () => void,
+		private onClosed?: () => void
 	) {
 		super(app);
 	}
@@ -34,6 +35,7 @@ export class InstallBackendModal extends Modal {
 
 	onClose(): void {
 		this.contentEl.empty();
+		this.onClosed?.();
 	}
 
 	/** Looks for Python and a location (nothing is written), then shows the plan or what's missing. */

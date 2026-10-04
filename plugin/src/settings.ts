@@ -33,6 +33,11 @@ export const SUBMIT_KEY_LABELS: Record<SubmitKey, string> = {
 	"cmd+enter": "Cmd+Enter",
 };
 
+/** The label of a submit-key choice in a dropdown: the Option key is Alt off macOS. */
+export function submitKeyOptionLabel(key: SubmitKey, isMac: boolean): string {
+	return !isMac && key === "alt+enter" ? "Alt+Enter" : SUBMIT_KEY_LABELS[key];
+}
+
 /**
  * The key that opens the agent's external editor (the built-in editor pane, reached through
  * `$VISUAL`). Each choice is one that Claude Code, Codex and OpenCode all leave free (or that

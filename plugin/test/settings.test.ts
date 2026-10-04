@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	submitKeyOptionLabel,
 	agentsSupportedOn,
 	agentsWithLimits,
 	asAgentId,
@@ -331,5 +332,13 @@ describe("agents on Windows", () => {
 		expect(merged.agents.claude.enabled).toBe(true);
 		expect(merged.agents.codex.enabled).toBe(false);
 		expect(merged.agents.opencode.enabled).toBe(false);
+	});
+});
+
+describe("submitKeyOptionLabel", () => {
+	it("calls the Option key Alt off macOS and leaves the other labels alone", () => {
+		expect(submitKeyOptionLabel("alt+enter", true)).toBe("Option+Enter");
+		expect(submitKeyOptionLabel("alt+enter", false)).toBe("Alt+Enter");
+		expect(submitKeyOptionLabel("ctrl+enter", false)).toBe("Ctrl+Enter");
 	});
 });

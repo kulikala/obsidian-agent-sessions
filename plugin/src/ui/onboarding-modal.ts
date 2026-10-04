@@ -10,7 +10,7 @@ import { App, getLanguage, Modal, Notice, Platform, Setting, setIcon } from "obs
 import { detectAgents } from "../backend/backend";
 import { languageOptions, resolveLang, t, type LanguageSetting, type MessageKey } from "../i18n";
 import type AgentSessionsPlugin from "../main";
-import { agentsSupportedOn, SUBMIT_KEY_LABELS, submitKeyChoices, type AgentId, type SubmitKey } from "../settings";
+import { agentsSupportedOn, submitKeyChoices, submitKeyOptionLabel, type AgentId, type SubmitKey } from "../settings";
 import { editorKeyLabel } from "../terminal/keys";
 import { AGENT_ICON_ID } from "./icons";
 import {
@@ -265,7 +265,7 @@ export class OnboardingModal extends Modal {
 				button
 					.setButtonText(t("action.installBackend"))
 					.setCta()
-					.onClick(() => this.plugin.openInstallBackend(() => this.render()))
+					.onClick(() => this.plugin.openInstallBackend(undefined, () => this.redetect()))
 			);
 		}
 		this.image(body, "install");
@@ -278,7 +278,6 @@ export class OnboardingModal extends Modal {
 			void this.detect();
 		}
 		body.createEl("p", { text: t("onboarding.settings.desc") });
-		let anyHelp = false;
 		for (const id of agentsSupportedOn(process.platform)) {
 			const setting = new Setting(body);
 			setIcon(setting.nameEl.createSpan({ cls: "agent-sessions-settings-agent-icon" }), AGENT_ICON_ID[id]);
@@ -298,17 +297,12 @@ export class OnboardingModal extends Modal {
 			);
 			// Windows has the WinGet button above; elsewhere a missing agent gets the vendor's own command.
 			if (found === null && (id === "claude" || this.plugin.settings.agents[id].enabled)) {
-				anyHelp = this.renderInstallHelp(body, id) || anyHelp;
+				this.renderInstallHelp(body, id);
 			}
 		}
-		if (anyHelp) {
-			new Setting(body).addButton((button) =>
-				button.setButtonText(t("onboarding.setup.detectAgain")).onClick(() => {
-					this.detected = null;
-					this.render();
-				})
-			);
-		}
+		new Setting(body).addButton((button) =>
+			button.setButtonText(t("onboarding.setup.detectAgain")).onClick(() => this.redetect())
+		);
 
 		const agents = this.plugin.settings.agents;
 		const usable = agentsSupportedOn(process.platform).filter((id) => agents[id].enabled);
@@ -330,7 +324,7 @@ export class OnboardingModal extends Modal {
 		const submit = new Setting(body).setName(t("settings.submitKey.name")).setDesc(t("onboarding.settings.submitKey.desc"));
 		submit.addDropdown((dropdown) => {
 			for (const key of submitKeyChoices(Platform.isMacOS)) {
-				dropdown.addOption(key, SUBMIT_KEY_LABELS[key]);
+				dropdown.addOption(key, submitKeyOptionLabel(key, Platform.isMacOS));
 			}
 			dropdown.setValue(this.plugin.settings.submitKey);
 			dropdown.onChange((value) => {
@@ -364,6 +358,12 @@ export class OnboardingModal extends Modal {
 		return true;
 	}
 
+	/** Looks for the agents again, for after something installed one. */
+	private redetect(): void {
+		this.detected = null;
+		this.render();
+	}
+
 	/** Windows: Claude Code found, or a button installing it with WinGet (Python is offered by
 	 * the install dialog itself). */
 	private async renderClaudeOnWindows(el: HTMLElement): Promise<void> {
@@ -384,7 +384,7 @@ export class OnboardingModal extends Modal {
 					const message = err instanceof Error ? err.message : String(err);
 					new Notice(message === "winget-missing" ? t("install.winget.missing") : t("install.winget.failed", { error: message }));
 				}
-				this.render();
+				this.redetect();
 			})
 		);
 	}
@@ -397,6 +397,10 @@ export class OnboardingModal extends Modal {
 		this.detecting = true;
 		try {
 			this.detected = await detectAgents(Platform.isMacOS);
+			if (process.platform === "win32") {
+				// The program block above looks for Claude Code the way the plugin starts it.
+				this.detected.claude = await this.plugin.findClaudeBinary();
+			}
 		} catch {
 			this.detected = { claude: null, codex: null, opencode: null };
 		} finally {

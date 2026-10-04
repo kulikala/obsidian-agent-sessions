@@ -95,7 +95,7 @@ import {
 	mergeSettings,
 	OPENCODE_LAUNCH_VIA,
 	parseEnvLines,
-	SUBMIT_KEY_LABELS,
+	submitKeyOptionLabel,
 	submitKeyChoices,
 	type AgentId,
 	type AgentSettings,
@@ -1234,8 +1234,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/** Opens the install dialog (side panel's empty state, settings); `onDone` runs after a successful install. */
-	openInstallBackend(onDone?: () => void): void {
-		new InstallBackendModal(this.app, this, onDone).open();
+	openInstallBackend(onDone?: () => void, onClosed?: () => void): void {
+		new InstallBackendModal(this.app, this, onDone, onClosed).open();
 	}
 
 	vaultPath(): string {
@@ -2661,7 +2661,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		setting.addDropdown((dropdown) => {
 			// Non-macOS doesn't offer cmd+enter (Command — on non-macOS that's Super).
 			for (const key of submitKeyChoices(Platform.isMacOS)) {
-				dropdown.addOption(key, SUBMIT_KEY_LABELS[key]);
+				dropdown.addOption(key, submitKeyOptionLabel(key, Platform.isMacOS));
 			}
 			dropdown.setValue(this.plugin.settings.submitKey);
 			dropdown.onChange((value) => {
