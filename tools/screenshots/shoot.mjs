@@ -7,6 +7,7 @@
 
 import { spawn } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createServer as createHttpServer } from "node:http";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -117,6 +118,8 @@ function buildSandbox(root, now, look) {
 		// Keeps the welcome guide from opening over the scenes.
 		onboardingShownVersion: "screenshots",
 		onboardingOnUpdate: false,
+		// Development builds only: the guide reads its pictures from this folder instead of GitHub.
+		...(look.imageBase ? { onboardingImageBase: look.imageBase } : {}),
 		agentSessionsPath: cli,
 		agents: {
 			claude: { enabled: true, path: claudeBin, env: "" },
@@ -243,6 +246,12 @@ async function readmeScenes(page, box, look) {
 	await clearNotices(page);
 	await page.evaluate(`${PLUGIN}.openOnboarding()`);
 	await page.waitFor(`document.querySelector('.agent-sessions-onboarding')`, { what: "the welcome guide" });
+	// The language step has no picture, so the README shows the next step with its picture loaded
+	// (from the folder served in `run`; needs a development build of the plugin).
+	await sleep(800);
+	await page.evaluate(`[...document.querySelectorAll('.agent-sessions-onboarding button')].find((b) => b.textContent.trim() === ${JSON.stringify(msg('en', 'action.next'))}).click()`);
+	await sleep(1500);
+	await page.waitFor(`(() => { const img = document.querySelector('.agent-sessions-onboarding img'); return !!img && img.complete && img.naturalWidth > 0; })()`, { what: "the guide's picture" });
 	await capture(page, "welcome");
 	await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }))`);
 	await page.waitFor(`!document.querySelector('.agent-sessions-onboarding')`, { what: "the welcome guide to close" });
@@ -587,7 +596,22 @@ async function run() {
 		}
 		console.log(changed.length ? `Changed:\n${changed.map((f) => `  ${f}`).join("\n")}` : "No image changed.");
 	} else {
-		await withObsidian({ lang: "en", light: false, window: WINDOW, scale: 2 }, readmeScenes);
+		// Serves docs/onboarding/ for the welcome guide's picture.
+		const server = createHttpServer((req, res) => {
+			try {
+				const body = readFileSync(join(ONBOARDING_DIR, decodeURIComponent(new URL(req.url, "http://x").pathname)));
+				res.writeHead(200, { "content-type": "image/png", "access-control-allow-origin": "*" }).end(body);
+			} catch {
+				res.writeHead(404).end();
+			}
+		});
+		await new Promise((done) => server.listen(0, "127.0.0.1", done));
+		const imageBase = `http://127.0.0.1:${server.address().port}`;
+		try {
+			await withObsidian({ lang: "en", light: false, window: WINDOW, scale: 2, imageBase }, readmeScenes);
+		} finally {
+			server.close();
+		}
 	}
 }
 

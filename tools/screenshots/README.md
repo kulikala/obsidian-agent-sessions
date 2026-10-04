@@ -27,6 +27,8 @@ UI labels are read from the plugin's own locale files.
 
 # README screenshots
 
+The README's `welcome.png` shows the guide's second step with its picture, read from `docs/onboarding/` through a small local server. That needs a development build (the picture-folder override is not in the production bundle): build without `production` but as a one-shot (the plain `node esbuild.config.mjs` watches and never exits).
+
 `shoot.mjs` produces `docs/images/overview.png`, `manager.png`, `codex.png`, `welcome.png` (the
 welcome guide, first page), and `organize.png` (the "Organize names and categories" result view)
 from a build of the plugin, rendered by a real Obsidian. Build into a scratch directory, never
