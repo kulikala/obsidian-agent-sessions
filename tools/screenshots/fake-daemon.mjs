@@ -17,9 +17,10 @@ function frame(kind, payload) {
 }
 
 /**
- * `sessions`: the scenario's sessions (with `cwd`). Returns `{ close() }`.
+ * `sessions`: the scenario's sessions (with `cwd`). `look`: `{ lang, light }` for the transcripts.
+ * Returns `{ close() }`.
  */
-export function startFakeDaemon(sockPath, sessions, now) {
+export function startFakeDaemon(sockPath, sessions, now, look = {}) {
 	rmSync(sockPath, { force: true });
 	const known = new Map(sessions.filter((s) => s.daemon || s.tab).map((s) => [s.id, s]));
 	const server = net.createServer((socket) => {
@@ -45,7 +46,7 @@ export function startFakeDaemon(sockPath, sessions, now) {
 					if (msg.op === "resize" && attached?.transcript) {
 						// Like a real TUI: clear and redraw at the new size.
 						reply(socket, msg.seq);
-						const redraw = "\x1b[H\x1b[2J\x1b[3J" + renderTranscript(attached.transcript, msg.cols, attached.title);
+						const redraw = "\x1b[H\x1b[2J\x1b[3J" + renderTranscript(attached.transcript, msg.cols, attached.title, look);
 						socket.write(frame("D", redraw));
 						continue;
 					}
@@ -83,7 +84,7 @@ export function startFakeDaemon(sockPath, sessions, now) {
 			reply(socket, seq);
 			const s = known.get(msg.id);
 			if (s?.transcript) {
-				socket.write(frame("R", renderTranscript(s.transcript, msg.cols, s.title)));
+				socket.write(frame("R", renderTranscript(s.transcript, msg.cols, s.title, look)));
 			}
 			socket.write(frame("J", JSON.stringify({ ev: "replayed" })));
 		} else {

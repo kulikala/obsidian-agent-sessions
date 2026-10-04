@@ -2,23 +2,29 @@
 // Takes the README screenshots: launches a separate Obsidian with its own profile, home
 // directory, and vault, loads the built plugin into it, feeds it the scenario through a stand-in
 // CLI and daemon, and captures each scene to docs/images/. Nothing outside the sandbox is read or
-// written, and no real agent is started. See README.md next to this file.
+// written, and no real agent is started. `--onboarding` shoots the welcome guide's scenes instead
+// (docs/onboarding/<lang>/<scene>.png). See README.md next to this file.
 
 import { spawn } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectPage, sleep } from "./cdp.mjs";
 import { startFakeDaemon } from "./fake-daemon.mjs";
-import { cwdOf, LIMITS, NOTES, ORGANIZE_COMMENT, ORGANIZE_SUGGESTIONS, SESSIONS } from "./scenario.mjs";
+import { cwdOf, LIMITS, scenarioFor } from "./scenario.mjs";
+import { LANGUAGES, readOnboardingScenes } from "./scenes.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..", "..");
 const PLUGIN_DIR = join(REPO, "plugin");
 const OUT_DIR = join(REPO, "docs", "images");
+const ONBOARDING_DIR = join(REPO, "docs", "onboarding");
 const WINDOW = { width: 1600, height: 1100 };
+// The onboarding images: 16:10, Obsidian's default light theme. Rendered at 2x (the terminal
+// needs it to lay out right) and captured at half scale, i.e. 1x pixels.
+const ONBOARDING_WINDOW = { width: 1600, height: 1000 };
 const SIDEBAR_WIDTH = 420;
 
 const OBSIDIAN_BIN =
@@ -30,6 +36,12 @@ const OBSIDIAN_BIN =
 	}[process.platform];
 
 const keep = process.argv.includes("--keep");
+const onboarding = process.argv.includes("--onboarding");
+const langArg = process.argv.indexOf("--lang");
+const languages = langArg >= 0 ? [process.argv[langArg + 1]] : LANGUAGES;
+if (languages.some((l) => !LANGUAGES.includes(l))) {
+	throw new Error(`--lang takes ${LANGUAGES.join(" or ")}`);
+}
 
 // The built plugin to load: --plugin-js PATH or AGENT_SESSIONS_PLUGIN_JS, else plugin/main.js.
 const pluginJsArg = process.argv.indexOf("--plugin-js");
@@ -53,23 +65,24 @@ function freePort() {
 
 // ---- Sandbox ------------------------------------------------------------------------------
 
-function buildSandbox(root, now) {
+/** `look`: { lang, light, scenario } — the UI language, the theme, and the words (scenarioFor). */
+function buildSandbox(root, now, look) {
 	const home = join(root, "home");
 	const userData = join(root, "profile");
 	const vault = join(root, "vault");
 	const runtime = join(home, ".agents", "sessions");
-	const sessions = SESSIONS.map((s) => ({ ...s, cwd: cwdOf(s) }));
+	const sessions = look.scenario.sessions.map((s) => ({ ...s, cwd: cwdOf(s) }));
 
-	for (const [path, text] of Object.entries(NOTES)) {
+	for (const [path, text] of Object.entries(look.scenario.notes)) {
 		mkdirSync(dirname(join(vault, path)), { recursive: true });
 		writeFileSync(join(vault, path), text);
 	}
 
-	// Obsidian: this profile knows exactly one vault, opened in the default dark theme.
+	// Obsidian: this profile knows exactly one vault, opened in the default dark or light theme.
 	writeJson(join(userData, "obsidian.json"), {
 		vaults: { a5d0c0ffee000001: { path: vault, ts: now * 1000, open: true } },
 	});
-	writeJson(join(vault, ".obsidian", "appearance.json"), { theme: "obsidian" });
+	writeJson(join(vault, ".obsidian", "appearance.json"), { theme: look.light ? "moonstone" : "obsidian" });
 	// Menus drawn in the page (macOS would otherwise use native ones, out of reach of the script).
 	writeJson(join(vault, ".obsidian", "app.json"), { promptDelete: false, nativeMenus: false });
 	writeJson(join(vault, ".obsidian", "community-plugins.json"), ["agent-sessions"]);
@@ -94,12 +107,12 @@ function buildSandbox(root, now) {
 	// "Organize names and categories" asks the Claude Code CLI for its suggestions; this stand-in
 	// answers with the canned ones from the scenario, in Claude Code's stream-json shape.
 	const claudeBin = join(home, "bin", "claude");
-	writeJson(join(root, "organize.json"), ORGANIZE_SUGGESTIONS);
+	writeJson(join(root, "organize.json"), look.scenario.suggestions);
 	writeFileSync(claudeBin, `#!/bin/sh\nexec "${process.execPath}" "${join(HERE, "fake-claude.mjs")}" "${join(root, "organize.json")}"\n`);
 	chmodSync(claudeBin, 0o755);
 
 	writeJson(join(pluginDir, "data.json"), {
-		language: "en",
+		language: look.lang,
 		notifyOnIdle: true,
 		// Keeps the welcome guide from opening over the scenes.
 		onboardingShownVersion: "screenshots",
@@ -146,16 +159,16 @@ function buildSandbox(root, now) {
 	}
 	for (const s of sessions) {
 		if (s.registry) {
-			setRegistry(home, s, s.registry);
+			setRegistry(home, sessions.map((x) => x.id), s, s.registry);
 		}
 	}
 
-	return { home, userData, vault, runtime, sessions, logPath };
+	return { home, userData, vault, runtime, sessions, ids: sessions.map((x) => x.id), logPath };
 }
 
 /** Writes one `~/.claude/sessions/<pid>.json` record. The pid must be alive, so it's ours. */
-function setRegistry(home, s, status) {
-	const index = SESSIONS.findIndex((x) => x.id === s.id);
+function setRegistry(home, ids, s, status) {
+	const index = ids.indexOf(s.id);
 	writeJson(join(home, ".claude", "sessions", `${index + 1}.json`), {
 		pid: process.pid,
 		sessionId: s.id,
@@ -195,14 +208,295 @@ async function capture(page, name) {
 	console.log(`  wrote ${file}`);
 }
 
-async function run() {
+// ---- The README's scenes ------------------------------------------------------------------
+
+async function readmeScenes(page, box, look) {
+	const flips = box.sessions.filter((s) => s.flipToIdle);
+	console.log("Scenes:");
+	await capture(page, "overview");
+
+	await page.evaluate(`(async () => {
+		app.workspace.rightSplit.collapse();
+		await app.commands.executeCommandById('agent-sessions:open-manager');
+	})()`);
+	await capture(page, "manager");
+
+	// Codex asking for approval in front, while a Claude session's idle notice comes in.
+	await page.evaluate(`(async () => {
+		for (const leaf of app.workspace.getLeavesOfType('agent-sessions-manager')) leaf.detach();
+		app.workspace.rightSplit.expand();
+		app.workspace.rightSplit.setSize(${SIDEBAR_WIDTH});
+	})()`);
+	const limiter = box.sessions.find((s) => s.transcript === "codex-limiter");
+	await front(page, limiter.id);
+	for (const s of flips) {
+		setRegistry(box.home, box.ids, s, "busy");
+	}
+	await sleep(1200);
+	for (const s of flips) {
+		setRegistry(box.home, box.ids, s, "idle");
+	}
+	await page.waitFor(`document.querySelector('.notice')`, { what: "the idle notice" });
+	await capture(page, "codex");
+
+	// The welcome guide, on its first page.
+	await clearNotices(page);
+	await page.evaluate(`${PLUGIN}.openOnboarding()`);
+	await page.waitFor(`document.querySelector('.agent-sessions-onboarding')`, { what: "the welcome guide" });
+	await capture(page, "welcome");
+	await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }))`);
+	await page.waitFor(`!document.querySelector('.agent-sessions-onboarding')`, { what: "the welcome guide to close" });
+
+	await openOrganizeResult(page, look);
+	await capture(page, "organize");
+}
+
+/**
+ * "Organize names and categories": every session already has a category, so the "only unnamed"
+ * switch goes off; the stand-in claude answers; one row is unticked and given a comment.
+ */
+async function openOrganizeResult(page, look) {
+	await sleep(500);
+	await page.click(`.agent-sessions-nav [aria-label=${JSON.stringify(msg(look.lang, "action.more"))}]`);
+	await page.waitFor(`document.querySelector('.menu')`, { what: "the more menu" });
+	await page.evaluate(`[...document.querySelectorAll('.menu-item')].find((i) => i.textContent.includes(${JSON.stringify(msg(look.lang, "action.organize"))})).click()`);
+	await page.waitFor(`document.querySelector('.agent-sessions-organize .checkbox-container')`, { what: "the organize dialog" });
+	await page.evaluate(`document.querySelector('.agent-sessions-organize .checkbox-container').click()`);
+	await page.evaluate(`[...document.querySelectorAll('.agent-sessions-organize button')].find((b) => b.textContent.includes(${JSON.stringify(msg(look.lang, "organize.suggest"))})).click()`);
+	await page.waitFor(`document.querySelector('.agent-sessions-organize-row:not(.is-header)')`, { what: "the organize results" });
+	await page.evaluate(`(() => {
+		const rows = [...document.querySelectorAll('.agent-sessions-organize-row:not(.is-header)')];
+		const target = rows.find((r) => r.textContent.includes(${JSON.stringify(look.scenario.organizeCategory)}));
+		target.querySelector('.agent-sessions-round-check').click();
+		const comment = target.querySelector('.agent-sessions-organize-comment');
+		comment.value = ${JSON.stringify(look.scenario.comment)};
+		comment.dispatchEvent(new Event('input', { bubbles: true }));
+	})()`);
+}
+
+// ---- The welcome guide's scenes -----------------------------------------------------------
+
+/** A UI string in `lang`, read from the plugin's own locale file so labels never drift. */
+function msg(lang, key) {
+	const source = readFileSync(join(PLUGIN_DIR, "src", "i18n", "locales", `${lang}.ts`), "utf8");
+	const line = source.split("\n").find((l) => l.trimStart().startsWith(`${JSON.stringify(key)}:`));
+	const match = line && /:\s*("(?:[^"\\]|\\.)*")\s*,?\s*$/.exec(line);
+	if (!match) {
+		throw new Error(`no string ${key} in ${lang}.ts`);
+	}
+	return JSON.parse(match[1]);
+}
+
+/** The 16:10 box of at least `minWidth` that holds `rect` with some context around it. */
+function frameAround(rect, viewport, minWidth = 800, margin = 40) {
+	const ratio = ONBOARDING_WINDOW.width / ONBOARDING_WINDOW.height;
+	const width = Math.min(viewport.width, Math.max(minWidth, (rect.height + 2 * margin) * ratio, rect.width + 2 * margin));
+	const height = width / ratio;
+	const x = Math.round(Math.min(Math.max(rect.x + rect.width / 2 - width / 2, 0), viewport.width - width));
+	const y = Math.round(Math.min(Math.max(rect.y + rect.height / 2 - height / 2, 0), viewport.height - height));
+	return { x, y, width: Math.round(width), height: Math.round(height) };
+}
+
+/** The union of the bounding boxes of everything matching `selectors` that is on screen. */
+function unionOf(page, selectors) {
+	return page.evaluate(`(() => {
+		const boxes = ${JSON.stringify(selectors)}
+			.flatMap((sel) => [...document.querySelectorAll(sel)])
+			.map((el) => el.getBoundingClientRect())
+			.filter((r) => r.width > 0 && r.height > 0);
+		if (!boxes.length) return null;
+		const x = Math.min(...boxes.map((r) => r.left));
+		const y = Math.min(...boxes.map((r) => r.top));
+		return {
+			x, y,
+			width: Math.max(...boxes.map((r) => r.right)) - x,
+			height: Math.max(...boxes.map((r) => r.bottom)) - y,
+		};
+	})()`);
+}
+
+const changed = [];
+
+/** Writes docs/onboarding/<lang>/<scene>.png only when its bytes differ from what is there. */
+function writeScene(lang, scene, png) {
+	const file = join(ONBOARDING_DIR, lang, `${scene}.png`);
+	const same = existsSync(file) && readFileSync(file).equals(png);
+	if (!same) {
+		mkdirSync(dirname(file), { recursive: true });
+		writeFileSync(file, png);
+		changed.push(file);
+	}
+	console.log(`  ${same ? "same " : "wrote"} ${lang}/${scene}.png  ${Math.round(statSync(file).size / 1024)} KB`);
+}
+
+async function pressEscape(page) {
+	await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }))`);
+	await sleep(300);
+}
+
+async function onboardingScenes(page, box, look) {
+	const { lang } = look;
+	const viewport = ONBOARDING_WINDOW;
+	const wanted = new Set(readOnboardingScenes());
+	const shoot = async (scene, rect) => {
+		if (!wanted.delete(scene)) {
+			throw new Error(`scene ${scene} is not in ONBOARDING_SCENES`);
+		}
+		await sleep(900);
+		writeScene(lang, scene, await page.screenshot(rect ? frameAround(rect, viewport) : { x: 0, y: 0, ...viewport }, 1 / look.scale));
+	};
+	const menuOf = (name) =>
+		`[...document.querySelectorAll('.agent-sessions-row')].find((r) => r.textContent.includes(${JSON.stringify(name.split(': ')[1])}))`;
+	const openRowMenu = async (name) => {
+		await page.evaluate(`(() => {
+			const row = ${menuOf(name)};
+			row.scrollIntoView({ block: "nearest" });
+			row.querySelector('.agent-sessions-row-menu-btn').setAttribute('data-shot', '1');
+		})()`);
+		await page.hover(`[data-shot="1"]`);
+		await sleep(200);
+		await page.click(`[data-shot="1"]`);
+		await page.evaluate(`document.querySelector('[data-shot]')?.removeAttribute('data-shot')`);
+		await page.waitFor(`document.querySelector('.menu')`, { what: "the row menu" });
+		await sleep(300);
+	};
+	const menuItem = (key) => `[...document.querySelectorAll('.menu-item')].find((i) => i.textContent.includes(${JSON.stringify(msg(lang, key))}))`;
+	const sessions = box.sessions;
+	const checkout = sessions.find((s) => s.transcript === "claude-checkout");
+	const infra = sessions.find((s) => s.transcript === "claude-infra");
+
+	console.log(`Onboarding scenes (${lang}):`);
+	await clearNotices(page);
+	await front(page, checkout.id);
+	await shoot("overview");
+
+	// The side panel: the top of the list with the nav row and a strip of the terminal.
+	await shoot("side-panel", { x: 1180, y: 0, width: 420, height: 0 });
+
+	// The row's ⋯ menu.
+	await openRowMenu(checkout.name);
+	await shoot("row-menu", await unionOf(page, [".menu"]));
+	await pressEscape(page);
+
+	// The same menu with "Restart session" under the pointer.
+	await openRowMenu(infra.name);
+	await page.evaluate(`(${menuItem("action.restartSession")}).setAttribute('data-shot', '1')`);
+	await page.hover(`[data-shot="1"]`);
+	await sleep(600);
+	// The tooltip would cover the items below the highlighted one.
+	await page.evaluate(`document.querySelectorAll('.tooltip').forEach((n) => n.remove())`);
+	await shoot("restart", await unionOf(page, [".menu"]));
+	await page.evaluate(`document.querySelector('[data-shot]')?.removeAttribute('data-shot')`);
+	await pressEscape(page);
+
+	// Move to category: the dialog with the category suggestions open.
+	await openRowMenu(checkout.name);
+	await page.evaluate(`${menuItem("action.moveToCategory")}.click()`);
+	await page.waitFor(`document.querySelector('.modal .agent-sessions-name-input-field')`, { what: "the move dialog" });
+	await page.click(`.modal .agent-sessions-name-input-field`);
+	await sleep(500);
+	await shoot("move-category", await unionOf(page, [".modal", ".suggestion-container"]));
+	await pressEscape(page);
+	await page.waitFor(`!document.querySelector('.modal')`, { what: "the move dialog to close" });
+
+	// New session: the dialog with a name half typed.
+	await page.click(`.agent-sessions-nav [aria-label=${JSON.stringify(msg(lang, "action.newSession"))}]`);
+	await page.waitFor(`document.querySelector('.modal .agent-sessions-name-input-field')`, { what: "the new session dialog" });
+	await page.click(`.modal .agent-sessions-name-input-field`);
+	await page.type(look.scenario.newSessionName);
+	await sleep(300);
+	await shoot("new-session", await unionOf(page, [".modal"]));
+	await pressEscape(page);
+	await page.waitFor(`!document.querySelector('.modal')`, { what: "the new session dialog to close" });
+
+	// The built-in editor under the terminal.
+	const draft = join(box.vault, ".agents", "draft-prompt.md");
+	writeFileSync(draft, look.scenario.editorDraft);
+	await front(page, checkout.id);
+	await page.evaluate(`(() => {
+		const view = ${leafOf(checkout.id)}.view;
+		window.__editorResult = view.openEditor(${JSON.stringify(draft)}, ${JSON.stringify(checkout.cwd)});
+	})()`);
+	await page.waitFor(`getComputedStyle(document.querySelector('.agent-sessions-terminal-editor')).display !== 'none'`, { what: "the editor pane" });
+	await sleep(600);
+	await shoot("editor", await unionOf(page, [".workspace-tabs.mod-active"]));
+	await page.evaluate(`${leafOf(checkout.id)}.view.cancelEditor()`);
+	await sleep(500);
+
+	// Organize: the result view.
+	await openOrganizeResult(page, look);
+	await shoot("organize", await unionOf(page, [".agent-sessions-organize"]));
+	await pressEscape(page);
+	await page.waitFor(`!document.querySelector('.modal')`, { what: "the organize dialog to close" });
+
+	// The install dialog, with a made-up plan so no path of this machine shows.
+	await page.evaluate(`(() => {
+		${PLUGIN}.planBackendInstall = async () => ({
+			python: { path: "/usr/bin/python3", version: "3.12.4" },
+			location: { dir: "/Users/demo/.local/share/agent-sessions" },
+		});
+		${PLUGIN}.openInstallBackend();
+	})()`);
+	await page.waitFor(`document.querySelector('.agent-sessions-install-plan')`, { what: "the install plan" });
+	await shoot("install", await unionOf(page, [".modal"]));
+	await pressEscape(page);
+	await page.waitFor(`!document.querySelector('.modal')`, { what: "the install dialog to close" });
+
+	// Settings → the agents section, with made-up program paths.
+	await page.evaluate(`(() => {
+		const agents = ${PLUGIN}.settings.agents;
+		window.__realPaths = { claude: agents.claude.path, codex: agents.codex.path };
+		Object.assign(agents.claude, { path: ${JSON.stringify("/Users/demo/.local/bin/claude")} });
+		Object.assign(agents.codex, { path: ${JSON.stringify("/opt/homebrew/bin/codex")} });
+		// Settings open in a window of their own by default, out of reach of this page.
+		app.setting.shouldUsePopout = () => false;
+		app.setting.open();
+		return 0;
+	})()`);
+	await page.waitFor(`document.querySelector('.modal.mod-settings')`, { what: "the settings dialog" });
+	await sleep(800);
+	await page.evaluate(`(app.setting.openTabById(${PLUGIN}.manifest.id), 0)`);
+	await page.waitFor(`document.querySelector('.agent-sessions-settings-agent')`, { what: "the agents settings" });
+	await page.evaluate(`(() => {
+		const heading = [...document.querySelectorAll('.setting-item-heading .setting-item-name')].find((n) => n.textContent === ${JSON.stringify(msg(lang, "settings.agents.heading"))});
+		heading.scrollIntoView({ block: "start" });
+	})()`);
+	await shoot("agents", await unionOf(page, [".modal.mod-settings"]));
+	await page.evaluate(`(() => {
+		app.setting.close();
+		const agents = ${PLUGIN}.settings.agents;
+		agents.claude.path = window.__realPaths.claude;
+		agents.codex.path = window.__realPaths.codex;
+	})()`);
+	await sleep(300);
+
+	// The session manager with its usage view.
+	await page.evaluate(`(async () => {
+		app.workspace.rightSplit.collapse();
+		await app.commands.executeCommandById('agent-sessions:open-manager');
+	})()`);
+	await shoot("manager");
+
+	if (wanted.size) {
+		throw new Error(`no code shoots: ${[...wanted].join(", ")}`);
+	}
+}
+
+// ---- One Obsidian run ---------------------------------------------------------------------
+
+/**
+ * Launches the sandbox in `look` (language, theme, viewport), lays out the workspace, and hands
+ * the window to `scenes(page, box, look)`.
+ */
+async function withObsidian(look, scenes) {
 	if (!existsSync(PLUGIN_JS)) {
 		throw new Error(`${PLUGIN_JS} is missing — build the plugin first (see README.md next to this file)`);
 	}
 	const now = Math.floor(Date.now() / 1000);
 	const root = mkdtempSync(join(tmpdir(), "as-shots-"));
-	const box = buildSandbox(root, now);
-	const daemon = startFakeDaemon(join(box.runtime, "daemon.sock"), box.sessions, now);
+	look.scenario = await scenarioFor(look.lang);
+	const box = buildSandbox(root, now, look);
+	const daemon = startFakeDaemon(join(box.runtime, "daemon.sock"), box.sessions, now, { lang: look.lang, light: look.light });
 	const port = await freePort();
 	const obsidian = spawn(
 		OBSIDIAN_BIN,
@@ -216,16 +510,16 @@ async function run() {
 		page = await connectPage(port);
 		await page.waitFor("window.app?.workspace?.layoutReady", { what: "Obsidian's workspace" });
 
-		// English UI and community plugins on; both take effect on reload.
+		// The UI language and community plugins on; both take effect on reload.
 		await page.evaluate(`(async () => {
-			localStorage.setItem('language', 'en');
+			localStorage.setItem('language', ${JSON.stringify(look.lang)});
 			await app.plugins.setEnable(true);
 			location.reload();
 		})()`).catch(() => undefined);
 		await sleep(1500);
 		await page.waitFor(`window.app?.workspace?.layoutReady && !!${PLUGIN}`, { what: "the plugin to load" });
 		await page.collectErrors(errors);
-		await page.setViewport(WINDOW.width, WINDOW.height);
+		await page.setViewport(look.window.width, look.window.height, look.scale);
 
 		// Layout: no file explorer, the side panel on the right, the terminal tabs in the middle.
 		const tabs = box.sessions.filter((s) => s.tab).map((s) => ({ id: s.id, agent: s.agent, cwd: s.cwd }));
@@ -253,67 +547,13 @@ async function run() {
 		await front(page, checkout.id);
 		await sleep(1000);
 		for (const s of flips) {
-			setRegistry(box.home, s, "idle");
+			setRegistry(box.home, box.ids, s, "idle");
 		}
 		await sleep(1500);
 		await clearNotices(page);
-
 		await page.evaluate(`app.workspace.rightSplit.setSize(${SIDEBAR_WIDTH})`);
-		console.log("Scenes:");
-		await capture(page, "overview");
 
-		await page.evaluate(`(async () => {
-			app.workspace.rightSplit.collapse();
-			await app.commands.executeCommandById('agent-sessions:open-manager');
-		})()`);
-		await capture(page, "manager");
-
-		// Codex asking for approval in front, while a Claude session's idle notice comes in.
-		await page.evaluate(`(async () => {
-			for (const leaf of app.workspace.getLeavesOfType('agent-sessions-manager')) leaf.detach();
-			app.workspace.rightSplit.expand();
-			app.workspace.rightSplit.setSize(${SIDEBAR_WIDTH});
-		})()`);
-		const limiter = box.sessions.find((s) => s.transcript === "codex-limiter");
-		await front(page, limiter.id);
-		for (const s of flips) {
-			setRegistry(box.home, s, "busy");
-		}
-		await sleep(1200);
-		for (const s of flips) {
-			setRegistry(box.home, s, "idle");
-		}
-		await page.waitFor(`document.querySelector('.notice')`, { what: "the idle notice" });
-		await capture(page, "codex");
-
-		// The welcome guide, on its first page.
-		await clearNotices(page);
-		await page.evaluate(`${PLUGIN}.openOnboarding()`);
-		await page.waitFor(`document.querySelector('.agent-sessions-onboarding')`, { what: "the welcome guide" });
-		await capture(page, "welcome");
-		await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }))`);
-		await page.waitFor(`!document.querySelector('.agent-sessions-onboarding')`, { what: "the welcome guide to close" });
-
-		// "Organize names and categories": every session already has a category, so the
-		// "only unnamed" switch goes off; the stand-in claude answers; one row is unticked
-		// and given a comment.
-		await sleep(500);
-		await page.click('.agent-sessions-nav [aria-label="More"]');
-		await page.waitFor(`document.querySelector('.menu')`, { what: "the more menu" });
-		await page.evaluate(`[...document.querySelectorAll('.menu-item')].find((i) => i.textContent.includes('Organize names and categories')).click()`);
-		await page.waitFor(`document.querySelector('.agent-sessions-organize .checkbox-container')`, { what: "the organize dialog" });
-		await page.evaluate(`document.querySelector('.agent-sessions-organize .checkbox-container').click()`);
-		await page.evaluate(`[...document.querySelectorAll('.agent-sessions-organize button')].find((b) => b.textContent.includes('Suggest')).click()`);
-		await page.waitFor(`document.querySelector('.agent-sessions-organize-row:not(.is-header)')`, { what: "the organize results" });
-		await page.evaluate(`(() => {
-			const rows = [...document.querySelectorAll('.agent-sessions-organize-row:not(.is-header)')];
-			const target = rows.find((r) => r.textContent.includes('Vector search'));
-			target.querySelector('.agent-sessions-round-check').click();
-			const comment = target.querySelector('.agent-sessions-organize-comment');
-			comment.value = ${JSON.stringify(ORGANIZE_COMMENT)};
-			comment.dispatchEvent(new Event('input', { bubbles: true }));
-		})()`);
-		await capture(page, "organize");
+		await scenes(page, box, look);
 	} catch (err) {
 		failed = true;
 		if (page) {
@@ -337,6 +577,17 @@ async function run() {
 			await sleep(500);
 			rmSync(root, { recursive: true, force: true });
 		}
+	}
+}
+
+async function run() {
+	if (onboarding) {
+		for (const lang of languages) {
+			await withObsidian({ lang, light: true, window: ONBOARDING_WINDOW, scale: 2 }, onboardingScenes);
+		}
+		console.log(changed.length ? `Changed:\n${changed.map((f) => `  ${f}`).join("\n")}` : "No image changed.");
+	} else {
+		await withObsidian({ lang: "en", light: false, window: WINDOW, scale: 2 }, readmeScenes);
 	}
 }
 
