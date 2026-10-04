@@ -176,6 +176,8 @@ The runner can also run on the machine under test (`--local`). This is the way t
 
    On macOS: `open -a Obsidian --args --remote-debugging-port=9222`.
 
+   With the AppImage, run the AppImage file (or the `obsidian` binary inside its extracted folder) with the same flag. Keep only the test vault's window open: the runner talks to the first Obsidian window it finds on the port.
+
 5. Run the smoke test:
 
    ```sh
