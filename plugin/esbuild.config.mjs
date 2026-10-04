@@ -6,7 +6,11 @@ import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import builtins from "builtin-modules";
 
-const production = process.argv[2] === "production";
+const mode = process.argv[2];
+const production = mode === "production";
+// `dev` builds once, with the development flag on, and exits; no argument builds the same way and keeps
+// watching; `production` builds once, minified, with the flag off.
+const once = production || mode === "dev";
 const REPO = fileURLToPath(new URL("..", import.meta.url));
 
 /**
@@ -98,7 +102,7 @@ const context = await esbuild.context({
 	minify: production,
 });
 
-if (production) {
+if (once) {
 	await context.rebuild();
 	await context.dispose();
 } else {
