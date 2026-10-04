@@ -3,69 +3,24 @@ import {
 	completeStep,
 	installPageState,
 	nextIndex,
-	ONBOARDING_PAGES,
 	ONBOARDING_SCENES,
 	onboardingImageUrl,
-	onboardingNav,
 	onboardingSteps,
 	progressFinished,
 	resolveAutoLanguage,
 	resumeProgress,
 	sanitizeProgress,
 	shouldOpenOnStartup,
-	shouldShowOnboarding,
 	skipStep,
 	stepAvailableFor,
 	stepState,
-	stepPage,
 	STEP_SCENES,
-	USAGE_ITEMS,
 	WHATS_NEW,
 	whatsNewSince,
 	type OnboardingProgress,
 } from "../../src/ui/onboarding-model";
 
-describe("shouldShowOnboarding", () => {
-	it("shows on first install", () => {
-		expect(shouldShowOnboarding("", "0.5.0", true)).toBe(true);
-		expect(shouldShowOnboarding("", "0.5.0", false)).toBe(true);
-	});
-
-	it("shows after an update only when the user keeps it on", () => {
-		expect(shouldShowOnboarding("0.4.0", "0.5.0", true)).toBe(true);
-		expect(shouldShowOnboarding("0.4.0", "0.5.0", false)).toBe(false);
-	});
-
-	it("does not reopen for an unchanged version", () => {
-		expect(shouldShowOnboarding("0.5.0", "0.5.0", true)).toBe(false);
-	});
-});
-
-describe("onboarding navigation", () => {
-	it("has no Back on the first page and Done on the last", () => {
-		expect(onboardingNav(0)).toEqual({ step: 1, total: ONBOARDING_PAGES.length, hasBack: false, isLast: false });
-		const last = onboardingNav(ONBOARDING_PAGES.length - 1);
-		expect(last.hasBack).toBe(true);
-		expect(last.isLast).toBe(true);
-	});
-
-	it("clamps out-of-range indexes", () => {
-		expect(onboardingNav(-3).step).toBe(1);
-		expect(onboardingNav(99).step).toBe(ONBOARDING_PAGES.length);
-	});
-
-	it("steps within the pages", () => {
-		expect(stepPage(0, -1)).toBe(0);
-		expect(stepPage(0, 1)).toBe(1);
-		expect(stepPage(ONBOARDING_PAGES.length - 1, 1)).toBe(ONBOARDING_PAGES.length - 1);
-	});
-});
-
-describe("page content", () => {
-	it("lists the five usage items", () => {
-		expect(USAGE_ITEMS).toHaveLength(5);
-	});
-
+describe("install page", () => {
 	it("reports the install state", () => {
 		expect(installPageState(true, "/x/agent-sessions")).toEqual({ kind: "installed", path: "/x/agent-sessions" });
 		expect(installPageState(false, "/x/agent-sessions")).toEqual({ kind: "missing" });
@@ -339,8 +294,8 @@ describe("whatsNewSince", () => {
 	});
 
 	it("has the items of every version between what was shown and now, oldest first", () => {
-		const older = { title: "onboarding.about.heading", body: "onboarding.about.lead", scene: "overview" } as const;
-		const newer = { title: "onboarding.install.heading", body: "onboarding.install.desc", scene: "install" } as const;
+		const older = { title: "onboarding.step.about", body: "onboarding.about.lead", scene: "overview" } as const;
+		const newer = { title: "onboarding.step.setup", body: "onboarding.install.desc", scene: "install" } as const;
 		WHATS_NEW["0.4.5"] = [older];
 		WHATS_NEW["0.6.0"] = [newer];
 		try {

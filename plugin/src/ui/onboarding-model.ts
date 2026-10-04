@@ -1,69 +1,9 @@
 // The welcome guide's logic, kept free of `obsidian` so it can be tested in plain Node: when it is
-// shown, which steps it has, how far the user got, and what the install page reports.
-//
-// Two models live here. The step model (from `OnboardingStepId` down) is what the guide is being
-// rebuilt around: a sequence of steps, the progress kept in the settings, the what's-new items and
-// the screenshot scenes. The page model above it is what the current four-page modal
-// (`ui/onboarding-modal.ts`) renders; the step model replaces it once the new modal does, so those
-// exports stay exactly as they are until then.
+// shown, which steps it has, how far the user got, what the install page reports, what's new and
+// the screenshot scenes. The modal (`ui/onboarding-modal.ts`) only renders what this decides.
 
 import type { MessageKey } from "../i18n";
 import type { AgentId } from "../settings";
-
-// ---- The page model of the current modal (replaced by the step model below) ----
-
-export type OnboardingPageId = "about" | "usage" | "install" | "settings";
-
-/** The pages, in order. */
-export const ONBOARDING_PAGES: readonly OnboardingPageId[] = ["about", "usage", "install", "settings"];
-
-/**
- * Whether the guide opens by itself at startup. It does on first install (nothing recorded yet),
- * and after an update when the user keeps "Show this guide after updates" on; an unchanged
- * version never reopens it.
- */
-export function shouldShowOnboarding(shownVersion: string, currentVersion: string, onUpdate: boolean): boolean {
-	if (shownVersion === "") {
-		return true;
-	}
-	return shownVersion !== currentVersion && onUpdate;
-}
-
-export interface OnboardingNav {
-	/** 1-based, for the step indicator ("2 / 4"). */
-	step: number;
-	total: number;
-	hasBack: boolean;
-	/** The last page swaps Next for Done. */
-	isLast: boolean;
-}
-
-/** Back/Next/Done state for the page at `index` (clamped into range). */
-export function onboardingNav(index: number, total = ONBOARDING_PAGES.length): OnboardingNav {
-	const i = Math.min(Math.max(index, 0), total - 1);
-	return { step: i + 1, total, hasBack: i > 0, isLast: i === total - 1 };
-}
-
-/** The page index after Back (`-1`) or Next (`+1`), staying inside the pages. */
-export function stepPage(index: number, delta: -1 | 1, total = ONBOARDING_PAGES.length): number {
-	return Math.min(Math.max(index + delta, 0), total - 1);
-}
-
-export interface UsageItem {
-	/** A lucide icon id. */
-	icon: string;
-	title: MessageKey;
-	body: MessageKey;
-}
-
-/** The "Using sessions" page's items. The editor item's text takes the current editor key as `{key}`. */
-export const USAGE_ITEMS: readonly UsageItem[] = [
-	{ icon: "terminal", title: "onboarding.usage.input.title", body: "onboarding.usage.input.body" },
-	{ icon: "pencil", title: "onboarding.usage.rename.title", body: "onboarding.usage.rename.body" },
-	{ icon: "folder-input", title: "onboarding.usage.category.title", body: "onboarding.usage.category.body" },
-	{ icon: "square-pen", title: "onboarding.usage.editor.title", body: "onboarding.usage.editor.body" },
-	{ icon: "gauge", title: "onboarding.usage.limits.title", body: "onboarding.usage.limits.body" },
-];
 
 export type InstallPageState = { kind: "installed"; path: string } | { kind: "missing" };
 
@@ -76,6 +16,13 @@ export function installPageState(backendAvailable: boolean, programPath: string)
 }
 
 // ---- The guide's steps ----
+
+/** What the floating coach window (`ui/onboarding-coach.ts`) offers the guide: while an operation
+ * step is being done the modal gets out of the way and the coach shows that step instead. */
+export interface OnboardingCoach {
+	/** Shows `step` (an operation step) in the coach. The guide's progress is already saved. */
+	show(step: OnboardingStepId): void;
+}
 
 /** A step of the guide. `first-session` through `editor` are the ones it walks the user through on
  * its own session; the rest are read-and-ask steps. */

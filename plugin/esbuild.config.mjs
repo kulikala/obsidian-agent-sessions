@@ -92,6 +92,9 @@ const context = await esbuild.context({
 	// AGENT_SESSIONS_OUTFILE: build somewhere else than plugin/main.js (which a development vault may
 	// link to), e.g. for a test machine.
 	outfile: process.env.AGENT_SESSIONS_OUTFILE || "main.js",
+	// True only in a development build: code behind it (the welcome guide's picture-folder override)
+	// is removed from the shipped bundle.
+	define: { __AGENT_SESSIONS_DEV__: String(!production) },
 	minify: production,
 });
 

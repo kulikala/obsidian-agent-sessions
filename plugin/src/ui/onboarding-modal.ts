@@ -1,21 +1,41 @@
-// The welcome guide: a few pages shown on first install and after updates, and on demand
-// (command, settings tab). It only presents; installing, enabling agents and the submit key go
-// through the same `AgentSessionsPlugin` methods the install dialog and the settings tab use.
+// The welcome guide: a run of steps (`onboarding-model.ts`) shown first on install, after an update
+// that has something new, and on demand. It only presents; installing, enabling agents and the
+// submit key go through the same `AgentSessionsPlugin` methods the install dialog and the settings
+// tab use. Progress is saved to the settings after every change, so closing the modal keeps the place.
+//
+// The operation steps (first session, tabs, rename, editor) hand over to the floating coach window
+// (`plugin.onboardingCoach`) when there is one; without it the modal shows them as pages itself.
 
-import { App, Modal, Notice, Platform, Setting, setIcon } from "obsidian";
+import { App, getLanguage, Modal, Notice, Platform, Setting, setIcon } from "obsidian";
 import { detectAgents } from "../backend/backend";
-import { t, type MessageKey } from "../i18n";
+import { getLang, languageOptions, resolveLang, t, type LanguageSetting, type MessageKey } from "../i18n";
+import { en } from "../i18n/locales/en";
+import { ja } from "../i18n/locales/ja";
 import type AgentSessionsPlugin from "../main";
-import { AGENT_IDS, agentsSupportedOn, SUBMIT_KEY_LABELS, submitKeyChoices, type AgentId, type SubmitKey } from "../settings";
+import { agentsSupportedOn, SUBMIT_KEY_LABELS, submitKeyChoices, type AgentId, type SubmitKey } from "../settings";
 import { editorKeyLabel } from "../terminal/keys";
 import { AGENT_ICON_ID } from "./icons";
 import {
+	agentInstallHelp,
+	currentStep,
+	guideAgent,
+	isLastPage,
+	skipIfUnavailable,
+	stepBack,
+	stepForward,
+} from "./onboarding-flow";
+import { renderSceneImage } from "./onboarding-image";
+import {
+	completeStep,
 	installPageState,
-	ONBOARDING_PAGES,
-	onboardingNav,
-	stepPage,
-	USAGE_ITEMS,
-	type OnboardingPageId,
+	OPERATION_STEPS,
+	skipStep,
+	stepState,
+	STEP_SCENES,
+	type OnboardingProgress,
+	type OnboardingScene,
+	type OnboardingStepId,
+	type WhatsNewItem,
 } from "./onboarding-model";
 
 const AGENT_NAME_KEY: Record<AgentId, MessageKey> = {
@@ -24,24 +44,62 @@ const AGENT_NAME_KEY: Record<AgentId, MessageKey> = {
 	opencode: "settings.agents.opencode.name",
 };
 
-const PAGE_HEADING_KEY: Record<OnboardingPageId, MessageKey> = {
-	about: "onboarding.about.heading",
-	usage: "onboarding.usage.heading",
-	install: "onboarding.install.heading",
-	settings: "onboarding.settings.heading",
+const STEP_HEADING_KEY: Record<Exclude<OnboardingStepId, "language">, MessageKey> = {
+	about: "onboarding.step.about",
+	setup: "onboarding.step.setup",
+	"first-session": "onboarding.step.first-session",
+	tabs: "onboarding.step.tabs",
+	rename: "onboarding.step.rename",
+	editor: "onboarding.step.editor",
+	more: "onboarding.step.more",
+	"whats-new": "onboarding.step.whats-new",
 };
 
+const OP_BODY_KEY: Record<string, MessageKey> = {
+	"first-session": "onboarding.op.first-session",
+	tabs: "onboarding.op.tabs",
+	rename: "onboarding.op.rename",
+	editor: "onboarding.op.editor",
+};
+
+const MORE_ITEMS: readonly { icon: string; title: MessageKey; body: MessageKey; scene: OnboardingScene }[] = [
+	{ icon: "rotate-cw", title: "onboarding.more.restart.title", body: "onboarding.more.restart.body", scene: "restart" },
+	{ icon: "folder-input", title: "onboarding.more.organize.title", body: "onboarding.more.organize.body", scene: "organize" },
+	{ icon: "gauge", title: "onboarding.more.manager.title", body: "onboarding.more.manager.body", scene: "manager" },
+];
+
+export interface OnboardingModalOptions {
+	/** The run to show. */
+	progress: OnboardingProgress;
+	/** Whether changes are saved to the settings. False for an update run shown while an earlier,
+	 * unfinished run is kept as it is (its "Continue the guide" button opens that one). */
+	persist: boolean;
+	/** An earlier unfinished run exists that this one left alone. */
+	hasEarlierRun: boolean;
+	/** What the `whats-new` step lists. */
+	whatsNew: readonly WhatsNewItem[];
+}
+
+/** `key` in English and in Japanese, for the pages shown before the user has picked a language. */
+function bilingual(key: MessageKey): [string, string] {
+	return [en[key], ja[key] ?? en[key]];
+}
+
 export class OnboardingModal extends Modal {
-	private index = 0;
-	/** The agents' detection results, looked up once when the settings page is first reached. */
+	private progress: OnboardingProgress;
+	/** The agents' detection results, looked up when the setup step is first reached. */
 	private detected: Record<AgentId, string | null> | null = null;
 	private detecting = false;
+	/** Operation steps started from this page (the coach, when there is one, does the rest). */
+	private started = new Set<OnboardingStepId>();
 
 	constructor(
 		app: App,
-		private plugin: AgentSessionsPlugin
+		private plugin: AgentSessionsPlugin,
+		private options: OnboardingModalOptions
 	) {
 		super(app);
+		this.progress = options.progress;
 	}
 
 	onOpen(): void {
@@ -54,37 +112,71 @@ export class OnboardingModal extends Modal {
 		this.contentEl.empty();
 	}
 
+	private setProgress(next: OnboardingProgress): void {
+		this.progress = next;
+		if (this.options.persist) {
+			void this.plugin.saveOnboardingProgress(next);
+		}
+	}
+
+	private agent(): AgentId {
+		const agents = this.plugin.settings.agents;
+		return guideAgent(
+			this.plugin.settings.lastNewSessionAgent,
+			{ claude: agents.claude.enabled, codex: agents.codex.enabled, opencode: agents.opencode.enabled },
+			process.platform
+		);
+	}
+
 	private render(): void {
 		const { contentEl } = this;
 		contentEl.empty();
-		const nav = onboardingNav(this.index);
-		const page = ONBOARDING_PAGES[this.index];
+		// A step the guide's agent can't do is passed over where it is reached (and that is saved).
+		const adjusted = skipIfUnavailable(this.progress, this.agent());
+		if (adjusted !== this.progress) {
+			this.setProgress(adjusted);
+		}
+		const p = this.progress;
+		const step = currentStep(p);
+		if (step === null) {
+			this.finish();
+			return;
+		}
 
-		const steps = contentEl.createDiv({ cls: "agent-sessions-onboarding-steps" });
-		const dots = steps.createDiv({ cls: "agent-sessions-onboarding-dots" });
-		ONBOARDING_PAGES.forEach((_, i) => {
-			dots.createSpan({ cls: i === this.index ? "agent-sessions-onboarding-dot is-current" : "agent-sessions-onboarding-dot" });
+		const header = contentEl.createDiv({ cls: "agent-sessions-onboarding-steps" });
+		const dots = header.createDiv({ cls: "agent-sessions-onboarding-dots" });
+		p.steps.forEach((id, i) => {
+			const dot = dots.createSpan({ cls: "agent-sessions-onboarding-dot" });
+			dot.toggleClass("is-current", i === p.current);
+			dot.toggleClass("is-done", stepState(p, id) !== "pending");
 		});
-		steps.createSpan({ text: t("onboarding.step", { step: nav.step, total: nav.total }) });
+		header.createSpan({ text: t("onboarding.step", { step: p.current + 1, total: p.steps.length }) });
 
-		contentEl.createEl("h3", { cls: "agent-sessions-onboarding-heading", text: t(PAGE_HEADING_KEY[page]) });
+		const heading = step === "language" ? bilingual("onboarding.language.heading").join(" / ") : t(STEP_HEADING_KEY[step]);
+		contentEl.createEl("h3", { cls: "agent-sessions-onboarding-heading", text: heading });
 		const body = contentEl.createDiv({ cls: "agent-sessions-onboarding-body" });
-		switch (page) {
+		switch (step) {
+			case "language":
+				this.renderLanguage(body);
+				break;
 			case "about":
 				this.renderAbout(body);
 				break;
-			case "usage":
-				this.renderUsage(body);
+			case "setup":
+				this.renderSetup(body);
 				break;
-			case "install":
-				this.renderInstall(body);
+			case "more":
+				this.renderMore(body);
 				break;
-			case "settings":
-				this.renderSettings(body);
+			case "whats-new":
+				this.renderWhatsNew(body);
 				break;
+			default:
+				this.renderOperation(body, step);
 		}
 
-		if (nav.isLast) {
+		const last = isLastPage(p);
+		if (last && (step === "more" || step === "whats-new")) {
 			new Setting(contentEl)
 				.setName(t("onboarding.afterUpdates"))
 				.addToggle((toggle) =>
@@ -95,22 +187,116 @@ export class OnboardingModal extends Modal {
 				);
 		}
 
+		const operation = OPERATION_STEPS.includes(step);
+		const pending = stepState(p, step) === "pending";
 		const footer = new Setting(contentEl).setClass("agent-sessions-onboarding-footer");
-		if (nav.hasBack) {
-			footer.addButton((button) => button.setButtonText(t("action.back")).onClick(() => this.go(-1)));
+		if (p.current > 0) {
+			footer.addButton((button) => button.setButtonText(t("action.back")).onClick(() => this.setStep(stepBack(this.progress))));
+		}
+		if (operation && pending) {
+			footer.addButton((button) =>
+				button.setButtonText(t("action.skip")).onClick(() => this.setStep(stepForward(skipStep(this.progress, step))))
+			);
 		}
 		footer.addButton((button) => {
 			button.setCta();
-			if (nav.isLast) {
-				button.setButtonText(t("action.done")).onClick(() => this.close());
-			} else {
-				button.setButtonText(t("action.next")).onClick(() => this.go(1));
+			if (last) {
+				button.setButtonText(t("action.finishGuide")).onClick(() => this.finish());
+				return;
+			}
+			button.setButtonText(t("action.next")).onClick(() => this.next(step));
+			if (operation && pending && !this.hasStarted(step)) {
+				button.setDisabled(true);
 			}
 		});
 	}
 
-	private go(delta: -1 | 1): void {
-		this.index = stepPage(this.index, delta);
+	private hasStarted(step: OnboardingStepId): boolean {
+		return this.started.has(step) || (step === "first-session" && this.progress.sessionId !== null);
+	}
+
+	private setStep(next: OnboardingProgress): void {
+		this.setProgress(next);
+		this.render();
+	}
+
+	/** Next. An operation step that was started here and isn't tracked (no coach) counts as done. */
+	private next(step: OnboardingStepId): void {
+		let p = this.progress;
+		if (OPERATION_STEPS.includes(step) && stepState(p, step) === "pending" && this.hasStarted(step)) {
+			p = completeStep(p, step);
+		}
+		this.setStep(stepForward(p));
+	}
+
+	/** The run is through (or the user ended it): its record goes, and so does the modal. */
+	private finish(): void {
+		if (this.options.persist) {
+			void this.plugin.saveOnboardingProgress(null);
+		}
+		this.close();
+	}
+
+	// ---- Pictures ----
+
+	private image(parent: HTMLElement, scene: OnboardingScene): void {
+		renderSceneImage(parent, {
+			scene,
+			lang: getLang(),
+			version: this.plugin.manifest.version,
+			base: this.plugin.devImageBase,
+			enabled: this.plugin.settings.onboardingImages,
+			onTurnOff: () => {
+				this.plugin.settings.onboardingImages = false;
+				void this.plugin.saveSettings();
+				this.render();
+			},
+		});
+	}
+
+	/** The sentence saying what the pictures cost (a request to GitHub for images) and the checkbox that
+	 * turns them off. `both` writes it in English and Japanese, for before the user has chosen. */
+	private renderImagesConsent(parent: HTMLElement, both: boolean): void {
+		const box = parent.createDiv({ cls: "agent-sessions-onboarding-consent" });
+		const sentences = both ? bilingual("onboarding.images.notice") : [t("onboarding.images.notice")];
+		for (const sentence of sentences) {
+			box.createEl("p", { cls: "agent-sessions-onboarding-muted", text: sentence });
+		}
+		const label = box.createEl("label", { cls: "agent-sessions-onboarding-consent-label" });
+		const checkbox = label.createEl("input", { type: "checkbox" });
+		checkbox.checked = this.plugin.settings.onboardingImages;
+		label.createSpan({ text: both ? bilingual("onboarding.images.label").join(" / ") : t("onboarding.images.label") });
+		checkbox.addEventListener("change", () => {
+			this.plugin.settings.onboardingImages = checkbox.checked;
+			void this.plugin.saveSettings();
+			this.render();
+		});
+	}
+
+	// ---- Steps ----
+
+	private renderLanguage(body: HTMLElement): void {
+		const options = languageOptions();
+		const resolved = resolveLang("auto", getLanguage());
+		const choices: [LanguageSetting, string][] = [
+			["auto", t("onboarding.language.auto", { language: options[resolved] })],
+			["en", options.en],
+			["ja", options.ja],
+		];
+		const list = body.createDiv({ cls: "agent-sessions-onboarding-choices" });
+		for (const [value, label] of choices) {
+			const button = list.createEl("button", { text: label });
+			button.toggleClass("mod-cta", this.plugin.settings.language === value);
+			button.addEventListener("click", () => void this.chooseLanguage(value));
+		}
+		this.renderImagesConsent(body, true);
+	}
+
+	private async chooseLanguage(value: LanguageSetting): Promise<void> {
+		this.plugin.settings.language = value;
+		this.plugin.applyLanguage();
+		await this.plugin.saveSettings();
+		this.titleEl.setText(t("onboarding.title"));
 		this.render();
 	}
 
@@ -120,82 +306,40 @@ export class OnboardingModal extends Modal {
 		for (const key of ["onboarding.about.tabs", "onboarding.about.daemon", "onboarding.about.panels"] as const) {
 			list.createEl("li", { text: t(key) });
 		}
+		this.image(body, "overview");
 	}
 
-	private renderUsage(body: HTMLElement): void {
-		const key = editorKeyLabel(this.plugin.settings.editorKey, Platform.isMacOS);
-		for (const item of USAGE_ITEMS) {
-			const row = body.createDiv({ cls: "agent-sessions-onboarding-item" });
-			setIcon(row.createSpan({ cls: "agent-sessions-onboarding-item-icon" }), item.icon);
-			const text = row.createDiv({ cls: "agent-sessions-onboarding-item-text" });
-			text.createDiv({ cls: "agent-sessions-onboarding-item-title", text: t(item.title) });
-			text.createDiv({ cls: "agent-sessions-onboarding-item-body", text: t(item.body, { key }) });
-		}
-	}
-
-	private renderInstall(body: HTMLElement): void {
+	private renderSetup(body: HTMLElement): void {
 		body.createEl("p", { text: t("onboarding.install.desc") });
 		const state = installPageState(this.plugin.backendAvailable(), this.plugin.agentSessionsPath());
-		const setting = new Setting(body);
+		const program = new Setting(body).setName(t("onboarding.setup.program"));
+		if (state.kind === "installed") {
+			program.setDesc(t("onboarding.install.installed", { path: state.path }));
+			setIcon(program.nameEl.createSpan({ cls: "agent-sessions-onboarding-ok" }), "check");
+		} else {
+			program.setDesc(t("onboarding.install.missing"));
+			program.addButton((button) =>
+				button
+					.setButtonText(t("action.installBackend"))
+					.setCta()
+					.onClick(() => this.plugin.openInstallBackend(() => this.render()))
+			);
+		}
+		this.image(body, "install");
+
 		if (process.platform === "win32") {
 			void this.renderClaudeOnWindows(body.createDiv());
 		}
-		if (state.kind === "installed") {
-			setting.setName(t("onboarding.install.installed", { path: state.path }));
-			setIcon(setting.nameEl.createSpan({ cls: "agent-sessions-onboarding-ok" }), "check");
-			return;
-		}
-		setting.setName(t("onboarding.install.missing"));
-		setting.addButton((button) =>
-			button
-				.setButtonText(t("action.installBackend"))
-				.setCta()
-				.onClick(() => this.plugin.openInstallBackend(() => this.render()))
-		);
-	}
-
-	/** Windows: Claude Code found, or a button installing it with WinGet (Python is offered by
-	 * the install dialog itself). */
-	private async renderClaudeOnWindows(el: HTMLElement): Promise<void> {
-		const found = await this.plugin.findClaudeBinary();
-		const setting = new Setting(el);
-		if (found) {
-			setting.setName(t("onboarding.install.claudeFound", { path: found }));
-			setIcon(setting.nameEl.createSpan({ cls: "agent-sessions-onboarding-ok" }), "check");
-			return;
-		}
-		setting.setName(t("install.claudeMissing"));
-		setting.addButton((button) =>
-			button
-				.setButtonText(t("install.winget.claude"))
-				.onClick(async () => {
-					button.setDisabled(true).setButtonText(t("install.winget.running"));
-					try {
-						await this.plugin.wingetInstall("claude");
-					} catch (err) {
-						const message = err instanceof Error ? err.message : String(err);
-						new Notice(message === "winget-missing" ? t("install.winget.missing") : t("install.winget.failed", { error: message }));
-					}
-					this.render();
-				})
-		);
-	}
-
-	private renderSettings(body: HTMLElement): void {
-		body.createEl("p", { text: t("onboarding.settings.desc") });
 		if (!this.detected) {
 			body.createEl("p", { cls: "agent-sessions-onboarding-muted", text: t("onboarding.settings.detecting") });
 			void this.detect();
 		}
-		for (const id of AGENT_IDS) {
+		body.createEl("p", { text: t("onboarding.settings.desc") });
+		let anyHelp = false;
+		for (const id of agentsSupportedOn(process.platform)) {
 			const setting = new Setting(body);
 			setIcon(setting.nameEl.createSpan({ cls: "agent-sessions-settings-agent-icon" }), AGENT_ICON_ID[id]);
 			setting.nameEl.createSpan({ text: t(AGENT_NAME_KEY[id]) });
-			if (!agentsSupportedOn(process.platform).includes(id)) {
-				setting.setDesc(t("settings.agents.unsupportedOnPlatform"));
-				setting.addToggle((toggle) => toggle.setValue(false).setDisabled(true));
-				continue;
-			}
 			const found = this.detected?.[id];
 			if (found !== undefined) {
 				setting.setDesc(found ? t("settings.agents.detected.found", { path: found }) : t("settings.agents.detected.notFound"));
@@ -204,9 +348,40 @@ export class OnboardingModal extends Modal {
 				toggle.setValue(this.plugin.settings.agents[id].enabled).onChange(async (value) => {
 					if (!(await this.plugin.setAgentEnabled(id, value))) {
 						toggle.setValue(true);
+						return;
 					}
+					this.render();
 				})
 			);
+			// Windows has the WinGet button above; elsewhere a missing agent gets the vendor's own command.
+			if (found === null && (id === "claude" || this.plugin.settings.agents[id].enabled)) {
+				anyHelp = this.renderInstallHelp(body, id) || anyHelp;
+			}
+		}
+		if (anyHelp) {
+			new Setting(body).addButton((button) =>
+				button.setButtonText(t("onboarding.setup.detectAgain")).onClick(() => {
+					this.detected = null;
+					this.render();
+				})
+			);
+		}
+
+		const agents = this.plugin.settings.agents;
+		const usable = agentsSupportedOn(process.platform).filter((id) => agents[id].enabled);
+		if (usable.length > 1) {
+			new Setting(body)
+				.setName(t("onboarding.setup.agentForGuide"))
+				.setDesc(t("onboarding.setup.agentForGuide.desc"))
+				.addDropdown((dropdown) => {
+					for (const id of usable) {
+						dropdown.addOption(id, t(AGENT_NAME_KEY[id]));
+					}
+					dropdown.setValue(this.agent()).onChange(async (value) => {
+						this.plugin.settings.lastNewSessionAgent = value as AgentId;
+						await this.plugin.saveSettings();
+					});
+				});
 		}
 
 		const submit = new Setting(body).setName(t("settings.submitKey.name")).setDesc(t("onboarding.settings.submitKey.desc"));
@@ -223,9 +398,55 @@ export class OnboardingModal extends Modal {
 				}
 			});
 		});
+		this.image(body, "agents");
 	}
 
-	/** Looks for the agents once, then redraws the page if it is still the one showing. */
+	/** The official install command for a missing agent (macOS, Linux), with a Copy button and the
+	 * docs. Nothing is run. Returns whether anything was shown. */
+	private renderInstallHelp(body: HTMLElement, id: AgentId): boolean {
+		const help = agentInstallHelp(id, process.platform);
+		if (!help) {
+			return false;
+		}
+		const box = body.createDiv({ cls: "agent-sessions-onboarding-install-help" });
+		box.createEl("p", { text: t("onboarding.setup.notInstalled", { agent: t(AGENT_NAME_KEY[id]) }) });
+		const row = box.createDiv({ cls: "agent-sessions-onboarding-command" });
+		row.createEl("code", { text: help.command });
+		row.createEl("button", { text: t("action.copy") }).addEventListener("click", () => {
+			void navigator.clipboard.writeText(help.command);
+			new Notice(t("onboarding.setup.copied"));
+		});
+		box.createEl("p", { cls: "agent-sessions-onboarding-muted", text: t("onboarding.setup.pasteHint") });
+		box.createEl("a", { cls: "external-link", text: t("onboarding.setup.docs"), href: help.docsUrl });
+		return true;
+	}
+
+	/** Windows: Claude Code found, or a button installing it with WinGet (Python is offered by
+	 * the install dialog itself). */
+	private async renderClaudeOnWindows(el: HTMLElement): Promise<void> {
+		const found = await this.plugin.findClaudeBinary();
+		const setting = new Setting(el);
+		if (found) {
+			setting.setName(t("onboarding.install.claudeFound", { path: found }));
+			setIcon(setting.nameEl.createSpan({ cls: "agent-sessions-onboarding-ok" }), "check");
+			return;
+		}
+		setting.setName(t("install.claudeMissing"));
+		setting.addButton((button) =>
+			button.setButtonText(t("install.winget.claude")).onClick(async () => {
+				button.setDisabled(true).setButtonText(t("install.winget.running"));
+				try {
+					await this.plugin.wingetInstall("claude");
+				} catch (err) {
+					const message = err instanceof Error ? err.message : String(err);
+					new Notice(message === "winget-missing" ? t("install.winget.missing") : t("install.winget.failed", { error: message }));
+				}
+				this.render();
+			})
+		);
+	}
+
+	/** Looks for the agents, then redraws the page if it is still the setup step. */
 	private async detect(): Promise<void> {
 		if (this.detecting) {
 			return;
@@ -238,8 +459,96 @@ export class OnboardingModal extends Modal {
 		} finally {
 			this.detecting = false;
 		}
-		if (ONBOARDING_PAGES[this.index] === "settings") {
+		if (currentStep(this.progress) === "setup") {
 			this.render();
+		}
+	}
+
+	/** An operation step as a page: what to do, the picture, and the Start / Skip actions. The coach
+	 * window takes over after Start when there is one. */
+	private renderOperation(body: HTMLElement, step: OnboardingStepId): void {
+		const state = stepState(this.progress, step);
+		if (state === "skipped" && !this.hasStarted(step)) {
+			body.createEl("p", { text: t("onboarding.op.notAvailable") });
+			return;
+		}
+		const key = editorKeyLabel(this.plugin.settings.editorKey, Platform.isMacOS);
+		body.createEl("p", { cls: "agent-sessions-onboarding-lead", text: t(OP_BODY_KEY[step], { key }) });
+		if (step === "rename") {
+			body.createEl("p", { cls: "agent-sessions-onboarding-muted", text: t("onboarding.op.rename.optional") });
+		}
+		for (const scene of STEP_SCENES[step]) {
+			this.image(body, scene);
+		}
+		if (state !== "pending") {
+			return;
+		}
+		if (step === "first-session") {
+			body.createEl("p", { cls: "agent-sessions-onboarding-muted", text: t("onboarding.op.startFirst") });
+		}
+		if (this.hasStarted(step)) {
+			body.createEl("p", { cls: "agent-sessions-onboarding-muted", text: t("onboarding.op.started") });
+			return;
+		}
+		new Setting(body).addButton((button) =>
+			button
+				.setButtonText(t("onboarding.op.start"))
+				.setCta()
+				.onClick(() => this.startOperation(step))
+		);
+	}
+
+	/** Starts the guide's session if there is none yet (with no name, so nothing is typed into it),
+	 * saves it in the progress, then hands the step to the coach or keeps the page. */
+	private startOperation(step: OnboardingStepId): void {
+		if (this.progress.sessionId === null) {
+			const id = this.plugin.newSession(undefined, this.agent());
+			if (id === undefined) {
+				return;
+			}
+			this.setProgress({ ...this.progress, sessionId: id });
+		}
+		this.started.add(step);
+		const coach = this.plugin.onboardingCoach;
+		if (coach) {
+			this.close();
+			coach.show(step);
+			return;
+		}
+		this.render();
+	}
+
+	private renderMore(body: HTMLElement): void {
+		for (const item of MORE_ITEMS) {
+			const row = body.createDiv({ cls: "agent-sessions-onboarding-item" });
+			setIcon(row.createSpan({ cls: "agent-sessions-onboarding-item-icon" }), item.icon);
+			const text = row.createDiv({ cls: "agent-sessions-onboarding-item-text" });
+			text.createDiv({ cls: "agent-sessions-onboarding-item-title", text: t(item.title) });
+			text.createDiv({ cls: "agent-sessions-onboarding-item-body", text: t(item.body) });
+			this.image(text, item.scene);
+		}
+	}
+
+	private renderWhatsNew(body: HTMLElement): void {
+		for (const item of this.options.whatsNew) {
+			const row = body.createDiv({ cls: "agent-sessions-onboarding-item" });
+			const text = row.createDiv({ cls: "agent-sessions-onboarding-item-text" });
+			text.createDiv({ cls: "agent-sessions-onboarding-item-title", text: t(item.title) });
+			text.createDiv({ cls: "agent-sessions-onboarding-item-body", text: t(item.body) });
+			this.image(text, item.scene);
+		}
+		this.renderImagesConsent(body, false);
+		if (this.options.hasEarlierRun) {
+			body.createEl("p", { cls: "agent-sessions-onboarding-muted", text: t("onboarding.whatsNew.continue") });
+			new Setting(body).addButton((button) =>
+				button
+					.setButtonText(t("action.continueGuide"))
+					.setCta()
+					.onClick(() => {
+						this.close();
+						this.plugin.openOnboarding("continue");
+					})
+			);
 		}
 	}
 }

@@ -2381,7 +2381,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 
 /* ---- Welcome guide ---- */
 .agent-sessions-onboarding {
-	width: min(560px, 92vw);
+	width: min(620px, 92vw);
 }
 .agent-sessions-onboarding-steps {
 	display: flex;
@@ -2402,6 +2402,12 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	background: var(--background-modifier-border);
 }
 .agent-sessions-onboarding-dot.is-current {
+	background: var(--interactive-accent);
+}
+.agent-sessions-onboarding-dot.is-done {
+	background: var(--text-faint);
+}
+.agent-sessions-onboarding-dot.is-current.is-done {
 	background: var(--interactive-accent);
 }
 .agent-sessions-onboarding-heading {
@@ -2449,6 +2455,74 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	margin-left: var(--size-4-2);
 	color: var(--color-green);
 	vertical-align: middle;
+}
+.agent-sessions-onboarding-image {
+	position: relative;
+	aspect-ratio: 8 / 5;
+	margin: var(--size-4-3) 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background: var(--background-secondary);
+	overflow: hidden;
+}
+.agent-sessions-onboarding-image.is-text-only {
+	aspect-ratio: auto;
+	padding: var(--size-4-2) var(--size-4-3);
+}
+.agent-sessions-onboarding-image img {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+}
+.agent-sessions-onboarding-image-caption {
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+.agent-sessions-onboarding-image.is-loading .agent-sessions-onboarding-image-caption,
+.agent-sessions-onboarding-image.is-failed .agent-sessions-onboarding-image-caption {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--size-4-1);
+	padding: var(--size-4-3);
+	text-align: center;
+}
+.agent-sessions-onboarding-image.is-loading img {
+	opacity: 0;
+}
+.agent-sessions-onboarding-choices {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+	margin-bottom: var(--size-4-3);
+}
+.agent-sessions-onboarding-consent {
+	margin-top: var(--size-4-3);
+}
+.agent-sessions-onboarding-consent-label {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+}
+.agent-sessions-onboarding-install-help {
+	margin: 0 0 var(--size-4-3);
+	padding: var(--size-4-2) var(--size-4-3);
+	border-left: 2px solid var(--background-modifier-border);
+}
+.agent-sessions-onboarding-command {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+}
+.agent-sessions-onboarding-command code {
+	flex: 1;
+	min-width: 0;
+	overflow-wrap: anywhere;
+	user-select: text;
 }
 .agent-sessions-onboarding-footer {
 	border-top: none;

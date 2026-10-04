@@ -124,7 +124,16 @@ import {
 import { agentLaunchFor, writeUiState } from "./backend/ui-state";
 import { InstallBackendModal } from "./ui/install-modal";
 import { OnboardingModal } from "./ui/onboarding-modal";
-import { shouldShowOnboarding } from "./ui/onboarding-model";
+import { canContinue, startProgress } from "./ui/onboarding-flow";
+import {
+	resumeProgress,
+	shouldOpenOnStartup,
+	WHATS_NEW,
+	whatsNewSince,
+	type OnboardingCoach,
+	type OnboardingProgress,
+	type WhatsNewItem,
+} from "./ui/onboarding-model";
 import { UsageModal } from "./usage/usage-modal";
 import { writeVaultState } from "./backend/vault-state";
 import { ManagerView, VIEW_TYPE_MANAGER } from "./views/manager";
@@ -376,7 +385,21 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.addCommand({
 			id: "show-welcome",
 			name: t("action.showWelcome"),
-			callback: () => this.openOnboarding(),
+			callback: () => this.openOnboarding("restart"),
+		});
+
+		this.addCommand({
+			id: "continue-welcome",
+			name: t("action.continueWelcome"),
+			checkCallback: (checking) => {
+				if (!canContinue(this.settings.onboardingProgress)) {
+					return false;
+				}
+				if (!checking) {
+					this.openOnboarding("continue");
+				}
+				return true;
+			},
 		});
 
 		this.addCommand({
@@ -407,6 +430,14 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 	}
 
+	/** The floating window that guides the operation steps. Set by whatever provides it (null-safe:
+	 * without it the welcome guide shows those steps in its own dialog). */
+	onboardingCoach?: OnboardingCoach;
+	/** A folder to read the guide's pictures from instead of the version's tag on GitHub. Only ever
+	 * set in a development build (`__AGENT_SESSIONS_DEV__`); the production bundle has no code that
+	 * reads it. */
+	devImageBase?: string;
+
 	async loadSettings(): Promise<void> {
 		// `loadData()` is typed `Promise<any>` (Obsidian's own data store has no schema) — `raw` is
 		// kept `unknown` here rather than `any` so `mergeSettings` (which already takes `unknown`)
@@ -414,6 +445,10 @@ export default class AgentSessionsPlugin extends Plugin {
 		const raw: unknown = await this.loadData();
 		this.settings = mergeSettings(raw, Platform.isMacOS);
 		this.needsAgentDetection = !(raw && typeof raw === "object" && "agents" in raw);
+		if (__AGENT_SESSIONS_DEV__) {
+			const base = (raw as { onboardingImageBase?: unknown } | null)?.onboardingImageBase;
+			this.devImageBase = typeof base === "string" && base !== "" ? base : undefined;
+		}
 	}
 
 	async saveSettings(): Promise<void> {
@@ -1038,21 +1073,73 @@ export default class AgentSessionsPlugin extends Plugin {
 		return false;
 	}
 
-	/** Opens the welcome guide. */
-	openOnboarding(): void {
-		new OnboardingModal(this.app, this).open();
+	/**
+	 * Opens the welcome guide. `"restart"` runs it from the language step; `"continue"` picks up the
+	 * saved run (a session it was watching that has since gone puts its steps back); `"update"` runs
+	 * what an update brought, leaving an unfinished earlier run alone for its "Continue" button.
+	 */
+	openOnboarding(how: "restart" | "continue" | "update" = "restart"): void {
+		const saved = this.settings.onboardingProgress;
+		const backendInstalled = this.backendAvailable();
+		let progress: OnboardingProgress;
+		let persist = true;
+		let hasEarlierRun = false;
+		if (how === "continue" && canContinue(saved)) {
+			progress = resumeProgress(saved, (id) => this.index.sessions.has(id));
+		} else if (how === "update") {
+			progress = startProgress("update", { backendInstalled, whatsNew: true });
+			hasEarlierRun = canContinue(saved);
+			persist = !hasEarlierRun;
+		} else {
+			progress = startProgress("first", { backendInstalled, whatsNew: false });
+		}
+		if (progress.steps.length === 0) {
+			return;
+		}
+		if (persist) {
+			void this.saveOnboardingProgress(progress);
+		}
+		const whatsNew: readonly WhatsNewItem[] = this.whatsNewItems;
+		new OnboardingModal(this.app, this, { progress, persist, hasEarlierRun, whatsNew }).open();
 	}
 
-	/** Opens the welcome guide by itself on first install and after an update (once per version). */
+	/** What the what's-new step lists: the entries since the version last shown, found at startup. A
+	 * run opened some other way (or picked up after a restart) lists the current version's entries. */
+	private whatsNewItems: readonly WhatsNewItem[] = [];
+
+	/** Saves the guide's progress (`null` clears it) without redrawing the views, since nothing else
+	 * shows it. Also what the coach window calls as steps get done. */
+	async saveOnboardingProgress(progress: OnboardingProgress | null): Promise<void> {
+		this.settings.onboardingProgress = progress;
+		await this.saveData(this.settings);
+	}
+
+	/** Decides at startup what the guide does: opens from the top on first install, runs the update
+	 * flow when a new version has something to show, or offers (in a notice, never a dialog) to pick
+	 * up an unfinished run. The version is recorded either way, so each version asks once. */
 	private maybeShowOnboarding(): void {
 		const version = this.manifest.version;
 		const s = this.settings;
-		if (!shouldShowOnboarding(s.onboardingShownVersion, version, s.onboardingOnUpdate)) {
-			return;
+		const start = shouldOpenOnStartup(s.onboardingShownVersion, version, s.onboardingOnUpdate, s.onboardingProgress);
+		this.whatsNewItems = whatsNewSince(s.onboardingShownVersion, version);
+		if (this.whatsNewItems.length === 0) {
+			this.whatsNewItems = WHATS_NEW[version] ?? [];
 		}
 		s.onboardingShownVersion = version;
 		void this.saveSettings();
-		this.openOnboarding();
+		if (start === "first") {
+			this.openOnboarding("restart");
+		} else if (start === "update") {
+			this.openOnboarding("update");
+		} else if (start === "resume-notice") {
+			const notice = new Notice("", 15000);
+			notice.messageEl.createSpan({ text: t("notice.onboardingResume") + " " });
+			notice.messageEl.createEl("a", { text: t("action.continueGuide"), href: "#" }).addEventListener("click", (event) => {
+				event.preventDefault();
+				notice.hide();
+				this.openOnboarding("continue");
+			});
+		}
 	}
 
 	/** Opens the install dialog (side panel's empty state, settings); `onDone` runs after a successful install. */
@@ -1112,6 +1199,9 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * state is kept elsewhere). After sending, waits via `index.waitForName` for `Row.name` to
 	 * reflect it (once it does, subscribers redraw the tab title themselves).
 	 *
+	 * Returns the new session's id (`undefined` when the store couldn't be written), which the
+	 * welcome guide keeps to watch the session.
+	 *
 	 * `agent` defaults to the last one used (`settings.lastNewSessionAgent`, what the new-session
 	 * dialog remembers) and is saved back as the new "last used" value. Claude's `--session-id`
 	 * lets the caller assign `id` as the session's own persistent id, so a `sessions.json` entry
@@ -1127,7 +1217,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * `linkAgentSession` learns the real id; Codex isn't supported yet (`/rename` needs an
 	 * `idle` and a scan to reflect it, and a still-unresolved session has neither).
 	 */
-	newSession(name?: string, agent: AgentId = this.settings.lastNewSessionAgent): void {
+	newSession(name?: string, agent: AgentId = this.settings.lastNewSessionAgent): string | undefined {
 		if (agent !== this.settings.lastNewSessionAgent) {
 			this.settings.lastNewSessionAgent = agent;
 			void this.saveSettings();
@@ -1141,7 +1231,7 @@ export default class AgentSessionsPlugin extends Plugin {
 				});
 			} catch (err) {
 				this.notifyLockError(err);
-				return;
+				return undefined;
 			}
 			this.index.refreshStore();
 		}
@@ -1150,16 +1240,16 @@ export default class AgentSessionsPlugin extends Plugin {
 			this.trackNewAgentSession(agent, id, cwd);
 		}
 		if (!name) {
-			return;
+			return id;
 		}
 		if (agent === "opencode") {
 			// OpenCode has no `/rename`: the name waits here until the session has its real id.
 			this.pendingNames.set(id, name);
-			return;
+			return id;
 		}
 		if (agent !== "claude") {
 			new Notice(t("notice.renameAtCreateUnsupported"));
-			return;
+			return id;
 		}
 		void opened
 			.then(async () => {
@@ -1173,6 +1263,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			.catch((err) => {
 				new Notice(t("notice.renameFailed", { error: messageOf(err) }));
 			});
+		return id;
 	}
 
 	/** Starts finding the real id of a new Codex/OpenCode session that runs under `placeholderId`
@@ -2410,10 +2501,22 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 
 	/** The welcome guide: a button to open it, and whether it comes back after updates. */
 	private renderOnboardingSetting(containerEl: HTMLElement): void {
+		const guide = new Setting(containerEl).setName(t("settings.onboarding.name")).setDesc(t("settings.onboarding.desc"));
+		if (canContinue(this.plugin.settings.onboardingProgress)) {
+			guide.addButton((button) =>
+				button.setCta().setButtonText(t("action.continueWelcome")).onClick(() => this.plugin.openOnboarding("continue"))
+			);
+		}
+		guide.addButton((button) => button.setButtonText(t("action.showWelcome")).onClick(() => this.plugin.openOnboarding("restart")));
 		new Setting(containerEl)
-			.setName(t("settings.onboarding.name"))
-			.setDesc(t("settings.onboarding.desc"))
-			.addButton((button) => button.setButtonText(t("action.showWelcome")).onClick(() => this.plugin.openOnboarding()));
+			.setName(t("settings.onboardingImages.name"))
+			.setDesc(t("settings.onboardingImages.desc"))
+			.addToggle((toggle) =>
+				toggle.setValue(this.plugin.settings.onboardingImages).onChange(async (value) => {
+					this.plugin.settings.onboardingImages = value;
+					await this.plugin.saveSettings();
+				})
+			);
 		new Setting(containerEl)
 			.setName(t("settings.onboardingOnUpdate.name"))
 			.addToggle((toggle) =>
