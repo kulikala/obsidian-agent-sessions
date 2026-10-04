@@ -97,6 +97,11 @@ export class OnboardingCoachWindow implements OnboardingCoach {
 			this.sessionStartedAt = Date.now();
 			this.originalId = null;
 		}
+		// After a restart the progress still says which tab id the session was adopted from.
+		const saved = this.plugin.settings.onboardingProgress;
+		if (saved && saved.sessionId === sessionId && saved.tabSessionId !== undefined) {
+			this.originalId = saved.tabSessionId;
+		}
 		this.lastName = sessionId ? (this.plugin.index.sessions.get(sessionId)?.name ?? null) : null;
 		const base = initialTracker(sessionId);
 		this.tracker = this.step ? track(base, { kind: "step-entered", step: this.step }).state : base;
@@ -146,7 +151,7 @@ export class OnboardingCoachWindow implements OnboardingCoach {
 		}
 		this.originalId = id;
 		this.tracker = { ...this.tracker, sessionId: successor };
-		this.save((p) => ({ ...p, sessionId: successor }));
+		this.save((p) => ({ ...p, sessionId: successor, tabSessionId: id }));
 	}
 
 	/** The index changed: a rename or category move of the guide's session shows up as a new name. */
@@ -236,7 +241,7 @@ export class OnboardingCoachWindow implements OnboardingCoach {
 		if (id === undefined) {
 			return;
 		}
-		this.save((p) => ({ ...p, sessionId: id }));
+		this.save((p) => ({ ...p, sessionId: id, tabSessionId: undefined }));
 		this.watchSession(id);
 		this.render();
 	}

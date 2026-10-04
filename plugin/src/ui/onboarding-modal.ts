@@ -453,7 +453,7 @@ export class OnboardingModal extends Modal {
 			if (id === undefined) {
 				return;
 			}
-			this.setProgress({ ...this.progress, sessionId: id });
+			this.setProgress({ ...this.progress, sessionId: id, tabSessionId: undefined });
 		}
 		this.started.add(step);
 		const coach = this.plugin.onboardingCoach;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	activeTabSession,
+	ADOPT_WINDOW_MS,
 	adoptSuccessor,
 	categoryOf,
 	hintDue,
@@ -85,6 +86,16 @@ describe("adoptSuccessor", () => {
 				],
 			})
 		).toBe("child");
+	});
+
+	it("adopts a successor the index already lists, as long as no open tab owns it", () => {
+		expect(adoptSuccessor({ ...base, candidates: [{ id: "child", cwd: "/v", startedAt: 2000 }], known: () => false })).toBe("child");
+	});
+
+	it("does not adopt an entry started more than two minutes after the guide session", () => {
+		const startedAt = base.guideStartedAt + ADOPT_WINDOW_MS + 1;
+		expect(adoptSuccessor({ ...base, candidates: [{ id: "later", cwd: "/v", startedAt }] })).toBeNull();
+		expect(adoptSuccessor({ ...base, candidates: [{ id: "edge", cwd: "/v", startedAt: startedAt - 1 }] })).toBe("edge");
 	});
 
 	it("does nothing once the guide's own id is in the ledger", () => {

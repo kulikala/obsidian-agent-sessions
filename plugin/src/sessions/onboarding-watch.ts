@@ -68,6 +68,9 @@ export function hintDue(since: number | null, now: number): boolean {
 	return since !== null && now - since >= TERMINAL_HINT_MS;
 }
 
+/** How long after the guide session began a restarted process may still be taken for it. */
+export const ADOPT_WINDOW_MS = 2 * 60_000;
+
 /** A ledger entry the guide may adopt as its session. */
 export interface LedgerCandidate {
 	id: string;
@@ -79,8 +82,8 @@ export interface LedgerCandidate {
  * Claude Code sometimes starts again right after the first prompt is accepted (the one-time "auto
  * mode" acknowledgement), and the new process writes its ledger record under a session id of its own,
  * so the id the guide started never shows up. While the guide's id is absent from the ledger, the
- * id to adopt instead is that of the earliest entry the plugin doesn't know (`known`) that was
- * started in the guide session's folder after the guide session began. `null` when there is none, or
+ * id to adopt instead is that of the earliest entry no other open tab owns (`known`) that was
+ * started in the guide session's folder within `ADOPT_WINDOW_MS` after the guide session began. `null` when there is none, or
  * when the guide's own id is in the ledger after all.
  */
 export function adoptSuccessor(args: {
@@ -95,7 +98,7 @@ export function adoptSuccessor(args: {
 	}
 	let best: LedgerCandidate | null = null;
 	for (const c of args.candidates) {
-		if (c.cwd !== args.guideCwd || c.startedAt === undefined || c.startedAt < args.guideStartedAt || args.known(c.id)) {
+		if (c.cwd !== args.guideCwd || c.startedAt === undefined || c.startedAt < args.guideStartedAt || c.startedAt > args.guideStartedAt + ADOPT_WINDOW_MS || args.known(c.id)) {
 			continue;
 		}
 		if (best === null || (best.startedAt ?? 0) > c.startedAt) {

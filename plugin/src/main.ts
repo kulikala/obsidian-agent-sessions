@@ -329,7 +329,7 @@ export default class AgentSessionsPlugin extends Plugin {
 				const tab = view ? { sessionId: view.sessionId, daemonId: view.daemonSessionId } : null;
 				coach.feed({
 					kind: "active-tab",
-					sessionId: activeTabSession(tab, this.settings.onboardingProgress?.sessionId ?? null),
+					sessionId: activeTabSession(tab, this.settings.onboardingProgress?.tabSessionId ?? this.settings.onboardingProgress?.sessionId ?? null),
 				});
 			})
 		);
@@ -2013,11 +2013,10 @@ export default class AgentSessionsPlugin extends Plugin {
 			.filter((view): view is TerminalView => view instanceof TerminalView);
 	}
 
-	/** Whether `id` is a session the plugin already has: a row in the index or an open tab. */
+	/** Whether an open terminal tab owns `id`. (A row in the index is not enough: the scan lists a
+	 * restarted agent's new session within seconds, before any tab has it.) */
 	knowsSession(id: string): boolean {
-		return (
-			this.index.sessions.has(id) || this.terminalViews().some((v) => v.sessionId === id || v.daemonSessionId === id)
-		);
+		return this.terminalViews().some((v) => v.sessionId === id || v.daemonSessionId === id);
 	}
 
 	private findTerminalView(id: string): TerminalView | undefined {

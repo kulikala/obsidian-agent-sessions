@@ -122,6 +122,11 @@ describe("sanitizeProgress", () => {
 		});
 	});
 
+	it("keeps the tab's own id when it is a string and drops it otherwise", () => {
+		expect(sanitizeProgress({ ...valid, tabSessionId: "t1" })?.tabSessionId).toBe("t1");
+		expect(sanitizeProgress({ ...valid, tabSessionId: 5 })).toEqual(valid);
+	});
+
 	it("returns null for anything that isn't an object", () => {
 		for (const raw of [null, undefined, "progress", 3, true, ["language"]]) {
 			expect(sanitizeProgress(raw)).toBeNull();

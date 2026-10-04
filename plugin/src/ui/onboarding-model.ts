@@ -109,6 +109,9 @@ export interface OnboardingProgress {
 	/** Set once the guide's session has been moved to a category — the rename step mentions it, but
 	 * a name is enough to move on. */
 	renameCategoryDone?: boolean;
+	/** The id of the guide's tab when `sessionId` is the id a restarted agent process took over (the
+	 * tab's own events are then reported under it). Absent when they are the same. */
+	tabSessionId?: string;
 }
 
 function isStepId(value: unknown): value is OnboardingStepId {
@@ -183,6 +186,9 @@ export function sanitizeProgress(raw: unknown): OnboardingProgress | null {
 			states,
 			sessionId: saved.sessionId,
 		};
+		if (typeof saved.tabSessionId === "string") {
+			progress.tabSessionId = saved.tabSessionId;
+		}
 		if (typeof saved.renameCategoryDone === "boolean") {
 			progress.renameCategoryDone = saved.renameCategoryDone;
 		}
