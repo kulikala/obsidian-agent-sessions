@@ -244,7 +244,7 @@ The smoke test does not exercise the DOM. Before a release, one person runs this
 - [ ] A new session appears in the side panel with its status (busy, idle, waiting) updating as the agent works.
 - [ ] Rename: the row menu's Rename changes the name in the panel, the manager and the tab title.
 - [ ] Move to category: the dialog shows the session's name, offers the existing categories in a dropdown and accepts a new one; the row moves to that category.
-- [ ] Archive and unarchive: the row leaves and returns to the list.
+- [ ] Archive: the row leaves the side panel; in the Session Manager with archived sessions shown, "Remove from archive" brings it back.
 - [ ] End session and copy ID work from the menu.
 
 ### Built-in editor
