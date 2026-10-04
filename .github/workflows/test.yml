@@ -66,4 +66,4 @@ jobs:
           node-version: 22
 
       - run: node --check tools/smoke/inject.js
-      - run: node --test tools/smoke
+      - run: node --test "tools/smoke/test/*.test.mjs"

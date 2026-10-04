@@ -44,6 +44,6 @@ step failed.
 ## Tests
 
 ```sh
-node --test tools/smoke
+node --test "tools/smoke/test/*.test.mjs"
 python3 -W error -m unittest discover -s tests -t .   # includes tests/smoke (the fake agent)
 ```
