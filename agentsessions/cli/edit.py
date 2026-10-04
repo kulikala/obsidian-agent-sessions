@@ -38,13 +38,17 @@ _LINE_SUFFIX = re.compile(r'(?::\d+){1,2}$')
 def file_argument(args: List[str]) -> Optional[str]:
     """The file to edit among an editor's arguments. Claude Code treats an editor whose name
     contains "code" as VS Code and, on Windows, calls it as `<editor> -g <file>:<line>`; other
-    callers pass the file alone. Options are skipped and a `:line[:col]` suffix is dropped when the
-    file exists without it."""
+    callers pass the file alone. Options are skipped and a `:line[:col]` suffix is dropped after
+    `-g`, or otherwise when the file exists without it."""
+    goto = False
     for arg in args:
         if arg.startswith('-') and not os.path.exists(arg):
+            goto = goto or arg == '-g'
             continue
         m = _LINE_SUFFIX.search(arg)
-        if m and not os.path.exists(arg) and os.path.exists(arg[:m.start()]):
+        # After `-g` the suffix is always there, and the file may not exist yet (Claude Code
+        # creates its prompt file only when the prompt has text).
+        if m and not os.path.exists(arg) and (goto or os.path.exists(arg[:m.start()])):
             return arg[:m.start()]
         return arg
     return None

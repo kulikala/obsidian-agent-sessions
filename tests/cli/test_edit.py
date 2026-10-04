@@ -135,5 +135,8 @@ class FileArgumentTest(unittest.TestCase):
         self.assertEqual(cmd_edit.file_argument([f]), f)
         self.assertEqual(cmd_edit.file_argument(['-g', f + ':1']), f)
         self.assertEqual(cmd_edit.file_argument(['--wait', '-g', f + ':3:7']), f)
+        missing = os.path.join(d, 'not-written-yet.md')
+        self.assertEqual(cmd_edit.file_argument(['-g', missing + ':1']), missing)
+        self.assertEqual(cmd_edit.file_argument([missing + ':1']), missing + ':1')
         self.assertIsNone(cmd_edit.file_argument(['-g']))
         self.assertIsNone(cmd_edit.file_argument([]))

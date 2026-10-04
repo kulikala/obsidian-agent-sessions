@@ -828,7 +828,8 @@ export class TerminalView extends ItemView {
 		if (this.pendingEdit || this.closed) {
 			return this.closed ? "cancel" : "busy";
 		}
-		const initial = fs.readFileSync(file, "utf8");
+		// A prompt file the agent hasn't written yet (an empty prompt) starts the pane empty.
+		const initial = fs.existsSync(file) ? fs.readFileSync(file, "utf8") : "";
 		const s = this.plugin.settings;
 		const pane = new EditorPane(this.editorEl, {
 			app: this.app,
