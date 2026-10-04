@@ -837,7 +837,7 @@ One Japanese string is deliberately not translated: `OTHER_GROUP`, the literal `
 - **Claude Code inside WSL**: supported only with Obsidian in the same WSL2 distribution (setup ④, Linux Obsidian under WSLg), which is Linux on both sides; it is supported but not yet verified, and its checks are in [`testing.md`](testing.md#4-platform--checks). Windows Obsidian with Claude Code in WSL1 (②) or WSL2 (③) is not supported: the agent's hooks, status line, transcripts and processes live on the Linux side, where the plugin cannot start, observe or reattach the session, and under WSL2's default NAT networking the editor round trip cannot reach Windows' `127.0.0.1`. The reasoning is in [`principles.md`](principles.md#4-supported-platforms-are-the-ones-where-agent-and-plugin-share-an-os).
 - Obsidian desktop only (`isDesktopOnly: true` in `manifest.json`), since the plugin spawns processes and opens local sockets — neither is available to a mobile or web build. Minimum Obsidian version 1.8.7 (`minAppVersion`): deferred views (§7.5, §23) arrived in 1.7.2, and `getLanguage()` (§17) in 1.8.7.
 - Python 3.9+, standard library only: `bin/agent-sessions` runs through `#!/usr/bin/env python3`; a copy the plugin installed names the interpreter it found (§20.1).
-- On any other platform (`isSupportedPlatform`: anything but desktop `darwin`/`linux`) `onload` stops after loading settings: a notice and a one-line settings tab say why, and nothing else is registered or started.
+- On any other platform (`isSupportedPlatform`: anything but desktop `darwin`, `linux` and `win32`, so mobile and other systems) `onload` stops after loading settings: a notice and a one-line settings tab say why, and nothing else is registered or started.
 
 ### 19.1 Windows
 

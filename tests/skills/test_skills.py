@@ -358,7 +358,9 @@ class TestHelpSkill(SkillsTestCase):
         'status.group.done', 'status.group.archived', 'organize.suggest', 'organize.suggestAgain',
         'organize.resuggest', 'organize.apply', 'organize.showLog', 'organize.onlyIncomplete',
         'modal.newSession.nameField', 'modal.newSession.agentField', 'install.winget.python',
-        'install.winget.claude', 'install.skills', 'settings.agents.unsupportedOnPlatform',
+        'install.winget.claude', 'install.skills', 'action.changeModel', 'action.apply', 'modal.changeModel.title',
+        'modal.changeModel.model', 'modal.changeModel.effort', 'modal.changeModel.other', 'editor.model',
+        'editor.effort', 'editor.keepCurrent', 'effort.auto', 'settings.agents.unsupportedOnPlatform',
     )
 
     @staticmethod

@@ -4,7 +4,7 @@
 
 Facts about the Agent Sessions plugin for Obsidian, by task. Each name is written as "English / 日本語": the label in an English UI and in a Japanese UI. Where nothing is given in Japanese, the label is the same (an agent or program name). Source: the plugin's README, its design and testing docs, and its English and Japanese UI strings.
 
-Contents: What it is - Where things are - Install, update, remove - Welcome guide - Start and resume a session - Close, end and restart - Name and categorize - Organize names and categories - Archive, compact, copy ID, analytics - Session list and states - Session Manager - Usage and limits - Built-in editor - Keys and terminal tab - Settings - Agents - Language - Supported platforms - Troubleshooting - What the agent can do - Privacy
+Contents: What it is - Where things are - Install, update, remove - Welcome guide - Start and resume a session - Close, end and restart - Name and categorize - Organize names and categories - Row menu, change model, compact, archive - Session list and states - Session Manager - Usage and limits - Built-in editor - Keys and terminal tab - Settings - Agents - Language - Supported platforms - Troubleshooting - What the agent can do - Privacy
 
 ## What it is
 
@@ -66,7 +66,7 @@ A walkthrough with pictures: it opens by itself on first install and, after an u
 ## Name and categorize
 
 - A category is the part of a name before `: `. `Backend: Fix login` is category "Backend", name "Fix login". A name without `: ` has no category.
-- Rename: row menu -> "Rename / 名前を変更". The dialog has one field for category and name together: type the category and then `:` (a full-width `：` counts once a space follows); the category turns into a chip. Existing categories are suggested in a dropdown (arrow keys move, Enter or Tab picks). The new name shows in the panel, the manager and the tab title.
+- Rename: row menu -> "Rename / 名前を変更". The dialog has one field for category and name together: type the category and then `:` (a full-width `：` counts once a space follows); the category turns into a chip. Existing categories are suggested in a dropdown (arrow keys move, Enter or Tab picks). The new name shows in the panel, the manager and the tab title. The plugin sends `/rename` to the running session, so for a Claude Code session started with Remote Control the name also changes in its Remote Control session (claude.ai and the Claude app).
 - Move to category: row menu -> "Move to category… / カテゴリに移動…". A single category field with a dropdown of existing categories; a new name creates a category. It is disabled until the session has a name or a first prompt.
 - Each category gets a stable color. The Session Manager groups sessions by category; sessions without one are under "Other / その他".
 
@@ -80,13 +80,20 @@ For many sessions at once: `⋯` menu of the side panel or the Session Manager -
 5. "Apply selected / 選択を適用" renames the ticked sessions. Nothing changes before that; closing the dialog changes nothing.
 It sends excerpts of the sessions (folder name, first prompt, a short excerpt of the latest prompt and reply, existing category names) to that agent under the user's own account, and counts against its usage limits. See Privacy.
 
-## Archive, compact, copy ID, analytics
+## Row menu, change model, compact, archive
 
-All in the row menu (`⋯` or right-click) of the side panel and the Session Manager:
-- "Archive / アーカイブ": the row leaves the lists. In the Session Manager, `⋯` -> "Show archive / アーカイブを表示" lists archived sessions; "Remove from archive / アーカイブ解除" brings one back. The status filter "Archived / アーカイブ済み" also shows them.
-- "Compact session / セッションを圧縮": sends `/compact` to the session. Disabled right after a compaction, until the next instruction.
-- "Session analytics / セッション解析結果": cost, tokens, turns and duration cards, input/output/tool-use bars and a turn-by-turn table. Click rows to select a range; "Copy" gives the result as Markdown.
-- "Copy ID / ID をコピー": copies the session id.
+The row menu (`⋯` or right-click on a row, side panel and Session Manager) is in four groups with separators:
+1. "Rename / 名前を変更", "Move to category… / カテゴリに移動…"
+2. "Change model… / モデルを変更…", "Compact session / セッションを圧縮", "Restart session / セッションを再起動"
+3. "Session analytics / セッション解析結果", "Copy ID / ID をコピー"
+4. "Archive / アーカイブ" (or "Remove from archive / アーカイブ解除"), "End session / セッションを終了"
+Change model, Restart session and End session appear for running sessions (held by the daemon) only. Change model is disabled, with a tooltip, for Codex and OpenCode sessions.
+
+- "Change model… / モデルを変更…" (Claude Code, running): the dialog "Change model / モデルを変更" shows "Now: <model> · <effort> / 現在: ..." and has "Model / モデル" (Default, Best available, Opus Plan, the Opus/Sonnet/Haiku aliases, or "Other… / その他…" for a full model ID such as `claude-opus-5-5`) and "Effort / エフォート" (including "Auto (clear the saved level)"). "Apply / 適用" sends only what changed: `/model <x>` and/or `/effort <y>` to the session. `/model` also becomes Claude Code's default for new sessions; `/effort max` applies to this session only; not every model supports every effort level. If Claude Code opens its "Switch model?" confirmation (a conversation with history), the plugin answers it for the user, so nothing has to be typed in the terminal. A draft being typed in the prompt is kept.
+- "Compact session": sends `/compact` to the session. Disabled right after a compaction, until the next instruction.
+- "Archive": the row leaves the lists. In the Session Manager, `⋯` -> "Show archive / アーカイブを表示" lists archived sessions; "Remove from archive" brings one back. The status filter "Archived / アーカイブ済み" also shows them.
+- "Session analytics": cost, tokens, turns and duration cards, input/output/tool-use bars and a turn-by-turn table. Click rows to select a range; "Copy" gives the result as Markdown.
+- "Copy ID": copies the session id.
 
 ## Session list and states
 
@@ -115,6 +122,7 @@ All in the row menu (`⋯` or right-click) of the side panel and the Session Man
 ## Built-in editor
 
 - Press Ctrl+G inside a session (the "Editor key", see Settings) to edit the current prompt, or what `/memory` and `/keybindings` open, in a pane under the terminal. The terminal output stays visible. The pane's height is Settings -> "Editor pane height (%) / 編集領域の高さ（%）" (default 40).
+- For a Claude Code prompt the bar also has "Model / モデル" and "Effort / エフォート" dropdowns, set to the current values ("Keep current / 現在のまま"). If one is changed, "Send" first applies it with `/model` / `/effort` and then submits the prompt text intact. Other edits (`/memory` and so on) and other agents show no dropdowns.
 - Type `@` to complete a file name from the vault; autosave; paste, IME and undo work natively; Tab indents.
 - "Send (<submit key>) / 送る（<キー>）" submits a prompt at once; Esc ("Back to prompt (Esc) / 入力欄に戻る（Esc）") returns to the agent's input without sending. Files other than a prompt (for example `/keybindings`) are saved but not submitted.
 - While the pane is open Ctrl+W (Cmd+W on macOS) does not close the tab.
