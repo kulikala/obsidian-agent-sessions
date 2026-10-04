@@ -213,13 +213,25 @@ export async function windowsPythonCandidates(): Promise<string[]> {
 	return [...new Set(out)];
 }
 
+/** Whether `file` exists without following it — an App Execution Alias in `WindowsApps` can't be
+ * `stat`ed, only `lstat`ed. */
+function aliasExists(file: string): boolean {
+	try {
+		fs.lstatSync(file);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
 /** `winget.exe`, if this Windows has it (App Installer; on a fresh install it can take a while
  * before the Store registers it). */
 export async function locateWinget(): Promise<string | null> {
 	const env = await windowsEnv();
 	if (env.LOCALAPPDATA) {
 		const file = path.win32.join(env.LOCALAPPDATA, "Microsoft", "WindowsApps", "winget.exe");
-		if (fs.existsSync(file)) return file;
+		// An App Execution Alias: `stat` (and so `existsSync`) fails on it with EACCES, but it runs.
+		if (aliasExists(file)) return file;
 	}
 	return locateWindowsProgram("winget.exe");
 }
