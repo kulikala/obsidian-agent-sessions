@@ -290,6 +290,12 @@ Use a test vault. For the first-run items, a vault where the plugin was never en
 - [ ] "Suggest again for unchecked" re-suggests only the unticked rows; ticked rows stay as they are.
 - [ ] "Apply selected" renames and recategorizes the ticked sessions, and nothing changes before it is pressed. Closing the dialog before that changes nothing.
 
+### Agent skills
+
+- [ ] After installing the program, the install dialog lists the vault folders for "Agent skills" and says two skills are added; afterwards each enabled agent's skill folder holds `agent-sessions/SKILL.md`, `agent-sessions-help/SKILL.md` and `agent-sessions-help/reference.md`.
+- [ ] In a session started in the vault, asking how to rename a session or use the built-in editor (in English and in another language) gets an answer in the language asked, naming the menu items as the UI shows them; asking for a setup that is not supported (for example Obsidian on Windows with Claude Code in WSL2) gets a plain "not supported" with the WSLg alternative.
+- [ ] Turning an agent off or pressing Remove takes the skills' files away, and leaves a file without the marker alone.
+
 ### A real Claude Code conversation
 
 - [ ] Start a Claude Code session from the plugin; the prompt appears and a message gets an answer.

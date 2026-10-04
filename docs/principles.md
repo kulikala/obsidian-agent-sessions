@@ -41,7 +41,7 @@ Agent Sessions runs Claude Code, Codex and OpenCode sessions as terminal tabs in
 - The built-in editor: the agent is started with `$VISUAL` pointing at the editor shim; no agent configuration file is edited for it.
 - Claude Code `keybindings.json`: only when the user changes the submit-key setting away from the default.
 - Codex and OpenCode: nothing in their user configuration; OpenCode gets a small plugin only while OpenCode is enabled, and it is removed with it.
-- The vault: one skill file per enabled agent in the vault's project skill folder. A file the program did not write is never overwritten or removed.
+- The vault: the two skills' files (`SKILL.md`, plus the help skill's `reference.md`) in each enabled agent's project skill folder. A file the program did not write is never overwritten or removed.
 
 **Given up.**
 - Setting up everything unconditionally at install time (extra hooks "in case", permission rules, model or environment settings).

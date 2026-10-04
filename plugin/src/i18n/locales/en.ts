@@ -362,7 +362,7 @@ export const en = {
 	"install.opencode": "OpenCode",
 	"install.opencodeValue": "Adds a status plugin to ~/.config/opencode/plugins/ and a status line (agent-sessions-tui.jsx, listed in tui.json)",
 	"install.skills": "Agent skills",
-	"install.skillsValue": "Adds one skill to this vault: {folders}",
+	"install.skillsValue": "Adds two skills to this vault: {folders}",
 	"install.skillsSkipped": "Not written (no agent is turned on in the agent settings)",
 	"install.running": "Installing…",
 	"install.done": "agent-sessions installed in {dir}.",
