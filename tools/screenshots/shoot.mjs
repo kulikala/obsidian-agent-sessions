@@ -12,7 +12,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectPage, sleep } from "./cdp.mjs";
 import { startFakeDaemon } from "./fake-daemon.mjs";
-import { cwdOf, LIMITS, NOTES, SESSIONS } from "./scenario.mjs";
+import { cwdOf, LIMITS, NOTES, ORGANIZE_COMMENT, ORGANIZE_SUGGESTIONS, SESSIONS } from "./scenario.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..", "..");
@@ -30,6 +30,12 @@ const OBSIDIAN_BIN =
 	}[process.platform];
 
 const keep = process.argv.includes("--keep");
+
+// The built plugin to load: --plugin-js PATH or AGENT_SESSIONS_PLUGIN_JS, else plugin/main.js.
+const pluginJsArg = process.argv.indexOf("--plugin-js");
+const PLUGIN_JS = resolve(
+	(pluginJsArg >= 0 ? process.argv[pluginJsArg + 1] : process.env.AGENT_SESSIONS_PLUGIN_JS) || join(PLUGIN_DIR, "main.js")
+);
 
 function writeJson(path, value) {
 	mkdirSync(dirname(path), { recursive: true });
@@ -64,13 +70,15 @@ function buildSandbox(root, now) {
 		vaults: { a5d0c0ffee000001: { path: vault, ts: now * 1000, open: true } },
 	});
 	writeJson(join(vault, ".obsidian", "appearance.json"), { theme: "obsidian" });
-	writeJson(join(vault, ".obsidian", "app.json"), { promptDelete: false });
+	// Menus drawn in the page (macOS would otherwise use native ones, out of reach of the script).
+	writeJson(join(vault, ".obsidian", "app.json"), { promptDelete: false, nativeMenus: false });
 	writeJson(join(vault, ".obsidian", "community-plugins.json"), ["agent-sessions"]);
 
 	// The plugin: copies of the built files, so the sandbox never writes into the repo.
 	const pluginDir = join(vault, ".obsidian", "plugins", "agent-sessions");
 	mkdirSync(pluginDir, { recursive: true });
-	for (const f of ["main.js", "manifest.json", "styles.css"]) {
+	copyFileSync(PLUGIN_JS, join(pluginDir, "main.js"));
+	for (const f of ["manifest.json", "styles.css"]) {
 		copyFileSync(join(PLUGIN_DIR, f), join(pluginDir, f));
 	}
 
@@ -83,6 +91,13 @@ function buildSandbox(root, now) {
 	writeFileSync(cli, `#!/bin/sh\nexec "${process.execPath}" "${join(HERE, "fake-cli.mjs")}" "${statePath}" "$@"\n`);
 	chmodSync(cli, 0o755);
 
+	// "Organize names and categories" asks the Claude Code CLI for its suggestions; this stand-in
+	// answers with the canned ones from the scenario, in Claude Code's stream-json shape.
+	const claudeBin = join(home, "bin", "claude");
+	writeJson(join(root, "organize.json"), ORGANIZE_SUGGESTIONS);
+	writeFileSync(claudeBin, `#!/bin/sh\nexec "${process.execPath}" "${join(HERE, "fake-claude.mjs")}" "${join(root, "organize.json")}"\n`);
+	chmodSync(claudeBin, 0o755);
+
 	writeJson(join(pluginDir, "data.json"), {
 		language: "en",
 		notifyOnIdle: true,
@@ -91,7 +106,7 @@ function buildSandbox(root, now) {
 		onboardingOnUpdate: false,
 		agentSessionsPath: cli,
 		agents: {
-			claude: { enabled: true, path: "/usr/bin/true", env: "" },
+			claude: { enabled: true, path: claudeBin, env: "" },
 			codex: { enabled: true, path: "/usr/bin/true", env: "" },
 		},
 		sideDetailHeight: 250,
@@ -181,8 +196,8 @@ async function capture(page, name) {
 }
 
 async function run() {
-	if (!existsSync(join(PLUGIN_DIR, "main.js"))) {
-		throw new Error("plugin/main.js is missing — run `npm run build` in plugin/ first");
+	if (!existsSync(PLUGIN_JS)) {
+		throw new Error(`${PLUGIN_JS} is missing — build the plugin first (see README.md next to this file)`);
 	}
 	const now = Math.floor(Date.now() / 1000);
 	const root = mkdtempSync(join(tmpdir(), "as-shots-"));
@@ -270,6 +285,35 @@ async function run() {
 		}
 		await page.waitFor(`document.querySelector('.notice')`, { what: "the idle notice" });
 		await capture(page, "codex");
+
+		// The welcome guide, on its first page.
+		await clearNotices(page);
+		await page.evaluate(`${PLUGIN}.openOnboarding()`);
+		await page.waitFor(`document.querySelector('.agent-sessions-onboarding')`, { what: "the welcome guide" });
+		await capture(page, "welcome");
+		await page.evaluate(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }))`);
+		await page.waitFor(`!document.querySelector('.agent-sessions-onboarding')`, { what: "the welcome guide to close" });
+
+		// "Organize names and categories": every session already has a category, so the
+		// "only unnamed" switch goes off; the stand-in claude answers; one row is unticked
+		// and given a comment.
+		await sleep(500);
+		await page.click('.agent-sessions-nav [aria-label="More"]');
+		await page.waitFor(`document.querySelector('.menu')`, { what: "the more menu" });
+		await page.evaluate(`[...document.querySelectorAll('.menu-item')].find((i) => i.textContent.includes('Organize names and categories')).click()`);
+		await page.waitFor(`document.querySelector('.agent-sessions-organize .checkbox-container')`, { what: "the organize dialog" });
+		await page.evaluate(`document.querySelector('.agent-sessions-organize .checkbox-container').click()`);
+		await page.evaluate(`[...document.querySelectorAll('.agent-sessions-organize button')].find((b) => b.textContent.includes('Suggest')).click()`);
+		await page.waitFor(`document.querySelector('.agent-sessions-organize-row:not(.is-header)')`, { what: "the organize results" });
+		await page.evaluate(`(() => {
+			const rows = [...document.querySelectorAll('.agent-sessions-organize-row:not(.is-header)')];
+			const target = rows.find((r) => r.textContent.includes('Vector search'));
+			target.querySelector('.agent-sessions-round-check').click();
+			const comment = target.querySelector('.agent-sessions-organize-comment');
+			comment.value = ${JSON.stringify(ORGANIZE_COMMENT)};
+			comment.dispatchEvent(new Event('input', { bubbles: true }));
+		})()`);
+		await capture(page, "organize");
 	} catch (err) {
 		failed = true;
 		if (page) {

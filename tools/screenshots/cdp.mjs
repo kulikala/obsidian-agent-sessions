@@ -99,6 +99,19 @@ export async function connectPage(port, { timeoutMs = 30000 } = {}) {
 				sessionId
 			);
 		},
+		/** A real mouse click on the centre of the first element matching `selector`. */
+		async click(selector) {
+			const at = await page.evaluate(`(() => {
+				const r = document.querySelector(${JSON.stringify(selector)})?.getBoundingClientRect();
+				return r ? { x: r.x + r.width / 2, y: r.y + r.height / 2 } : null;
+			})()`);
+			if (!at) {
+				throw new Error(`nothing to click: ${selector}`);
+			}
+			for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) {
+				await send("Input.dispatchMouseEvent", { type, ...at, button: "left", clickCount: 1 }, sessionId);
+			}
+		},
 		/** A PNG of the whole window, as a Buffer. */
 		async screenshot() {
 			const { data } = await send("Page.captureScreenshot", { format: "png" }, sessionId);

@@ -134,6 +134,8 @@ const byId = (id) => sessions.find((s) => s.id === id);
 
 if (args[0] === "--version") {
 	out("agent-sessions (screenshot sandbox)");
+} else if (args[0] === "setup") {
+	// Installing the agent skills into the vault: nothing to do in the sandbox.
 } else if (args[0] === "daemon") {
 	// The sandbox's daemon is already running inside shoot.mjs.
 } else if (args[0] === "json") {

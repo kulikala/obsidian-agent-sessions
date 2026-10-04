@@ -1,12 +1,18 @@
 # README screenshots
 
-`shoot.mjs` produces `docs/images/overview.png`, `manager.png`, and `codex.png` from the plugin as
-built in `plugin/main.js`, rendered by a real Obsidian:
+`shoot.mjs` produces `docs/images/overview.png`, `manager.png`, `codex.png`, `welcome.png` (the
+welcome guide, first page), and `organize.png` (the "Organize names and categories" result view)
+from a build of the plugin, rendered by a real Obsidian. Build into a scratch directory, never
+into `plugin/main.js` (a development vault may link it), and point the script at that file:
 
 ```sh
-(cd plugin && npm run build)
-node tools/screenshots/shoot.mjs          # add --keep to leave the sandbox behind for inspection
+SCRATCH=$(mktemp -d)
+(cd plugin && AGENT_SESSIONS_OUTFILE=$SCRATCH/main.js node esbuild.config.mjs production)
+node tools/screenshots/shoot.mjs --plugin-js $SCRATCH/main.js   # add --keep to leave the sandbox behind
 ```
+
+`--plugin-js PATH` (or `AGENT_SESSIONS_PLUGIN_JS`) names the built `main.js`; without it the script
+loads `plugin/main.js`. `manifest.json` and `styles.css` come from `plugin/`.
 
 Requirements: Node.js 22 or later (it uses the built-in `fetch` and `WebSocket`, no packages) and
 Obsidian installed at its default location (`OBSIDIAN_BIN=/path/to/Obsidian` overrides it). A
@@ -23,6 +29,9 @@ Every run builds a throwaway sandbox under the system temp directory:
   for a keychain that doesn't exist there.
 - **A stand-in CLI** (`fake-cli.mjs`) — the plugin's `agentSessionsPath` points at it, and it
   answers `json scan`, `live`, `detail`, `stats`, and `usage` from the scenario.
+- **A stand-in `claude`** (`fake-claude.mjs`) — the Claude Code path in the plugin's settings;
+  "Organize names and categories" runs it headless, and it answers with
+  `ORGANIZE_SUGGESTIONS` from `scenario.mjs` in Claude Code's `stream-json` shape.
 - **A stand-in daemon** (`fake-daemon.mjs`) — listens on the sandbox's `daemon.sock`, speaks the
   plugin's framed protocol, and replays a canned transcript (`transcripts.mjs`) when a tab
   attaches; it never starts a process.
@@ -31,12 +40,15 @@ Every run builds a throwaway sandbox under the system temp directory:
 
 The script drives the window over the DevTools protocol (`cdp.mjs`), lays the page out at a fixed
 1600×1100 at 2× scale, opens the tabs, flips one session from busy to idle in the background (the
-"Needs review" state and the idle notice), and captures each scene.
+"Needs review" state and the idle notice), and captures each scene. The welcome guide is opened
+with the plugin's own method; the organize dialog through the side panel's menu (the vault is
+set to non-native menus so the script can reach it), with real mouse clicks: the "only unnamed"
+switch off, Suggest, then one row unticked and given a comment.
 
 ## Changing what the images show
 
 - `scenario.mjs` — the sessions (names, agents, states, models, costs), the rate-limit numbers,
-  and the vault's notes. Times are relative to the moment of the run.
+  the vault's notes, and the organize suggestions and comment. Times are relative to the moment of the run.
 - `transcripts.mjs` — the terminal contents, in the style of each agent's TUI.
 - `shoot.mjs` — window size, sidebar width, and the scenes themselves (which tab is in front, what
   is open).
