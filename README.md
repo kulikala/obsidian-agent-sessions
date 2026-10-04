@@ -15,7 +15,7 @@ Run and manage [Claude Code](https://claude.com/claude-code), [Codex](https://gi
 - **State-aware tabs and rows** — icons, colors, and motion for each session state (working, running a shell command, waiting for your answer, unread response, editing, compacted, detached, exited, error), shared between the terminal tab, the side panel, and the manager.
 - **Naming and categories** — name a session as `Category: Name`; categories get a stable color and their own group in the manager. **Organize names and categories** (⋯ menu) proposes names and categories for recent sessions from their latest prompt and reply, using the agent you already have (Claude Code, else Codex, else OpenCode); you review the proposals, and nothing changes until you press Apply. It sends session excerpts to that agent — see [Disclosures](#disclosures).
 - **Restart session** — in a session's row menu: ends the agent and resumes the same conversation in the same tab, to pick up changed settings, hooks, skills, or environment.
-- **Welcome guide** — a short guide on first install and after updates: what Agent Sessions is, how to use sessions, installing the program, and the first settings.
+- **Welcome guide** — a walkthrough with pictures that opens on first install and, after an update, when the new version has something to show. It starts with the language, then sets up the program and the agents, and has you start a real session, switch tabs, rename it and use the built-in editor, checking each step as you do it. Close it any time and pick it up again where you left off.
 - **Built‑in editor** — press Ctrl+G inside a session to edit the current prompt (or `/memory`, `/keybindings`, etc.) in a split pane under the terminal, with `@`-file completion, autosave, and paste/IME/undo handled natively. The terminal output stays visible while you edit.
 - **Navigation helpers** — file paths printed in the output become clickable links into the vault, "insert current note as `@path`", and jump buttons for the previous/next prompt and the last response.
 - **Session and usage analytics** — per-session token/cost breakdown with a turn-by-turn table, and account-wide 5‑hour/7‑day usage totals, computed from each agent's own transcripts.
@@ -63,7 +63,7 @@ The plugin, the program and the agent have to run in the same operating system (
 
 ## Disclosures
 
-- **No network use by the plugin.** It talks only to its own daemon, over a local socket on this machine (a Unix socket, mode 0600; on Windows loopback TCP on `127.0.0.1` with a random port, and the first thing a client sends is a secret token, so any other connection is closed). Claude Code, Codex, and OpenCode, which it launches, connect to their own services under your own accounts.
+- **No network use by the plugin or the program, except the welcome guide's pictures.** The plugin talks to its own daemon over a local socket on this machine (a Unix socket, mode 0600; on Windows loopback TCP on `127.0.0.1` with a random port, and the first thing a client sends is a secret token, so any other connection is closed). The one exception: while the welcome guide is open, the plugin loads its pictures from GitHub (`raw.githubusercontent.com`), pinned to the plugin's version. Only images are fetched and none of your data is sent; GitHub sees your IP address and which picture is requested (no referrer is sent). Turn it off with **Settings → Load the guide's pictures from GitHub** (the guide then shows text descriptions). Claude Code, Codex, and OpenCode, which the plugin launches, connect to their own services under your own accounts.
 - **On Windows, runs a few more programs.** Besides Python and the agent, the plugin runs `reg.exe` (to read `PATH` from the registry, so a program installed while Obsidian is running is found without a restart) and `py.exe` (to find Python), always without a console window, and `winget.exe` only when you click an install button for Python or Claude Code in the install dialog. It listens on `127.0.0.1` only.
 - **Runs local programs.** The plugin runs the `agent-sessions` program with your Python (it ships inside the plugin as readable source and is written out only when you click Install), starts the Claude Code / Codex / OpenCode CLIs (or `ollama launch opencode`) you have installed, and reads your login shell's environment so they find the same `PATH` as in a terminal. It never downloads code.
 - **Reads and writes files outside the vault**, because that is where the agents and the program keep their state:
@@ -145,7 +145,14 @@ A small icon next to the state mark shows which agent a session belongs to (Clau
 
 ### Welcome guide
 
-A short guide opens on first install and after an update: what Agent Sessions is, how to use sessions, installing the `agent-sessions` program, and the first settings (which agents to use, the submit key). Turn off "Show this guide after updates" on its last page (or under **Settings → Show the welcome guide after updates**) to stop it reopening; open it any time with the **Show welcome guide** command or the button in settings.
+The guide opens by itself on first install, and after an update only when the new version has something to show. It runs in steps:
+
+1. **Language** — Auto (follows Obsidian), English or 日本語. The guide switches at once, and so does the plugin.
+2. **About** and **Setup** — what Agent Sessions is; the `agent-sessions` program, the agents found on this computer (on macOS and Linux a missing agent shows its official install command to copy and run in your terminal, plus a link to its documentation, and **Detect again**), the agent for the first session and the submit key.
+3. **Hands-on** — start a real session, then switch tabs, rename it (optionally file it in a category) and send a prompt from the built-in editor. A small window at the bottom right of the main window shows what to do and ticks each step when you do it; **Skip** passes a step over. With Codex or OpenCode only the tab switch is offered.
+4. **More** — restart, organize, and the Session Manager with usage.
+
+Closing the guide keeps your place: the next start shows a notice, and **Continue the welcome guide** (command palette or settings) resumes. **Start the welcome guide from the beginning** runs it again. Pictures come from GitHub while the guide is open (see [Disclosures](#disclosures)); **Load the guide's pictures from GitHub** in settings turns that off, and **Show the welcome guide after updates** stops it reopening after updates.
 
 ## Settings
 

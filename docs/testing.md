@@ -235,11 +235,26 @@ The smoke test does not exercise the DOM. Before a release, one person runs this
 
 ### Welcome guide
 
-- [ ] On a first install (a vault where the plugin was never enabled), the welcome guide opens by itself.
-- [ ] After updating to a newer version, the guide opens once more; with "Show this guide after updates" turned off on its last page, it does not.
-- [ ] The pages are in order (what Agent Sessions is, using sessions, installing the program, first settings) and you can move between them.
-- [ ] The settings page offers agent selection (Claude Code, Codex, OpenCode) and the submit key; the choices appear in Settings afterwards.
-- [ ] The **Show welcome guide** command and the button in Settings open it again.
+Use a test vault. For the first-run items, a vault where the plugin was never enabled (no `data.json`).
+
+- [ ] On a first install the guide opens by itself at the language step, with the heading "Language / 言語" and the picture sentence in both languages.
+- [ ] The choices read "Auto (English)" or "Auto (日本語)" (matching what Obsidian's language resolves to), "English" and "日本語". Choosing one switches the guide at once and the side panel and settings too.
+- [ ] With the pictures setting on, the pictures appear on the following steps (a development build: with `onboardingImageBase` pointing at a folder holding them); each frame has a fixed size and shows a description while loading.
+- [ ] Pictures that cannot load (offline, or a base URL that does not exist) are replaced after at most 10 seconds by the "Couldn't load the picture" note with the description and a link; the link turns the setting off.
+- [ ] With "Load the guide's pictures from GitHub" off (in the guide's language step, or in Settings), the guide shows descriptions only, and the developer tools' network panel shows no request to GitHub.
+- [ ] Setup: the program's state, the agents found (only Claude Code on Windows), the agent for the first session and the submit key. With an agent missing on macOS or Linux, its official command, a **Copy** button, the documentation link, the sentence about pasting it into a terminal, and **Detect again** appear; nothing is run for you. On Windows, the WinGet button installs Claude Code.
+- [ ] First session: **Start** begins a real session in a tab and the window at the bottom right appears without moving the keyboard focus out of the terminal. The first-run questions note is shown; after typing a message and getting the reply, the step is ticked and the window moves on.
+- [ ] A session left at a question (for example a permission) for a minute shows "Answer the question in the terminal".
+- [ ] Tabs: opening a note and then coming back to the session ticks the step; doing nothing does not.
+- [ ] Rename: renaming from the row menu ticks the step; moving to a category (or naming "Category: Name") ticks the optional item. Doing nothing does not tick it.
+- [ ] Editor: sending from the built-in editor ticks the step; going back to the prompt with Esc or cancelling does not.
+- [ ] **Skip** passes each step over; skipping the first session skips the rest of the hands-on steps. With Codex or OpenCode only the tab step is offered, the others say they are not available.
+- [ ] The window folds (and stays folded on the next step), can be dragged, stays inside the main window, and its picture opens and closes. It is not shown in a popout window, and the **Start the welcome guide from the beginning** command does nothing from a popout.
+- [ ] After the last step, **More** opens with pictures and the "Show the welcome guide after updates" toggle; **Finish the guide** clears the progress.
+- [ ] Closing the guide midway and restarting Obsidian shows one notice, "The welcome guide has more to show", with a button that continues from the same step. **Continue the welcome guide** (command palette, settings) does the same; **Start the welcome guide from the beginning** starts over.
+- [ ] If the guide's session was ended before continuing, the unfinished hands-on steps start again from the first session; finished and skipped steps stay as they were.
+- [ ] Update flow: with `onboardingShownVersion` in `data.json` set to an older version and `WHATS_NEW` holding an entry for the current one, the guide opens at "What's new" (and at Setup first if the program is not installed), with the picture sentence and checkbox at its end and, when an earlier run is unfinished, **Continue the guide**. With no entry for the version, nothing opens. With "Show the welcome guide after updates" off, nothing opens.
+- [ ] The guide's pictures match the current UI: each picture in the guide (both languages) shows the screen it is named for, as the app looks now.
 
 ### Session rows and menus
 
@@ -278,3 +293,13 @@ The smoke test does not exercise the DOM. Before a release, one person runs this
 - [ ] Resize the Obsidian window and the pane; the terminal re-wraps.
 - [ ] Quit Obsidian with the session running, start it again: the session is still running, its tab reattaches with the earlier output, and input works.
 - [ ] Path output that resolves inside the vault is clickable.
+
+## 6. Releasing
+
+Before tagging a release:
+
+1. Write the `WHATS_NEW` entry for the new version in `plugin/src/ui/onboarding-model.ts` (the strings in `en.ts` and `ja.ts`). The key is the version the entry ships in; check that it equals the tag you are about to push (the same as `manifest.version`), since the pictures are read from that tag.
+2. Re-shoot the guide's pictures: `node tools/screenshots/shoot.mjs --onboarding --plugin-js <path to the release build's main.js>`. Commit only the pictures that changed under `docs/onboarding/<lang>/`.
+3. Run `cd plugin && npx vitest run`; the picture check (every scene has an English and a Japanese picture) must be green.
+4. Run the UI checklist above, including "The guide's pictures match the current UI".
+5. Tag.

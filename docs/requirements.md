@@ -127,8 +127,9 @@ Agent CLIs other than Claude Code, Codex, and OpenCode (agy, …) are a future d
 
 ### R-G Welcome guide
 
-- R-G1 A multi-page welcome guide opens once on first install and once after each update (unless the user turned "Show this guide after updates" off), after the workspace is ready; never on an unsupported platform. It can also be opened with the "Show welcome guide" command and a settings-tab button.
-- R-G2 It explains what the plugin is, how to use sessions, offers the program install, and sets the enabled agents and the submit key through the same code paths as the settings tab.
+- R-G1 A step-by-step welcome guide opens by itself on first install (from the language step), and after an update only when the new version has items to show (`WHATS_NEW`) and the user keeps "Show the welcome guide after updates" on; after the workspace is ready, in the main window only, never on an unsupported platform. An unfinished run is resumed from a one-time notice at the next start, from the "Continue the welcome guide" command or from the settings tab; "Start the welcome guide from the beginning" runs it again.
+- R-G2 It asks for the language first, explains what the plugin is, offers the program install and the agents (official install commands on macOS and Linux, WinGet on Windows), sets the enabled agents and the submit key through the same code paths as the settings tab, and walks the user through starting a real session, switching tabs, renaming and the built-in editor, ticking each step only when the user does it.
+- R-G3 Its pictures are loaded from GitHub only while the guide is open, pinned to the plugin version, images only; the setting "Load the guide's pictures from GitHub" turns it off (descriptions are shown instead). A picture that does not load within 10 seconds is replaced by a note.
 
 ### R-U Uninstall
 
