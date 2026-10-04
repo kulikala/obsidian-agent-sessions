@@ -12,6 +12,7 @@ Run and manage [Claude Code](https://claude.com/claude-code), [Codex](https://gi
 - **Terminal tabs** — one session per Obsidian tab, backed by a real PTY (a ConPTY on Windows; xterm.js). Close the tab or quit Obsidian and the session keeps running; reopen it and the last screen is replayed.
 - **Side panel** — a right-sidebar list of open tabs, running sessions, and recent sessions, plus a details pane and a 5‑hour/7‑day rate‑limit view with a live countdown.
 - **Session Manager** — a full session tree grouped by category, a sortable table (last activity, model, effort, 5h/7d cost, folder), and a usage-analytics panel: 5‑hour/7‑day stat cards, a weekly-pace projection ("on track" vs. "will run out at ‑‑"), and a per-category cost breakdown — split into a section per enabled agent when more than one is enabled.
+- **Activity calendar** — a week at a glance (Mon–Sun, local time): per day and per agent, a colored block for each stretch a session was working, read from the transcripts' timestamps (a new block after a gap of 30 minutes or more), with overlapping sessions side by side, a title filter, and per-agent cards for hours, session count, and peak concurrency. Hover a block for its time range and name; click it to open the session. Open it from the Session Manager toolbar, the side panel's ⋯ menu, or the command palette.
 - **State-aware tabs and rows** — icons, colors, and motion for each session state (working, running a shell command, waiting for your answer, unread response, editing, compacted, detached, exited, error), shared between the terminal tab, the side panel, and the manager.
 - **Naming and categories** — name a session as `Category: Name`; categories get a stable color and their own group in the manager. **Organize names and categories** (⋯ menu) proposes names and categories for recent sessions from their latest prompt and reply, using the agent you already have (Claude Code, else Codex, else OpenCode); you review the proposals, and nothing changes until you press Apply. It sends session excerpts to that agent — see [Disclosures](#disclosures).
 - **Change model and effort** — in a Claude Code session's row menu (**Change model…**) and in the built-in editor's bar: switch the model and the effort level of the running session without typing `/model` or `/effort`.
@@ -26,6 +27,8 @@ Run and manage [Claude Code](https://claude.com/claude-code), [Codex](https://gi
 - **Bilingual UI** — English and Japanese, with an "automatic" mode that follows Obsidian's own language setting.
 
 ![The Session Manager: sessions grouped by category with cost per window, and the 5-hour/7-day usage analysis below](docs/images/manager.png)
+
+![The activity calendar: a week of sessions as colored blocks, one lane per agent in each day, with hours and concurrency per agent](docs/images/calendar.png)
 
 ![A Codex session waiting for approval, while a notice reports that a Claude Code session in another tab has finished](docs/images/codex.png)
 

@@ -130,6 +130,76 @@ function usageOf(s) {
 	};
 }
 
+// ---- json activity: made-up working spans, a few per day for every session, then merged the way
+// the real command does (gap of 30 minutes or more splits, clipped to the range, none after now).
+
+function mulberry32(seed) {
+	let a = seed >>> 0;
+	return () => {
+		a = (a + 0x6d2b79f5) >>> 0;
+		let t = a;
+		t = Math.imul(t ^ (t >>> 15), t | 1);
+		t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+		return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+	};
+}
+
+const EXTRA_ACTIVITY = [
+	["claude", "Storefront: Cart rounding"], ["claude", "Storefront: Coupon rules"], ["claude", "API: Pagination"],
+	["claude", "API: Auth refresh"], ["claude", "Docs: Quickstart"], ["claude", "Infra: Cost report"],
+	["claude", "Mobile: Deep links"], ["claude", "Research: Eval harness"], ["claude", "Research: Prompt caching"],
+	["claude", "Infra: Alert tuning"], ["codex", "API: Schema lint"], ["codex", "Mobile: Crash triage"],
+	["codex", "Docs: Changelog"], ["codex", "Storefront: Search ranking"],
+];
+
+function activitySessions() {
+	const known = sessions.map((s) => ({ id: s.id, agent: s.agent, name: s.name }));
+	const extra = EXTRA_ACTIVITY.map(([agent, name], i) => ({ id: `activity-${i}`, agent, name }));
+	return [...known, ...extra];
+}
+
+function mergeTimes(spans, gap) {
+	const sorted = [...spans].sort((x, y) => x[0] - y[0]);
+	const out = [];
+	for (const [a, b] of sorted) {
+		if (out.length && a - out[out.length - 1][1] < gap) {
+			out[out.length - 1][1] = Math.max(out[out.length - 1][1], b);
+		} else {
+			out.push([a, b]);
+		}
+	}
+	return out;
+}
+
+function activityOutput(from, to, gap) {
+	const first = new Date(from * 1000);
+	const result = [];
+	activitySessions().forEach((s, si) => {
+		const rand = mulberry32(si * 7919 + 13);
+		const raw = [];
+		for (let d = 0; d < 7; d++) {
+			const day = new Date(first.getFullYear(), first.getMonth(), first.getDate() + d).getTime() / 1000;
+			if (rand() < 0.2) {
+				continue;
+			}
+			const n = 1 + Math.floor(rand() * 3);
+			for (let i = 0; i < n; i++) {
+				const a = day + (6 + rand() * 15) * 3600;
+				raw.push([a, a + (8 + rand() * 120) * 60]);
+			}
+		}
+		const spans = mergeTimes(raw, gap)
+			.map(([a, b]) => [Math.max(a, from), Math.min(b, to, now)])
+			.filter(([a, b]) => b > a);
+		if (spans.length === 0) {
+			return;
+		}
+		const [category, label] = s.name.includes(": ") ? s.name.split(": ", 2) : [null, s.name];
+		result.push({ id: s.id, agent: s.agent, name: s.name, label, category, child: false, spans });
+	});
+	return { sessions: result };
+}
+
 const byId = (id) => sessions.find((s) => s.id === id);
 
 if (args[0] === "--version") {
@@ -174,6 +244,10 @@ if (args[0] === "--version") {
 	} else if (cmd === "usage") {
 		const s = byId(rest[0]);
 		out(s ? usageOf(s) : { turns: [], total: null, from: null, to: null });
+	} else if (cmd === "activity") {
+		const opt = (name) => rest[rest.indexOf(name) + 1];
+		const gap = (opt("--gap-minutes") ? Number(opt("--gap-minutes")) : 30) * 60;
+		out(activityOutput(Date.parse(opt("--from")) / 1000, Date.parse(opt("--to")) / 1000, gap));
 	} else if (cmd === "resolve") {
 		out({ thread: null, transcript: null });
 	} else {

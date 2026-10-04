@@ -29,7 +29,7 @@ UI labels are read from the plugin's own locale files.
 
 The README's `welcome.png` shows the guide's second step with its picture, read from `docs/onboarding/` through a small local server. That needs a development build (the picture-folder override is not in the production bundle): build with `node esbuild.config.mjs dev`, which builds once and exits (the plain `node esbuild.config.mjs` watches and never exits).
 
-`shoot.mjs` produces `docs/images/overview.png`, `manager.png`, `codex.png`, `welcome.png` (the
+`shoot.mjs` produces `docs/images/overview.png`, `manager.png`, `codex.png`, `calendar.png` (the activity calendar, last week), `welcome.png` (the
 welcome guide, first page), and `organize.png` (the "Organize names and categories" result view)
 from a build of the plugin, rendered by a real Obsidian. Build into a scratch directory, never
 into `plugin/main.js` (a development vault may link it), and point the script at that file:
@@ -57,7 +57,7 @@ Every run builds a throwaway sandbox under the system temp directory:
   `~/.claude` and `~/.agents` are the sandbox's; `--use-mock-keychain` keeps macOS from asking
   for a keychain that doesn't exist there.
 - **A stand-in CLI** (`fake-cli.mjs`) — the plugin's `agentSessionsPath` points at it, and it
-  answers `json scan`, `live`, `detail`, `stats`, and `usage` from the scenario.
+  answers `json scan`, `live`, `detail`, `stats`, `usage`, and `activity` from the scenario (`activity` makes up a few working spans per day for every session, deterministically).
 - **A stand-in `claude`** (`fake-claude.mjs`) — the Claude Code path in the plugin's settings;
   "Organize names and categories" runs it headless, and it answers with
   `ORGANIZE_SUGGESTIONS` from `scenario.mjs` in Claude Code's `stream-json` shape.

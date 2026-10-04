@@ -224,6 +224,18 @@ async function readmeScenes(page, box, look) {
 	})()`);
 	await capture(page, "manager");
 
+	// The activity calendar, on the last full week (the current one may be nearly empty).
+	await page.evaluate(`(async () => {
+		for (const leaf of app.workspace.getLeavesOfType('agent-sessions-manager')) leaf.detach();
+		await app.commands.executeCommandById('agent-sessions:open-activity');
+	})()`);
+	await page.waitFor(`document.querySelector('.agent-sessions-activity-nav')`, { what: "the calendar" });
+	await page.click(`.agent-sessions-activity [aria-label=${JSON.stringify(msg(look.lang, "activity.prevWeek"))}]`);
+	await sleep(1500);
+	await page.waitFor(`document.querySelector('.agent-sessions-activity-block')`, { what: "last week's blocks" });
+	await capture(page, "calendar");
+	await page.evaluate(`app.workspace.getLeavesOfType('agent-sessions-activity').forEach((l) => l.detach())`);
+
 	// Codex asking for approval in front, while a Claude session's idle notice comes in.
 	await page.evaluate(`(async () => {
 		for (const leaf of app.workspace.getLeavesOfType('agent-sessions-manager')) leaf.detach();

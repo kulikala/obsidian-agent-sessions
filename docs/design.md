@@ -637,6 +637,16 @@ The analysis area is a row of stat cards on top, per-category horizontal bars be
 
 The analysis area's own heading (caret + "Analysis") toggles folding — only visible/meaningful with 0 or 1 agent enabled (§10.2's `is-split`; hidden entirely once there's more than one, since each sibling panel folds on its own instead). A drag handle, matching §8's detail-pane handle, sits between the table and analysis areas (minimum height 120px) and always resizes the *whole* area, split or not. Folded state (`managerAnalysisCollapsed`, single-panel case only) and height (`managerAnalysisHeight`, default 240px, always) persist in settings and survive a skeleton rebuild (e.g. a language switch). The handle is hidden only while the single-panel case is folded — always visible while split, since there's no whole-area fold to hide it for there.
 
+### 10.4 The activity calendar (`agent-sessions-activity`)
+
+A week of sessions as a calendar (`views/activity.ts`; the pure parts in `views/activity-model.ts`). It opens from the Session Manager's toolbar (calendar icon), the side panel's ⋯ menu, and the command "Open activity calendar" (`openActivityTab`, one tab: an open one is brought to front).
+
+- **Data**: `json activity` (§13.4) for `[Monday 00:00, next Monday 00:00)` in local time. Weeks are built from local calendar days (`new Date(y, m, d + n)`), never from 86400-second steps, so a daylight-saving week still has seven days that start at local midnight. Switching weeks refetches; a response for a week that is no longer shown is dropped (`fetchToken`).
+- **Grid**: seven day columns, each split into one lane per enabled agent (plus any other agent present in the data). Each span is cut at local midnights into per-day pieces (`splitSpansByDay`) positioned by seconds since that day's midnight on a fixed 0–24 h axis (40 px per hour). Within a lane, overlapping pieces go side by side: `layoutOverlaps` groups chains of overlapping pieces into clusters, gives each piece the first free column, and every piece of a cluster shares the cluster's widest column count. A piece shows its label when `fitsLabel` says it is tall enough (and the cluster is at most three wide).
+- **Color**: a block takes its session's category color (the same palette slot as the category chip, `SessionIndex.categoryColorIndex`); without a category it takes its agent's lane color. Light and dark come from Obsidian's CSS variables plus a lightness switch under `.theme-light`.
+- **Cards**: per agent, hours (the union of all its spans, so overlapping sessions count once), the number of sessions, and the highest number of spans open at the same moment (`unionSeconds`, `maxConcurrency`). The title filter (name, label, category, id) applies to the cards, the day counts, and the grid alike.
+- **Interaction**: hover shows `HH:MM–HH:MM name` (Obsidian's `setTooltip`); click opens the session through `plugin.openSession`. After each load the grid scrolls to half an hour before the first activity of the week (08:00 when there is none).
+
 ## 11. Names and categories
 
 **Category** is everything before `: ` in a name (`tree.ts`'s `splitName`, the same rule the TUI and manager groups use). A name with no `: ` has no category.
@@ -723,6 +733,23 @@ Caching: per file, 10-minute buckets (`{bucket_start: {calls,…,cost}}`), the l
 Cache-write cost is input × 1.25 for a 5-minute TTL, input × 2 for a 1-hour TTL (`cache_creation.ephemeral_1h_input_tokens`, if present, uses the 1-hour rate; the rest uses 5-minute). An unrecognized model is priced at the `claude-opus-5` rate with `estimated: true`.
 
 `price_of`/`cost` take an `agent` parameter (default `'claude'`, so every pre-existing caller is unaffected). With `agent='codex'`, models are matched against `OPENAI_PRICES` instead (`gpt-5.6-sol`/`-terra`/`-luna`, `gpt-5.5`, `gpt-5.4`, `gpt-5-nano`, `gpt-5`; cache-read priced at input × 0.1, no separate cache-write tier) — an unrecognized OpenAI model returns `unknown: true` and `cost()` returns `None`, not a Claude-derived estimate: the two vendors' pricing bands don't overlap closely enough for a same-table fallback to be a reasonable ballpark. `agents/codex/usage.py` surfaces this as `unknown_cost: true` on the affected turn (and on `summarize`'s `total`), so `cost: null` reads as "unknown," not "free." OpenCode uses no price table at all: `agents/opencode/usage.py` sums the `cost` OpenCode stored on each assistant message (§3.3), which is `0` for a local model.
+
+### 13.4 `agent-sessions json activity --from ISO --to ISO [--gap-minutes N]`
+
+Backs the activity calendar (§10.4). `--from`/`--to` are required ISO 8601 (UTC when no zone is given); `--gap-minutes` defaults to 30.
+
+```json
+{"sessions": [{"id": "…", "agent": "claude", "name": "RIM: Notes", "label": "Notes",
+               "category": "RIM", "child": false, "spans": [[1790220000.0, 1790221200.0]]}]}
+```
+
+`spans` are `[start, end]` epoch seconds, sorted, clipped to the range; a session with no span in the range is left out. They come from the transcript's message timestamps (`sessions/activity.py`): sorted, a new span starts when the distance to the previous timestamp is the gap or more, a span shorter than one minute is extended to one minute, and the result is clipped. The timestamps per agent:
+
+- **Claude Code**: every `user` and `assistant` line with a `timestamp`, sub-agent sidechains and tool results included (the agent was working then).
+- **Codex**: the `timestamp` of every rollout record.
+- **OpenCode**: `time_created` and `time_updated` of the session's `message` and `part` rows.
+
+Name, label, and category are the ones `json scan` reports (`category` is the group before `': '`). The scan cache supplies the names; a transcript file last written before `--from` cannot hold activity in the range and is never opened. Timestamps are not cached: a week of recently written transcripts is read once per call.
 
 ## 14. statusLine
 

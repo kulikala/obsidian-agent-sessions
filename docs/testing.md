@@ -296,6 +296,18 @@ Use a test vault. For the first-run items, a vault where the plugin was never en
 - [ ] In a session started in the vault, asking how to rename a session or use the built-in editor (in English and in another language) gets an answer in the language asked, naming the menu items as the UI shows them; asking for a setup that is not supported (for example Obsidian on Windows with Claude Code in WSL2) gets a plain "not supported" with the WSLg alternative.
 - [ ] Turning an agent off or pressing Remove takes the skills' files away, and leaves a file without the marker alone.
 
+### Activity calendar
+
+- [ ] "Open activity calendar" in the command palette, the Session Manager toolbar's calendar button, and the side panel's ⋯ menu all open the same single tab.
+- [ ] The title, the one-line explanation, the week range (Monday to Sunday), "This week", and the filter box are shown; the language follows the plugin's setting (English and Japanese).
+- [ ] Cards per enabled agent show hours, session count, and peak concurrency; the day headers show per-agent counts; the grid has one lane per agent in each of the seven days and a 0:00–24:00 axis.
+- [ ] The grid starts scrolled to about half an hour before the week's first activity.
+- [ ] Blocks are colored by the session's category (as its chip) or by the agent when it has none; overlapping sessions sit side by side; tall enough blocks carry their name.
+- [ ] Hovering a block shows `HH:MM–HH:MM name`; clicking it opens that session's tab.
+- [ ] The previous/next arrows move by a week and "This week" returns; typing in the filter narrows the blocks, counts, and cards.
+- [ ] A block that crosses midnight appears on both days. In a week with a daylight-saving change, all seven columns still start at midnight.
+- [ ] Light and dark themes are both legible; narrowing the pane scrolls the grid sideways instead of squeezing it.
+
 ### A real Claude Code conversation
 
 - [ ] Start a Claude Code session from the plugin; the prompt appears and a message gets an answer.
