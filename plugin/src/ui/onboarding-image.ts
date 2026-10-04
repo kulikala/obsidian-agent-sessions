@@ -1,5 +1,5 @@
 // A screenshot in the welcome guide: an `<img>` in a frame of fixed proportions, loaded from GitHub
-// (see `onboardingImageUrl`). While it loads the frame shows the scene's description, and when the
+// (see `onboardingImageUrl`), loaded eagerly: a lazy picture below the modal's visible area never starts, and the timeout below would call that a failure. While it loads the frame shows the scene's description, and when the
 // picture doesn't come (an error, or `IMAGE_TIMEOUT_MS` without an answer) it says so and offers to
 // stop loading pictures. With pictures turned off there is no `<img>` at all, only the description.
 
@@ -50,7 +50,6 @@ export function renderSceneImage(parent: HTMLElement, opts: SceneImageOptions): 
 	const img = frame.createEl("img", {
 		attr: {
 			alt: description,
-			loading: "lazy",
 			referrerpolicy: "no-referrer",
 			src: onboardingImageUrl(opts.scene, opts.lang, opts.version, opts.base),
 		},
