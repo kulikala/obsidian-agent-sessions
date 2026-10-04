@@ -67,3 +67,40 @@ export function unansweredSince(prev: number | null, status: string | undefined,
 export function hintDue(since: number | null, now: number): boolean {
 	return since !== null && now - since >= TERMINAL_HINT_MS;
 }
+
+/** A ledger entry the guide may adopt as its session. */
+export interface LedgerCandidate {
+	id: string;
+	cwd?: string;
+	startedAt?: number;
+}
+
+/**
+ * Claude Code sometimes starts again right after the first prompt is accepted (the one-time "auto
+ * mode" acknowledgement), and the new process writes its ledger record under a session id of its own,
+ * so the id the guide started never shows up. While the guide's id is absent from the ledger, the
+ * id to adopt instead is that of the earliest entry the plugin doesn't know (`known`) that was
+ * started in the guide session's folder after the guide session began. `null` when there is none, or
+ * when the guide's own id is in the ledger after all.
+ */
+export function adoptSuccessor(args: {
+	guideAppeared: boolean;
+	guideCwd: string;
+	guideStartedAt: number;
+	candidates: readonly LedgerCandidate[];
+	known: (id: string) => boolean;
+}): string | null {
+	if (args.guideAppeared) {
+		return null;
+	}
+	let best: LedgerCandidate | null = null;
+	for (const c of args.candidates) {
+		if (c.cwd !== args.guideCwd || c.startedAt === undefined || c.startedAt < args.guideStartedAt || args.known(c.id)) {
+			continue;
+		}
+		if (best === null || (best.startedAt ?? 0) > c.startedAt) {
+			best = c;
+		}
+	}
+	return best?.id ?? null;
+}

@@ -322,6 +322,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.register(() => coach.destroy());
 		this.register(this.index.registry.onIdle((id) => coach.feed({ kind: "idle", sessionId: id })));
 		this.register(this.index.onChange(() => coach.onIndexChange()));
+		this.register(this.index.registry.onChange(() => coach.onRegistryChange()));
 		this.registerEvent(
 			this.app.workspace.on("active-leaf-change", (leaf) => {
 				const view = leaf?.view instanceof TerminalView ? leaf.view : null;
@@ -2010,6 +2011,13 @@ export default class AgentSessionsPlugin extends Plugin {
 			.getLeavesOfType(VIEW_TYPE_TERMINAL)
 			.map((leaf) => leaf.view)
 			.filter((view): view is TerminalView => view instanceof TerminalView);
+	}
+
+	/** Whether `id` is a session the plugin already has: a row in the index or an open tab. */
+	knowsSession(id: string): boolean {
+		return (
+			this.index.sessions.has(id) || this.terminalViews().some((v) => v.sessionId === id || v.daemonSessionId === id)
+		);
 	}
 
 	private findTerminalView(id: string): TerminalView | undefined {

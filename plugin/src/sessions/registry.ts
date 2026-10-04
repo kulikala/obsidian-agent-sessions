@@ -25,6 +25,10 @@ export interface RegistryEntry {
 	updatedAt: number;
 	/** The reason when `status === "waiting"`. `undefined` otherwise. */
 	waitingFor?: string;
+	/** The working directory the process was started in, when its record has one. */
+	cwd?: string;
+	/** When the process started (ms since the epoch), when its record has one. */
+	startedAt?: number;
 }
 
 interface RawSessionRecord {
@@ -35,6 +39,8 @@ interface RawSessionRecord {
 	statusUpdatedAt?: unknown;
 	bridgeSessionId?: unknown;
 	waitingFor?: unknown;
+	cwd?: unknown;
+	startedAt?: unknown;
 }
 
 function isAlive(pid: number): boolean {
@@ -83,6 +89,8 @@ function readEntries(sessionsDir: string): Map<string, RegistryEntry> {
 						? raw.statusUpdatedAt
 						: 0,
 			waitingFor: typeof raw.waitingFor === "string" ? raw.waitingFor : undefined,
+			...(typeof raw.cwd === "string" ? { cwd: raw.cwd } : {}),
+			...(typeof raw.startedAt === "number" ? { startedAt: raw.startedAt } : {}),
 		});
 	}
 	return out;

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	activeTabSession,
+	adoptSuccessor,
 	categoryOf,
 	hintDue,
 	nameEvents,
@@ -68,5 +69,35 @@ describe("terminal hint timing", () => {
 		expect(hintDue(null, 1e9)).toBe(false);
 		expect(hintDue(1000, 1000 + TERMINAL_HINT_MS - 1)).toBe(false);
 		expect(hintDue(1000, 1000 + TERMINAL_HINT_MS)).toBe(true);
+	});
+});
+
+describe("adoptSuccessor", () => {
+	const base = { guideAppeared: false, guideCwd: "/v", guideStartedAt: 1000, known: () => false };
+
+	it("adopts the earliest unknown entry started in the same folder after the guide session", () => {
+		expect(
+			adoptSuccessor({
+				...base,
+				candidates: [
+					{ id: "late", cwd: "/v", startedAt: 3000 },
+					{ id: "child", cwd: "/v", startedAt: 2000 },
+				],
+			})
+		).toBe("child");
+	});
+
+	it("does nothing once the guide's own id is in the ledger", () => {
+		expect(adoptSuccessor({ ...base, guideAppeared: true, candidates: [{ id: "c", cwd: "/v", startedAt: 2000 }] })).toBeNull();
+	});
+
+	it("ignores other folders, earlier starts, entries without a start time and sessions the plugin knows", () => {
+		const candidates = [
+			{ id: "other", cwd: "/x", startedAt: 2000 },
+			{ id: "old", cwd: "/v", startedAt: 500 },
+			{ id: "nostart", cwd: "/v" },
+			{ id: "mine", cwd: "/v", startedAt: 2000 },
+		];
+		expect(adoptSuccessor({ ...base, candidates, known: (id) => id === "mine" })).toBeNull();
 	});
 });
