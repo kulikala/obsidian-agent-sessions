@@ -13,7 +13,7 @@ Agent Sessions runs Claude Code, Codex and OpenCode sessions as terminal tabs in
 
 ## 1. A long-lived daemon owns the terminals
 
-**Chosen.** A resident process, `agent-sessions daemon`, holds each session's pseudo-terminal (a PTY on macOS and Linux, a ConPTY on Windows) and the agent process behind it. The plugin is a client: a tab attaches to the daemon, receives a replay of the last screen, then streams input and output. Closing a tab, reloading the plugin or quitting Obsidian does not end a session; reopening the tab re-attaches. Only the plugin starts the daemon, on demand.
+**Chosen.** A resident process, `agent-sessions daemon`, holds each session's pseudo-terminal (a PTY on macOS and Linux, a ConPTY on Windows) and the agent process behind it. The plugin is a client: a tab attaches to the daemon, receives a replay of the last screen, then streams input and output. Closing a tab, reloading the plugin or quitting Obsidian does not end a session; reopening the tab re-attaches. The plugin starts the daemon on demand.
 
 **Given up.**
 - Spawning the agent directly from the plugin (as a child of Obsidian), which is simpler but ties every session to the Obsidian process and loses them on restart or crash.
@@ -48,7 +48,7 @@ Agent Sessions runs Claude Code, Codex and OpenCode sessions as terminal tabs in
 - Replacing the user's `statusLine` or hooks wholesale, or keeping a private copy of the agent configuration to point the agent at.
 - Wrapping the agent binary in a proxy that injects state, which would change how the agent runs.
 
-**Why.** The agent's configuration is the user's, shared with sessions the plugin never started. A change there has to be small enough to read, safe to repeat, and removable without a trace. Two hook events and the status line carry all the state the plugin needs; the rest is read from files the agent already writes (transcripts and its live-status ledger).
+**Why.** The agent's configuration is the user's, shared with sessions the plugin never started. A change there has to be small enough to read, safe to repeat, and removable without a trace. Four hook events and the status line carry all the state the plugin needs; the rest is read from files the agent already writes (transcripts and its live-status ledger).
 
 ## 4. Supported platforms are the ones where agent and plugin share an OS
 
