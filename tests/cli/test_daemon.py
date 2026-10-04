@@ -2,11 +2,14 @@
 import io
 import os
 import shutil
+import subprocess
+import sys
 import tempfile
 import threading
 import time
 import unittest
 from contextlib import redirect_stdout
+from unittest import mock
 
 from agentsessions.cli import daemon as cmd_daemon
 from agentsessions.daemon import server as daemon
@@ -117,6 +120,62 @@ class TestWithRunningDaemon(CmdDaemonTestCase):
         self.assertEqual(rc, 0)
         self.harness.thread.join(TIMEOUT)
         self.assertFalse(self.harness.thread.is_alive())
+
+
+class TestScopeDetach(CmdDaemonTestCase):
+    def test_can_use_scope_needs_systemd_run_and_a_runtime_dir(self):
+        env = {'XDG_RUNTIME_DIR': '/run/user/1000'}
+        self.assertTrue(cmd_daemon.can_use_scope(env, '/usr/bin/systemd-run'))
+        self.assertFalse(cmd_daemon.can_use_scope(env, None))
+        self.assertFalse(cmd_daemon.can_use_scope({}, '/usr/bin/systemd-run'))
+        self.assertFalse(cmd_daemon.can_use_scope({'XDG_RUNTIME_DIR': ''}, '/usr/bin/systemd-run'))
+
+    def test_detach_scope_builds_the_systemd_run_command_and_returns_the_pid(self):
+        proc = mock.Mock(pid=4321)
+        proc.wait.side_effect = subprocess.TimeoutExpired('systemd-run', 1)
+        log = os.path.join(self.tmpdir, 'daemon.log')
+        with mock.patch.object(cmd_daemon.subprocess, 'Popen', return_value=proc) as popen:
+            pid = cmd_daemon._detach_scope('/usr/bin/systemd-run', ['--detach', '--idle-exit', '5'], log)
+        self.assertEqual(pid, 4321)
+        argv = popen.call_args[0][0]
+        self.assertEqual(argv[:6], ['/usr/bin/systemd-run', '--user', '--scope', '--collect', '--quiet', '--unit'])
+        self.assertTrue(argv[6].startswith('agent-sessions-daemon-'))
+        self.assertEqual(argv[7], sys.executable)
+        self.assertEqual(argv[-3:], ['daemon', '--idle-exit', '5'])
+        self.assertNotIn('--detach', argv)
+
+    def test_detach_scope_gives_up_when_systemd_run_exits_early(self):
+        proc = mock.Mock(pid=4321)
+        proc.wait.return_value = 1
+        log = os.path.join(self.tmpdir, 'daemon.log')
+        with mock.patch.object(cmd_daemon.subprocess, 'Popen', return_value=proc):
+            self.assertIsNone(cmd_daemon._detach_scope('/usr/bin/systemd-run', [], log))
+        with mock.patch.object(cmd_daemon.subprocess, 'Popen', side_effect=OSError):
+            self.assertIsNone(cmd_daemon._detach_scope('/usr/bin/systemd-run', [], log))
+
+    def test_main_falls_back_to_fork_when_the_scope_fails(self):
+        args = ['--detach', '--runtime-dir', self.tmpdir, '--sock', os.path.join(self.tmpdir, 's.sock')]
+        with mock.patch.object(cmd_daemon.sys, 'platform', 'linux'), \
+                mock.patch.object(cmd_daemon.shutil, 'which', return_value='/usr/bin/systemd-run'), \
+                mock.patch.dict(os.environ, {'XDG_RUNTIME_DIR': '/run/user/1'}), \
+                mock.patch.object(cmd_daemon, '_detach_scope', return_value=None) as scope, \
+                mock.patch.object(cmd_daemon.os, 'fork', return_value=777) as fork, \
+                mock.patch.object(cmd_daemon.os, '_exit', side_effect=SystemExit), \
+                self.assertRaises(SystemExit), redirect_stdout(io.StringIO()) as out:
+            cmd_daemon.main(args)
+        scope.assert_called_once()
+        fork.assert_called_once()
+        self.assertEqual(out.getvalue(), '777\n')
+
+    def test_main_skips_the_scope_off_linux(self):
+        args = ['--detach', '--runtime-dir', self.tmpdir, '--sock', os.path.join(self.tmpdir, 's.sock')]
+        with mock.patch.object(cmd_daemon.sys, 'platform', 'darwin'), \
+                mock.patch.object(cmd_daemon, '_detach_scope') as scope, \
+                mock.patch.object(cmd_daemon.os, 'fork', return_value=777), \
+                mock.patch.object(cmd_daemon.os, '_exit', side_effect=SystemExit), \
+                self.assertRaises(SystemExit), redirect_stdout(io.StringIO()):
+            cmd_daemon.main(args)
+        scope.assert_not_called()
 
 
 if __name__ == '__main__':

@@ -9,10 +9,11 @@ This only parses arguments and starts the daemon; the daemon itself lives in
 
 import argparse
 import os
+import shutil
 import subprocess
 import sys
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Mapping, Optional
 
 from .. import config, i18n, transport
 from ..daemon import protocol
@@ -146,6 +147,41 @@ def _detach_windows(args: List[str], log_path: str) -> int:
     return 0
 
 
+_SCOPE_SETTLE = 1.0   # seconds to wait for systemd-run to fail fast before trusting it
+
+
+def can_use_scope(env: Mapping[str, str], systemd_run: Optional[str]) -> bool:
+    """Whether the daemon can be started in its own transient systemd scope: `systemd-run`
+    was found (`shutil.which` result) and a user manager is plausibly reachable
+    (`XDG_RUNTIME_DIR` is where its bus socket lives)."""
+    return bool(systemd_run) and bool(env.get('XDG_RUNTIME_DIR'))
+
+
+def _detach_scope(systemd_run: str, args: List[str], log_path: str) -> Optional[int]:
+    """Starts the daemon in a transient user scope, so stopping an Obsidian that runs as a
+    systemd service doesn't take it down with that service's cgroup. Returns the pid, or
+    `None` if systemd-run couldn't set the scope up (the caller falls back to fork+setsid)."""
+    unit = 'agent-sessions-daemon-%d' % int(time.time())
+    argv = [systemd_run, '--user', '--scope', '--collect', '--quiet', '--unit', unit,
+            sys.executable, os.path.abspath(sys.argv[0]), 'daemon'] + [a for a in args if a != '--detach']
+    try:
+        log = open(log_path, 'ab')
+    except OSError:
+        return None
+    try:
+        p = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=log,
+                             start_new_session=True, close_fds=True)
+    except OSError:
+        return None
+    finally:
+        log.close()
+    try:
+        p.wait(timeout=_SCOPE_SETTLE)
+    except subprocess.TimeoutExpired:
+        return p.pid   # still running: the scope was created and the daemon is serving
+    return None
+
+
 def main(args: List[str]) -> int:
     ns = parse_args(args)
 
@@ -178,6 +214,23 @@ def main(args: List[str]) -> int:
         # command without --detach, and report its pid.
         d.close_unstarted()
         return _detach_windows(args, d.log_path)
+    if ns.detach and sys.platform.startswith('linux'):
+        systemd_run = shutil.which('systemd-run')
+        if can_use_scope(os.environ, systemd_run):
+            d.close_unstarted()
+            pid = _detach_scope(systemd_run, args, d.log_path)
+            if pid is not None:
+                sys.stdout.write('%d\n' % pid)
+                sys.stdout.flush()
+                return 0
+            try:
+                d.bind()   # the scope didn't come up: take the socket back and fork as usual
+            except AlreadyRunning:
+                sys.stderr.write(i18n.t('cmd.already_running', path=d.pid_path) + '\n')
+                return 1
+            except OSError as e:
+                sys.stderr.write(i18n.t('cmd.cannot_start_daemon', error=e, path=d.sock_path) + '\n')
+                return 1
     if ns.detach:
         sys.stdout.flush()
         sys.stderr.flush()
