@@ -5,3 +5,4 @@ __pycache__/
 *.pyc
 .superpowers/
 plan/
+tools/smoke/results/
