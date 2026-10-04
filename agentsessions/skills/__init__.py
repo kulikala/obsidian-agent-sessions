@@ -17,6 +17,7 @@ is never overwritten or removed. The text is rendered for the enabled agents (on
 the path given at install time, so every copy is rewritten when the set of agents changes.
 """
 import os
+import sys
 import re
 from typing import List, Optional, Tuple
 
@@ -45,7 +46,15 @@ def default_launcher() -> str:
     directory (a vault synced between machines keeps working)."""
     root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     path = os.path.join(root, 'bin', 'agent-sessions')
-    rel = os.path.relpath(path, os.path.expanduser('~'))
+    if sys.platform == 'win32':
+        # The `.cmd` launcher next to the script, by its own path: PowerShell, which runs the
+        # agents' commands there, has no `$HOME/...` form.
+        cmd = path + '.cmd'
+        return cmd if os.path.exists(cmd) else path
+    try:
+        rel = os.path.relpath(path, os.path.expanduser('~'))
+    except ValueError:   # another drive than the home directory (Windows)
+        return path
     return '$HOME/' + rel if not rel.startswith('..') and not os.path.isabs(rel) else path
 
 

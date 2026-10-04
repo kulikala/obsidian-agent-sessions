@@ -397,3 +397,17 @@ class WindowsLauncherTest(unittest.TestCase):
         text = skills.render('agent-sessions', r'C:\Users\a\AppData\Local\agent-sessions\bin\agent-sessions.cmd', ['claude'])
         self.assertIn('C:/Users/a/AppData/Local/agent-sessions/bin/agent-sessions.cmd stats', text)
         self.assertNotIn('"C:', text)
+
+
+class DefaultLauncherTest(unittest.TestCase):
+    def test_a_program_on_another_drive_is_named_by_its_path(self) -> None:
+        with mock.patch.object(skills.os.path, 'relpath', side_effect=ValueError('path is on mount D:')), \
+                mock.patch.object(skills.sys, 'platform', 'linux'):
+            launcher = skills.default_launcher()
+        self.assertTrue(launcher.endswith(os.path.join('bin', 'agent-sessions')))
+        self.assertFalse(launcher.startswith('$HOME'))
+
+    def test_windows_names_the_cmd_launcher(self) -> None:
+        with mock.patch.object(skills.sys, 'platform', 'win32'), \
+                mock.patch.object(skills.os.path, 'exists', return_value=True):
+            self.assertTrue(skills.default_launcher().endswith('agent-sessions.cmd'))
