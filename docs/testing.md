@@ -196,6 +196,8 @@ The same as in [What the smoke test touches](#what-the-smoke-test-touches), and 
 
 Before pasting the results `.md` into an issue or a message, read it. The runner replaces the home folder with `~`, but the file still holds the environment block and messages, and a vault path or a machine name outside the home folder is not replaced. It must contain no private paths or names.
 
+<a id="4-platform--checks"></a>
+
 ## 4. Platform ④ checks
 
 Platform ④ is a Linux Obsidian running under WSLg with Claude Code installed in the same WSL2 distribution. On top of the smoke test, run the checks below by hand, with a real Claude Code session, and record what is asked for.
