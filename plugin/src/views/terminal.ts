@@ -22,6 +22,7 @@ import { AGENT_BIN_NAME, BackendError, loginEnv, resolveAgentBinary, withBinDirO
 import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../backend/daemon-client";
 import { t } from "../i18n";
 import { promptHasDraft, type ScreenCell } from "../terminal/prompt-draft";
+import { attachPlan, launchSize, NO_ROOM_ATTACH_MS } from "../terminal/pane-size";
 import {
 	agentSendSequence,
 	classifyCtrlKeyNonMac,
@@ -129,6 +130,10 @@ export class TerminalView extends ItemView {
 	private closed = false;
 	private lastSize = { width: 0, height: 0 };
 	private resizeTimer: number | null = null;
+	/** Set while the tab waits for its pane to get a size before connecting (`maybeAttach`). */
+	private noRoomTimer: number | null = null;
+	/** The wait for room is over: connect even though the pane still has none. */
+	private waitedForRoom = false;
 
 	private client: DaemonClient | null = null;
 	private attaching = false;
@@ -416,6 +421,10 @@ export class TerminalView extends ItemView {
 	async onClose(): Promise<void> {
 		this.closed = true;
 		this.cancelEditor();
+		if (this.noRoomTimer !== null) {
+			window.clearTimeout(this.noRoomTimer);
+			this.noRoomTimer = null;
+		}
 		if (this.resizeTimer) {
 			window.clearTimeout(this.resizeTimer);
 			this.resizeTimer = null;
@@ -548,8 +557,17 @@ export class TerminalView extends ItemView {
 	// ---- Connecting -------------------------------------------------------------------
 
 	private maybeAttach(): void {
-		if (this.id && this.opened && this.lastSize.width > 0 && this.lastSize.height > 0) {
+		const plan = attachPlan({ hasId: !!this.id, opened: this.opened, size: this.lastSize, waitedForRoom: this.waitedForRoom });
+		if (plan === "attach") {
 			void this.ensureAttached();
+		} else if (plan === "wait" && this.noRoomTimer === null && !this.closed) {
+			// A pane with no room (a narrow window with both sidebars open) would never start the
+			// session: connect at the fallback size after a while, and resize once there is a size.
+			this.noRoomTimer = window.setTimeout(() => {
+				this.noRoomTimer = null;
+				this.waitedForRoom = true;
+				this.maybeAttach();
+			}, NO_ROOM_ATTACH_MS);
 		}
 	}
 
@@ -661,8 +679,7 @@ export class TerminalView extends ItemView {
 			cwd,
 			argv,
 			env,
-			cols: this.terminal.cols,
-			rows: this.terminal.rows,
+			...launchSize(this.terminal.cols, this.terminal.rows),
 		});
 		if (!res.ok && res.error !== "exists") {
 			throw new Error(t("error.startFailed", { error: res.error ?? "unknown" }));
@@ -677,7 +694,8 @@ export class TerminalView extends ItemView {
 
 	private async attachTo(client: DaemonClient): Promise<void> {
 		this.replayChunks = [];
-		const res = await client.attach(this.daemonId, this.terminal.cols, this.terminal.rows);
+		const size = launchSize(this.terminal.cols, this.terminal.rows);
+		const res = await client.attach(this.daemonId, size.cols, size.rows);
 		if (!res.ok) {
 			this.replayChunks = null;
 			throw new Error(t("error.attachFailed", { error: res.error ?? "unknown" }));
