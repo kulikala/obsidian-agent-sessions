@@ -309,6 +309,8 @@ export class SessionIndex extends EventEmitter {
 	): Promise<boolean> {
 		const deadline = Date.now() + timeoutMs;
 		for (;;) {
+			// The session may be linked to another id while this waits (`registry.setAlias`).
+			id = this.registry.resolve(id);
 			if (this.sessions.get(id)?.name === expected) {
 				return true;
 			}

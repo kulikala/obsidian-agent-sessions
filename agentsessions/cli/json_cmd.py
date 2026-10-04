@@ -119,5 +119,19 @@ def main(args: List[str]) -> int:
         _print(json_output.resolve_output(agent, pid, since, cwd))
         return 0
 
+    if sub == 'ppid':
+        pids = []
+        for value in rest:
+            try:
+                pids.append(int(value))
+            except ValueError:
+                sys.stderr.write(i18n.t('cmd.json_resolve_bad_pid', value=value) + '\n')
+                return 2
+        if not pids:
+            sys.stderr.write(i18n.t('cmd.json_ppid_usage') + '\n')
+            return 2
+        _print(json_output.ppid_output(pids))
+        return 0
+
     sys.stderr.write(i18n.t('cmd.json_unknown_subcommand', sub=sub) + '\n')
     return 2

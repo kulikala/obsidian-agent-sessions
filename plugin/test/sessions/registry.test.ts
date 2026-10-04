@@ -119,6 +119,19 @@ describe("Registry", () => {
 		expect(busied.sort()).toEqual(["a", "c"]);
 	});
 
+	it("answers an aliased id from the entry of the id it was linked to", async () => {
+		writeSession(dir, "a.json", { pid: process.pid, sessionId: "real", status: "idle" });
+		const registry = new Registry(dir);
+		expect(registry.get("tab")).toBeNull();
+
+		const waiting = registry.waitFor("tab", "idle", 5000);
+		registry.setAlias("tab", "real");
+
+		expect(registry.get("tab")?.status).toBe("idle");
+		expect(registry.resolve("tab")).toBe("real");
+		await expect(waiting).resolves.toBe(true);
+	});
+
 	it("waitFor resolves true immediately if already in that state", async () => {
 		writeSession(dir, "a.json", { pid: process.pid, sessionId: "a", status: "idle" });
 		const registry = new Registry(dir);

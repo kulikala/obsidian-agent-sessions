@@ -154,6 +154,8 @@ function isBusyLike(status: string): boolean {
  */
 export class Registry extends EventEmitter {
 	private entries: Map<string, RegistryEntry>;
+	/** Old id → the id the ledger knows the session by (`setAlias`). */
+	private aliases = new Map<string, string>();
 	private watchers: fs.FSWatcher[] = [];
 	private debounceTimer: number | null = null;
 	/** Retries watching `sessionsDir` while it doesn't exist yet (an agent installed after the
@@ -181,7 +183,26 @@ export class Registry extends EventEmitter {
 	}
 
 	get(id: string): RegistryEntry | null {
-		return this.entries.get(id) ?? null;
+		return this.entries.get(this.resolve(id)) ?? null;
+	}
+
+	/**
+	 * Says that the ledger knows the session started under `from` by the id `to` (an agent that
+	 * restarted itself under a new session id — `successor.ts`). Callers that still hold the old
+	 * id (`get`, `waitFor`) are answered from `to`'s entry. Fires `change` so a pending `waitFor`
+	 * looks again.
+	 */
+	setAlias(from: string, to: string): void {
+		if (from === to || this.aliases.get(from) === to) {
+			return;
+		}
+		this.aliases.set(from, to);
+		this.emit("change");
+	}
+
+	/** The id `id` is known by in the ledger: itself unless `setAlias` redirected it. */
+	resolve(id: string): string {
+		return this.aliases.get(id) ?? id;
 	}
 
 	all(): Map<string, RegistryEntry> {
@@ -217,7 +238,7 @@ export class Registry extends EventEmitter {
 	 */
 	waitFor(id: string, status: "idle" | "busy", timeoutMs: number): Promise<boolean> {
 		const matches = (): boolean => {
-			const entry = this.entries.get(id);
+			const entry = this.entries.get(this.resolve(id));
 			if (!entry) {
 				return false;
 			}

@@ -191,6 +191,21 @@ export async function resolve(
 	]) as Promise<ResolveResult>;
 }
 
+/**
+ * `json ppid PID…`: each running pid's parent pid, as `{"<pid>": <ppid>}` (a pid that isn't
+ * running is left out). `null` when the process table can't be read — callers then go without it.
+ */
+export async function parentPids(
+	agentSessionsPath: string,
+	vaultPath: string,
+	pids: readonly number[]
+): Promise<Record<string, number> | null> {
+	const out = (await runJson(agentSessionsPath, vaultPath, ["ppid", ...pids.map(String)])) as {
+		parents?: Record<string, number> | null;
+	};
+	return out.parents ?? null;
+}
+
 const LOGIN_ENV_KEYS = ["PATH", "LANG", "HOME", "USER", "TMPDIR", "CLAUDE_CONFIG_DIR"] as const;
 
 function parseEnvOutput(stdout: string): Record<string, string> {

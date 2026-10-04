@@ -68,42 +68,16 @@ export function hintDue(since: number | null, now: number): boolean {
 	return since !== null && now - since >= TERMINAL_HINT_MS;
 }
 
-/** How long after the guide session began a restarted process may still be taken for it. */
-export const ADOPT_WINDOW_MS = 2 * 60_000;
-
-/** A ledger entry the guide may adopt as its session. */
-export interface LedgerCandidate {
-	id: string;
-	cwd?: string;
-	startedAt?: number;
-}
-
 /**
- * Claude Code sometimes starts again right after the first prompt is accepted (the one-time "auto
- * mode" acknowledgement), and the new process writes its ledger record under a session id of its own,
- * so the id the guide started never shows up. While the guide's id is absent from the ledger, the
- * id to adopt instead is that of the earliest entry no other open tab owns (`known`) that was
- * started in the guide session's folder within `ADOPT_WINDOW_MS` after the guide session began. `null` when there is none, or
- * when the guide's own id is in the ledger after all.
+ * The id a Claude Code session now runs as, when the agent restarted itself under a new one
+ * (`successor.ts`; `main.ts` links the tab and swaps it over): the id of the tab whose daemon
+ * session is `id` but whose own id differs. `null` while the tab still has the id it started with
+ * or when no tab has it.
  */
-export function adoptSuccessor(args: {
-	guideAppeared: boolean;
-	guideCwd: string;
-	guideStartedAt: number;
-	candidates: readonly LedgerCandidate[];
-	known: (id: string) => boolean;
-}): string | null {
-	if (args.guideAppeared) {
-		return null;
-	}
-	let best: LedgerCandidate | null = null;
-	for (const c of args.candidates) {
-		if (c.cwd !== args.guideCwd || c.startedAt === undefined || c.startedAt < args.guideStartedAt || c.startedAt > args.guideStartedAt + ADOPT_WINDOW_MS || args.known(c.id)) {
-			continue;
-		}
-		if (best === null || (best.startedAt ?? 0) > c.startedAt) {
-			best = c;
-		}
-	}
-	return best?.id ?? null;
+export function restartedAs(
+	tabs: readonly { sessionId: string; daemonId: string; agent: string }[],
+	id: string
+): string | null {
+	const tab = tabs.find((v) => v.agent === "claude" && v.daemonId === id && v.sessionId !== id);
+	return tab?.sessionId ?? null;
 }

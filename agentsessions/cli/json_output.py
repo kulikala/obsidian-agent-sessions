@@ -14,7 +14,7 @@ import socket
 import time
 from typing import Dict, List, Optional
 
-from .. import agents, config, i18n, transport
+from .. import agents, config, i18n, procs, transport
 from ..agents import claude as claude_agent
 from ..agents import codex as codex_agent
 from ..agents import opencode as opencode_agent
@@ -176,10 +176,12 @@ def send_daemon_op(op: str, client: str = 'json', sock_path: Optional[str] = Non
 
 
 def _daemon_links() -> Dict[str, str]:
-    """`{daemon_uuid: session_id}` for every non-Claude session sessions.json
-    links (`sessions[<session_id>] = {"agent": "codex"|"opencode", "daemon":
-    "<daemon_uuid>"}`, written by the plugin once `json resolve <agent>` finds
-    the real session id -- see design.md §3.3). A link whose `daemon_uuid` no
+    """`{daemon_uuid: session_id}` for every session sessions.json links
+    (`sessions[<session_id>] = {"agent": ..., "daemon": "<daemon_uuid>"}`, written
+    by the plugin once `json resolve <agent>` finds a Codex or OpenCode session's
+    real id -- see design.md §3.3 -- or once it sees a Claude Code session that
+    restarted itself continue under an id other than the one the daemon started it
+    with). A link whose `daemon_uuid` no
     longer names a running daemon session (the daemon restarted, or the plugin
     already re-resumed under a new uuid) is simply never looked up by
     `_daemon_list`'s relabeling below, so a stale entry here is inert, not a
@@ -187,9 +189,9 @@ def _daemon_links() -> Dict[str, str]:
     st = store.load(path=config.STORE_PATH)
     out: Dict[str, str] = {}
     for session_id, entry in st.sessions.items():
-        if isinstance(entry, dict) and entry.get('agent') not in (None, 'claude'):
+        if isinstance(entry, dict) and entry.get('agent') is not None:
             daemon_id = entry.get('daemon')
-            if isinstance(daemon_id, str) and daemon_id:
+            if isinstance(daemon_id, str) and daemon_id and daemon_id != session_id:
                 out[daemon_id] = session_id
     return out
 
@@ -197,17 +199,17 @@ def _daemon_links() -> Dict[str, str]:
 def _daemon_list() -> dict:
     """Fetches the daemon's `list`. `running: false` if it isn't up (this never
     starts it). Codex and OpenCode sessions are relabeled from the daemon-assigned
-    uuid `start` was called with to the resolved session id (Claude Code sessions
-    are unaffected -- there, the daemon uuid already *is* the transcript id), so a
-    consumer only ever sees real session ids for them, matching `json scan`'s rows."""
+    uuid `start` was called with to the resolved session id (a Claude Code session
+    keeps its daemon uuid, which already *is* the transcript id, unless the store
+    links it to the id it restarted under), so a consumer only ever sees real
+    session ids for them, matching `json scan`'s rows."""
     resp = send_daemon_op('list')
     if resp is None or not resp.get('ok'):
         return {'running': False, 'sessions': []}
     sessions = resp.get('sessions', [])
-    if any(isinstance(s, dict) and s.get('agent') not in (None, 'claude') for s in sessions):
+    if any(isinstance(s, dict) for s in sessions):
         links = _daemon_links()
-        sessions = [dict(s, id=links[s['id']]) if isinstance(s, dict) and s.get('agent') not in (None, 'claude')
-                    and s.get('id') in links else s
+        sessions = [dict(s, id=links[s['id']]) if isinstance(s, dict) and s.get('id') in links else s
                     for s in sessions]
     return {'running': True, 'sessions': sessions}
 
@@ -307,6 +309,17 @@ def resolve_output(agent: str, pid: int, since: float, cwd: str) -> dict:
     resolver = codex_agent.resolve if agent == 'codex' else opencode_agent.resolve
     thread, transcript = resolver.resolve(pid, since, cwd, already_linked=already_linked)
     return {'thread': thread, 'transcript': transcript}
+
+
+def ppid_output(pids: List[int]) -> dict:
+    """Backs `json ppid <pid>...`: `{"parents": {"<pid>": <ppid>}}` for every pid in the process table
+    (a pid that isn't running is left out). `{"parents": null}` when the table can't be read -- the
+    caller then falls back on whatever it knew without the parent (see the plugin's
+    `sessions/successor.ts`)."""
+    table = procs.parent_table()
+    if table is None:
+        return {'parents': None}
+    return {'parents': {str(p): table[p] for p in pids if p in table}}
 
 
 def stats_output() -> dict:

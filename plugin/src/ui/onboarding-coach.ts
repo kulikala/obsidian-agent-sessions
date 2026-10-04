@@ -7,7 +7,7 @@
 import { Platform, setIcon } from "obsidian";
 import { t } from "../i18n";
 import type AgentSessionsPlugin from "../main";
-import { adoptSuccessor, hintDue, nameEvents, unansweredSince } from "../sessions/onboarding-watch";
+import { hintDue, nameEvents, unansweredSince } from "../sessions/onboarding-watch";
 import { initialTracker, track, type TrackerEvent, type TrackerState } from "../sessions/onboarding-tracker";
 import { editorKeyLabel } from "../terminal/keys";
 import { currentStep, OP_BODY_KEY, skipIfUnavailable, STEP_HEADING_KEY } from "./onboarding-flow";
@@ -43,10 +43,8 @@ export class OnboardingCoachWindow implements OnboardingCoach {
 	private hintSince: number | null = null;
 	private lastName: string | null = null;
 	/** The id the guide started the session under, once the tracker has moved to the id a restarted
-	 * agent process took (see `adoptSuccessor`); events about this tab still count for the session. */
+	 * agent process took (see `restartedAs`); events about this tab still count for the session. */
 	private originalId: string | null = null;
-	/** When the guide's session was started, as far as this window knows. */
-	private sessionStartedAt = 0;
 	private position: { left: number; top: number } | null = null;
 	private pollTimer: number | undefined;
 	private advanceTimer: number | undefined;
@@ -92,9 +90,8 @@ export class OnboardingCoachWindow implements OnboardingCoach {
 
 	/** Starts watching `step` on `sessionId` (a new tracker, as the step starts over). */
 	private watchSession(sessionId: string | null): void {
-		if (sessionId !== this.tracker.sessionId || this.sessionStartedAt === 0) {
+		if (sessionId !== this.tracker.sessionId) {
 			// A different session than the one watched so far: it starts over, aliases included.
-			this.sessionStartedAt = Date.now();
 			this.originalId = null;
 		}
 		// After a restart the progress still says which tab id the session was adopted from.
@@ -131,21 +128,14 @@ export class OnboardingCoachWindow implements OnboardingCoach {
 		}
 	}
 
-	/** The ledger changed: if the agent restarted itself under a new session id, follow it. */
+	/** A session may have been linked to a new id (the ledger changed): if the agent restarted itself
+	 * under a new session id, follow it. */
 	onRegistryChange(): void {
 		const id = this.tracker.sessionId;
 		if (this.step === null || id === null || this.originalId !== null) {
 			return;
 		}
-		const registry = this.plugin.index.registry;
-		const candidates = [...registry.all()].map(([cid, e]) => ({ id: cid, cwd: e.cwd, startedAt: e.startedAt }));
-		const successor = adoptSuccessor({
-			guideAppeared: registry.get(id) !== null,
-			guideCwd: this.plugin.vaultPath(),
-			guideStartedAt: this.sessionStartedAt,
-			candidates,
-			known: (cid) => this.plugin.knowsSession(cid),
-		});
+		const successor = this.plugin.successorOf(id);
 		if (successor === null) {
 			return;
 		}

@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
 	activeTabSession,
-	ADOPT_WINDOW_MS,
-	adoptSuccessor,
 	categoryOf,
 	hintDue,
 	nameEvents,
+	restartedAs,
 	TERMINAL_HINT_MS,
 	unansweredSince,
 } from "../../src/sessions/onboarding-watch";
@@ -73,42 +72,23 @@ describe("terminal hint timing", () => {
 	});
 });
 
-describe("adoptSuccessor", () => {
-	const base = { guideAppeared: false, guideCwd: "/v", guideStartedAt: 1000, known: () => false };
+describe("restartedAs", () => {
+	const tabs = [
+		{ sessionId: "guide", daemonId: "guide", agent: "claude" },
+		{ sessionId: "real", daemonId: "tab", agent: "claude" },
+		{ sessionId: "thread", daemonId: "placeholder", agent: "codex" },
+	];
 
-	it("adopts the earliest unknown entry started in the same folder after the guide session", () => {
-		expect(
-			adoptSuccessor({
-				...base,
-				candidates: [
-					{ id: "late", cwd: "/v", startedAt: 3000 },
-					{ id: "child", cwd: "/v", startedAt: 2000 },
-				],
-			})
-		).toBe("child");
+	it("names the id a Claude tab continues under once it was linked", () => {
+		expect(restartedAs(tabs, "tab")).toBe("real");
 	});
 
-	it("adopts a successor the index already lists, as long as no open tab owns it", () => {
-		expect(adoptSuccessor({ ...base, candidates: [{ id: "child", cwd: "/v", startedAt: 2000 }], known: () => false })).toBe("child");
+	it("is null while the tab still has the id it started with", () => {
+		expect(restartedAs(tabs, "guide")).toBeNull();
 	});
 
-	it("does not adopt an entry started more than two minutes after the guide session", () => {
-		const startedAt = base.guideStartedAt + ADOPT_WINDOW_MS + 1;
-		expect(adoptSuccessor({ ...base, candidates: [{ id: "later", cwd: "/v", startedAt }] })).toBeNull();
-		expect(adoptSuccessor({ ...base, candidates: [{ id: "edge", cwd: "/v", startedAt: startedAt - 1 }] })).toBe("edge");
-	});
-
-	it("does nothing once the guide's own id is in the ledger", () => {
-		expect(adoptSuccessor({ ...base, guideAppeared: true, candidates: [{ id: "c", cwd: "/v", startedAt: 2000 }] })).toBeNull();
-	});
-
-	it("ignores other folders, earlier starts, entries without a start time and sessions the plugin knows", () => {
-		const candidates = [
-			{ id: "other", cwd: "/x", startedAt: 2000 },
-			{ id: "old", cwd: "/v", startedAt: 500 },
-			{ id: "nostart", cwd: "/v" },
-			{ id: "mine", cwd: "/v", startedAt: 2000 },
-		];
-		expect(adoptSuccessor({ ...base, candidates, known: (id) => id === "mine" })).toBeNull();
+	it("is null for an id no tab has, and for another agent's placeholder", () => {
+		expect(restartedAs(tabs, "nobody")).toBeNull();
+		expect(restartedAs(tabs, "placeholder")).toBeNull();
 	});
 });

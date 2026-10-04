@@ -32,11 +32,13 @@ import {
 	resetLoginEnvCache,
 	listOllamaModels,
 	locateProgram,
+	parentPids,
 	runProgram,
 	scan,
 	setAgentEnv,
 	withBinDirOnPath,
 } from "./backend/backend";
+import { planSuccessors, possibleSuccessors, type SuccessorCandidate, type SuccessorTab } from "./sessions/successor";
 import {
 	chooseInstallDir,
 	findInstalled,
@@ -126,7 +128,7 @@ import { InstallBackendModal } from "./ui/install-modal";
 import { OnboardingModal } from "./ui/onboarding-modal";
 import { OnboardingCoachWindow } from "./ui/onboarding-coach";
 import { canContinue, guideAgent, startProgress } from "./ui/onboarding-flow";
-import { activeTabSession } from "./sessions/onboarding-watch";
+import { activeTabSession, restartedAs } from "./sessions/onboarding-watch";
 import {
 	resumeProgress,
 	SESSION_STEPS,
@@ -249,6 +251,9 @@ export default class AgentSessionsPlugin extends Plugin {
 	private pendingNames = new Map<string, string>();
 	/** Placeholder ids of Codex/OpenCode sessions `resolveAgentSession` is still looking the real id for. */
 	private unresolvedIds = new Set<string>();
+	/** The daemon's session list as of the last live refresh that reached it. */
+	private daemonSessions: DaemonSession[] = [];
+	private linkingSuccessors = false;
 	/** Sessions started headless (in the background). Excluded from `notifyIdle`. */
 	private headless = new Set<string>();
 	/** Whether Claude Code's `tui` is `fullscreen` (re-read at startup and on every `settings-changed`). */
@@ -333,7 +338,14 @@ export default class AgentSessionsPlugin extends Plugin {
 				});
 			})
 		);
-		this.register(this.index.onDaemonSessions((sessions) => this.adoptOrphanSessions(sessions)));
+		this.register(
+			this.index.onDaemonSessions((sessions) => {
+				this.daemonSessions = sessions;
+				this.adoptOrphanSessions(sessions);
+				void this.linkSuccessors();
+			})
+		);
+		this.register(this.index.registry.onChange(() => void this.linkSuccessors()));
 
 		// Remember the last-frontmost Markdown view (the target for `@` insertion).
 		this.registerEvent(
@@ -1479,8 +1491,20 @@ export default class AgentSessionsPlugin extends Plugin {
 				// Keeps a name the user already gave (OpenCode stores it here — see `renameSession`),
 				// or the one given while the session was still under its placeholder id.
 				// A session started by `agent-sessions new` has its name in `pendingRenames[daemonId]`.
-				const name = this.pendingNames.get(daemonId) ?? store.pendingRenames[daemonId] ?? store.sessions[id]?.name;
+				// A Claude session that restarted itself had its entry under the id the tab started with
+				// (`newSession`): that entry's name moves over and the entry goes, and an earlier id of
+				// the same process stops claiming the daemon session.
+				const name =
+					this.pendingNames.get(daemonId) ?? store.pendingRenames[daemonId] ?? store.sessions[id]?.name ?? store.sessions[daemonId]?.name;
 				delete store.pendingRenames[daemonId];
+				if (daemonId !== id) {
+					delete store.sessions[daemonId];
+					for (const entry of Object.values(store.sessions)) {
+						if (entry.daemon === daemonId) {
+							delete entry.daemon;
+						}
+					}
+				}
 				store.sessions[id] = { agent, cwd, daemon: daemonId, ...(name ? { name } : {}) };
 			});
 			this.index.refreshStore();
@@ -1495,6 +1519,71 @@ export default class AgentSessionsPlugin extends Plugin {
 		} catch (err) {
 			this.notifyLockError(err);
 		}
+	}
+
+	/**
+	 * Claude Code that restarted itself under a new session id (`sessions/successor.ts`): a tab
+	 * whose session runs but whose id the ledger never shows is matched with the unowned ledger entry
+	 * that continues it, preferably by the entry's parent pid being the tab's daemon child. The link is
+	 * the one a Codex thread gets (`linkAgentSession`: `sessions[realId].daemon = the tab's daemon id`)
+	 * and the tab is swapped over to the real id (`TerminalView.relinkId`), so status, rename,
+	 * analytics and the row all follow the real id from then on. An in-flight caller still holding the
+	 * old id is redirected by `registry.setAlias`.
+	 */
+	private async linkSuccessors(): Promise<void> {
+		if (this.linkingSuccessors || !this.backendAvailable()) {
+			return;
+		}
+		const registry = this.index.registry;
+		const running = new Map(this.daemonSessions.filter((s) => s.exited === null).map((s) => [s.id, s]));
+		const views = new Map<string, TerminalView>();
+		const tabs: SuccessorTab[] = [];
+		for (const view of this.terminalViews()) {
+			const daemon = running.get(view.daemonSessionId);
+			if (view.sessionAgent !== "claude" || !daemon || registry.get(view.sessionId) !== null || views.has(view.sessionId)) {
+				continue;
+			}
+			views.set(view.sessionId, view);
+			tabs.push({ id: view.sessionId, cwd: view.getCwd() || daemon.cwd, startedAt: daemon.startedAt * 1000, daemonPid: daemon.pid ?? null });
+		}
+		if (tabs.length === 0) {
+			return;
+		}
+		const candidates: SuccessorCandidate[] = [...registry.all()].map(([id, e]) => ({ id, pid: e.pid, cwd: e.cwd, startedAt: e.startedAt }));
+		const owned = (id: string) => this.knowsSession(id) || running.has(id);
+		const possible = possibleSuccessors(tabs, candidates, owned);
+		if (possible.length === 0) {
+			return;
+		}
+		this.linkingSuccessors = true;
+		try {
+			const parents = await parentPids(
+				this.agentSessionsPath(),
+				this.vaultPath(),
+				possible.map((c) => c.pid)
+			).catch(() => null);
+			for (const link of planSuccessors({ tabs, candidates, owned, parents })) {
+				const view = views.get(link.tabId);
+				if (!view || view.sessionId !== link.tabId) {
+					continue;
+				}
+				this.linkAgentSession("claude", link.successorId, view.getCwd() || this.vaultPath(), view.daemonSessionId);
+				registry.setAlias(link.tabId, link.successorId);
+				this.relinkTerminalViews(link.tabId, link.successorId);
+				this.coach?.onRegistryChange();
+			}
+		} finally {
+			this.linkingSuccessors = false;
+		}
+	}
+
+	/** The id a tab started under `id` now runs as, when the agent restarted itself (`linkSuccessors`);
+	 * `null` while it still has `id`. */
+	successorOf(id: string): string | null {
+		return restartedAs(
+			this.terminalViews().map((v) => ({ sessionId: v.sessionId, daemonId: v.daemonSessionId, agent: v.sessionAgent })),
+			id
+		);
 	}
 
 	/** The name given to an OpenCode tab that has no row yet (`id` = the tab's current id), if any. */
