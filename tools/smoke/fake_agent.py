@@ -27,6 +27,26 @@ IS_WINDOWS = sys.platform == 'win32'
 if not IS_WINDOWS:
     import termios
 
+if IS_WINDOWS:
+    import ctypes
+    import ctypes.wintypes as w
+
+    STD_INPUT_HANDLE = -10
+    ENABLE_PROCESSED_INPUT = 0x0001
+    ENABLE_LINE_INPUT = 0x0002
+    ENABLE_ECHO_INPUT = 0x0004
+    ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200
+
+    # The three console calls the raw mode needs. `w.HANDLE` is `c_void_p`: a HANDLE is
+    # nothing but a pointer-sized value on the way in.
+    _k32 = ctypes.WinDLL('kernel32', use_last_error=True)
+    _k32.GetStdHandle.argtypes = [w.DWORD]
+    _k32.GetStdHandle.restype = w.HANDLE
+    _k32.GetConsoleMode.argtypes = [w.HANDLE, ctypes.POINTER(w.DWORD)]
+    _k32.GetConsoleMode.restype = w.BOOL
+    _k32.SetConsoleMode.argtypes = [w.HANDLE, w.DWORD]
+    _k32.SetConsoleMode.restype = w.BOOL
+
 PROMPT = b'> '         # no newline: the agent is waiting, not done
 NEWLINE = b'\r\n' if IS_WINDOWS else b'\n'   # a ConPTY console does not add the carriage return
 CTRL_G = 0x07
@@ -109,6 +129,40 @@ class _Cbreak:
             termios.tcsetattr(self._fd, termios.TCSADRAIN, self._saved)
 
 
+class _RawConsole:
+    """The Windows half of `_Cbreak`: bytes as they are typed, with no echo from the console.
+
+    A console starts in cooked mode: `ENABLE_LINE_INPUT` holds every byte back until Enter
+    arrives, `ENABLE_ECHO_INPUT` types them onto the screen itself (so the agent's own echo
+    lands doubled, and a Ctrl+G arrives as the text `^G`), and `ENABLE_PROCESSED_INPUT` gives
+    Ctrl+C to the console instead of the agent. Clearing all three and asking for VT input
+    leaves the agent echoing exactly what it read. The mode is put back on the way out,
+    however the agent leaves; when stdin is not a console at all (a pipe, as when a test drives
+    the agent with plain subprocesses) there is nothing to change and nothing to restore.
+    """
+
+    def __init__(self) -> None:
+        self._handle: Optional[int] = None
+        self._mode: Optional[int] = None
+
+    def __enter__(self) -> None:
+        if not IS_WINDOWS:
+            return
+        handle = _k32.GetStdHandle(STD_INPUT_HANDLE)
+        mode = w.DWORD()
+        if not _k32.GetConsoleMode(handle, ctypes.byref(mode)):
+            return   # not a console: the bytes arrive as they are written
+        raw = mode.value & ~(ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT | ENABLE_PROCESSED_INPUT)
+        raw |= ENABLE_VIRTUAL_TERMINAL_INPUT
+        if not _k32.SetConsoleMode(handle, raw):
+            return   # the mode stays what it was, so there is nothing to restore either
+        self._handle, self._mode = handle, mode.value
+
+    def __exit__(self, *exc: object) -> None:
+        if self._handle is not None and self._mode is not None:
+            _k32.SetConsoleMode(self._handle, self._mode)
+
+
 def _answer(line: bytes) -> bool:
     """One complete line. True when the agent is done."""
     text = line.decode('utf-8', 'replace')
@@ -150,7 +204,8 @@ def serve() -> int:
 
 def main() -> int:
     if IS_WINDOWS:
-        return serve()
+        with _RawConsole():
+            return serve()
     with _Cbreak(sys.stdin.fileno()):
         return serve()
 
