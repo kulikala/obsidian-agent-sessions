@@ -437,6 +437,8 @@ export default class AgentSessionsPlugin extends Plugin {
 		if (!this.started) {
 			return;
 		}
+		this.onboardingModal?.close();
+		this.onboardingModal = null;
 		// Resolve any in-progress edit with `cancel` (writing the original content back), then close the socket.
 		for (const view of this.terminalViews()) {
 			view.cancelEditor();
@@ -457,6 +459,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	onboardingCoach?: OnboardingCoach;
 	/** The same window, as the class the plugin feeds events to. */
 	private coach: OnboardingCoachWindow | null = null;
+	/** The welcome guide's dialog while it is open. */
+	private onboardingModal: OnboardingModal | null = null;
 	/** A folder to read the guide's pictures from instead of the version's tag on GitHub. Only ever
 	 * set in a development build (`__AGENT_SESSIONS_DEV__`); the production bundle has no code that
 	 * reads it. */
@@ -1135,7 +1139,11 @@ export default class AgentSessionsPlugin extends Plugin {
 			void this.saveOnboardingProgress(progress);
 		}
 		const whatsNew: readonly WhatsNewItem[] = this.whatsNewItems;
-		new OnboardingModal(this.app, this, { progress, persist, hasEarlierRun, whatsNew }).open();
+		// One guide at a time: an open one is closed first rather than stacked under the new one.
+		this.onboardingModal?.close();
+		const modal = new OnboardingModal(this.app, this, { progress, persist, hasEarlierRun, whatsNew });
+		this.onboardingModal = modal;
+		modal.open();
 	}
 
 	/** The agent the guide's session runs (see `guideAgent`). */
