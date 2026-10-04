@@ -2416,6 +2416,9 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 .agent-sessions-onboarding-body {
 	min-height: 14em;
 }
+.agent-sessions-onboarding-body.is-compact {
+	min-height: 0;
+}
 .agent-sessions-onboarding-lead {
 	color: var(--text-normal);
 }

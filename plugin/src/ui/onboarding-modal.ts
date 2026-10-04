@@ -225,7 +225,9 @@ export class OnboardingModal extends Modal {
 			["en", options.en],
 			["ja", options.ja],
 		];
-		new Setting(body).addDropdown((dropdown) => {
+		body.addClass("is-compact");
+		body.createEl("p", { text: t("onboarding.language.desc") });
+		new Setting(body).setName(t("settings.language.name")).addDropdown((dropdown) => {
 			for (const [value, label] of choices) {
 				dropdown.addOption(value, label);
 			}

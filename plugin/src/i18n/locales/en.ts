@@ -255,6 +255,7 @@ export const en = {
 	"onboarding.step.more": "More to explore",
 	"onboarding.step.whats-new": "What's new",
 	"onboarding.language.heading": "Language",
+	"onboarding.language.desc": "Choose the language for this guide and the plugin. You can change it later in Settings.",
 	"onboarding.language.auto": "Auto ({language})",
 	"onboarding.image.failed": "Couldn't load the picture (offline, or this version's pictures aren't published yet).",
 	"onboarding.image.turnOff": "Stop loading pictures",

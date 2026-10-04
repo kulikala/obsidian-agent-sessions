@@ -256,6 +256,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"onboarding.step.more": "ほかにできること",
 	"onboarding.step.whats-new": "新しい機能",
 	"onboarding.language.heading": "言語",
+	"onboarding.language.desc": "このガイドとプラグインの表示言語を選びます。あとから設定でも変えられます。",
 	"onboarding.language.auto": "自動（{language}）",
 	"onboarding.image.failed": "図を読み込めませんでした（オフラインか、この版の図がまだ公開されていません）。",
 	"onboarding.image.turnOff": "図を読み込まない",
