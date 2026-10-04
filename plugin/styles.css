@@ -2356,6 +2356,13 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 }
 
 /* ---- Install dialog ---- */
+.agent-sessions-install-details {
+	margin: var(--size-4-2) 0;
+}
+.agent-sessions-install-details summary {
+	cursor: pointer;
+	color: var(--text-muted);
+}
 .agent-sessions-install-plan {
 	padding-left: 1.2em;
 }

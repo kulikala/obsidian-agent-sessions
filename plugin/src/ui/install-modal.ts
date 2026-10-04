@@ -60,7 +60,10 @@ export class InstallBackendModal extends Modal {
 		if (process.platform === "win32" && this.plugin.settings.agents.claude.enabled) {
 			void this.renderClaudeOnWindows(contentEl.createDiv());
 		}
-		const list = contentEl.createEl("ul", { cls: "agent-sessions-install-plan" });
+		// What the install would do is there to check, not to read every time: folded until opened.
+		const details = contentEl.createEl("details", { cls: "agent-sessions-install-details" });
+		details.createEl("summary", { text: t("install.details") });
+		const list = details.createEl("ul", { cls: "agent-sessions-install-plan" });
 		const item = (label: string, value: string) => {
 			const li = list.createEl("li");
 			li.createSpan({ cls: "agent-sessions-install-label", text: label });

@@ -333,6 +333,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"install.title": "agent-sessions をインストール",
 	"install.checking": "このコンピュータを確認しています…",
 	"install.intro": "agent-sessions は、セッションを動かし続け、エージェントの記録を読むプログラムです。このプラグインに同梱されており、インストールするとホームフォルダ内に書き出され、この Vault にはそのスキルが追加されます。プラグインを更新すると、どちらも更新されます。",
+	"install.details": "詳細",
 	"install.location": "場所",
 	"install.python": "Python",
 	"install.pythonValue": "{path}（{version}）",

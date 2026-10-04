@@ -332,6 +332,7 @@ export const en = {
 	"install.title": "Install agent-sessions",
 	"install.checking": "Checking this computer…",
 	"install.intro": "agent-sessions keeps your sessions running and reads the agents' transcripts. It comes bundled with this plugin; installing writes it to a folder in your home directory, and updates to the plugin update it too.",
+	"install.details": "Details",
 	"install.location": "Location",
 	"install.python": "Python",
 	"install.pythonValue": "{path} ({version})",
