@@ -65,6 +65,7 @@ import {
 	type OpencodePluginMode,
 	type OpencodePluginStatus,
 } from "./backend/opencode-plugin";
+import { CONFIRM_KEY, isModelSwitchDialog, mayAskToConfirm } from "./terminal/model-switch";
 import { EditServer, editReplyFor, submitsAfterEdit, tabOwnsEditSession, type EditReply, type EditRequest } from "./backend/edit-server";
 import { SessionIndex, type Row } from "./sessions/index";
 import { getLang, languageOptions, resolveLang, setLang, t, type MessageKey } from "./i18n";
@@ -175,6 +176,8 @@ const MODEL_COMMAND_SETTLE_MS = 600;
 /** How long the built-in editor's switch waits for the returned text to show in the prompt, and how often it looks. */
 const DRAFT_WAIT_MS = 3000;
 const DRAFT_POLL_MS = 150;
+/** How long to look for the "Switch model?" dialog after `/model`, and for it to close after Enter. */
+const DIALOG_WAIT_MS = 3000;
 /** Upper bound while waiting for `registry`'s state. */
 const WAIT_IDLE_MS = 60000;
 /** Upper bound while waiting to see `busy` after sending. Commands that never go busy (like `/rename`) give up after this. */
@@ -1750,9 +1753,32 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 	}
 
+	/**
+	 * `/model` in a conversation with history opens a "Switch model?" dialog; the user chose the
+	 * model, so answers it with Enter and waits for it to close. Needs the session's tab to read
+	 * the screen — without one nothing is looked at.
+	 */
+	private async confirmModelSwitch(id: string, command: string): Promise<void> {
+		const view = this.findTerminalView(id);
+		if (!view || !mayAskToConfirm(command)) {
+			return;
+		}
+		for (let waited = 0; waited < DIALOG_WAIT_MS; waited += DRAFT_POLL_MS) {
+			await sleep(DRAFT_POLL_MS);
+			if (isModelSwitchDialog(view.screenText())) {
+				view.sendBytes(Buffer.from(CONFIRM_KEY, "utf8"));
+				for (let gone = 0; gone < DIALOG_WAIT_MS && isModelSwitchDialog(view.screenText()); gone += DRAFT_POLL_MS) {
+					await sleep(DRAFT_POLL_MS);
+				}
+				return;
+			}
+		}
+	}
+
 	private async applyModelCommandsOrThrow(id: string, commands: string[]): Promise<void> {
 		for (const command of commands) {
 			await this.sendCommand(id, command, t("progress.changingModel"));
+			await this.confirmModelSwitch(id, command);
 			await sleep(MODEL_COMMAND_SETTLE_MS);
 			await this.index.registry.waitFor(id, "idle", WAIT_BUSY_MS);
 		}

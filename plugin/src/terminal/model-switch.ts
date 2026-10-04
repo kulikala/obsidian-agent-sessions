@@ -95,3 +95,20 @@ export function planEditorSend(current: CurrentModel, choice: ModelChoice): Edit
 	const commands = planModelChange(current, choice);
 	return commands.length === 0 ? { kind: "plain" } : { kind: "switch", commands };
 }
+
+/**
+ * Claude Code asks "Switch model? … ❯ 1. Yes, switch to Sonnet 5.5" when `/model` is run in a
+ * conversation that has history. The user already chose the model, so the plugin answers it.
+ * The one place the dialog is recognised, from the visible screen's text.
+ */
+export function isModelSwitchDialog(screen: string): boolean {
+	return /Switch model\?/.test(screen) && /Yes, switch to/.test(screen);
+}
+
+/** Only `/model` can raise that dialog; `/effort` never does. */
+export function mayAskToConfirm(command: string): boolean {
+	return /^\/model\s/.test(command);
+}
+
+/** Enter: the dialog's first option, "Yes, switch to …", is the one preselected. */
+export const CONFIRM_KEY = "\r";

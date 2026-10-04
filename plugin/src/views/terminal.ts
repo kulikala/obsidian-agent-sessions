@@ -247,6 +247,16 @@ export class TerminalView extends ItemView {
 		this.sendInput(bytes);
 	}
 
+	/** The visible screen as plain text (one line per row), for matching a dialog Claude Code drew. */
+	screenText(): string {
+		const buffer = this.terminal.buffer.active;
+		const lines: string[] = [];
+		for (let y = buffer.baseY; y < buffer.baseY + this.terminal.rows; y++) {
+			lines.push(buffer.getLine(y)?.translateToString(true) ?? "");
+		}
+		return lines.join("\n");
+	}
+
 	/** Whether the agent's input box on screen holds a draft (`promptHasDraft` over the visible
 	 * rows; `null` when no prompt line is visible). */
 	promptHasDraft(): boolean | null {

@@ -60,6 +60,7 @@ export const en = {
 	"effort.auto": "Auto (clear the saved level)",
 	"modal.changeModel.title": "Change model",
 	"modal.changeModel.model": "Model",
+	"modal.changeModel.current": "Now: {model} · {effort}",
 	"modal.changeModel.effort": "Effort",
 	"modal.changeModel.other": "Other…",
 	"modal.changeModel.otherPlaceholder": "Model ID, e.g. claude-opus-5-5",

@@ -791,6 +791,10 @@ export class ChangeModelModal extends Modal {
 	onOpen(): void {
 		this.setTitle(t("modal.changeModel.title"));
 		const { current } = this;
+		this.contentEl.createEl("p", {
+			cls: "setting-item-description",
+			text: t("modal.changeModel.current", { model: current.display ?? t("common.default"), effort: current.effort ?? t("common.default") }),
+		});
 		const modelRow = new Setting(this.contentEl).setName(t("modal.changeModel.model"));
 		const otherEl = this.contentEl.createEl("input", { type: "text", cls: "agent-sessions-model-other" });
 		otherEl.placeholder = t("modal.changeModel.otherPlaceholder");

@@ -61,6 +61,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"effort.auto": "自動（保存したレベルを解除）",
 	"modal.changeModel.title": "モデルを変更",
 	"modal.changeModel.model": "モデル",
+	"modal.changeModel.current": "現在: {model} · {effort}",
 	"modal.changeModel.effort": "エフォート",
 	"modal.changeModel.other": "その他…",
 	"modal.changeModel.otherPlaceholder": "モデル ID（例: claude-opus-5-5）",

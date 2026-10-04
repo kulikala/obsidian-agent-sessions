@@ -67,3 +67,21 @@ describe("planEditorSend", () => {
 		expect(planEditorSend(opusMedium, { model: "opus", effort: "max" })).toEqual({ kind: "switch", commands: ["/effort max"] });
 	});
 });
+
+describe("model switch dialog", () => {
+	const dialog = "Switch model?\nYour next response will be slower and use more tokens\n❯ 1. Yes, switch to Sonnet 5.5\n  2. No, go back";
+
+	it("recognises Claude Code's confirmation on screen", async () => {
+		const { isModelSwitchDialog } = await import("../../src/terminal/model-switch");
+		expect(isModelSwitchDialog(dialog)).toBe(true);
+		expect(isModelSwitchDialog("❯ \n  ? for shortcuts")).toBe(false);
+		expect(isModelSwitchDialog("Switch model?")).toBe(false);
+	});
+
+	it("only /model may raise it, and Enter answers it", async () => {
+		const { mayAskToConfirm, CONFIRM_KEY } = await import("../../src/terminal/model-switch");
+		expect(mayAskToConfirm("/model sonnet")).toBe(true);
+		expect(mayAskToConfirm("/effort high")).toBe(false);
+		expect(CONFIRM_KEY).toBe("\r");
+	});
+});
