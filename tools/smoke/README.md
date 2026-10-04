@@ -10,6 +10,8 @@ bundled with the plugin and adds no command to it.
 - `lib/*.mjs`: the pure parts (result aggregation, markdown, home paths, leftovers, targets file).
 - `fake_agent.py`: the stand-in agent (prompt, echo, `size`, Ctrl+G opens `$VISUAL`, `exit`).
 
+See [docs/testing.md](../../docs/testing.md) for the full guide (targets, reading results, real machines, the UI checklist).
+
 ## Run
 
 Build the plugin first (`cd plugin && npm run build`), then:
