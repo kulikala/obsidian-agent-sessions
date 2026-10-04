@@ -105,6 +105,16 @@ def parse_ts(value) -> Optional[float]:
         return None
 
 
+def activity_times(path: str) -> List[float]:
+    """Timestamps of every record of a rollout (for the activity calendar)."""
+    out: List[float] = []
+    for d in iter_records(path):
+        t = parse_ts(d.get('timestamp'))
+        if t is not None:
+            out.append(t)
+    return out
+
+
 def iter_records(path: str) -> Iterator[dict]:
     with open(path, 'r', encoding='utf-8', errors='replace') as f:
         for line in f:

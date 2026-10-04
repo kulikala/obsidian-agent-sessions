@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import List
 
 from .. import i18n
+from ..sessions import activity
 from . import json_output
 
 
@@ -75,6 +76,33 @@ def main(args: List[str]) -> int:
                 sys.stderr.write(i18n.t('cmd.json_unknown_option', option=opt) + '\n')
                 return 2
         _print(json_output.usage_output(session_id, from_ts=from_ts, to_ts=to_ts))
+        return 0
+
+    if sub == 'activity':
+        from_ts, to_ts, gap = None, None, activity.DEFAULT_GAP_SECONDS
+        i = 0
+        while i < len(rest):
+            opt = rest[i]
+            if opt in ('--from', '--to', '--gap-minutes') and i + 1 < len(rest):
+                value = rest[i + 1]
+                try:
+                    if opt == '--gap-minutes':
+                        gap = float(value) * 60
+                    elif opt == '--from':
+                        from_ts = _parse_iso(value)
+                    else:
+                        to_ts = _parse_iso(value)
+                except ValueError:
+                    sys.stderr.write(i18n.t('cmd.json_bad_iso', value=value) + '\n')
+                    return 2
+                i += 2
+            else:
+                sys.stderr.write(i18n.t('cmd.json_unknown_option', option=opt) + '\n')
+                return 2
+        if from_ts is None or to_ts is None:
+            sys.stderr.write(i18n.t('cmd.json_activity_usage') + '\n')
+            return 2
+        _print(json_output.activity_output(from_ts, to_ts, gap))
         return 0
 
     if sub == 'stats':

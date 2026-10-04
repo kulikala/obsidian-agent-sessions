@@ -19,7 +19,7 @@ from ..agents import claude as claude_agent
 from ..agents import codex as codex_agent
 from ..agents import opencode as opencode_agent
 from ..daemon import protocol
-from ..sessions import cache, store
+from ..sessions import activity, cache, store
 from ..sessions.live import STATUS_LABEL_KEY
 from ..sessions.model import Session, folder_of, split_name
 from ..tui.items import OTHER_LABEL_LEN
@@ -122,6 +122,42 @@ def scan_output(only: Optional[List[str]] = None) -> dict:
                     break
     cache.save(c, path=cache_path)
     return {'sessions': sessions, 'store': _store_dict()}
+
+
+def activity_output(from_ts: float, to_ts: float,
+                    gap: float = activity.DEFAULT_GAP_SECONDS) -> dict:
+    """`{"sessions": [{id, agent, name, label, category, child, spans}]}` for the sessions
+    that were active inside `[from_ts, to_ts)`. `spans` are `[start, end]` epoch seconds
+    built from the transcript's message timestamps (see `sessions/activity.py`), clipped
+    to the range. Reuses the shared scan cache for names; a transcript file last written
+    before `from_ts` can't hold activity in range and is never opened."""
+    cache_path = config.CACHE_PATH
+    c = cache.load(path=cache_path)
+    out: List[dict] = []
+    for name in agents.enabled_agents():
+        adapter = _adapter(name)
+        paths = adapter.list_transcripts()
+        if name != 'opencode':   # OpenCode's pseudo paths name no file
+            paths = [p for p in paths if _mtime(p) >= from_ts]
+        for s in adapter.scan(paths, cache=c).values():
+            if s.mtime < from_ts:
+                continue
+            spans = activity.clip_spans(
+                activity.spans_from_times(adapter.activity_times(s.path), gap), from_ts, to_ts)
+            if not spans:
+                continue
+            d = _session_dict(s)
+            out.append({'id': d['id'], 'agent': d['agent'], 'name': d['name'], 'label': d['label'],
+                        'category': d['group'], 'child': d['child'], 'spans': spans})
+    cache.save(c, path=cache_path)
+    return {'sessions': out}
+
+
+def _mtime(path: str) -> float:
+    try:
+        return os.stat(path).st_mtime
+    except OSError:
+        return 0.0
 
 
 def _recv_json(sock: socket.socket, decoder: protocol.Decoder, deadline: float) -> dict:

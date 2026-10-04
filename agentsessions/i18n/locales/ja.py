@@ -72,10 +72,11 @@ MESSAGES = {
     'cmd.already_running': 'already running: {path}',
     'cmd.cannot_start_daemon': 'cannot start daemon: {error} ({path})',
 
-    'cmd.json_usage': 'usage: agent-sessions json scan|live|detail|usage|stats|resolve|ppid ...',
+    'cmd.json_usage': 'usage: agent-sessions json scan|live|detail|usage|stats|activity|resolve|ppid ...',
     'cmd.json_id_needs_value': '--only には ID が要ります',
     'cmd.json_detail_usage': 'usage: agent-sessions json detail ID',
     'cmd.json_usage_usage': 'usage: agent-sessions json usage ID [--from ISO] [--to ISO]',
+    'cmd.json_activity_usage': 'usage: agent-sessions json activity --from <ISO8601> --to <ISO8601> [--gap-minutes N]',
     'cmd.json_bad_iso': 'bad ISO8601: {value}',
     'cmd.json_unknown_option': 'unknown option: {option}',
     'cmd.json_unknown_subcommand': 'unknown json subcommand: {sub}',

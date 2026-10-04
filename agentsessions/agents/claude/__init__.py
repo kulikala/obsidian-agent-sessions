@@ -18,6 +18,7 @@ import os
 from typing import Dict, List, Optional
 
 from ... import config
+from ...sessions import activity as _activity
 from ...sessions import detail as _detail
 from ...sessions import live as _live
 from ...sessions import scan as _scan
@@ -60,3 +61,7 @@ def collect_usage(path: str) -> list:
 def summarize_usage(turns: list, from_ts: Optional[float] = None,
                      to_ts: Optional[float] = None) -> dict:
     return _turns.summarize(turns, from_ts=from_ts, to_ts=to_ts)
+
+
+def activity_times(path: str) -> List[float]:
+    return _activity.claude_times(path)

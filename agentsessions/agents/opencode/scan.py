@@ -109,3 +109,22 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
         return out
     finally:
         d.close()
+
+
+def activity_times(session_id: str, path: Optional[str] = None) -> List[float]:
+    """Epoch seconds of every message and message part of a session (for the
+    activity calendar)."""
+    d = _db.open_db(path)
+    if d is None:
+        return []
+    try:
+        rows = d.query('SELECT time_created, time_updated FROM message WHERE session_id = ?', (session_id,))
+        rows += d.query('SELECT time_created, time_updated FROM part WHERE session_id = ?', (session_id,))
+    finally:
+        d.close()
+    out: List[float] = []
+    for r in rows:
+        for v in (r['time_created'], r['time_updated']):
+            if isinstance(v, (int, float)) and v > 0:
+                out.append(v / 1000.0)
+    return out
