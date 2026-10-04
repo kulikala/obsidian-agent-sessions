@@ -21,6 +21,11 @@ def read(path):
         return f.read()
 
 
+def skill_files(base, names=skills.SKILL_NAMES):
+    """Every file the install writes under `base` (relative to the vault), for `names`."""
+    return ['%s/%s/%s' % (base, n, f) for n in names for f in skills.template_files(n)]
+
+
 class SkillsTestCase(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -59,14 +64,14 @@ class TestTemplates(unittest.TestCase):
             head = text.split('---\n')[1]
             self.assertLess(len(head.split('description: ', 1)[1].split('\n')[0]), 1024)
             self.assertIn(skills.MARKER, text)
-            self.assertIn('"%s"' % LAUNCHER, text)
+            self.assertEqual('"%s"' % LAUNCHER in text, name == 'agent-sessions', name)
             self.assertNotIn('{{', text)
 
-    def test_there_is_one_skill_and_the_model_may_invoke_it(self):
-        self.assertEqual(skills.SKILL_NAMES, ('agent-sessions',))
-        text = skills.render('agent-sessions', LAUNCHER)
-        self.assertNotIn('disable-model-invocation', text)
-        self.assertIn('Only when the user explicitly asks for a new session', text)
+    def test_there_are_two_skills_and_the_model_may_invoke_them(self):
+        self.assertEqual(skills.SKILL_NAMES, ('agent-sessions', 'agent-sessions-help'))
+        for name in skills.SKILL_NAMES:
+            self.assertNotIn('disable-model-invocation', skills.render(name, LAUNCHER))
+        self.assertIn('Only when the user explicitly asks for a new session', skills.render('agent-sessions', LAUNCHER))
 
     def test_the_body_covers_new_stats_and_other_sessions(self):
         calls = set(re.findall(r'"%s" (\w+)' % re.escape(LAUNCHER), skills.render('agent-sessions', LAUNCHER)))
@@ -80,7 +85,7 @@ class TestTemplates(unittest.TestCase):
     def test_the_bodies_call_the_commands_that_exist(self):
         for name in skills.SKILL_NAMES:
             calls = re.findall(r'"%s" (\w+)' % re.escape(LAUNCHER), skills.render(name, LAUNCHER))
-            self.assertTrue(calls, name)
+            self.assertEqual(bool(calls), name == 'agent-sessions', name)
             for cmd in calls:
                 self.assertIn(cmd, SUBCOMMANDS)
 
@@ -158,10 +163,8 @@ class TestInstall(SkillsTestCase):
     def test_installs_into_the_folders_of_the_enabled_agents_only(self):
         status, changes = skills.install(self.vault, ['claude', 'codex'], LAUNCHER)
         self.assertEqual(status, skills.INSTALLED)
-        self.assertEqual(len(changes), 2)
-        self.assertEqual(self.files(), sorted(
-            ['%s/%s/SKILL.md' % (CLAUDE, n) for n in skills.SKILL_NAMES]
-            + ['%s/%s/SKILL.md' % (CODEX, n) for n in skills.SKILL_NAMES]))
+        self.assertEqual(len(changes), len(skill_files(CLAUDE)) + len(skill_files(CODEX)))
+        self.assertEqual(self.files(), sorted(skill_files(CLAUDE) + skill_files(CODEX)))
 
     def test_nothing_goes_outside_the_vault(self):
         with tempfile.TemporaryDirectory() as home:
@@ -177,13 +180,13 @@ class TestInstall(SkillsTestCase):
         skills.install(self.vault, ['claude'], LAUNCHER)
         status, changes = skills.install(self.vault, ['claude'], '/other/agent-sessions')
         self.assertEqual(status, skills.UPDATED)
-        self.assertEqual(len(changes), 1)
+        self.assertEqual(len(changes), 1)   # only the file that names the launcher
         self.assertIn('/other/agent-sessions', read(self.path(CLAUDE, 'agent-sessions', 'SKILL.md')))
 
     def test_disabling_an_agent_takes_its_copies_away(self):
         skills.install(self.vault, ['claude', 'codex'], LAUNCHER)
         skills.install(self.vault, ['claude'], LAUNCHER)
-        self.assertEqual(self.files(), sorted('%s/%s/SKILL.md' % (CLAUDE, n) for n in skills.SKILL_NAMES))
+        self.assertEqual(self.files(), sorted(skill_files(CLAUDE)))
         self.assertFalse(os.path.exists(self.path('.agents')))
 
     def test_a_changed_set_rewrites_every_installed_copy(self):
@@ -193,7 +196,7 @@ class TestInstall(SkillsTestCase):
             self.assertIn('OpenCode', text)
         status, changes = skills.install(self.vault, ['claude', 'codex'], LAUNCHER)
         self.assertEqual(status, skills.UPDATED)
-        self.assertEqual(len(changes), 2)
+        self.assertEqual(len(changes), 2)   # the agent-sessions skill in each folder; the help text names no agent set
         for base in (CLAUDE, CODEX):
             text = read(self.path(base, 'agent-sessions', 'SKILL.md'))
             self.assertNotIn('OpenCode', text)
@@ -214,7 +217,7 @@ class TestInstall(SkillsTestCase):
     def test_opencode_alone_moves_to_its_own_folder(self):
         skills.install(self.vault, ['claude'], LAUNCHER)
         skills.install(self.vault, ['opencode'], LAUNCHER)
-        self.assertEqual(self.files(), sorted('%s/%s/SKILL.md' % (OPENCODE, n) for n in skills.SKILL_NAMES))
+        self.assertEqual(self.files(), sorted(skill_files(OPENCODE)))
 
     def test_a_skill_without_the_marker_is_never_overwritten_or_removed(self):
         mine = self.path(CLAUDE, 'agent-sessions', 'SKILL.md')
@@ -248,7 +251,7 @@ class TestInstall(SkillsTestCase):
                 self.write_legacy(base, name, policy=(base == CODEX and name == 'agent-sessions-new'))
         status, _ = skills.install(self.vault, ['claude'], LAUNCHER)
         self.assertEqual(status, skills.INSTALLED)
-        self.assertEqual(self.files(), ['%s/agent-sessions/SKILL.md' % CLAUDE])
+        self.assertEqual(self.files(), sorted(skill_files(CLAUDE)))
 
     def test_an_old_skill_without_the_marker_is_left_alone(self):
         mine = self.write_legacy(CLAUDE, 'agent-sessions-new', managed=False)
@@ -288,7 +291,7 @@ class TestInstall(SkillsTestCase):
 
     def test_dry_run_writes_nothing(self):
         status, changes = skills.install(self.vault, ['claude'], LAUNCHER, dry_run=True)
-        self.assertEqual((status, len(changes)), (skills.INSTALLED, 1))
+        self.assertEqual((status, len(changes)), (skills.INSTALLED, len(skill_files(CLAUDE))))
         self.assertEqual(self.files(), [])
 
     def test_a_folder_that_cannot_be_written_is_reported_not_raised(self):
@@ -303,7 +306,7 @@ class TestRemove(SkillsTestCase):
     def test_removes_every_copy_of_ours_and_the_folders_it_leaves_empty(self):
         skills.install(self.vault, ['claude', 'codex'], LAUNCHER)
         changes = skills.remove(self.vault)
-        self.assertEqual(len(changes), 2)
+        self.assertEqual(len(changes), len(skill_files(CLAUDE)) + len(skill_files(CODEX)))
         self.assertEqual(os.listdir(self.vault), [])
 
     def test_keeps_other_skills_and_the_folders_that_hold_them(self):
@@ -327,6 +330,138 @@ class TestRemove(SkillsTestCase):
         os.makedirs(self.path(CLAUDE))
         self.assertEqual(skills.remove(self.vault), [])
         self.assertTrue(os.path.isdir(self.path(CLAUDE)))
+
+
+class TestHelpSkill(SkillsTestCase):
+    HELP = 'agent-sessions-help'
+    # UI strings the reference quotes; its text must keep matching the plugin's English and Japanese locales.
+    LABEL_KEYS = (
+        'action.openSidePanel', 'action.newSession', 'action.sessionManager', 'action.insertNoteAt',
+        'action.organize', 'action.rescan', 'action.openSettings', 'action.rename', 'action.moveToCategory',
+        'action.compact', 'action.archive', 'action.unarchive', 'action.showArchived', 'action.endSession',
+        'action.restartSession', 'action.usage', 'action.copyId', 'action.prevInstruction',
+        'action.nextInstruction', 'action.lastResponse', 'action.installBackend', 'action.reinstall',
+        'action.uninstallBackend', 'action.checkAgain', 'action.showWelcome', 'action.continueWelcome',
+        'action.skip', 'action.resume', 'action.startFresh', 'action.reconnect',
+        'settings.backend.name', 'settings.agentSessionsPath.name', 'settings.submitKey.name',
+        'settings.editorKey.name', 'settings.language.name', 'settings.notifyOnIdle.name',
+        'settings.recentCount.name', 'settings.scrollback.name', 'settings.onboardingOnUpdate.name',
+        'settings.onboardingImages.name', 'settings.agents.path.name', 'settings.agents.env.name',
+        'settings.agents.detect.name', 'settings.agents.launchVia.name', 'settings.agents.ollamaModel.name',
+        'settings.display.heading', 'settings.input.heading', 'settings.other.heading', 'settings.agents.heading',
+        'settings.font.name', 'settings.fontSize.name', 'settings.padding.name', 'settings.onboarding.name',
+        'section.openTabs', 'section.running', 'section.recent', 'group.other', 'toolbar.filterPlaceholder',
+        'toolbar.filterByStatus', 'table.updated', 'table.model', 'table.effort', 'table.folder',
+        'status.working', 'status.runningShell', 'status.asking', 'status.waiting', 'status.idle',
+        'status.detached', 'status.exited', 'status.error', 'status.connecting', 'status.editing',
+        'status.group.all', 'status.group.needsInput', 'status.group.needsReview', 'status.group.running',
+        'status.group.done', 'status.group.archived', 'organize.suggest', 'organize.suggestAgain',
+        'organize.resuggest', 'organize.apply', 'organize.showLog', 'organize.onlyIncomplete',
+        'modal.newSession.nameField', 'modal.newSession.agentField', 'install.winget.python',
+        'install.winget.claude', 'install.skills', 'settings.agents.unsupportedOnPlatform',
+    )
+
+    @staticmethod
+    def locale(code):
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                            'plugin', 'src', 'i18n', 'locales', code + '.ts')
+        pairs = re.findall(r'^\t"([\w.]+)":\s*"((?:[^"\\]|\\.)*)",?$', read(path), re.M)
+        return {k: v.replace('\\"', '"') for k, v in pairs}
+
+    def test_the_skill_is_a_short_skill_md_and_a_reference_next_to_it(self):
+        self.assertEqual(skills.template_files(self.HELP), ['SKILL.md', 'reference.md'])
+        text = skills.render(self.HELP, LAUNCHER)
+        self.assertLess(len(text.splitlines()), 40)
+        self.assertIn('`reference.md`', text)
+        self.assertIn('agent-sessions` skill', text)
+        head = text.split('---\n')[1]
+        description = head.split('description: ', 1)[1].split('\n')[0]
+        for word in ('side panel', 'Session Manager', 'built-in editor', 'in any language'):
+            self.assertIn(word, text)
+        self.assertIn('Use when the user asks how to', description)
+
+    def test_every_file_carries_the_marker_and_no_placeholder_is_left(self):
+        for f in skills.template_files(self.HELP):
+            text = skills.render(self.HELP, LAUNCHER, file=f)
+            self.assertIn(skills.MARKER, text, f)
+            self.assertNotIn('{{', text, f)
+
+    def test_the_reference_is_the_same_whichever_agents_are_enabled(self):
+        for agents in (['claude'], ['codex'], ['opencode'], ['claude', 'codex', 'opencode']):
+            self.assertEqual(skills.render(self.HELP, LAUNCHER, agents, 'reference.md'),
+                             skills.render(self.HELP, LAUNCHER, file='reference.md'))
+
+    def test_the_reference_quotes_the_plugins_labels_in_both_languages(self):
+        en, ja = self.locale('en'), self.locale('ja')
+        self.assertGreater(len(en), 300)
+        text = skills.render(self.HELP, LAUNCHER, file='reference.md')
+        for key in self.LABEL_KEYS:
+            for code, table in (('en', en), ('ja', ja)):
+                label = re.sub(r'\s*[（(].*$|…$|\s*\{.*$', '', table[key]).strip().rstrip('.。')
+                if label:
+                    self.assertTrue(label in text, '%s (%s): %r' % (key, code, label))
+
+    def test_the_reference_names_the_unsupported_setups(self):
+        text = skills.render(self.HELP, LAUNCHER, file='reference.md')
+        for phrase in ('WSL1', 'WSL2', 'WSLg', 'Codex and OpenCode show', 'not supported'):
+            self.assertIn(phrase, text)
+
+    def test_the_reference_is_installed_next_to_skill_md_in_every_folder(self):
+        skills.install(self.vault, ['claude', 'codex'], LAUNCHER)
+        for base in (CLAUDE, CODEX):
+            folder = self.path(base, self.HELP)
+            self.assertEqual(sorted(os.listdir(folder)), ['SKILL.md', 'reference.md'])
+            self.assertEqual(read(os.path.join(folder, 'reference.md')),
+                             skills.render(self.HELP, LAUNCHER, ['claude', 'codex'], 'reference.md'))
+
+    def test_a_reference_without_the_marker_is_never_overwritten_or_removed(self):
+        skills.install(self.vault, ['claude'], LAUNCHER)
+        ref = self.path(CLAUDE, self.HELP, 'reference.md')
+        with open(ref, 'w') as f:
+            f.write('my notes\n')
+        status, changes = skills.install(self.vault, ['claude'], LAUNCHER)
+        self.assertEqual(status, skills.FOREIGN)
+        self.assertTrue(any(ref in c for c in changes))
+        skills.remove(self.vault)
+        self.assertEqual(read(ref), 'my notes\n')
+        self.assertEqual(self.files(), ['%s/%s/reference.md' % (CLAUDE, self.HELP)])
+
+    def test_a_foreign_help_skill_does_not_hold_back_the_other_files(self):
+        mine = self.path(CLAUDE, self.HELP, 'SKILL.md')
+        os.makedirs(os.path.dirname(mine))
+        with open(mine, 'w') as f:
+            f.write('my own skill\n')
+        status, _ = skills.install(self.vault, ['claude'], LAUNCHER)
+        self.assertEqual(status, skills.FOREIGN)
+        self.assertEqual(read(mine), 'my own skill\n')
+        self.assertTrue(os.path.exists(self.path(CLAUDE, 'agent-sessions', 'SKILL.md')))
+
+    def test_an_edited_or_deleted_reference_is_put_back(self):
+        skills.install(self.vault, ['claude'], LAUNCHER)
+        ref = self.path(CLAUDE, self.HELP, 'reference.md')
+        with open(ref, 'a') as f:
+            f.write('\nedited\n')
+        status, changes = skills.install(self.vault, ['claude'], LAUNCHER)
+        self.assertEqual((status, len(changes)), (skills.UPDATED, 1))
+        self.assertNotIn('edited', read(ref))
+        os.unlink(ref)
+        status, changes = skills.install(self.vault, ['claude'], LAUNCHER)
+        self.assertEqual((status, len(changes)), (skills.INSTALLED, 1))
+        self.assertEqual(skills.install(self.vault, ['claude'], LAUNCHER), (skills.UNCHANGED, []))
+
+    def test_moving_to_another_folder_takes_the_reference_along(self):
+        skills.install(self.vault, ['claude'], LAUNCHER)
+        skills.install(self.vault, ['opencode'], LAUNCHER)
+        self.assertEqual(self.files(), sorted(skill_files(OPENCODE)))
+        self.assertFalse(os.path.exists(self.path('.claude')))
+
+    def test_a_file_someone_added_next_to_the_reference_stays(self):
+        skills.install(self.vault, ['claude'], LAUNCHER)
+        extra = self.path(CLAUDE, self.HELP, 'notes.txt')
+        with open(extra, 'w') as f:
+            f.write('n')
+        skills.remove(self.vault)
+        self.assertEqual(self.files(), ['%s/%s/notes.txt' % (CLAUDE, self.HELP)])
 
 
 class TestSetupCommand(SkillsTestCase):

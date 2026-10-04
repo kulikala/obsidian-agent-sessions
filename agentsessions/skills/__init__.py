@@ -1,8 +1,9 @@
 """The agent skills Agent Sessions installs into a vault (`agent-sessions setup --skills`).
 
-One skill, `agent-sessions`, ships inside the program (start a session, usage statistics, other
-sessions; the `SKILL.md` template sits next to this file). It is installed as a *project* skill of the vault, in the folders
-each agent reads them from when it runs in the vault:
+Two skills ship inside the program, each a folder of templates next to this file:
+`agent-sessions` (start a session, usage statistics, other sessions) and `agent-sessions-help`
+(how to use Agent Sessions in Obsidian: a short `SKILL.md` and the facts in `reference.md`). They are
+installed as *project* skills of the vault, in the folders each agent reads them from when it runs in the vault:
 
     Claude Code   <vault>/.claude/skills/<name>/SKILL.md      (OpenCode reads this too)
     Codex         <vault>/.agents/skills/<name>/SKILL.md      (OpenCode reads this too)
@@ -12,8 +13,8 @@ Codex does not read the Claude Code folder, and Claude Code reads neither of the
 enabled agent of those two gets its own folder; OpenCode reads all three, so it needs a folder of its
 own only when it is the sole agent (and a name found in two folders is listed once).
 
-Every file written carries a marker. A skill folder whose `SKILL.md` lacks it is somebody else's and
-is never overwritten or removed. The text is rendered for the enabled agents (only they are named; `render`) and names the launcher by
+Every file written carries a marker. A file lacking it is somebody else's and is never overwritten or
+removed. The text is rendered for the enabled agents (only they are named; `render`) and names the launcher by
 the path given at install time, so every copy is rewritten when the set of agents changes.
 """
 import os
@@ -25,7 +26,7 @@ from .. import i18n
 
 MARKER = '<!-- agent-sessions:managed - written by `agent-sessions setup --skills`; edits are overwritten -->'
 YAML_MARKER = '# agent-sessions:managed - written by `agent-sessions setup --skills`; edits are overwritten'
-SKILL_NAMES = ('agent-sessions',)
+SKILL_NAMES = ('agent-sessions', 'agent-sessions-help')
 # The three skills earlier versions installed; ours (marked) are removed on install, whatever the agents.
 LEGACY_SKILL_NAMES = ('agent-sessions-new', 'agent-sessions-stats', 'agent-sessions-info')
 SKILL_FILE = 'SKILL.md'
@@ -113,13 +114,13 @@ def _holds(cond: str, conds: dict) -> bool:
     return any(all(term(t) for t in alt.split('&')) for alt in cond.split('|'))
 
 
-def render(name: str, launcher: str, agents: Optional[List[str]] = None) -> str:
-    """`name`'s `SKILL.md`: the template with the marker, the launcher and the text for the enabled
+def render(name: str, launcher: str, agents: Optional[List[str]] = None, file: str = SKILL_FILE) -> str:
+    """`name`'s `SKILL.md` (or another file `file` of the skill): the template with the marker, the launcher and the text for the enabled
     `agents` filled in. A line `{{if cond}}` ... `{{endif}}` is kept when the condition holds
     (names: `claude`, `codex`, `opencode`, `multi` = several agents, `windows` = an agent with
     5-hour/7-day windows, `late` = an agent that records a session after its first message); a
     `{{if cond}}...{{endif}}` inside a line is kept or dropped the same way."""
-    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), name, SKILL_FILE), encoding='utf-8') as f:
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), name, file), encoding='utf-8') as f:
         text = f.read()
     facts = _facts(list(agents or []))
     conds, tokens = facts['conds'], facts['tokens']
@@ -166,8 +167,15 @@ def _write(path: str, text: str) -> None:
     os.replace(tmp, path)
 
 
+def template_files(name: str) -> List[str]:
+    """The files of skill `name` (names relative to its folder), `SKILL.md` first: every file in its template folder."""
+    folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), name)
+    others = sorted(f for f in os.listdir(folder) if f != SKILL_FILE and os.path.isfile(os.path.join(folder, f)))
+    return [SKILL_FILE] + others
+
+
 def _files_of(name: str, base: str, launcher: str, agents: List[str]) -> List[Tuple[str, str]]:
-    return [(os.path.join(base, name, SKILL_FILE), render(name, launcher, agents))]
+    return [(os.path.join(base, name, f), render(name, launcher, agents, f)) for f in template_files(name)]
 
 
 def install(vault: str, agents: List[str], launcher: Optional[str] = None,
@@ -217,7 +225,8 @@ def _remove_dir(vault: str, base: str, dry_run: bool, names: Tuple[str, ...] = S
     changes: List[str] = []
     for name in names:
         folder = os.path.join(vault, base, name)
-        for rel in (SKILL_FILE, CODEX_POLICY_FILE):
+        # The skill's files, then the policy file earlier versions wrote; each is judged by its own marker.
+        for rel in (template_files(name) if name in SKILL_NAMES else [SKILL_FILE]) + [CODEX_POLICY_FILE]:
             path = os.path.join(folder, rel)
             if not _managed(_read(path)):
                 continue
