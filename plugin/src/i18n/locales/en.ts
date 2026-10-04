@@ -116,6 +116,7 @@ export const en = {
 	"error.agentStartWaitFailed": "Timed out waiting for {name} to start",
 	"error.ollamaModelMissing": "Choose an Ollama model under Settings > Agents > OpenCode before starting OpenCode through ollama.",
 	"error.replyWaitFailed": "Timed out waiting for a reply",
+	"error.renameWaitFailed": "Timed out waiting for the rename",
 	"confirm.endSession.message": "End this session?",
 	"notice.endFailed": "Failed to end: {error}",
 	"confirm.restartSession.message": "This session is busy. Restart it anyway? The current work will be interrupted.",

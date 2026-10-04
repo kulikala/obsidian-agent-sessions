@@ -68,6 +68,7 @@ import { SessionIndex, type Row } from "./sessions/index";
 import { getLang, languageOptions, resolveLang, setLang, t, type MessageKey } from "./i18n";
 import { applyCodexConfig, defaultCodexConfigPath, type ApplyCodexConfigResult } from "./terminal/codex-config";
 import { applyEditorKey, applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./terminal/keybindings";
+import { afterWait, planHeadlessCommand } from "./terminal/headless-plan";
 import { agentSendSequence, editorKeyLabel, reconcileSubmitKey } from "./terminal/keys";
 import {
 	BACKUP_FILENAME,
@@ -1626,11 +1627,28 @@ export default class AgentSessionsPlugin extends Plugin {
 			if (!(await ready(WAIT_IDLE_MS))) {
 				throw new Error(t("error.agentStartWaitFailed", { name: t(AGENT_DISPLAY_NAME_KEY[agent]) }));
 			}
+			const plan = planHeadlessCommand(agent, text);
+			const clearLine = async (seq: string): Promise<void> => {
+				if (seq) {
+					client.writeInput(Buffer.from(seq, "utf8"));
+					await sleep(COMMAND_CHUNK_GAP_MS);
+				}
+			};
+			await clearLine(plan.clearBeforeCommand);
 			await this.writeCommand((data) => client.writeInput(data), text, agent);
-			await registry.waitFor(id, "busy", WAIT_BUSY_MS);
-			if (!(await ready(WAIT_IDLE_MS))) {
-				throw new Error(t("error.replyWaitFailed"));
+			if (plan.wait.kind === "name") {
+				// `/rename` never goes busy; the name showing up is the sign it was submitted.
+				const named = await this.index.waitForName(id, plan.wait.name, plan.wait.timeoutMs);
+				if (afterWait(plan.wait, named) === "teardown") {
+					throw new Error(t("error.renameWaitFailed"));
+				}
+			} else {
+				await registry.waitFor(id, "busy", WAIT_BUSY_MS);
+				if (!(await ready(WAIT_IDLE_MS))) {
+					throw new Error(t("error.replyWaitFailed"));
+				}
 			}
+			await clearLine(plan.clearBeforeExit);
 			await this.writeCommand((data) => client.writeInput(data), "/exit", agent);
 			const timeout = new Promise<"timeout">((resolve) => window.setTimeout(() => resolve("timeout"), WAIT_EXIT_MS));
 			if ((await Promise.race([exited, timeout])) === "timeout") {
