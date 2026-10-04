@@ -1115,6 +1115,12 @@ export default class AgentSessionsPlugin extends Plugin {
 		if (activeWindow !== window) {
 			return;
 		}
+		this.showOnboarding(how);
+	}
+
+	/** Opens the dialog in the main window (the plugin's own `document`), whichever window is active.
+	 * Returns whether it is on screen. */
+	private showOnboarding(how: "restart" | "continue" | "update"): boolean {
 		const saved = this.settings.onboardingProgress;
 		const backendInstalled = this.backendAvailable();
 		let progress: OnboardingProgress;
@@ -1133,7 +1139,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			progress = startProgress("first", { backendInstalled, whatsNew: false });
 		}
 		if (progress.steps.length === 0) {
-			return;
+			return false;
 		}
 		if (persist) {
 			void this.saveOnboardingProgress(progress);
@@ -1144,6 +1150,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		const modal = new OnboardingModal(this.app, this, { progress, persist, hasEarlierRun, whatsNew });
 		this.onboardingModal = modal;
 		modal.open();
+		return true;
 	}
 
 	/** The agent the guide's session runs (see `guideAgent`). */
@@ -1169,30 +1176,61 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	/** Decides at startup what the guide does: opens from the top on first install, runs the update
 	 * flow when a new version has something to show, or offers (in a notice, never a dialog) to pick
-	 * up an unfinished run. The version is recorded either way, so each version asks once. */
+	 * up an unfinished run. The version is recorded once that is on screen, so each version asks once. */
 	private maybeShowOnboarding(): void {
 		const version = this.manifest.version;
 		const s = this.settings;
 		const start = shouldOpenOnStartup(s.onboardingShownVersion, version, s.onboardingOnUpdate, s.onboardingProgress);
+		if (start === null) {
+			// Nothing to show; the version is still recorded so an update with nothing new stays quiet.
+			if (s.onboardingShownVersion !== version) {
+				s.onboardingShownVersion = version;
+				void this.saveSettings();
+			}
+			return;
+		}
 		this.whatsNewItems = whatsNewSince(s.onboardingShownVersion, version);
 		if (this.whatsNewItems.length === 0) {
 			this.whatsNewItems = WHATS_NEW[version] ?? [];
 		}
-		s.onboardingShownVersion = version;
-		void this.saveSettings();
-		if (start === "first") {
-			this.openOnboarding("restart");
-		} else if (start === "update") {
-			this.openOnboarding("update");
-		} else if (start === "resume-notice") {
-			const notice = new Notice("", 15000);
-			notice.messageEl.createSpan({ text: t("notice.onboardingResume") + " " });
-			notice.messageEl.createEl("a", { text: t("action.continueGuide"), href: "#" }).addEventListener("click", (event) => {
-				event.preventDefault();
-				notice.hide();
-				this.openOnboarding("continue");
-			});
+		// Only once the dialog or notice is on screen is the version recorded, so a guide that could not
+		// open (the main window was in the background) is offered again.
+		this.whenMainWindowFocused(() => {
+			let shown = false;
+			if (start === "first") {
+				shown = this.showOnboarding("restart");
+			} else if (start === "update") {
+				shown = this.showOnboarding("update");
+			} else {
+				const notice = new Notice("", 15000);
+				notice.messageEl.createSpan({ text: t("notice.onboardingResume") + " " });
+				notice.messageEl.createEl("a", { text: t("action.continueGuide"), href: "#" }).addEventListener("click", (event) => {
+					event.preventDefault();
+					notice.hide();
+					this.openOnboarding("continue");
+				});
+				shown = true;
+			}
+			if (shown) {
+				s.onboardingShownVersion = version;
+				void this.saveSettings();
+			}
+		});
+	}
+
+	/** Runs `run` now if the main window has focus, else the next time it gets it: a dialog opened while
+	 * another window (or none) is active could attach to the wrong document. */
+	private whenMainWindowFocused(run: () => void): void {
+		if (activeWindow === window) {
+			run();
+			return;
 		}
+		const onFocus = (): void => {
+			window.removeEventListener("focus", onFocus);
+			run();
+		};
+		window.addEventListener("focus", onFocus);
+		this.register(() => window.removeEventListener("focus", onFocus));
 	}
 
 	/** Opens the install dialog (side panel's empty state, settings); `onDone` runs after a successful install. */
