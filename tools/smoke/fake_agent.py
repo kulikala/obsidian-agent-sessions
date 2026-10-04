@@ -3,7 +3,7 @@
 The smoke test drives a real agent in a terminal tab. That needs a program that starts
 instantly, answers a fixed script, and never writes a transcript or a config of its own —
 and one that is not a real agent, whose behaviour changes with the network and the weather.
-This is that program: it runs on a PTY (Unix) or a ConPTY (Windows), reads one byte at a
+This is that program: it runs on a PTY (Unix) or a ConPTY (Windows), reads one keystroke at a
 time and echoes it the way a line editor would, answers `size` with the terminal's size,
 opens `$VISUAL` on Ctrl+G the way Claude Code does (`-g <file>:1`, on a temporary
 `claude-prompt-smoke-*.md`), and quits on `exit`. The one file it writes is that temporary
@@ -30,6 +30,7 @@ if not IS_WINDOWS:
 if IS_WINDOWS:
     import ctypes
     import ctypes.wintypes as w
+    import msvcrt
 
     STD_INPUT_HANDLE = -10
     ENABLE_PROCESSED_INPUT = 0x0001
@@ -51,11 +52,15 @@ PROMPT = b'> '         # no newline: the agent is waiting, not done
 NEWLINE = b'\r\n' if IS_WINDOWS else b'\n'   # a ConPTY console does not add the carriage return
 CTRL_G = 0x07
 FAKE_PROMPT = 'FAKE PROMPT'   # what the prompt file holds
+WEOF = '\uffff'   # what `msvcrt.getwch` hands back when the console has nothing left to give
+KEY_PREFIXES = ('\x00', '\xe0')   # an arrow or a function key: the prefix, then the scan code
 
 
 def _write(data: bytes) -> None:
-    """Bytes as they go out. Written unencoded: an echoed UTF-8 character can be half
-    arrived, and the terminal is what puts the bytes back together."""
+    """Bytes as they go out, already encoded: an echoed UTF-8 character can be half arrived, and
+    the terminal is what puts the bytes back together. Windows included — a ConPTY reads what the
+    agent writes as UTF-8 whatever its code page is, which is why this never goes through
+    `sys.stdout`'s own encoding."""
     sys.stdout.buffer.write(data)
     sys.stdout.buffer.flush()
 
@@ -83,11 +88,13 @@ def _run_editor(path: str) -> int:
     target = '%s:1' % path
     if IS_WINDOWS:
         if editor.lower().endswith(('.cmd', '.bat')):
-            # CreateProcess can't start a batch file; `cmd.exe /s /c` needs the whole command
-            # quoted (the daemon's own ConPTY wrapper, `conpty.command_line`, does the same).
+            # CreateProcess can't start a batch file; `cmd.exe /d /s /c` needs the whole command
+            # quoted (the daemon's own ConPTY wrapper, `conpty.command_line`, does the same), and
+            # `list2cmdline` quotes every argument that needs it — the file path and its `:<line>`
+            # among them, so the editor is given the one path, whole.
             comspec = os.environ.get('COMSPEC') or 'cmd.exe'
             return subprocess.call('%s /d /s /c "%s"' % (
-                comspec, subprocess.list2cmdline([editor, '-g', target])))
+                subprocess.list2cmdline([comspec]), subprocess.list2cmdline([editor, '-g', target])))
         return subprocess.call([editor, '-g', target])
     return subprocess.call(shlex.split(editor) + ['-g', target])
 
@@ -107,7 +114,19 @@ def _edit() -> None:
         os.unlink(path)
 
 
-class _Cbreak:
+class _Input:
+    """What the agent reads from: one keystroke at a time, and a terminal to put back afterwards.
+
+    A keystroke comes back differently on each platform — a Unix terminal's bytes, a Windows
+    console's characters — but the agent speaks bytes either way, so a source only has to turn a
+    key into the bytes a Unix terminal would have delivered, or say that there are no more.
+    """
+
+    def read_key(self) -> Optional[bytes]:
+        raise NotImplementedError
+
+
+class _Cbreak(_Input):
     """Bytes as they are typed, with no echo from the line discipline: the agent reads one
     byte at a time and echoes printable characters itself. The terminal is put back on the
     way out, however the agent leaves."""
@@ -128,9 +147,13 @@ class _Cbreak:
         if self._saved is not None:
             termios.tcsetattr(self._fd, termios.TCSADRAIN, self._saved)
 
+    def read_key(self) -> Optional[bytes]:
+        """The terminal's own byte for the next key; b'' when the terminal goes away."""
+        return sys.stdin.buffer.read(1)
 
-class _RawConsole:
-    """The Windows half of `_Cbreak`: bytes as they are typed, with no echo from the console.
+
+class _RawConsole(_Input):
+    """The Windows half of `_Cbreak`: keystrokes as they are typed, with no echo from the console.
 
     A console starts in cooked mode: `ENABLE_LINE_INPUT` holds every byte back until Enter
     arrives, `ENABLE_ECHO_INPUT` types them onto the screen itself (so the agent's own echo
@@ -139,6 +162,12 @@ class _RawConsole:
     leaves the agent echoing exactly what it read. The mode is put back on the way out,
     however the agent leaves; when stdin is not a console at all (a pipe, as when a test drives
     the agent with plain subprocesses) there is nothing to change and nothing to restore.
+
+    Keystrokes are read as characters, not as the bytes on stdin, because a console has no
+    UTF-8 bytes to offer: the pseudo console has turned what was typed into key events already,
+    and reading those back with `ReadFile` encodes them in the console's own code page, so
+    Japanese arrives as something else or not at all. `msvcrt.getwch` asks for the character
+    itself, and the console answers in Unicode whatever its code page says.
     """
 
     def __init__(self) -> None:
@@ -162,6 +191,32 @@ class _RawConsole:
         if self._handle is not None and self._mode is not None:
             _k32.SetConsoleMode(self._handle, self._mode)
 
+    def read_key(self) -> Optional[bytes]:
+        """The next keystroke as the bytes a Unix terminal would have handed over; None at the end
+        of the input. An arrow or a function key is two keys, not one: a `\\x00`/`\\xe0` prefix and
+        the scan code behind it. Neither is a character, and the agent has no use for either."""
+        if self._handle is None:
+            return sys.stdin.buffer.read(1)   # no console: the bytes arrive as they are written
+        while True:
+            ch = self._getwch()
+            if ch is None:
+                return None
+            if ch in KEY_PREFIXES:
+                self._getwch()
+                continue
+            return ch.encode('utf-8', 'replace')
+
+    @staticmethod
+    def _getwch() -> Optional[str]:
+        """One key as a character, or None when the console has nothing more to give. Ctrl+C is a
+        character here — no line input is left to take it — but a console that is going away fails
+        instead, and that is the end of the input."""
+        try:
+            ch = msvcrt.getwch()
+        except (KeyboardInterrupt, OSError):
+            return None
+        return None if ch == WEOF else ch
+
 
 def _answer(line: bytes) -> bool:
     """One complete line. True when the agent is done."""
@@ -177,14 +232,14 @@ def _answer(line: bytes) -> bool:
     return False
 
 
-def serve() -> int:
+def serve(source: _Input) -> int:
     _say('FAKE-AGENT READY')
     _write(PROMPT)
     line = bytearray()
     while True:
-        # A console (a ConPTY one included) hands over the bytes the terminal sent, and
-        # b'' is the terminal going away.
-        byte = sys.stdin.buffer.read(1)
+        # One keystroke at a time, from the terminal (a ConPTY one included); nothing at all is
+        # the terminal going away.
+        byte = source.read_key()
         if not byte:
             return 0
         if byte[0] == CTRL_G:   # Ctrl+G, as the terminal sends it: one byte, not a chord
@@ -203,11 +258,9 @@ def serve() -> int:
 
 
 def main() -> int:
-    if IS_WINDOWS:
-        with _RawConsole():
-            return serve()
-    with _Cbreak(sys.stdin.fileno()):
-        return serve()
+    source: _Input = _RawConsole() if IS_WINDOWS else _Cbreak(sys.stdin.fileno())
+    with source:
+        return serve(source)
 
 
 if __name__ == '__main__':
