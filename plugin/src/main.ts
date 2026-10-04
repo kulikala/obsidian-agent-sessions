@@ -1178,6 +1178,9 @@ export default class AgentSessionsPlugin extends Plugin {
 			return false;
 		}
 		if (persist) {
+			// Opening the guide re-arms the resume notice for the next time it is left unfinished.
+			const { resumeNoticed: _noticed, ...open } = progress;
+			progress = open;
 			void this.saveOnboardingProgress(progress);
 		}
 		const whatsNew: readonly WhatsNewItem[] = this.whatsNewItems;
@@ -1238,6 +1241,10 @@ export default class AgentSessionsPlugin extends Plugin {
 			} else if (start === "update") {
 				shown = this.showOnboarding("update");
 			} else {
+				const pending = this.settings.onboardingProgress;
+				if (pending) {
+					void this.saveOnboardingProgress({ ...pending, resumeNoticed: true });
+				}
 				const notice = new Notice("", 15000);
 				notice.messageEl.createSpan({ text: t("notice.onboardingResume") + " " });
 				notice.messageEl.createEl("a", { text: t("action.continueGuide"), href: "#" }).addEventListener("click", (event) => {

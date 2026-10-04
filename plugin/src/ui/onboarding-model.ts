@@ -109,6 +109,9 @@ export interface OnboardingProgress {
 	/** Set once the guide's session has been moved to a category — the rename step mentions it, but
 	 * a name is enough to move on. */
 	renameCategoryDone?: boolean;
+	/** Set once the startup notice offered to resume this run, so it is offered once, not on every
+	 * start; opening the guide clears it. */
+	resumeNoticed?: boolean;
 	/** The id of the guide's tab when `sessionId` is the id a restarted agent process took over (the
 	 * tab's own events are then reported under it). Absent when they are the same. */
 	tabSessionId?: string;
@@ -191,6 +194,9 @@ export function sanitizeProgress(raw: unknown): OnboardingProgress | null {
 		}
 		if (typeof saved.renameCategoryDone === "boolean") {
 			progress.renameCategoryDone = saved.renameCategoryDone;
+		}
+		if (typeof saved.resumeNoticed === "boolean") {
+			progress.resumeNoticed = saved.resumeNoticed;
 		}
 		return progress;
 	} catch {
@@ -337,7 +343,7 @@ export function shouldOpenOnStartup(
 	if (shownVersion !== current && onUpdate && whatsNewSince(shownVersion, current).length > 0) {
 		return "update";
 	}
-	if (progress !== null && !progressFinished(progress)) {
+	if (progress !== null && !progressFinished(progress) && !progress.resumeNoticed) {
 		return "resume-notice";
 	}
 	return null;

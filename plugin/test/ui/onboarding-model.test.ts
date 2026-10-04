@@ -341,6 +341,15 @@ describe("shouldOpenOnStartup", () => {
 		expect(shouldOpenOnStartup("0.5.0", "0.5.0", true, unfinished)).toBe("resume-notice");
 	});
 
+	it("offers to resume only once per unfinished run", () => {
+		expect(shouldOpenOnStartup("0.5.0", "0.5.0", true, { ...unfinished, resumeNoticed: true })).toBe(null);
+	});
+
+	it("keeps the resume flag through the saved-value check", () => {
+		expect(sanitizeProgress({ ...unfinished, resumeNoticed: true })?.resumeNoticed).toBe(true);
+		expect(sanitizeProgress({ ...unfinished, resumeNoticed: "yes" })?.resumeNoticed).toBeUndefined();
+	});
+
 	it("falls back to the resume notice for a version jump with nothing new to read", () => {
 		expect(shouldOpenOnStartup("0.5.0", "0.6.0", true, unfinished)).toBe("resume-notice");
 	});
