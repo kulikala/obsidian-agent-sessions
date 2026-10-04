@@ -1221,7 +1221,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		return leaf;
 	}
 
-	private async openSidePanel(): Promise<void> {
+	async openSidePanel(): Promise<void> {
 		const { workspace } = this.app;
 		const existing = workspace.getLeavesOfType(VIEW_TYPE_SIDE)[0];
 		if (existing) {

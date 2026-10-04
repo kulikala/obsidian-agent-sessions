@@ -24,6 +24,8 @@ import {
 	type OnboardingStepId,
 } from "./onboarding-model";
 
+/** The steps whose instructions point at the side panel. */
+const SIDE_PANEL_STEPS: readonly OnboardingStepId[] = ["tabs", "rename"];
 /** How long a finished step stays on screen, ticked, before the coach moves on. */
 const ADVANCE_MS = 2000;
 /** How often the unanswered-session clock is looked at. */
@@ -64,8 +66,24 @@ export class OnboardingCoachWindow implements OnboardingCoach {
 		this.pictureOpen = false;
 		this.hint = false;
 		this.hintSince = null;
-		this.watchSession(progress.sessionId);
 		this.startPolling();
+		if (!SIDE_PANEL_STEPS.includes(step)) {
+			this.begin(step, progress.sessionId);
+			return;
+		}
+		// The steps that point at the side panel need it on screen (a new vault has the right sidebar
+		// collapsed). It is revealed before the step is watched, so the leaf change this causes is not
+		// taken for the user switching tabs.
+		this.render();
+		void this.plugin.openSidePanel().finally(() => {
+			if (this.step === step) {
+				this.begin(step, progress.sessionId);
+			}
+		});
+	}
+
+	private begin(step: OnboardingStepId, sessionId: string | null): void {
+		this.watchSession(sessionId);
 		this.render();
 	}
 
