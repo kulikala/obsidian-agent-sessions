@@ -248,7 +248,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	async onload(): Promise<void> {
 		await this.loadSettings();
 		if (!isSupportedPlatform(process.platform, Platform.isMobile)) {
-			// Windows (native) and mobile: nothing below can work there, so nothing is started —
+			// Other platforms and mobile: nothing below can work there, so nothing is started —
 			// just a note on why, in a notice now and in this plugin's settings tab.
 			this.applyLanguage();
 			new Notice(t("notice.unsupportedPlatform"), 10000);

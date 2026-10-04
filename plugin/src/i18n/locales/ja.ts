@@ -268,7 +268,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"empty.noAgentEnabled": "設定で {agents} を有効にしてください。",
 	"empty.noAgentFound": "{agents} の実行ファイルが見つかりません。設定でパスを確認してください。",
 	"empty.noBackend": "セッションは、このプラグインに同梱の小さな Python プログラム agent-sessions を通して動きます。まずはインストールしてください。",
-	"notice.unsupportedPlatform": "Agent Sessions は macOS と Linux でのみ動作します。この端末では何も起動しません。",
+	"notice.unsupportedPlatform": "Agent Sessions は macOS・Linux・Windows のデスクトップでのみ動作します。この端末では何も起動しません。",
 	"settings.backend.name": "agent-sessions プログラム",
 	"settings.backend.missing": "まだインストールされていません。",
 	"settings.backend.bundled": "このプラグインが {dir} にインストールし、{python} で動いています。プラグインの更新とともに更新されます。",

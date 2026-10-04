@@ -267,7 +267,7 @@ export const en = {
 	"empty.noAgentEnabled": "Enable {agents} in settings to get started.",
 	"empty.noAgentFound": "Couldn't find the executable for {agents}. Check the path in settings.",
 	"empty.noBackend": "Sessions run through agent-sessions, a small Python program bundled with this plugin. Install it to get started.",
-	"notice.unsupportedPlatform": "Agent Sessions runs on macOS and Linux only, so it stays inactive on this device.",
+	"notice.unsupportedPlatform": "Agent Sessions runs on macOS, Linux and Windows desktops only, so it stays inactive on this device.",
 	"settings.backend.name": "agent-sessions program",
 	"settings.backend.missing": "Not installed yet.",
 	"settings.backend.bundled": "Installed by this plugin in {dir}, running on {python}. Updated along with the plugin.",
