@@ -26,6 +26,10 @@ def epoch(hms, day=DAY):
     return datetime.strptime('%sT%s' % (day, hms), '%Y-%m-%dT%H:%M:%S').replace(tzinfo=timezone.utc).timestamp()
 
 
+def pairs(session):
+    return [[b['start'], b['end']] for b in session['spans']]
+
+
 def claude_line(kind, hms, **extra):
     d = {'type': kind, 'timestamp': '%sT%s.000Z' % (DAY, hms)}
     d.update(extra)
@@ -89,18 +93,23 @@ class TestActivityOutput(unittest.TestCase):
         self.assertEqual(set(by), {CLAUDE_ID, CODEX_ID, OC_ID})
         c = by[CLAUDE_ID]
         self.assertEqual((c['agent'], c['name'], c['category'], c['label']), ('claude', 'RIM: Notes', 'RIM', 'Notes'))
-        self.assertEqual(c['spans'], [[epoch('01:00:00'), epoch('01:25:00')],
-                                      [epoch('02:10:00'), epoch('02:11:00')]])
+        self.assertEqual(pairs(c), [[epoch('01:00:00'), epoch('01:25:00')],
+                                    [epoch('02:10:00'), epoch('02:11:00')]])
+        first = c['spans'][0]['turns']
+        self.assertEqual([(t['prompt'], t['kind']) for t in first], [('hello', 'prompt'), ('more', 'prompt')])
+        self.assertEqual((first[0]['start'], first[0]['end']), (epoch('01:00:00'), epoch('01:05:00')))
         x = by[CODEX_ID]
         self.assertEqual(x['agent'], 'codex')
-        self.assertEqual(x['spans'], [[epoch('03:00:05'), epoch('03:21:00')]])
+        self.assertEqual(pairs(x), [[epoch('03:00:05'), epoch('03:21:00')]])
+        self.assertEqual([t['prompt'] for t in x['spans'][0]['turns']], ['codex prompt', 'and again'])
         o = by[OC_ID]
         self.assertEqual(o['agent'], 'opencode')
-        self.assertEqual(o['spans'], [[epoch('04:00:00'), epoch('04:25:00')]])
+        self.assertEqual(pairs(o), [[epoch('04:00:00'), epoch('04:25:00')]])
+        self.assertEqual([t['prompt'] for t in o['spans'][0]['turns']], ['hi', 'once more'])
 
     def test_clipped_to_range_and_filtered(self):
         out = jsonout.activity_output(epoch('01:10:00'), epoch('01:15:00'), 1800)
-        self.assertEqual(self.by_id(out)[CLAUDE_ID]['spans'], [[epoch('01:10:00'), epoch('01:15:00')]])
+        self.assertEqual(pairs(self.by_id(out)[CLAUDE_ID]), [[epoch('01:10:00'), epoch('01:15:00')]])
         self.assertEqual(set(self.by_id(out)), {CLAUDE_ID})
 
     def test_range_without_activity_is_empty(self):
@@ -110,14 +119,14 @@ class TestActivityOutput(unittest.TestCase):
     def test_gap_minutes_option(self):
         # with a 5-minute gap the 01:00 and 01:20 turns are no longer joined
         out = jsonout.activity_output(epoch('00:00:00'), epoch('23:59:59'), 5 * 60)
-        self.assertEqual(self.by_id(out)[CLAUDE_ID]['spans'], [
+        self.assertEqual(pairs(self.by_id(out)[CLAUDE_ID]), [
             [epoch('01:00:00'), epoch('01:05:00')], [epoch('01:20:00'), epoch('01:25:00')],
             [epoch('02:10:00'), epoch('02:11:00')]])
 
     def test_a_turn_still_being_written_ends_now(self):
         now = epoch('02:11:30')   # 70 s after the last record
         out = jsonout.activity_output(epoch('00:00:00'), epoch('23:59:59'), 1800, now=now)
-        self.assertEqual(self.by_id(out)[CLAUDE_ID]['spans'][-1], [epoch('02:10:00'), now])
+        self.assertEqual(pairs(self.by_id(out)[CLAUDE_ID])[-1], [epoch('02:10:00'), now])
 
     def test_turns_are_cached_and_recomputed_only_for_a_changed_file(self):
         from agentsessions.agents import claude as claude_agent
@@ -135,7 +144,7 @@ class TestActivityOutput(unittest.TestCase):
             os.utime(path, (old + 10, old + 10))
             out = jsonout.activity_output(*args)
             self.assertEqual(spy.call_count, 1)           # grew: parsed again
-            self.assertEqual(self.by_id(out)[CLAUDE_ID]['spans'][-1], [epoch('02:10:00'), epoch('02:12:00')])
+            self.assertEqual(pairs(self.by_id(out)[CLAUDE_ID])[-1], [epoch('02:10:00'), epoch('02:12:00')])
 
     def test_cli_args(self):
         import io

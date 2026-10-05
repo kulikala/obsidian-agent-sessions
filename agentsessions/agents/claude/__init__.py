@@ -63,5 +63,5 @@ def summarize_usage(turns: list, from_ts: Optional[float] = None,
     return _turns.summarize(turns, from_ts=from_ts, to_ts=to_ts)
 
 
-def activity_turns(path: str) -> List[List[float]]:
+def activity_turns(path: str) -> List[list]:
     return _activity.claude_turns(path)

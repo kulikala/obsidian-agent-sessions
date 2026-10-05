@@ -10,10 +10,11 @@ Code transcript reader; the Codex and OpenCode readers live next to their own pa
 """
 
 import json
-import os
 import re
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+
+from . import detail
 
 DEFAULT_GAP_SECONDS = 30 * 60
 # Within a turn, a silence this long ends the turn (the cache is independent of `--gap-minutes`).
@@ -22,7 +23,12 @@ MIN_SPAN_SECONDS = 60.0
 # A last turn whose final record is this recent is taken to still be running: it ends "now".
 LIVE_WINDOW_SECONDS = 120.0
 # Bumped whenever how turns are read changes: a cached entry of another version is recomputed.
-ACTIVITY_VERSION = 2
+ACTIVITY_VERSION = 3
+# How much of a turn's prompt is kept (in the cache and in `json activity`).
+PROMPT_CHARS = 200
+# What started a turn: a typed prompt, an injected notification that woke the agent, or the
+# agent carrying on by itself after a long silence.
+KIND_PROMPT, KIND_NOTIFICATION, KIND_RESUME = 'prompt', 'notification', 'resume'
 
 _TS_RE = re.compile(rb'"timestamp":"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?)Z"')
 # Claude Code user lines that carry text but aren't a prompt reaching the agent.
@@ -36,59 +42,65 @@ _NOT_A_TURN_PREFIXES = (
 
 
 class TurnBuilder:
-    """Feeds on events in transcript order and yields `[start, end]` turns. A prompt starts a
-    turn; activity extends the current one, unless it comes `SEGMENT_GAP_SECONDS` or more after
-    the turn's last record (the agent resumed on its own, e.g. after a compaction or a
-    resumed session), in which case it starts a new turn there."""
+    """Feeds on events in transcript order and yields turns `[start, end, prompt, kind]`. A
+    prompt starts a turn; activity extends the current one, unless it comes
+    `SEGMENT_GAP_SECONDS` or more after the turn's last record (the agent resumed on its own,
+    e.g. after a compaction or a resumed session), in which case it starts a `resume` turn."""
 
     def __init__(self) -> None:
-        self.turns: List[List[float]] = []
-        self._current: Optional[List[float]] = None
-        self._pre: List[List[float]] = []    # activity before the first prompt
-        self._pre_current: Optional[List[float]] = None
+        self.turns: List[list] = []
+        self._current: Optional[list] = None
+        self._pre: List[list] = []    # activity before the first prompt
+        self._pre_current: Optional[list] = None
 
-    def prompt(self, t: float) -> None:
-        self._current = [t, t]
+    def prompt(self, t: float, text: str = '', kind: str = KIND_PROMPT) -> None:
+        self._current = [t, t, text[:PROMPT_CHARS], kind]
         self.turns.append(self._current)
 
     def activity(self, t: float) -> None:
         if self._current is not None:
             if t - self._current[1] >= SEGMENT_GAP_SECONDS:
-                self.prompt(t)
+                self.prompt(t, '', KIND_RESUME)
             elif t > self._current[1]:
                 self._current[1] = t
         elif self.turns:
             return
         elif self._pre_current is None or t - self._pre_current[1] >= SEGMENT_GAP_SECONDS:
-            self._pre_current = [t, t]
+            self._pre_current = [t, t, '', KIND_RESUME]
             self._pre.append(self._pre_current)
         elif t > self._pre_current[1]:
             self._pre_current[1] = t
 
-    def finish(self) -> List[List[float]]:
+    def finish(self) -> List[list]:
         """Activity that precedes every prompt only counts when there is no prompt at all."""
         return self.turns if self.turns else self._pre
 
 
-def join_turns(turns: List[List[float]], gap: float = DEFAULT_GAP_SECONDS,
-               min_len: float = MIN_SPAN_SECONDS) -> List[List[float]]:
-    """`[[start, end], ...]` blocks: turns (any order) are joined when the next one starts less
-    than `gap` after the previous block's end; a block shorter than `min_len` is extended to
-    `min_len` so a one-message turn stays visible."""
-    blocks: List[List[float]] = []
-    for start, end in sorted(([a, b] for a, b in turns), key=lambda x: x[0]):
-        if blocks and start - blocks[-1][1] < gap:
-            blocks[-1][1] = max(blocks[-1][1], end)
+def _turn_dict(t: list) -> dict:
+    return {'start': t[0], 'end': t[1], 'prompt': t[2], 'kind': t[3]}
+
+
+def join_turns(turns: List[list], gap: float = DEFAULT_GAP_SECONDS,
+               min_len: float = MIN_SPAN_SECONDS) -> List[dict]:
+    """Blocks `{start, end, turns: [{start, end, prompt, kind}]}`: turns (any order) are joined
+    when the next one starts less than `gap` after the previous block's end; a block shorter
+    than `min_len` is extended to `min_len` so a one-message turn stays visible (its turns keep
+    their true times)."""
+    blocks: List[dict] = []
+    for t in sorted(turns, key=lambda x: x[0]):
+        if blocks and t[0] - blocks[-1]['end'] < gap:
+            blocks[-1]['end'] = max(blocks[-1]['end'], t[1])
+            blocks[-1]['turns'].append(_turn_dict(t))
         else:
-            blocks.append([start, end])
+            blocks.append({'start': t[0], 'end': t[1], 'turns': [_turn_dict(t)]})
     for b in blocks:
-        if b[1] - b[0] < min_len:
-            b[1] = b[0] + min_len
+        if b['end'] - b['start'] < min_len:
+            b['end'] = b['start'] + min_len
     return blocks
 
 
-def extend_if_live(turns: List[List[float]], now: float,
-                   window: float = LIVE_WINDOW_SECONDS) -> List[List[float]]:
+def extend_if_live(turns: List[list], now: float,
+                   window: float = LIVE_WINDOW_SECONDS) -> List[list]:
     """The turn that is still running (its last record is within `window` of `now`) ends now."""
     if not turns:
         return turns
@@ -99,13 +111,15 @@ def extend_if_live(turns: List[List[float]], now: float,
     return turns
 
 
-def clip_spans(spans: List[List[float]], start: float, end: float) -> List[List[float]]:
-    """The parts of `spans` inside `[start, end)`; empty ones are dropped."""
+def clip_spans(blocks: List[dict], start: float, end: float) -> List[dict]:
+    """The parts of `blocks` inside `[start, end)`; empty ones are dropped. A clipped block
+    keeps the turns that touch what is left of it, with their true times."""
     out = []
-    for a, b in spans:
-        a, b = max(a, start), min(b, end)
+    for blk in blocks:
+        a, b = max(blk['start'], start), min(blk['end'], end)
         if b > a:
-            out.append([a, b])
+            turns = [t for t in blk['turns'] if t['end'] > a and t['start'] < b]
+            out.append({'start': a, 'end': b, 'turns': turns})
     return out
 
 
@@ -117,28 +131,26 @@ def parse_utc(value: str) -> Optional[float]:
         return None
 
 
-def _starts_turn(rec: dict) -> bool:
-    """A user line that is a prompt reaching the agent: typed text, or an injected
-    notification (a finished background task, another session's message). Not tool results,
-    meta lines, sub-agent lines, or command output."""
+def _turn_start(rec: dict) -> Optional[Tuple[str, str]]:
+    """`(prompt text, kind)` for a user line that is a prompt reaching the agent: typed text,
+    or an injected notification (a finished background task, another session's message). `None`
+    for tool results, meta lines, sub-agent lines, and command output."""
     if rec.get('isMeta') or rec.get('isSidechain'):
-        return False
+        return None
     content = (rec.get('message') or {}).get('content')
-    if isinstance(content, str):
-        text = content
-    elif isinstance(content, list):
-        text = '\n'.join(b.get('text', '') for b in content
-                         if isinstance(b, dict) and b.get('type') == 'text' and b.get('text'))
-    else:
-        return False
-    text = text.lstrip()
-    return bool(text) and not text.startswith(_NOT_A_TURN_PREFIXES)
+    raw, _tools = detail._texts_and_tools(content)
+    head = raw.lstrip()
+    if not head or head.startswith(_NOT_A_TURN_PREFIXES):
+        return None
+    human = detail.is_human_prompt(rec, raw) or head.startswith('<command-')
+    text = detail.clean_text(raw).strip() or head
+    return text[:PROMPT_CHARS], KIND_PROMPT if human else KIND_NOTIFICATION
 
 
-def claude_turns(path: str) -> List[List[float]]:
+def claude_turns(path: str) -> List[list]:
     """Turns of a Claude Code transcript. Every user and assistant line is activity (tool
-    results and sub-agent work included: the agent was working); a line that `_starts_turn`
-    also starts a turn."""
+    results and sub-agent work included: the agent was working); a line that `_turn_start`
+    accepts also starts a turn."""
     b = TurnBuilder()
     try:
         f = open(path, 'rb')
@@ -162,8 +174,9 @@ def claude_turns(path: str) -> List[List[float]]:
                     rec = json.loads(line)
                 except ValueError:
                     rec = None
-                if isinstance(rec, dict) and _starts_turn(rec):
-                    b.prompt(t)
+                start = _turn_start(rec) if isinstance(rec, dict) else None
+                if start:
+                    b.prompt(t, start[0], start[1])
                     continue
             b.activity(t)
     return b.finish()
@@ -180,7 +193,7 @@ def save_cache(c: Dict[str, dict], path: str) -> None:
 
 
 def cached_turns(c: Dict[str, dict], key: str, size: int, mtime: float, compute,
-                 trust: bool = True) -> List[List[float]]:
+                 trust: bool = True) -> List[list]:
     """The turns for `key` from cache `c` when its (size, mtime, version) still match, else
     `compute()`d and stored. `trust=False` (a file written within the last moments, whose mtime
     can't tell two writes apart) always recomputes."""

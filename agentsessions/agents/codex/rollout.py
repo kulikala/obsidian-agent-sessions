@@ -105,28 +105,31 @@ def parse_ts(value) -> Optional[float]:
         return None
 
 
-def activity_turns(path: str) -> List[List[float]]:
-    """Turns of a rollout (for the activity calendar): a typed user message (`event_msg`
-    `user_message` or `item_completed` UserMessage, injected context and bare slash commands
-    excluded) starts one, and every record counts as activity up to the next prompt."""
+def activity_turns(path: str) -> List[list]:
+    """Turns `[start, end, prompt, kind]` of a rollout (for the activity calendar): a typed user
+    message (`event_msg` `user_message` or `item_completed` UserMessage, injected context and
+    bare slash commands excluded) starts one, and every record counts as activity up to the
+    next prompt."""
     from ...sessions.activity import TurnBuilder
     b = TurnBuilder()
     for d in iter_records(path):
         t = parse_ts(d.get('timestamp'))
         if t is None:
             continue
-        starts = False
+        text = None
         if d.get('type') == 'event_msg':
             payload = d.get('payload') or {}
             etype = payload.get('type')
             if etype == 'user_message':
                 msg = payload.get('message')
-                starts = isinstance(msg, str) and is_real_user_text(msg)
+                text = msg if isinstance(msg, str) and is_real_user_text(msg) else None
             elif etype == 'item_completed':
                 item = payload.get('item') or {}
-                starts = item.get('type') == 'UserMessage' and is_real_user_text(text_of(item.get('content')))
-        if starts:
-            b.prompt(t)
+                if item.get('type') == 'UserMessage':
+                    body = text_of(item.get('content'))
+                    text = body if is_real_user_text(body) else None
+        if text is not None:
+            b.prompt(t, text.strip())
         else:
             b.activity(t)
     return b.finish()

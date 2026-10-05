@@ -111,30 +111,42 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
         d.close()
 
 
-def activity_turns(session_id: str, path: Optional[str] = None) -> List[List[float]]:
-    """Turns of a session (for the activity calendar): a user message starts one, and every
-    message and part time counts as activity up to the next user message."""
+def activity_turns(session_id: str, path: Optional[str] = None) -> List[list]:
+    """Turns `[start, end, prompt, kind]` of a session (for the activity calendar): a user
+    message starts one (its prompt is the message's first text part), and every message and
+    part time counts as activity up to the next user message."""
     from ...sessions.activity import TurnBuilder
     d = _db.open_db(path)
     if d is None:
         return []
     try:
-        messages = d.query('SELECT time_created, time_updated, data FROM message WHERE session_id = ?', (session_id,))
-        parts = d.query('SELECT time_created, time_updated FROM part WHERE session_id = ?', (session_id,))
+        messages = d.query('SELECT id, time_created, time_updated, data FROM message WHERE session_id = ?', (session_id,))
+        parts = d.query('SELECT message_id, time_created, time_updated, data FROM part WHERE session_id = ? '
+                        'ORDER BY time_created, id', (session_id,))
     finally:
         d.close()
-    events = []   # (time, is_prompt); at the same instant a prompt sorts first
+    prompts = {}   # message id -> first text of its parts
+    for r in parts:
+        if r['message_id'] not in prompts:
+            text = _db.text_of_parts([r])
+            if text:
+                prompts[r['message_id']] = clean_text(text).strip()
+    events = []   # (time, is_prompt, text); at the same instant a prompt sorts first
     for r in messages:
         created, updated = r['time_created'], r['time_updated']
         if isinstance(created, (int, float)) and created > 0:
-            events.append((created / 1000.0, 0 if _db.loads(r['data']).get('role') == 'user' else 1))
+            is_user = _db.loads(r['data']).get('role') == 'user'
+            events.append((created / 1000.0, 0 if is_user else 1, prompts.get(r['id'], '') if is_user else ''))
         if isinstance(updated, (int, float)) and updated > 0:
-            events.append((updated / 1000.0, 1))
+            events.append((updated / 1000.0, 1, ''))
     for r in parts:
         for v in (r['time_created'], r['time_updated']):
             if isinstance(v, (int, float)) and v > 0:
-                events.append((v / 1000.0, 1))
+                events.append((v / 1000.0, 1, ''))
     b = TurnBuilder()
-    for t, kind in sorted(events):
-        b.prompt(t) if kind == 0 else b.activity(t)
+    for t, kind, text in sorted(events, key=lambda e: (e[0], e[1])):
+        if kind == 0:
+            b.prompt(t, text)
+        else:
+            b.activity(t)
     return b.finish()
