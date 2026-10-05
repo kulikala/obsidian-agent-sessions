@@ -36,12 +36,14 @@ function execFileText(
 	env?: NodeJS.ProcessEnv,
 	timeoutMs?: number
 ): Promise<{ stdout: string; stderr: string }> {
-	// Windows: a launcher `.cmd` runs as `python script …` (execFile refuses `.cmd` files), with
-	// UTF-8 Python and no console window popping up per call.
+	// Windows: a launcher `.cmd` runs as `python script …` and an agent's npm shim through
+	// `cmd.exe` (execFile refuses `.cmd` files), with UTF-8 Python and no console window popping
+	// up per call.
 	const call = programInvocation(cmd, args);
 	const callEnv = IS_WINDOWS ? { ...(env ?? process.env), PYTHONUTF8: "1" } : env;
 	return new Promise((resolve, reject) => {
-		execFile(call.file, call.args, { encoding: "utf8", env: callEnv, timeout: timeoutMs, windowsHide: true }, (err, stdout, stderr) => {
+		const options = { encoding: "utf8" as const, env: callEnv, timeout: timeoutMs, windowsHide: true, windowsVerbatimArguments: call.verbatim };
+		execFile(call.file, call.args, options, (err, stdout, stderr) => {
 			if (err) {
 				const e = err as NodeJS.ErrnoException & { stderr?: string };
 				e.stderr = stderr;

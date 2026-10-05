@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+	cmdShimArgument,
+	cmdShimInvocation,
 	expandWindowsVars,
+	extraProgramDirs,
+	isBatchFile,
 	isStorePythonStub,
 	mergeWindowsPath,
 	parseWindowsLauncher,
 	pathExts,
+	programInvocation,
 	pythonOrgCandidates,
 	windowsLauncherSource,
 	wingetInstallArgs,
@@ -65,5 +70,52 @@ describe("wingetInstallArgs", () => {
 	it("installs quietly for the current user only", () => {
 		const args = wingetInstallArgs("claude");
 		expect(args).toEqual(expect.arrayContaining(["install", "--exact", "--id", "Anthropic.ClaudeCode", "--scope", "user", "--silent"]));
+	});
+});
+
+describe("extraProgramDirs", () => {
+	it("adds WinGet's links, ~\\.local\\bin, npm's global bin and OpenCode's own folder", () => {
+		const env = { LOCALAPPDATA: "C:\\Users\\a\\AppData\\Local", USERPROFILE: "C:\\Users\\a", APPDATA: "C:\\Users\\a\\AppData\\Roaming" };
+		expect(extraProgramDirs(env)).toEqual([
+			"C:\\Users\\a\\AppData\\Local\\Microsoft\\WinGet\\Links",
+			"C:\\Users\\a\\.local\\bin",
+			"C:\\Users\\a\\AppData\\Roaming\\npm",
+			"C:\\Users\\a\\.opencode\\bin",
+		]);
+		expect(extraProgramDirs({})).toEqual([]);
+	});
+});
+
+describe("npm shims through cmd.exe", () => {
+	it("recognizes batch files by extension, in any case", () => {
+		expect(isBatchFile("C:\\npm\\codex.cmd")).toBe(true);
+		expect(isBatchFile("C:\\npm\\OPENCODE.CMD")).toBe(true);
+		expect(isBatchFile("C:\\x\\run.bat")).toBe(true);
+		expect(isBatchFile("C:\\x\\opencode.exe")).toBe(false);
+		expect(isBatchFile("/usr/local/bin/codex")).toBe(false);
+	});
+
+	it("quotes each argument for the C runtime and escapes cmd's metacharacters twice", () => {
+		expect(cmdShimArgument("exec")).toBe('^^^"exec^^^"');
+		expect(cmdShimArgument("")).toBe('^^^"^^^"');
+		expect(cmdShimArgument("a b")).toBe('^^^"a^^^ b^^^"');
+		expect(cmdShimArgument('{"a":true}')).toBe('^^^"{\\^^^"a\\^^^":true}^^^"');
+		expect(cmdShimArgument("C:\\dir\\")).toBe('^^^"C:\\dir\\\\^^^"');
+		expect(cmdShimArgument("a&b|c<d>e%f!g^h")).toBe('^^^"a^^^&b^^^|c^^^<d^^^>e^^^%f^^^!g^^^^h^^^"');
+	});
+
+	it("runs the shim as one verbatim `cmd.exe /d /s /c` line", () => {
+		expect(cmdShimInvocation("C:\\Users\\A B\\npm\\codex.cmd", ["exec", "-"], "C:\\Windows\\system32\\cmd.exe")).toEqual({
+			file: "C:\\Windows\\system32\\cmd.exe",
+			args: ["/d", "/s", "/c", '"C:\\Users\\A^ B\\npm\\codex.cmd ^^^"exec^^^" ^^^"-^^^""'],
+			verbatim: true,
+		});
+	});
+
+	it("leaves programs alone off Windows", () => {
+		if (process.platform === "win32") {
+			return;
+		}
+		expect(programInvocation("/usr/local/bin/codex.cmd", ["exec"])).toEqual({ file: "/usr/local/bin/codex.cmd", args: ["exec"] });
 	});
 });

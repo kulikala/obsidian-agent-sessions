@@ -14,6 +14,7 @@ import {
 	streamedChars,
 } from "../sessions/organize-agent";
 import type { AgentId, OrganizeModel } from "../settings";
+import { programInvocation } from "./windows";
 
 const TIMEOUT_MS = 180000;
 
@@ -39,11 +40,14 @@ export function runHeadless(run: HeadlessRun): Promise<string> {
 			reject(new Error("aborted"));
 			return;
 		}
-		const child = spawn(run.bin, headlessArgs(run.agent, run.model), {
+		// Windows: an npm-installed agent is a `.cmd` shim, which goes through cmd.exe.
+		const call = programInvocation(run.bin, headlessArgs(run.agent, run.model));
+		const child = spawn(call.file, call.args, {
 			cwd: run.cwd,
 			env: run.env,
 			stdio: ["pipe", "pipe", "pipe"],
 			windowsHide: true,
+			windowsVerbatimArguments: call.verbatim,
 		});
 		let stdout = "";
 		let stderr = "";
@@ -111,11 +115,13 @@ function deleteOpencodeSession(run: HeadlessRun, stdout: string): void {
 		return;
 	}
 	try {
-		const del = spawn(run.bin, ["session", "delete", id], {
+		const call = programInvocation(run.bin, ["session", "delete", id]);
+		const del = spawn(call.file, call.args, {
 			cwd: run.cwd,
 			env: run.env,
 			stdio: "ignore",
 			windowsHide: true,
+			windowsVerbatimArguments: call.verbatim,
 		});
 		del.on("error", () => undefined);
 	} catch {

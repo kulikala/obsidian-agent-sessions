@@ -44,12 +44,14 @@ export function expandWindowsVars(text: string, env: Record<string, string | und
 }
 
 /** Directories programs installed per-user tend to land in without being on Obsidian's PATH yet:
- * WinGet's command links, Claude Code's native installer, npm's global bin. */
+ * WinGet's command links, Claude Code's native installer, npm's global bin (Codex's and OpenCode's
+ * `.cmd` shims), OpenCode's own install folder. */
 export function extraProgramDirs(env: Record<string, string | undefined>): string[] {
 	const out: string[] = [];
 	if (env.LOCALAPPDATA) out.push(path.win32.join(env.LOCALAPPDATA, "Microsoft", "WinGet", "Links"));
 	if (env.USERPROFILE) out.push(path.win32.join(env.USERPROFILE, ".local", "bin"));
 	if (env.APPDATA) out.push(path.win32.join(env.APPDATA, "npm"));
+	if (env.USERPROFILE) out.push(path.win32.join(env.USERPROFILE, ".opencode", "bin"));
 	return out;
 }
 
@@ -95,6 +97,40 @@ export function parseWindowsLauncher(cmdText: string, cmdPath: string): [string,
 	const m = /^"([^"]+)" "%~dp0([^"]+)" %\*\s*$/m.exec(cmdText);
 	if (!m) return null;
 	return [m[1], path.win32.join(path.win32.dirname(cmdPath), m[2])];
+}
+
+/** How to start a program without a shell: `file`, `args`, and whether Node must pass `args` to
+ * Windows as written (`windowsVerbatimArguments`, for the `cmd.exe /c` form). */
+export interface Invocation {
+	file: string;
+	args: string[];
+	verbatim?: boolean;
+}
+
+/** Characters `cmd.exe` gives a meaning to (and space, which ends a word there). */
+const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
+
+/** One argument for a batch file run through `cmd.exe /d /s /c`: quoted the way the C runtime
+ * (Node, the program the batch file starts) reads it back, then every `cmd.exe` metacharacter
+ * escaped with `^` twice, once for the `/c` line and once more for the batch file's own `%*` line,
+ * which cmd parses again. The scheme cross-spawn uses for npm's shims. */
+export function cmdShimArgument(arg: string): string {
+	let quoted = arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, "$1$1");
+	quoted = `"${quoted}"`;
+	return quoted.replace(CMD_META, "^$1").replace(CMD_META, "^$1");
+}
+
+/** `file args` as a `cmd.exe /d /s /c "…"` invocation. Node refuses to start a `.cmd`/`.bat` itself
+ * (EINVAL) — npm installs Codex and OpenCode as such shims (`codex.cmd`, `opencode.cmd`) — and
+ * `shell: true` would leave the quoting to chance. Pure. */
+export function cmdShimInvocation(file: string, args: string[], comspec: string): Invocation {
+	const line = [file.replace(CMD_META, "^$1"), ...args.map(cmdShimArgument)].join(" ");
+	return { file: comspec, args: ["/d", "/s", "/c", `"${line}"`], verbatim: true };
+}
+
+/** Whether `file` is a batch script Windows runs through `cmd.exe`. */
+export function isBatchFile(file: string): boolean {
+	return /\.(cmd|bat)$/i.test(file);
 }
 
 // ---- I/O ----------------------------------------------------------------------------------
@@ -281,10 +317,11 @@ export async function wingetInstall(pkg: WingetPackage): Promise<void> {
 /**
  * How to run `cmd args` without a shell: on Windows a launcher `.cmd` written by
  * `windowsLauncherSource` becomes `python script args` (with `PYTHONUTF8=1` added to `env` by the
- * caller via `windowsEnv`); everything else is returned unchanged.
+ * caller via `windowsEnv`), and any other `.cmd`/`.bat` (an agent's npm shim) goes through
+ * `cmd.exe` (`cmdShimInvocation`); everything else is returned unchanged.
  */
-export function programInvocation(cmd: string, args: string[]): { file: string; args: string[] } {
-	if (process.platform !== "win32" || !/\.cmd$/i.test(cmd)) {
+export function programInvocation(cmd: string, args: string[]): Invocation {
+	if (process.platform !== "win32" || !isBatchFile(cmd)) {
 		return { file: cmd, args };
 	}
 	try {
@@ -293,7 +330,7 @@ export function programInvocation(cmd: string, args: string[]): { file: string; 
 			return { file: parsed[0], args: [parsed[1], ...args] };
 		}
 	} catch {
-		// Fall through: let the spawn fail with the launcher's own path in the error.
+		// Not readable: still a batch file, so it goes through cmd.exe and fails there with its own path.
 	}
-	return { file: cmd, args };
+	return cmdShimInvocation(cmd, args, process.env.ComSpec || process.env.COMSPEC || "cmd.exe");
 }
