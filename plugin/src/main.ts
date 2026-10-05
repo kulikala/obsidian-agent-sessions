@@ -70,6 +70,7 @@ import { EditServer, editReplyFor, submitsAfterEdit, tabOwnsEditSession, type Ed
 import { SessionIndex, type Row } from "./sessions/index";
 import { getLang, languageOptions, resolveLang, setLang, t, type MessageKey } from "./i18n";
 import { applyCodexConfig, defaultCodexConfigPath, type ApplyCodexConfigResult } from "./terminal/codex-config";
+import { msSinceKey, summarizeReloadSafety, type ReloadSafety } from "./terminal/reload-safety";
 import { applyEditorKey, applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./terminal/keybindings";
 import { afterWait, planHeadlessCommand } from "./terminal/headless-plan";
 import { agentSendSequence, editorKeyLabel, reconcileSubmitKey } from "./terminal/keys";
@@ -753,6 +754,27 @@ export default class AgentSessionsPlugin extends Plugin {
 			.map((leaf) => leaf.view)
 			.filter((view): view is TerminalView => view instanceof TerminalView);
 		return views.find((view) => view.containerEl.isShown()) ?? views[0];
+	}
+
+	/**
+	 * What reloading the plugin now would interrupt, for whoever is about to do it: whether a
+	 * built-in editor pane is open, how long ago a key was last typed into a terminal tab or the
+	 * editor pane, and which sessions have an unsent draft in their prompt line.
+	 */
+	reloadSafety(): ReloadSafety {
+		const tabs = this.app.workspace
+			.getLeavesOfType(VIEW_TYPE_TERMINAL)
+			.map((leaf) => leaf.view)
+			.filter((view): view is TerminalView => view instanceof TerminalView)
+			.map((view) => {
+				const row = this.index.sessions.get(view.sessionId);
+				return {
+					name: sessionDisplayName({ name: row?.name, label: row?.label, agent: view.sessionAgent, id: view.sessionId }),
+					editorOpen: view.isEditorOpen(),
+					hasDraft: view.promptHasDraft(),
+				};
+			});
+		return summarizeReloadSafety(tabs, msSinceKey());
 	}
 
 	sockPath(): string {

@@ -563,7 +563,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 
 	// ---- views/activity.ts ----
 	"activity.title": "稼働カレンダー",
-	"activity.subtitle": "プロンプトを送ってからエージェントが終えるまでを、各エージェントごとに並べます（ローカル時刻・30分未満の間隔のターンはひとつにつなぎます）。",
+	"activity.subtitle": "プロンプトを送ってからエージェントが終えるまでを、各エージェントごとに並べます（ローカル時刻・{gap}未満の間隔のターンはひとつにつなぎます）。",
 	"activity.mode.session": "7日枠",
 	"activity.mode.session.hint": "使用量の上限がリセットされる時刻に揃えた 7 日間（Claude Code の 7 日枠、なければ Codex の枠。どちらも分からなければ日曜始まりの週）",
 	"activity.mode.week": "週",
@@ -579,6 +579,13 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"activity.dur.hm": "{h} 時間 {m} 分",
 	"activity.answer": "回答：",
 	"activity.response": "応答",
+	"activity.gap.30": "30分",
+	"activity.gap.60": "1時間",
+	"activity.gap.120": "2時間",
+	"activity.gap.hint": "この間隔より近いターンをひとつのブロックにつなぐ",
+	"activity.card.hide": "{name} を表示中：クリックで非表示",
+	"activity.card.show": "{name} は非表示：クリックで表示",
+	"activity.card.last": "少なくとも1つのエージェントは表示したままにします",
 	"activity.openSession": "セッションを開く",
 	"activity.closeDetail": "閉じる",
 	"activity.filterPlaceholder": "題名で絞り込み",

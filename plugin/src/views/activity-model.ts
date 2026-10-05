@@ -417,3 +417,16 @@ export function rematchSpan<T extends Interval>(
 	}
 	return best;
 }
+
+export interface AgentCardState {
+	/** Whether the agent is shown (its card is "on"). */
+	on: boolean;
+	/** Whether clicking the card may change it: the last shown agent can't be turned off. */
+	canToggle: boolean;
+}
+
+/** The state of an agent's summary card, which doubles as that agent's show/hide switch. */
+export function agentCardState(agent: string, hidden: readonly string[], all: readonly string[]): AgentCardState {
+	const on = !hidden.includes(agent);
+	return { on, canToggle: !on || visibleAgents(all, hidden).length > 1 };
+}

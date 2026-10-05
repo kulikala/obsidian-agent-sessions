@@ -305,7 +305,7 @@ Use a test vault. For the first-run items, a vault where the plugin was never en
 ### Activity calendar
 
 - [ ] "Open activity calendar" in the command palette, the Session Manager toolbar's calendar button, and the side panel's ⋯ menu all open the same single tab.
-- [ ] The title, the one-line explanation, the 7-day window / Week / Day toggle, the period range, "Latest", and the filter box are shown; the language follows the plugin's setting (English and Japanese).
+- [ ] The title, the one-line explanation, the 7d / Week / Day toggle and the 30 min / 1 h / 2 h join control (the explanation names the chosen gap; switching refetches in place, and the choice survives reloading the plugin; the 7d tooltip explains the reset alignment), the period range, "Latest", and the filter box are shown; the language follows the plugin's setting (English and Japanese).
 - [ ] The toggle defaults to Session. With Claude Code enabled and its 7-day reset known, the Session period ends at that reset and starts 7 days earlier (its first and last day are dimmed outside the period); with only Codex's weekly window known it follows that; with neither it is a Sunday-start week. Earlier periods step back by 7 days.
 - [ ] Week runs Sunday to Saturday; Day shows one date with one wide column per agent. The chosen mode is still selected after reloading the plugin.
 - [ ] The next arrow is disabled on the period that holds now (in all three modes), and "Latest" returns to it.
@@ -313,7 +313,9 @@ Use a test vault. For the first-run items, a vault where the plugin was never en
 - [ ] Cards per enabled agent show hours, session count, and peak concurrency; the day headers show per-agent counts; the grid has one lane per agent in each day and a 0:00–24:00 axis.
 - [ ] The grid starts scrolled to about half an hour before the period's first activity.
 - [ ] Blocks are colored by the session's category (as its chip) or by the agent when it has none; overlapping sessions sit side by side; tall enough blocks carry their name.
-- [ ] There is a toggle per agent (icon and name); hiding one removes its lanes, blocks, and card, the choice survives reloading the plugin, and the last visible agent cannot be hidden.
+- [ ] There are no separate agent buttons: each summary card is the toggle (a card is a switch: click, Space or Enter). ON is full strength with the agent's color bar and an open eye; OFF is dimmed and dashed with a closed eye and muted numbers; turning one off removes its lanes, blocks, and day-mode columns, the choice survives reloading the plugin, and the last card that is on cannot be turned off.
+- [ ] With the join control at 1 h or 2 h, turns that are 30–60 (or 30–120) minutes apart become one block; at 30 min they are separate blocks.
+- [ ] Calling `plugin.reloadSafety()` returns `{editorOpen, recentKeyMs, drafts}`: `editorOpen` is true while a Ctrl+G pane is open, `recentKeyMs` is the time since the last key typed into a terminal tab or the editor pane (null before any), `drafts` names sessions whose prompt line holds unsent text.
 - [ ] Every block is at least about 6 px tall: a one-minute block is visible, its tooltip shows the true times, and two such blocks a few minutes apart sit side by side.
 - [ ] Day mode shows one column per session active that day (grouped by agent, each headed by the agent icon and session name, scrolling sideways when many), not one lane per agent.
 - [ ] A turn starts only at your own input (typed prompt, slash command, or your answer to a question the agent asked): a notification or another session's message in the middle does not start a new row, and the turn ends at the agent's last output before your next input.

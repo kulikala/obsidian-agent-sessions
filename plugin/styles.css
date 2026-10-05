@@ -3045,10 +3045,88 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 }
 
 .agent-sessions-activity-card {
-	padding: var(--size-4-2) var(--size-4-3);
+	position: relative;
+	padding: var(--size-4-2) var(--size-4-3) var(--size-4-2) var(--size-4-4);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
 	background-color: var(--background-secondary);
+	cursor: pointer;
+	user-select: none;
+	transition: opacity 0.12s ease, border-color 0.12s ease;
+}
+
+/* The card is the agent's show/hide switch. ON: full strength, the agent's color as a left bar,
+   an open eye. OFF: dimmed, no bar, a closed eye, muted numbers. */
+.agent-sessions-activity-card::before {
+	content: "";
+	position: absolute;
+	top: -1px;
+	bottom: -1px;
+	left: -1px;
+	width: 4px;
+	border-radius: var(--radius-m) 0 0 var(--radius-m);
+	background-color: var(--as-agent-claude);
+}
+
+.agent-sessions-activity-card.is-agent-codex::before {
+	background-color: var(--as-agent-codex);
+}
+
+.agent-sessions-activity-card.is-agent-opencode::before {
+	background-color: var(--as-agent-opencode);
+}
+
+.agent-sessions-activity-card.is-on {
+	border-color: var(--background-modifier-border-hover);
+}
+
+.agent-sessions-activity-card.is-off {
+	opacity: 0.45;
+	background-color: transparent;
+	border-style: dashed;
+}
+
+.agent-sessions-activity-card.is-off::before {
+	display: none;
+}
+
+.agent-sessions-activity-card.is-off .agent-sessions-activity-card-hours,
+.agent-sessions-activity-card.is-off .agent-sessions-activity-card-stats {
+	color: var(--text-faint);
+	font-weight: var(--font-normal);
+}
+
+.agent-sessions-activity-card:hover,
+.agent-sessions-activity-card:focus-visible {
+	opacity: 1;
+	border-color: var(--interactive-accent);
+	outline: none;
+}
+
+.agent-sessions-activity-card.is-locked {
+	cursor: default;
+}
+
+.agent-sessions-activity-card.is-locked:hover {
+	border-color: var(--background-modifier-border-hover);
+}
+
+.agent-sessions-activity-card-eye {
+	display: inline-flex;
+	color: var(--text-normal);
+}
+
+.agent-sessions-activity-card.is-off .agent-sessions-activity-card-eye {
+	color: var(--text-faint);
+}
+
+.agent-sessions-activity-card-eye svg {
+	width: 14px;
+	height: 14px;
+}
+
+.agent-sessions-activity-card.is-off .agent-sessions-activity-swatch {
+	background-color: var(--text-faint);
 }
 
 .agent-sessions-activity-card-title {
@@ -3464,25 +3542,6 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	color: var(--text-muted);
 	overflow-wrap: anywhere;
 	white-space: pre-wrap;
-}
-
-/* The agent toggles under the controls. */
-.agent-sessions-activity-agents {
-	display: flex;
-	flex-wrap: wrap;
-	gap: var(--size-4-2);
-	margin-bottom: var(--size-4-3);
-}
-
-.agent-sessions-activity-agent {
-	display: inline-flex;
-	align-items: center;
-	gap: var(--size-4-1);
-}
-
-.agent-sessions-activity-agent.is-off {
-	opacity: 0.45;
-	text-decoration: line-through;
 }
 
 /* Day mode's column heads: the session's agent icon and name. */

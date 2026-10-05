@@ -24,6 +24,7 @@ import {
 	type CurrentModel,
 	type ModelChoice,
 } from "../terminal/model-switch";
+import { noteKey } from "../terminal/reload-safety";
 import { effortLabel, modelAliasLabel, modelAliasShortLabel } from "../ui/modal-labels";
 
 export type EditResult = "send" | "return" | "cancel";
@@ -81,6 +82,7 @@ export class EditorPane {
 	/** Key handling captured on `window` (runs before Obsidian's own keydown handling). */
 	private captureKeyDown = (ev: KeyboardEvent): void => {
 		if (ev.target === this.textarea) {
+			noteKey();
 			this.onKeyDown(ev);
 		}
 	};

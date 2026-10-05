@@ -22,6 +22,7 @@ import { AGENT_BIN_NAME, BackendError, loginEnv, resolveAgentBinary, withBinDirO
 import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../backend/daemon-client";
 import { t } from "../i18n";
 import { promptHasDraft, type ScreenCell } from "../terminal/prompt-draft";
+import { noteKey } from "../terminal/reload-safety";
 import { attachPlan, launchSize, NO_ROOM_ATTACH_MS } from "../terminal/pane-size";
 import {
 	agentSendSequence,
@@ -255,6 +256,11 @@ export class TerminalView extends ItemView {
 			lines.push(buffer.getLine(y)?.translateToString(true) ?? "");
 		}
 		return lines.join("\n");
+	}
+
+	/** Whether the built-in editor pane (Ctrl+G) is open in this tab. */
+	isEditorOpen(): boolean {
+		return this.pendingEdit !== null;
 	}
 
 	/** Whether the agent's input box on screen holds a draft (`promptHasDraft` over the visible
@@ -1064,6 +1070,9 @@ export class TerminalView extends ItemView {
 	// ---- Keys -------------------------------------------------------------------
 
 	private handleKey(ev: KeyboardEvent): boolean {
+		if (ev.type === "keydown") {
+			noteKey();
+		}
 		// While the editor pane is open, nothing is passed to xterm (including IME input).
 		if (this.pendingEdit) {
 			return false;

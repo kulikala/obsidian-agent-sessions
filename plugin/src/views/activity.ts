@@ -12,9 +12,10 @@ import type AgentSessionsPlugin from "../main";
 import { paletteHueDeg } from "../sessions/category";
 import { listedInManager } from "../sessions/listing";
 import { renderCategoryChip } from "../ui/chip";
-import { ACTIVITY_MODES, AGENT_IDS, type ActivityMode } from "../settings";
+import { ACTIVITY_GAPS, ACTIVITY_MODES, AGENT_IDS, type ActivityGap, type ActivityMode } from "../settings";
 import type { ActivityResult, ActivitySession, ActivitySpan, ActivityTurn, StatsResult } from "../types";
 import {
+	agentCardState,
 	canGoNext,
 	clockLabel,
 	dayColumns,
@@ -98,7 +99,8 @@ export class ActivityView extends ItemView {
 	private detailEl!: HTMLElement;
 	private blockDetailEl!: HTMLElement;
 	private sessionDetailEl!: HTMLElement;
-	private agentsEl!: HTMLElement;
+	private subtitleEl!: HTMLElement;
+	private gapBtns = new Map<ActivityGap, HTMLElement>();
 	private filterEl!: HTMLInputElement;
 
 	constructor(leaf: WorkspaceLeaf, plugin: AgentSessionsPlugin) {
@@ -220,7 +222,8 @@ export class ActivityView extends ItemView {
 	private buildSkeleton(): void {
 		const head = this.contentEl.createDiv({ cls: "agent-sessions-activity-head" });
 		head.createEl("h2", { text: t("activity.title") });
-		head.createEl("p", { cls: "agent-sessions-activity-subtitle", text: t("activity.subtitle") });
+		this.subtitleEl = head.createEl("p", { cls: "agent-sessions-activity-subtitle" });
+		this.subtitleEl.setText(this.subtitleText());
 
 		const nav = head.createDiv({ cls: "agent-sessions-activity-nav" });
 		const modes = nav.createDiv({ cls: "agent-sessions-activity-modes" });
@@ -230,6 +233,14 @@ export class ActivityView extends ItemView {
 			setTooltip(btn, t(`activity.mode.${mode}.hint`));
 			this.registerDomEvent(btn, "click", () => this.setMode(mode, this.period.from));
 			this.modeBtns.set(mode, btn);
+		}
+		const gaps = nav.createDiv({ cls: "agent-sessions-activity-modes agent-sessions-activity-gaps" });
+		setTooltip(gaps, t("activity.gap.hint"));
+		this.gapBtns.clear();
+		for (const gap of ACTIVITY_GAPS) {
+			const btn = gaps.createEl("button", { text: t(`activity.gap.${gap}`), cls: "agent-sessions-activity-mode" });
+			this.registerDomEvent(btn, "click", () => this.setGap(gap));
+			this.gapBtns.set(gap, btn);
 		}
 		this.navButton(nav, "chevron-left", t("activity.prev"), () => this.go(shiftPeriod(this.period, -1)));
 		this.rangeEl = nav.createSpan({ cls: "agent-sessions-activity-range" });
@@ -251,8 +262,6 @@ export class ActivityView extends ItemView {
 			this.filterText = this.filterEl.value;
 			this.renderBody(true);
 		});
-
-		this.agentsEl = head.createDiv({ cls: "agent-sessions-activity-agents" });
 
 		this.splitEl = this.contentEl.createDiv({ cls: "agent-sessions-activity-split" });
 		this.bodyEl = this.splitEl.createDiv({ cls: "agent-sessions-activity-body" });
@@ -300,6 +309,21 @@ export class ActivityView extends ItemView {
 		return btn;
 	}
 
+	private subtitleText(): string {
+		return t("activity.subtitle", { gap: t(`activity.gap.${this.plugin.settings.activityGapMinutes}`) });
+	}
+
+	/** Switches how far apart turns may be and still join into one block; the blocks are rebuilt by the program, so it refetches in place. */
+	private setGap(gap: ActivityGap): void {
+		if (gap === this.plugin.settings.activityGapMinutes) {
+			return;
+		}
+		this.plugin.settings.activityGapMinutes = gap;
+		void this.plugin.saveSettings();
+		this.updateNav();
+		void this.fetchPeriod(false, true);
+	}
+
 	/** The range text, the active mode button, and whether "next" is allowed. */
 	private updateNav(): void {
 		const { from, to } = this.period;
@@ -315,6 +339,10 @@ export class ActivityView extends ItemView {
 			btn.toggleClass("is-active", mode === this.mode);
 		}
 		this.nextBtn.toggleClass("is-disabled", !canGoNext(this.period, new Date()));
+		for (const [gap, btn] of this.gapBtns) {
+			btn.toggleClass("is-active", gap === this.plugin.settings.activityGapMinutes);
+		}
+		this.subtitleEl.setText(this.subtitleText());
 	}
 
 	private go(period: Period): void {
@@ -344,7 +372,13 @@ export class ActivityView extends ItemView {
 		}
 		const { from, to } = this.period;
 		try {
-			const result = await activity(this.plugin.agentSessionsPath(), this.plugin.vaultPath(), from, to);
+			const result = await activity(
+				this.plugin.agentSessionsPath(),
+				this.plugin.vaultPath(),
+				from,
+				to,
+				this.plugin.settings.activityGapMinutes
+			);
 			if (token !== this.fetchToken) {
 				return;
 			}
@@ -415,27 +449,6 @@ export class ActivityView extends ItemView {
 		return key ? t(key) : agent;
 	}
 
-	/** The per-agent toggles under the controls: icon and name, dimmed when hidden; one always stays on. */
-	private renderAgentToggles(all: readonly string[], hidden: readonly string[]): void {
-		this.agentsEl.empty();
-		for (const agent of all) {
-			const off = hidden.includes(agent);
-			const btn = this.agentsEl.createEl("button", { cls: `agent-sessions-activity-agent is-agent-${agent}` });
-			btn.toggleClass("is-off", off);
-			btn.setAttr("aria-pressed", String(!off));
-			if (AGENT_ICON[agent]) {
-				const icon = btn.createSpan({ cls: "agent-sessions-row-agent-mark" });
-				setIcon(icon, AGENT_ICON[agent]);
-			}
-			btn.createSpan({ text: this.agentName(agent) });
-			this.registerDomEvent(btn, "click", () => {
-				const next = toggleAgent(this.plugin.settings.activityHiddenAgents, agent, all);
-				this.plugin.settings.activityHiddenAgents = next;
-				void this.plugin.saveSettings();
-			});
-		}
-	}
-
 	private renderBody(scrollToFirst = false): void {
 		const scrollEl = this.bodyEl.querySelector<HTMLElement>(".agent-sessions-activity-scroll");
 		const keepTop = scrollEl?.scrollTop ?? 0;
@@ -453,12 +466,11 @@ export class ActivityView extends ItemView {
 		this.renderedIds = listed.map((s) => s.id).join();
 		const all = this.laneAgents(listed);
 		const hidden = this.plugin.settings.activityHiddenAgents;
-		this.renderAgentToggles(all, hidden);
 		const agents = visibleAgents(all, hidden);
 		const sessions = filterSessions(listed, this.filterText).filter((s) => agents.includes(s.agent));
 		const days = periodDays(this.period);
 
-		this.renderCards(this.bodyEl, sessions, agents);
+		this.renderCards(this.bodyEl, filterSessions(listed, this.filterText), all, hidden);
 		if (listed.length === 0) {
 			this.bodyEl.createDiv({ cls: "agent-sessions-activity-message", text: t("activity.empty") });
 			return;
@@ -619,17 +631,56 @@ export class ActivityView extends ItemView {
 		el.style.height = `${(to - from) * 100}%`;
 	}
 
-	private renderCards(container: HTMLElement, sessions: readonly ActivitySession[], agents: readonly string[]): void {
+	/**
+	 * One card per agent with its hours, sessions and peak concurrency. The card is also that
+	 * agent's show/hide switch: on = full strength with the agent's color bar and an open eye;
+	 * off = dimmed, no bar, a closed eye. At least one agent stays on.
+	 */
+	private renderCards(
+		container: HTMLElement,
+		sessions: readonly ActivitySession[],
+		all: readonly string[],
+		hidden: readonly string[]
+	): void {
 		const cards = container.createDiv({ cls: "agent-sessions-activity-cards" });
-		for (const s of summarizeByAgent(sessions, agents)) {
-			const card = cards.createDiv({ cls: `agent-sessions-activity-card is-agent-${s.agent}` });
+		for (const s of summarizeByAgent(sessions, all)) {
+			const state = agentCardState(s.agent, hidden, all);
+			const name = this.agentName(s.agent);
+			const card = cards.createDiv({
+				cls: `agent-sessions-activity-card is-agent-${s.agent} ${state.on ? "is-on" : "is-off"}`,
+			});
+			card.setAttr("role", "switch");
+			card.setAttr("tabindex", "0");
+			card.setAttr("aria-checked", String(state.on));
+			card.setAttr("aria-label", name);
+			if (!state.canToggle) {
+				card.addClass("is-locked");
+				card.setAttr("aria-disabled", "true");
+			}
+			setTooltip(card, state.canToggle ? t(state.on ? "activity.card.hide" : "activity.card.show", { name }) : t("activity.card.last"));
 			const title = card.createDiv({ cls: "agent-sessions-activity-card-title" });
+			const eye = title.createSpan({ cls: "agent-sessions-activity-card-eye" });
+			setIcon(eye, state.on ? "eye" : "eye-off");
 			title.createSpan({ cls: "agent-sessions-activity-swatch" });
-			title.createSpan({ text: this.agentName(s.agent) });
+			title.createSpan({ text: name });
 			card.createDiv({ cls: "agent-sessions-activity-card-hours", text: t("activity.hours", { n: s.hours.toFixed(1) }) });
 			card.createDiv({
 				cls: "agent-sessions-activity-card-stats",
 				text: t("activity.cardStats", { sessions: s.sessions, max: s.maxConcurrent }),
+			});
+			const toggle = () => {
+				if (!state.canToggle) {
+					return;
+				}
+				this.plugin.settings.activityHiddenAgents = toggleAgent(this.plugin.settings.activityHiddenAgents, s.agent, all);
+				void this.plugin.saveSettings();
+			};
+			this.registerDomEvent(card, "click", toggle);
+			this.registerDomEvent(card, "keydown", (evt) => {
+				if (evt.key === " " || evt.key === "Enter") {
+					evt.preventDefault();
+					toggle();
+				}
 			});
 		}
 	}

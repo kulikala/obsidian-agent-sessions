@@ -161,6 +161,10 @@ export type OrganizeModel = "sonnet" | "haiku";
 
 export const ORGANIZE_MODELS: readonly OrganizeModel[] = ["sonnet", "haiku"];
 
+/** How far apart (minutes) two turns may be and still join into one block in the activity calendar. */
+export const ACTIVITY_GAPS = [30, 60, 120] as const;
+export type ActivityGap = (typeof ACTIVITY_GAPS)[number];
+
 export interface AgentSessionsSettings {
 	fontFamily: string;
 	fontSize: number;
@@ -198,6 +202,8 @@ export interface AgentSessionsSettings {
 	organizeModel: OrganizeModel;
 	/** The activity calendar's period mode. Default `session`. */
 	activityMode: ActivityMode;
+	/** The activity calendar's join gap (minutes). Default 30. */
+	activityGapMinutes: ActivityGap;
 	/** Agents hidden in the activity calendar (their lanes, blocks and card). */
 	activityHiddenAgents: string[];
 	/** The activity calendar's details panel width, as a % of the view (when a block is open). */
@@ -237,6 +243,7 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	managerStatusFilter: "all",
 	organizeModel: "sonnet",
 	activityMode: "session",
+	activityGapMinutes: 30,
 	activityHiddenAgents: [],
 	activityDetailWidth: 38,
 	agentSkillsStamp: "",
@@ -323,6 +330,9 @@ export function mergeSettings(data: unknown, isMac = true, platform: string = pr
 	}
 	if (!ACTIVITY_MODES.includes(saved.activityMode as ActivityMode)) {
 		delete saved.activityMode;
+	}
+	if (!ACTIVITY_GAPS.includes(saved.activityGapMinutes as ActivityGap)) {
+		delete saved.activityGapMinutes;
 	}
 	if (!Array.isArray(saved.activityHiddenAgents) || !saved.activityHiddenAgents.every((a) => typeof a === "string")) {
 		delete saved.activityHiddenAgents;

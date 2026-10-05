@@ -21,6 +21,7 @@ import {
 	splitDuration,
 	toggleAgent,
 	visibleAgents,
+	agentCardState,
 	splitSpansByDay,
 	summarizeByAgent,
 	unionSeconds,
@@ -394,5 +395,23 @@ describe("rematchSpan", () => {
 		expect(rematchSpan(prev, [mk("b", [[100, 200]])])).toBeNull();
 		expect(rematchSpan(prev, [mk("a", [[300, 400]])])).toBeNull();
 		expect(rematchSpan(prev, [])).toBeNull();
+	});
+});
+
+describe("agent card state", () => {
+	const all = ["claude", "codex", "opencode"];
+
+	it("is on unless hidden", () => {
+		expect(agentCardState("claude", [], all)).toEqual({ on: true, canToggle: true });
+		expect(agentCardState("codex", ["codex"], all)).toEqual({ on: false, canToggle: true });
+	});
+
+	it("locks the last card that is on", () => {
+		expect(agentCardState("claude", ["codex", "opencode"], all)).toEqual({ on: true, canToggle: false });
+		expect(agentCardState("claude", ["codex"], all)).toEqual({ on: true, canToggle: true });
+	});
+
+	it("always lets an off card be turned back on", () => {
+		expect(agentCardState("codex", ["codex", "opencode"], all).canToggle).toBe(true);
 	});
 });

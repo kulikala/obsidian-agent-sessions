@@ -38,6 +38,7 @@ describe("DEFAULT_SETTINGS", () => {
 			managerStatusFilter: "all",
 			organizeModel: "sonnet",
 			activityMode: "session",
+			activityGapMinutes: 30,
 			activityHiddenAgents: [],
 			activityDetailWidth: 38,
 			agentSkillsStamp: "",
@@ -89,6 +90,11 @@ describe("mergeSettings", () => {
 	it("keeps a known activityMode and drops an unknown one", () => {
 		expect(mergeSettings({ activityMode: "day" }).activityMode).toBe("day");
 		expect(mergeSettings({ activityMode: "month" }).activityMode).toBe("session");
+	});
+
+	it("keeps a known activity join gap and drops an unknown one", () => {
+		expect(mergeSettings({ activityGapMinutes: 60 }).activityGapMinutes).toBe(60);
+		expect(mergeSettings({ activityGapMinutes: 45 }).activityGapMinutes).toBe(30);
 	});
 
 	it("keeps valid activity calendar choices and drops invalid ones", () => {

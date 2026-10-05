@@ -123,6 +123,15 @@ class TestActivityOutput(unittest.TestCase):
             [epoch('01:00:00'), epoch('01:05:00')], [epoch('01:20:00'), epoch('01:25:00')],
             [epoch('02:10:00'), epoch('02:11:00')]])
 
+    def test_the_join_gap_decides_how_far_apart_turns_still_make_one_block(self):
+        # the Claude fixture's turns end 01:25:00 and start again 02:10:00: 45 minutes apart
+        def blocks(minutes):
+            out = jsonout.activity_output(epoch('00:00:00'), epoch('23:59:59'), minutes * 60)
+            return pairs(self.by_id(out)[CLAUDE_ID])
+        self.assertEqual(len(blocks(30)), 2)
+        self.assertEqual(blocks(60), [[epoch('01:00:00'), epoch('02:10:20')]])
+        self.assertEqual(blocks(120), [[epoch('01:00:00'), epoch('02:10:20')]])
+
     def test_a_turn_still_being_written_ends_now(self):
         now = epoch('02:11:30')   # 70 s after the last record
         out = jsonout.activity_output(epoch('00:00:00'), epoch('23:59:59'), 1800, now=now)
