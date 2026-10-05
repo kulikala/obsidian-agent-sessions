@@ -9,7 +9,8 @@ removed.
 The plugin runs inside the `opencode` process and writes one status file per
 session, `~/.agents/sessions/opencode/<ses_id>.json`:
 `{"status": "busy"|"idle"|"waiting", "waiting_for": "permission"|"question"|"",
-"pid": process.pid, "cwd", "updated_at"}` (seconds), atomically (tmp + rename).
+"pid": process.pid, "cwd", "updated_at"}` (seconds), atomically (tmp + rename;
+on Windows a rename that a reader blocks is retried, then written in place).
 A top-level session gets its file (status `idle`) when it is created, so the file
 is there from launch, before any prompt.
 `agents/opencode/live.py` reads them; a dead `pid` marks a file stale.
@@ -51,6 +52,32 @@ function fileOf(id) {
 	return path.join(DIR, id + ".json");
 }
 
+// Windows refuses to rename over a file another process is reading at that moment (EPERM/EBUSY):
+// a few short retries, then a plain write, so one update is never lost to a reader.
+function replace(tmp, file) {
+	for (let attempt = 0; ; attempt++) {
+		try {
+			fs.renameSync(tmp, file);
+			return;
+		} catch (err) {
+			if (process.platform !== "win32") {
+				throw err;
+			}
+			if (attempt >= 4) {
+				break;
+			}
+			Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+		}
+	}
+	try {
+		fs.writeFileSync(file, fs.readFileSync(tmp));
+	} finally {
+		try {
+			fs.unlinkSync(tmp);
+		} catch {}
+	}
+}
+
 function remove(id) {
 	sessions.delete(id);
 	written.delete(id);
@@ -83,7 +110,7 @@ function write(id, directory) {
 			updated_at: Date.now() / 1000,
 		}),
 	);
-	fs.renameSync(tmp, file);
+	replace(tmp, file);
 	written.add(id);
 }
 

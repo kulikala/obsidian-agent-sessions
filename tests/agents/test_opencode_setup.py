@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import pathlib
 import shutil
 import subprocess
 import tempfile
@@ -263,9 +264,9 @@ if (process.argv[4] === "dump") {
         with open(self.driver, 'w') as f:
             f.write(self.DRIVER)
 
-    def _node(self, events, mode='dump'):
+    def _node(self, events, mode='dump', node_args=()):
         env = dict(os.environ, HOME=self.tmp, USERPROFILE=self.tmp)
-        r = subprocess.run([NODE, self.driver, self.plugin, json.dumps(events), mode], env=env,
+        r = subprocess.run([NODE, *node_args, self.driver, self.plugin, json.dumps(events), mode], env=env,
                            stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr.decode())
         return r.stdout.decode()
@@ -285,6 +286,17 @@ if (process.argv[4] === "dump") {
         # a later busy is not undone by another created/updated for the same session
         ev += [self.status('ses_a', 'busy'), {'type': 'session.updated', 'properties': {'info': {'id': 'ses_a'}}}]
         self.assertEqual(self._files_after(ev)['ses_a.json']['status'], 'busy')
+
+    def test_a_rename_windows_refuses_falls_back_to_writing_in_place(self):
+        # As on Windows while a reader holds the file: every rename fails with EPERM.
+        preload = os.path.join(self.tmp, 'windows.mjs')
+        with open(preload, 'w') as f:
+            f.write('import fs from "node:fs";\n'
+                    'Object.defineProperty(process, "platform", { value: "win32" });\n'
+                    'fs.renameSync = () => { throw Object.assign(new Error("EPERM"), { code: "EPERM" }); };\n')
+        out = self._node([self.status('ses_a', 'busy')], node_args=('--import', pathlib.Path(preload).as_uri()))
+        self.assertEqual(json.loads(out), {'ses_a.json': mock.ANY})
+        self.assertEqual(json.loads(out)['ses_a.json']['status'], 'busy')
 
     def test_created_sub_agent_sessions_get_no_file(self):
         ev = [{'type': 'session.created', 'properties': {'info': {'id': 'ses_kid', 'parentID': 'ses_a'}}}]
