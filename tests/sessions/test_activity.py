@@ -50,6 +50,14 @@ class TestTurnBuilder(unittest.TestCase):
         b.activity(20)
         self.assertEqual(b.finish(), [[10, 20]])
 
+    def test_a_long_silence_inside_a_turn_starts_a_new_turn(self):
+        b = activity.TurnBuilder()
+        b.prompt(0)
+        b.activity(600)
+        b.activity(600 + 8 * 3600)          # the agent resumed hours later without a prompt
+        b.activity(600 + 8 * 3600 + 300)
+        self.assertEqual(b.finish(), [[0, 600], [600 + 8 * 3600, 600 + 8 * 3600 + 300]])
+
     def test_a_transcript_with_no_prompt_is_one_turn(self):
         b = activity.TurnBuilder()
         b.activity(5)
@@ -109,6 +117,16 @@ class TestClaudeTurns(unittest.TestCase):
             line('assistant', '03:01:00', message={'role': 'assistant', 'content': 'handled'}),
         ])
         self.assertEqual(got, [[epoch('01:00:00'), epoch('01:01:00')], [epoch('03:00:00'), epoch('03:01:00')]])
+
+    def test_assistant_output_resuming_after_a_long_gap_without_a_prompt(self):
+        got = self.turns([
+            line('user', '02:00:00', message={'role': 'user', 'content': 'go'}),
+            line('assistant', '02:29:00', message={'role': 'assistant', 'content': 'working'}),
+            # eight hours later the assistant continues (resumed session), no prompt in between
+            line('assistant', '10:33:00', message={'role': 'assistant', 'content': 'again'}),
+            line('assistant', '10:40:00', message={'role': 'assistant', 'content': 'more'}),
+        ])
+        self.assertEqual(got, [[epoch('02:00:00'), epoch('02:29:00')], [epoch('10:33:00'), epoch('10:40:00')]])
 
     def test_unreadable_file(self):
         self.assertEqual(activity.claude_turns('/nonexistent/x.jsonl'), [])

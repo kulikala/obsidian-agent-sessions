@@ -16,11 +16,13 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 DEFAULT_GAP_SECONDS = 30 * 60
+# Within a turn, a silence this long ends the turn (the cache is independent of `--gap-minutes`).
+SEGMENT_GAP_SECONDS = 30 * 60
 MIN_SPAN_SECONDS = 60.0
 # A last turn whose final record is this recent is taken to still be running: it ends "now".
 LIVE_WINDOW_SECONDS = 120.0
 # Bumped whenever how turns are read changes: a cached entry of another version is recomputed.
-ACTIVITY_VERSION = 1
+ACTIVITY_VERSION = 2
 
 _TS_RE = re.compile(rb'"timestamp":"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?)Z"')
 # Claude Code user lines that carry text but aren't a prompt reaching the agent.
@@ -34,12 +36,16 @@ _NOT_A_TURN_PREFIXES = (
 
 
 class TurnBuilder:
-    """Feeds on `(time, is_prompt)` events in transcript order and yields `[start, end]` turns."""
+    """Feeds on events in transcript order and yields `[start, end]` turns. A prompt starts a
+    turn; activity extends the current one, unless it comes `SEGMENT_GAP_SECONDS` or more after
+    the turn's last record (the agent resumed on its own, e.g. after a compaction or a
+    resumed session), in which case it starts a new turn there."""
 
     def __init__(self) -> None:
         self.turns: List[List[float]] = []
         self._current: Optional[List[float]] = None
-        self._pre: Optional[List[float]] = None   # activity before the first prompt
+        self._pre: List[List[float]] = []    # activity before the first prompt
+        self._pre_current: Optional[List[float]] = None
 
     def prompt(self, t: float) -> None:
         self._current = [t, t]
@@ -47,20 +53,21 @@ class TurnBuilder:
 
     def activity(self, t: float) -> None:
         if self._current is not None:
-            if t > self._current[1]:
+            if t - self._current[1] >= SEGMENT_GAP_SECONDS:
+                self.prompt(t)
+            elif t > self._current[1]:
                 self._current[1] = t
-        elif self._pre is None:
-            self._pre = [t, t]
-        elif t > self._pre[1]:
-            self._pre[1] = t
-        elif t < self._pre[0]:
-            self._pre[0] = t
+        elif self.turns:
+            return
+        elif self._pre_current is None or t - self._pre_current[1] >= SEGMENT_GAP_SECONDS:
+            self._pre_current = [t, t]
+            self._pre.append(self._pre_current)
+        elif t > self._pre_current[1]:
+            self._pre_current[1] = t
 
     def finish(self) -> List[List[float]]:
         """Activity that precedes every prompt only counts when there is no prompt at all."""
-        if not self.turns and self._pre is not None:
-            return [self._pre]
-        return self.turns
+        return self.turns if self.turns else self._pre
 
 
 def join_turns(turns: List[List[float]], gap: float = DEFAULT_GAP_SECONDS,

@@ -751,7 +751,7 @@ Backs the activity calendar (§10.4), which asks for one period at a time: a day
 - **Codex**: an `event_msg` `user_message` (or `item_completed` UserMessage) with real text starts a turn (injected context such as AGENTS.md and bare slash commands do not); every record is activity.
 - **OpenCode**: a `user` message starts a turn; the `time_created` and `time_updated` of every `message` and `part` row are activity.
 
-Activity before the first prompt counts only when a transcript has no prompt at all.
+A silence of 30 minutes or more between two records inside a turn also ends it (the agent resumed on its own, for example after a compaction or a resumed session): the records after it start a new turn there. Activity before the first prompt counts only when a transcript has no prompt at all.
 
 Name, label, and category are the ones `json scan` reports (`category` is the group before `': '`). The scan cache supplies the names. Turns are cached per transcript in `activity-cache.json` (next to `scan-cache.json`): `path → {version, size, mtime, turns}`, recomputed only when the size or mtime changed, the algorithm `version` (`ACTIVITY_VERSION`) differs, or the file was written within the last two seconds (the same racy-mtime guard as the scan cache); OpenCode has no file, so its entry is keyed by the session's last-updated time. A changed transcript is parsed again in full. Entries for transcripts that no longer exist are dropped. A transcript file last written before `--from` cannot hold activity in the range and is never opened.
 
