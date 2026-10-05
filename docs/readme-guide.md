@@ -23,8 +23,8 @@ The README is the page people read before they have the plugin, while they insta
 Each point names the reader it serves.
 
 - **The value comes first.** The first lines say what the plugin is and what it does for you, with a screenshot. (Browser)
-- **A picture shows what words cannot.** One per main view at most, kept out of the middle of lists. (Browser)
-- **Features are what the reader can do.** Not how they were built or tested. One short line per feature; the full list lives in `docs/usage.md`. (Browser)
+- **Each feature is shown next to its picture.** A reader understands a feature faster by seeing it than by reading about it. Each feature gets a short heading, one or two sentences on what the reader gets, and the picture that shows it. The alt text says what the picture actually shows. A feature without a fitting picture keeps its heading and sentence; no picture is forced. `README.ja.md` uses the Japanese screenshots where they exist. (Browser)
+- **Features are what the reader can do.** Not how they were built or tested. The full list lives in `docs/usage.md`. (Browser)
 - **Limits that would stop an install are on the first screen.** Platform and agent support, so someone who cannot use it finds out before installing. (Browser)
 - **Requirements, then supported setups, then install steps.** In that order, so nobody starts an install that cannot work. Details beyond the steps live in `docs/installation.md`. (Installer)
 - **Troubleshooting starts with the symptom.** The bold part is what the user sees; the fix follows. Rare cases live in `docs/usage.md`. (Stuck user)
@@ -37,6 +37,16 @@ Each point names the reader it serves.
 - **Every sentence earns its place.** If removing it changes nothing a reader can decide or do, remove it. (Everyone)
 
 `README.ja.md` says the same as `README.md`, in Japanese.
+
+## docs/usage.md
+
+The README links here for every feature, so it is read by someone already using the plugin, who comes to:
+
+- **find how to do something**: a task-named heading, then numbered steps;
+- **understand what a screen shows**: what each part means, in the words the screen uses;
+- **fix a problem**: the symptom as seen, then the fix.
+
+What follows: headings name tasks or screens, not components. Procedures are numbered steps. UI names match `plugin/src/i18n/locales/en.ts`. Short tables only for comparable values (menu item → what it does). Pictures where they show a screen. Every fact the plugin's behavior depends on stays; how it was built goes to `design.md`.
 
 ## Reviewing a README change
 

@@ -10,22 +10,63 @@ Desktop only: macOS, Linux, and Windows (Claude Code only).
 
 ## Features
 
-- **The agent's own CLI in a tab.** Your settings, login, slash commands, hooks, skills and MCP servers work as in a terminal. Vault paths in the output open as links.
-- **Sessions keep running** when you close the tab or quit Obsidian. Reopen one to see its last screen and continue.
-- **State at a glance.** Working, waiting for you, unread reply, or done, with the same icon everywhere. A notice tells you when a session in another tab finishes or asks a question.
-- **Session manager.** Sessions grouped by category (name them `Category: Name`), sortable and filterable by state.
-- **Organize names and categories.** One of your agents suggests names and categories; nothing is renamed until you apply. It sends session excerpts to that agent (see [What Organize sends](#what-organize-sends)).
-- **Usage and cost.** Each agent's 5-hour and 7-day windows with time to reset and a weekly-pace forecast; estimated cost per session and category; a turn-by-turn analysis you can copy as Markdown. Calculated on your machine from the agents' local files.
-- **Activity calendar.** When each agent was working, by 7-day window, week or day. Click a block to see its prompts and open the session.
-- **Built-in editor** (Ctrl+G). Write the prompt in a pane under the terminal, with `@` file completion, normal paste, undo and IME.
-- **Restart session** applies changed settings or skills and keeps the conversation.
-- **Change model…** (Claude Code) switches model and effort.
-- **Welcome guide.** Checks Python and your agents, installs the helper program, and walks you through your first session.
-- **Agent skills.** Ask an agent about your usage, your other sessions, or how to use the plugin.
+### The agent's own CLI in a tab
 
-![The Session manager: sessions grouped by category with cost per window, and the 5-hour and 7-day usage analytics below](docs/images/manager.png)
+Each session is the agent's command-line program in an Obsidian tab, with your settings, login, slash commands, hooks, skills and MCP servers. Vault paths in the output open as links.
+
+![A Codex session in a terminal tab, asking whether to run a test command](docs/images/codex.png)
+
+### Start a session with any agent
+
+**New session** asks which agent to start and what to call it. Claude Code, Codex and OpenCode sessions share the same lists.
+
+![The New session dialog with Claude Code and Codex to choose from, and the name Docs: Release notes](docs/onboarding/en/new-session.png)
+
+### Every session and its state in the side panel
+
+Open tabs, running sessions without a tab, and recent ones, each with an icon for its state. Sessions keep running when you close the tab or quit Obsidian; reopen one to see its last screen.
+
+![The side panel: open tabs, running and recent sessions with state icons and categories, and the Needs input and Needs review counts at the top](docs/onboarding/en/side-panel.png)
+
+### Sessions by category, with usage and cost
+
+The **Session manager** groups sessions named `Category: Name` and shows their cost per 5-hour and 7-day window. Below, each agent's usage windows show the time to reset and whether you will reach the limit at your current pace. Costs are estimates, calculated on your machine from the agents' local files.
+
+![The Session manager: sessions grouped by category with model, effort and cost, and below, the 5-hour and 7-day windows and cost per category](docs/images/manager.png)
+
+### Names and categories suggested by an agent
+
+**Organize names and categories** has one of your agents suggest a name and category for recent sessions. Nothing is renamed until you press **Apply selected**. It sends session excerpts to that agent; see [What Organize sends](#what-organize-sends).
+
+![The Organize names and categories dialog: current and suggested names side by side, with one suggestion unchecked and a comment for the next try](docs/images/organize.png)
+
+### When each agent was working
+
+The **Activity calendar** shows working time as blocks, by 7-day window, week or day. Click a block to see its prompts and open the session.
 
 ![The activity calendar: a week of sessions as colored blocks, one lane per agent in each day, with hours and concurrency per agent](docs/images/calendar.png)
+
+### A built-in editor for prompts
+
+Press Ctrl+G to write the prompt in a pane under the terminal, with `@` file completion, normal paste, undo and IME, while the output stays visible.
+
+![The built-in editor under a Claude Code session, with a multi-line prompt and the Send and Back to prompt buttons](docs/onboarding/en/editor.png)
+
+### Rename, restart or analyze from the session menu
+
+Each session's ⋯ menu renames it, moves it to a category, compacts, archives, restarts or ends it, opens **Session analytics**, and copies its ID. **Restart session** picks up changed settings or skills and keeps the conversation. For Claude Code, **Change model…** switches model and effort.
+
+![A session's menu open in the side panel: Rename, Move to category, Compact session, Archive, Restart session, End session, Session analytics, Copy ID](docs/onboarding/en/row-menu.png)
+
+### Setup with the welcome guide
+
+On first install, the welcome guide checks Python and your agents, shows what the helper program will write before installing it, and walks you through your first session.
+
+![The Install agent-sessions dialog listing the install folder, Python, the hooks added to Claude Code's settings, and the vault's skill folders](docs/onboarding/en/install.png)
+
+### Ask an agent about your sessions
+
+Two agent skills let you ask an agent about your usage, your other sessions, or how to use the plugin.
 
 All features: [`docs/usage.md`](docs/usage.md).
 

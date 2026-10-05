@@ -1,85 +1,282 @@
 # Usage
 
-The features in detail: tabs, panels, the Session manager, naming and Organize, the built-in editor, the activity calendar, usage and limits, session states, the welcome guide, settings, the CLI, and less common troubleshooting. The [README](../README.md) has the overview.
+How to do things with Agent Sessions, what each screen shows, and what to do when something goes wrong. The [README](../README.md) has the overview, install and disclosures.
 
-## Sessions and tabs
+- [Start a session](#start-a-session)
+- [Work in a session tab](#work-in-a-session-tab)
+- [Side panel](#side-panel)
+- [Session states](#session-states)
+- [Session manager](#session-manager)
+- [Session menu](#session-menu)
+- [Name and group sessions](#name-and-group-sessions)
+- [Organize names and categories](#organize-names-and-categories)
+- [Restart, model and effort](#restart-model-and-effort)
+- [Built-in editor](#built-in-editor)
+- [Activity calendar](#activity-calendar)
+- [Usage and limits](#usage-and-limits)
+- [Agent skills](#agent-skills)
+- [Remote Control](#remote-control)
+- [Welcome guide](#welcome-guide)
+- [Settings](#settings)
+- [CLI](#cli)
+- [More troubleshooting](#more-troubleshooting)
 
-- One session per Obsidian tab, backed by a real PTY (a ConPTY on Windows; xterm.js). Close the tab or quit Obsidian and the session keeps running; reopen it and the last screen is replayed.
-- Claude Code, Codex, and OpenCode sessions mix freely in the same list, sorted and filtered together. Agents are auto-detected on first run; enable any of them, with per-agent path and environment-variable settings. "New session" asks which agent to start when more than one is enabled. OpenCode can also be started through `ollama launch opencode` to use a local model.
-- Icons, colors, and motion show each session's state (see [Session states](#session-states)), identical in the tab, the side panel, and the manager. A notice reports when a session in another tab finishes or needs an answer.
-- Paths printed in the output become clickable links when they resolve inside the vault. The tab header inserts the current note as `@path` and jumps to the previous prompt, the next prompt, or the last response.
-- `Cmd +`/`Cmd -`/`Cmd 0` (macOS) or `Ctrl+Shift+=`/`Ctrl+Shift+-`/`Ctrl+Shift+0` (other platforms) change the tab's font size. On non-macOS, `Ctrl+Shift+C`/`Ctrl+Shift+V` copy and paste, `Ctrl+Shift+W` closes the tab, and `Ctrl+Shift+P` opens the command palette; plain `Ctrl+<key>` combinations always reach the agent, not Obsidian.
+## Start a session
 
-## Side panel and Session manager
+1. Click **New session** (＋) in the side panel or the Session manager.
+2. If more than one agent is enabled, choose the agent.
+3. Type a name, optionally as `Category: Name` (see [Name and group sessions](#name-and-group-sessions)).
+4. Click **Start**. The session opens in a new tab.
 
-- The **side panel** (right sidebar) lists *open tabs*, *running* sessions (attached to the daemon but without a tab), and *recent* sessions; each row has a state icon, a category chip, and the name. A details pane shows model, effort, connection status, context usage, total tokens and cost, and the last prompt and response. A rate-limit view shows 5-hour and 7-day bars with a countdown to reset for each enabled agent.
-- The **Session manager** is the default view for a new tab. A session tree grouped by category (plus an "Other" group and an archive) sits above a collapsible, resizable usage-analytics panel: 5-hour and 7-day cards, a weekly-pace projection ("on track" or "will run out at --"), and a per-category cost bar, with one section per enabled agent when more than one is enabled. A sortable table shows last activity, model, effort, 5h/7d cost, and folder. Opening it never starts a session. The toolbar has a status filter (all, needs input, needs review, running, done, archived).
-- The row menu (⋯ or right-click) renames a session and moves it to a category, changes the model, compresses (`/compact`), restarts, opens the session analysis, copies the ID, ends the session, and archives it (end first, then archive).
+![The New session dialog with Claude Code and Codex to choose from, and the name Docs: Release notes](onboarding/en/new-session.png)
 
-## Naming, categories, and Organize
+- Agents are detected on first run. Turn each one on or off, and set its path and environment variables, under **Settings → Agents** (see [Settings](#settings)).
+- OpenCode can also start through `ollama launch opencode` to use a local model.
 
-Name a session as `Category: Name`: categories get a stable color and their own group in the manager. The rename dialog has one field with a dropdown of existing categories and free entry for a new one.
+## Work in a session tab
 
-**Organize names and categories** (⋯ menu of the side panel and the manager) proposes a `Category: Name` for recent, non-archived sessions (30 at most; by default only those without a name or a category) from the folder, the first prompt, the last few prompts and the last reply. Names are short noun phrases; categories are your existing projects or areas where one fits, and a new one only when none does. Each proposal has a one-line reason. To do it for a single session, use **Suggest name and category…** in that session's row menu. With Claude Code the model is Sonnet; the setting "Model for suggestions" switches to Haiku, which is faster. It uses the agent you already have: Claude Code, else Codex, else OpenCode (the dialog says which). Untick rows you don't like, comment on them, and press **Suggest again for unchecked**. **Apply selected** renames through the same path as the row menu; nothing changes before that. It sends session excerpts to that agent, see [Disclosures](../README.md#disclosures).
+Each session is one Obsidian tab running the agent in a real terminal (a PTY, or a ConPTY on Windows; drawn with xterm.js).
 
-## Restart, model, and effort
+- **Closing the tab or quitting Obsidian does not end the session.** Reopen it and the last screen is shown again.
+- **Paths in the output** that point inside the vault become links.
+- **A notice** tells you when a session in another tab finishes or needs an answer.
 
-- **Restart session** (row menu; running sessions only; asks first if the session is busy) ends the agent and resumes the same conversation in the same tab, to pick up changed settings, hooks, skills, or environment.
-- **Change model…** (row menu, running Claude Code sessions) picks a model (an alias such as Opus, Sonnet or Haiku, or a full model ID) and an effort level, and sends `/model` and `/effort` for what changed. `/model` also becomes Claude Code's default for new sessions.
+The tab header has these buttons:
 
-## Built-in editor
+| Button | Does |
+|---|---|
+| **Insert current note with @** | types the open note's path as `@path` |
+| **Previous instruction** | jumps to the previous prompt |
+| **Next instruction** | jumps to the next prompt |
+| **Last response** | jumps to the last response |
 
-Press Ctrl+G inside a session to edit the current prompt (or `/memory`, `/keybindings`, and so on) in a split pane under the terminal, with `@` file completion, autosave, and native paste, IME, and undo. The terminal output stays visible while you edit. For a Claude Code prompt the bar has model and effort dropdowns (set to the current values); if you change one, **Send** applies it with `/model` and `/effort` first and then submits the prompt. Esc returns to the input without sending. The key is the **editor key** setting (Ctrl+G, Ctrl+Q, or Option/Alt+G); each agent is configured to open its editor on it.
+Keys inside a session tab:
 
-## Activity calendar
+| Action | macOS | Windows, Linux |
+|---|---|---|
+| Larger, smaller, reset font | `Cmd +`, `Cmd -`, `Cmd 0` | `Ctrl+Shift+=`, `Ctrl+Shift+-`, `Ctrl+Shift+0` |
+| Copy, paste | — | `Ctrl+Shift+C`, `Ctrl+Shift+V` |
+| Close the tab | — | `Ctrl+Shift+W` |
+| Command palette | — | `Ctrl+Shift+P` |
 
-A calendar of when each agent was working, with a toggle for the period:
+On Windows and Linux, plain `Ctrl+<key>` always goes to the agent, not to Obsidian.
 
-- **7d** ("7日枠"; the default): 7 days aligned to the reset of your usage limit: Claude Code's 7-day window if Claude Code is enabled and its reset is known, else Codex's weekly window, else a Sunday-start week. Earlier periods step back by 7 days.
-- **Week**: Sunday to Saturday, local time.
-- **Day**: one day, 0:00 to 24:00, one wide column per agent.
+## Side panel
 
-The arrows move by one period and never go past the one that holds now; "Latest" returns to it. The chosen mode is remembered. Click a date in a day header to open that day.
+The side panel (right sidebar) lists sessions in three groups:
 
-Per day and per agent, a colored block marks the time a session was working, read from the transcripts: from your input to the agent until the agent's last output before your next input. Your input is what you typed (a slash command included) or your answer to a question the agent asked; notifications, reminders and messages from other sessions don't start a turn, they belong to the one running. A pause of 30 minutes or more inside a turn is not counted. The time a session's sub-agents (background agents, teammates) were working counts too, so work handed to sub-agents is counted while they run. Turns and sub-agent runs less than 30 minutes apart are joined into one block, so related work reads as one flow; a block under a minute shows as one minute. Overlapping sessions sit side by side. A title filter and per-agent cards show hours, session count, and peak concurrency. The calendar draws the sessions the Session manager lists (archived sessions and unnamed child sessions started by other sessions are left out). A segmented control picks how far apart turns may be and still join into one block (30 min, 1 h, or 2 h; default 30 min; the one-line explanation under the title states it). Each agent's summary card is also its show/hide switch: an "on" card is full strength with the agent's color bar and an open eye, an "off" card is dimmed and dashed with a closed eye and its lanes, blocks and day-mode columns disappear; at least one stays on, and the choice is remembered. Every block is drawn at least a few pixels tall, so a one-minute turn stays visible. In Day mode each session gets its own column instead of one lane per agent. Hover a block for its time range and name; click it to split the view: the calendar stays on the left and a panel opens on the right (drag the divider to resize, Close to go back). Its top shows the block: one row per turn of yours in it: when, how long, what you asked (or answered), and the response it ended with (folded behind a "Response" disclosure, closed each time the panel opens), its bottom the session's details, with "Open session" to jump to its tab. The calendar reloads itself while it is showing (when you come back to its tab, a few seconds after a session finishes a turn, and every minute while the period includes now), keeping your place and the open details. A thin line marks the current time in today's column, with the time at the axis. The title's ⓘ tooltip explains what a block is. Open the calendar from the Session manager toolbar, the side panel's ⋯ menu, or the command palette.
+| Group | Holds |
+|---|---|
+| **Open tabs** | sessions with a tab |
+| **Running** | sessions still running without a tab |
+| **Recent** | recent sessions |
 
-## Usage and limits
+![The side panel: open tabs, running and recent sessions with state icons and categories, and the Needs input and Needs review counts at the top](onboarding/en/side-panel.png)
 
-- Account-wide 5-hour and 7-day usage windows per agent, with the countdown to reset and a weekly-pace projection.
-- **Session analysis** (row menu): cost, tokens, turn count, and duration cards; input, output, and tool-use bars; and a turn-by-turn table. Click rows to select a range and copy the result as Markdown.
-- Both are computed from each agent's own transcripts.
-
-## Agent skills
-
-Two skills are installed together with the program, into the vault only:
-
-- `agent-sessions` lets a Claude Code, Codex, or OpenCode session started in the vault read the 5-hour and 7-day usage windows and a session's tokens and cost, list other sessions with their status and last messages, and, only when you ask for it, start a new session (in a folder, with a name, on any enabled agent, Claude Code optionally with Remote Control).
-- `agent-sessions-help` answers questions about using the plugin (where something is, how to rename, organize, or restart a session, how to use the built-in editor, what is supported) in the language you ask in, from a reference written against the plugin's own menus and settings.
-
-## Remote Control
-
-For a Claude Code session started with Remote Control, renaming it in Agent Sessions sends `/rename` to the running session, so the name also changes in its Remote Control session (claude.ai and the Claude app).
+- Each row has a state icon, an agent icon, a category chip and the name.
+- The **details pane** below shows the selected session's model, effort, connection status, context usage, total tokens and cost, and the last instruction and reply.
+- At the bottom, each enabled agent's 5-hour and 7-day usage bars count down to their reset.
 
 ## Session states
 
-The terminal tab, the side panel rows, and the manager rows all share the same icon, color, and motion for a session's state: connecting, working (model is responding), running a shell command, waiting for your answer (a question or permission prompt), unread (finished responding, tab not yet brought to front), editing (built-in editor open), idle, detached (tab exists but not yet connected), compacted (just ran `/compact`, context was reset), exited, and error. Animated states respect `prefers-reduced-motion`.
+The tab, the side panel and the Session manager show the same icon, color and motion for a session's state:
 
-These are further grouped into the same buckets Claude's own app filters sessions by — needs input, needs review, running, done — with matching icons and colors for each, plus an archived bucket. The Session manager's toolbar has a status-filter menu for the same six buckets (all / needs input / needs review / running / done / archived).
+| State | Means |
+|---|---|
+| **Connecting** | the tab is connecting to the session |
+| **Working** | the model is responding |
+| **Running a command** | the agent is running a shell command |
+| **Waiting for your answer** | a question or permission prompt is open |
+| **Waiting for input** | it finished responding and you have not looked at the tab yet |
+| **Editing** | the built-in editor is open |
+| **Compacted (context was reset)** | `/compact` just ran |
+| **Idle** | nothing is happening |
+| **Not connected** | the tab exists but is not connected yet |
+| **Exited** | the agent has exited |
+| **Error** | an error occurred |
 
-A small icon next to the state mark shows which agent a session belongs to (Claude Code, Codex, or OpenCode) — each agent's own mark (single-color, matching the rest of the UI), not a colored brand logo.
+- Animated states respect `prefers-reduced-motion`.
+- A small icon next to the state shows the agent (Claude Code, Codex or OpenCode), in one color like the rest of the UI.
+- States are grouped the way Claude's own app filters sessions: **Needs input**, **Needs review**, **Running**, **Done**, plus **Archived**. The side panel shows the Needs input and Needs review counts, and the Session manager filters by these groups.
+
+## Session manager
+
+The Session manager is what a new empty tab shows. It also opens from **Session manager** in the side panel and the command palette. Opening it never starts a session.
+
+![The Session manager: sessions grouped by category with model, effort and cost, and below, the 5-hour and 7-day windows and cost per category](images/manager.png)
+
+- **Session list.** Sessions grouped by category, plus an "Other" group and the archive. The table sorts by last activity, model, effort, 5h and 7d cost, and folder.
+- **Status filter** (toolbar): All, Needs input, Needs review, Running, Done, Archived.
+- **Analysis** (below, collapsible and resizable): 5-hour and 7-day cards with the time to reset, a weekly-pace forecast ("on track", or when it will run out), and cost by category. With more than one agent enabled, there is one section per agent.
+
+## Session menu
+
+Open it with ⋯ on a row, or right-click the row, in the side panel or the Session manager.
+
+![A session's menu open in the side panel: Rename, Move to category, Compact session, Archive, Restart session, End session, Session analytics, Copy ID](onboarding/en/row-menu.png)
+
+| Item | Does |
+|---|---|
+| **Rename** | renames the session |
+| **Move to category…** | changes its category |
+| **Suggest name and category…** | asks an agent for a name and category for this session |
+| **Change model…** | switches model and effort (running Claude Code sessions) |
+| **Compact session** | sends `/compact` |
+| **Restart session** | restarts the agent in the same conversation |
+| **Session analytics** | opens the turn-by-turn analysis |
+| **Copy ID** | copies the session ID |
+| **End session** | ends the agent |
+| **Archive** | moves the session to the archive |
+
+To archive a running session, end it first.
+
+## Name and group sessions
+
+Name a session `Category: Name`. Each category gets a stable color and its own group in the Session manager.
+
+- **Rename** has one field, with a dropdown of existing categories; type a new one to create it.
+- **Move to category…** changes only the category.
+
+![The Move to category dialog for Storefront: Checkout total flicker, with the list of existing categories](onboarding/en/move-category.png)
+
+## Organize names and categories
+
+An agent proposes a `Category: Name` for recent sessions from their folder, first prompt, last few prompts and last reply.
+
+1. Open the ⋯ menu of the side panel or the Session manager and choose **Organize names and categories**. For one session, use **Suggest name and category…** in its row menu.
+2. The dialog says which agent it will use. Press **Suggest**.
+3. Untick a suggestion you don't want, add a comment if you like, and press **Suggest again for unchecked**.
+4. Press **Apply selected**. Nothing is renamed before this.
+
+![The Organize names and categories dialog: current and suggested names side by side, with one suggestion unchecked and a comment for the next try](images/organize.png)
+
+- It covers up to 30 recent sessions that are not archived; by default only those without a name or a category.
+- Names are short noun phrases. Categories reuse your existing projects or areas where one fits, and a new one only when none does. Each suggestion has a one-line reason.
+- The agent is Claude Code, else Codex, else OpenCode. With Claude Code the model is Sonnet; **Model for suggestions** switches to Haiku, which is faster.
+- **Apply selected** renames the same way as **Rename**.
+- It sends session excerpts to that agent: see [What Organize sends](../README.md#what-organize-sends).
+
+## Restart, model and effort
+
+**Restart session** ends the agent and resumes the same conversation in the same tab. Use it after changing settings, hooks, skills or environment.
+
+1. Open the session's ⋯ menu. (Restart is there for running sessions.)
+2. Choose **Restart session**. If the session is busy, it asks first.
+
+![The session menu with Restart session highlighted](onboarding/en/restart.png)
+
+**Change model…** (running Claude Code sessions) picks a model (an alias such as Opus, Sonnet or Haiku, or a full model ID) and an effort level, and sends `/model` and `/effort` for what changed. `/model` also becomes Claude Code's default for new sessions.
+
+## Built-in editor
+
+1. In a session, press **Ctrl+G** (the **Editor key** setting: Ctrl+G, Ctrl+Q or Option/Alt+G).
+2. Write in the pane under the terminal. It has `@` file completion, autosave, and normal paste, IME and undo. The output stays visible.
+3. Press **Send** to submit, or **Back to prompt (Esc)** to return without sending.
+
+![The built-in editor under a Claude Code session, with a multi-line prompt and the Send and Back to prompt buttons](onboarding/en/editor.png)
+
+- It also opens for anything the agent hands to an editor, such as `/memory` or `/keybindings`.
+- For a Claude Code prompt, the bar has **Model** and **Effort** dropdowns set to the current values. If you change one, **Send** applies it with `/model` and `/effort` before the prompt.
+- Each agent is configured to open its editor on the editor key.
+
+## Activity calendar
+
+Shows when each agent was working. Open it from the Session manager toolbar, the side panel's ⋯ menu, or the command palette (**Open activity calendar**).
+
+![The activity calendar: a week of sessions as colored blocks, one lane per agent in each day, with hours and concurrency per agent](images/calendar.png)
+
+| Mode | Shows |
+|---|---|
+| **7d** (default) | 7 days aligned to your usage limit's reset |
+| **Week** | Sunday to Saturday, local time |
+| **Day** | one day, 0:00 to 24:00 |
+
+- **7d** follows Claude Code's 7-day window if Claude Code is enabled and its reset is known, else Codex's weekly window, else a week from Sunday. Earlier periods step back 7 days.
+- In Day mode each session gets its own column instead of one lane per agent.
+- The arrows move one period and stop at the current one; **Latest** returns to it. The mode is remembered. Click a date to open that day.
+
+**Reading a block**
+
+- A block runs from your input to the agent's last output before your next input. Your input is what you typed (a slash command too) or your answer to the agent's question. Notifications, reminders and messages from other sessions do not start a turn.
+- Time sub-agents (background agents, teammates) spend working counts too.
+- A pause of 30 minutes or more inside a turn is not counted.
+- Turns less than 30 minutes apart join into one block. The **30 min / 1 h / 2 h** control changes this gap; the line under the title states the current one.
+- A block under a minute shows as one minute and is always a few pixels tall. Overlapping sessions sit side by side.
+- The calendar shows the sessions the Session manager lists: archived sessions and unnamed child sessions started by other sessions are left out.
+
+**Working with it**
+
+- Hover a block for its time range and name.
+- Click a block to open a details panel on the right (drag the divider to resize; **Close** to go back). It lists each of your turns in the block: when, how long, what you asked or answered, and the final reply under **Response**. Below are the session's details and **Open session**.
+- Each agent's summary card (hours, sessions, peak concurrency) is also its show/hide switch. At least one agent stays on, and the choice is remembered.
+- **Filter by title** narrows the blocks.
+- A line marks the current time in today's column.
+- The calendar reloads while it is showing: when you come back to its tab, a few seconds after a session finishes a turn, and every minute while the period includes now. It keeps your place and the open details.
+
+## Usage and limits
+
+- Each agent's account-wide 5-hour and 7-day windows, with the countdown to reset and a weekly-pace forecast, in the side panel and the Session manager.
+- **Session analytics** (session menu): cost, tokens, turns and duration; input, output and tool-use bars; and a turn-by-turn table. Select rows to choose a range, and copy it as Markdown.
+- Both come from each agent's own local files.
+
+## Agent skills
+
+Two skills are installed with the program, into the vault only:
+
+| Skill | Lets an agent |
+|---|---|
+| `agent-sessions` | read usage and session details, list sessions, and start one when you ask |
+| `agent-sessions-help` | answer questions about using the plugin |
+
+- `agent-sessions` works from a Claude Code, Codex or OpenCode session started in the vault. It reads the 5-hour and 7-day windows and a session's tokens and cost, lists other sessions with their status and last messages, and starts a new session only when you ask (in a folder, with a name, on any enabled agent; Claude Code optionally with Remote Control).
+- `agent-sessions-help` answers in the language you ask in: where something is, how to rename, organize or restart, how to use the built-in editor, what is supported.
+
+## Remote Control
+
+For a Claude Code session started with Remote Control, renaming it in Agent Sessions sends `/rename` to the session, so the name also changes in Remote Control (claude.ai and the Claude app).
 
 ## Welcome guide
 
-The guide opens by itself on first install, and after an update only when the new version has something to show. It starts with the language, then sets up the program and the agents (a missing agent shows its official install command to copy, plus a link to its documentation, and **Detect again**), and has you start a real session, switch tabs, rename it, and send a prompt from the built-in editor, ticking each step as you do it (**Skip** passes a step over). It ends with restart, organize, and the Session manager. Closing the guide keeps your place: **Continue the welcome guide** (command palette or settings) resumes, and **Start the welcome guide from the beginning** runs it again. Pictures come from GitHub while the guide is open (see [Disclosures](../README.md#disclosures)); **Load the guide's pictures from GitHub** in settings turns that off, and **Show the welcome guide after updates** stops it reopening after updates.
+It opens on first install, and after an update only when the new version has something to show.
 
-## More
+1. Choose the language.
+2. Set up the program and the agents. A missing agent shows its official install command to copy, a link to its documentation, and **Detect again**.
 
-- **OpenCode status line**: a bottom row in OpenCode's session screen with what OpenCode's own screen doesn't already show, the submit-key symbol and whether the session is busy, idle, or waiting. Turned on with OpenCode; nothing to configure.
-- **Bilingual UI**: English and Japanese, with an "automatic" mode that follows Obsidian's own language setting.
+   ![The Install agent-sessions dialog listing the install folder, Python, the hooks added to Claude Code's settings, and the vault's skill folders](onboarding/en/install.png)
+
+3. Start a real session, switch tabs, rename it, and send a prompt from the built-in editor. Each step is ticked as you do it; **Skip** passes one over.
+4. Read about restart, organize and the Session manager.
+
+- Closing the guide keeps your place: **Continue the welcome guide** (command palette or settings) resumes it, and **Start the welcome guide from the beginning** runs it again.
+- Its pictures load from GitHub while it is open; **Load the guide's pictures from GitHub** turns that off (see [Disclosures](../README.md#disclosures)).
+- **Show the welcome guide after updates** stops it reopening after updates.
 
 ## Settings
 
-Font family and size, padding (comfortable/compact/none), submit key, editor key, recent-sessions count, idle notifications, agents (Claude Code/Codex/OpenCode — enabled, path, environment variables; for OpenCode also whether to start it directly or through `ollama launch opencode`, and the Ollama model to use, chosen from `ollama list` or typed in), path to `agent-sessions`, terminal scrollback, built-in editor height, display language (auto/Japanese/English), whether the welcome guide reopens after updates, and the saved heights of the side panel's details pane and the manager's analytics panel.
+![Settings → Agents: Claude Code and Codex turned on with their executable paths and environment variables, OpenCode turned off](onboarding/en/agents.png)
+
+| Setting | Values |
+|---|---|
+| **Font**, **Font size** | terminal font |
+| **Padding** | Comfortable, Compact, None |
+| **Submit key** | Enter by default |
+| **Editor key** | Ctrl+G, Ctrl+Q, Option/Alt+G |
+| **Recent count (side panel)** | number of recent sessions |
+| **Notify when waiting for input** | on, off |
+| **Agents** | per agent: on/off, **Executable**, **Environment variables**, **Find again** |
+| **Launch with** (OpenCode) | `opencode` or `ollama launch opencode` |
+| **Ollama model** (OpenCode) | from `ollama list`, or typed |
+| **agent-sessions location** | path; empty uses `~/bin/agent-sessions` if it exists, else the installed copy |
+| **Scrollback lines** | terminal history |
+| **Editor pane height (%)** | built-in editor height |
+| **Model for suggestions** | Sonnet, Haiku |
+| **Language** | Auto, English, Japanese |
+| **Show the welcome guide after updates** | on, off |
+| **Load the guide's pictures from GitHub** | on, off |
+
+- **Language: Auto** follows Obsidian's own language.
+- The heights of the side panel's details pane and the Session manager's analysis panel are saved as you drag them.
+- With OpenCode on, a status line row in OpenCode's session screen shows the submit-key symbol and whether the session is busy, idle or waiting. There is nothing to configure.
 
 ## CLI
 
@@ -97,12 +294,12 @@ agent-sessions show [ID|NAME] [--json]   # one session's usage and last messages
 agent-sessions stats [--json]     # 5-hour/7-day usage windows per agent
 ```
 
-`agent-sessions json` is the machine-readable interface the plugin itself uses (`scan`, `live`, `detail`, `usage`, `stats`); `hook` and `status` back the Claude Code hooks and `statusLine` described above; `edit` is the receiving end of the built-in editor.
-
-On Windows the terminal UI (`agent-sessions` with no arguments) and `agent-sessions attach` are not available (they need `curses` and `termios`); the other commands, the built-in editor included, work.
+- `agent-sessions json` is the machine-readable interface the plugin uses (`scan`, `live`, `detail`, `usage`, `stats`).
+- `hook` and `status` serve Claude Code's hooks and `statusLine`; `edit` receives the built-in editor.
+- On Windows, the terminal UI (`agent-sessions` with no arguments) and `agent-sessions attach` are not available (they need `curses` and `termios`). The other commands, the built-in editor included, work.
 
 ## More troubleshooting
 
-- **A Claude Code hook fails with something like `node: not found`** (often another plugin's own hook script) — node is likely installed through a version manager (mise, nvm, asdf, volta) whose shell integration only loads in an interactive shell (`.zshrc`/`.bashrc`), not the login-but-non-interactive shell a session's environment is normally built from. The plugin also probes an interactive shell's `PATH` and merges it in (`docs/design.md`'s §4.2), so this should self-correct on the next session; if it doesn't, check that `$SHELL -i -c 'echo $PATH'` actually includes node's directory from a regular terminal.
-- **The program cannot be installed on Windows (Python or Claude Code not found)** — the install dialog offers **Install Python with WinGet** / **Install Claude Code with WinGet**; each runs `winget install` per user, with no administrator prompt, once you click. If the dialog says WinGet is missing, update "App Installer" from the Microsoft Store. A `python.exe` that is only the Microsoft Store's empty alias is not used; install Python with WinGet or from python.org.
-- **Claude Code in WSL, Obsidian on Windows** — not supported (see [Supported environments](../README.md#supported-environments)). Run Obsidian in WSL through WSLg instead.
+- **A Claude Code hook fails with something like `node: not found`** (often another plugin's hook script). Node is probably installed through a version manager (mise, nvm, asdf, volta) that loads only in an interactive shell (`.zshrc`, `.bashrc`). The plugin also reads an interactive shell's `PATH` ([design.md §4.2](design.md)), so the next session should work. If not, check in a terminal that `$SHELL -i -c 'echo $PATH'` includes node's folder.
+- **The program cannot be installed on Windows (Python or Claude Code not found).** The install dialog offers **Install Python with WinGet** and **Install Claude Code with WinGet**; each runs `winget install` per user, without an administrator prompt, when you click it. If the dialog says WinGet is missing, update "App Installer" from the Microsoft Store. A `python.exe` that is only the Microsoft Store's empty alias is not used; install Python with WinGet or from python.org.
+- **Claude Code in WSL, Obsidian on Windows.** Not supported (see [Supported environments](../README.md#supported-environments)). Run Obsidian in WSL through WSLg.
