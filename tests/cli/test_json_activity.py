@@ -170,9 +170,10 @@ class TestActivityOutput(unittest.TestCase):
         after = self.by_id(jsonout.activity_output(*args))[sid]
         self.assertEqual(pairs(after), [[epoch('04:00:00'), epoch('04:50:20')]])             # one 50-minute block
         span = after['spans'][0]
-        # only the typed prompt is listed; the notification still counted as work
-        self.assertEqual([(t['prompt'], t['kind'], t['reply']) for t in span['turns']], [('build it', 'prompt', 'dispatching')])
-        self.assertEqual(span['final'], 'all done')
+        # one human turn: the notification at 04:50 continues it (it counted as work, it isn't a turn),
+        # and the turn's own work is 30 s + 20 s; the hours of sub-agent work make up the block
+        self.assertEqual([(t['prompt'], t['kind'], t['reply'], round(t['active'])) for t in span['turns']],
+                         [('build it', 'prompt', 'all done', 50)])
 
     def test_real_shaped_subagent_files_lengthen_the_blocks(self):
         sid = '55555555-5555-5555-5555-555555555555'

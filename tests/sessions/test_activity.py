@@ -6,12 +6,13 @@ import unittest
 from agentsessions.sessions import activity
 
 
-def turn(start, end, prompt='p', kind='prompt', reply=''):
-    return [start, end, prompt, kind, reply]
+def turn(start, end, prompt='p', kind='prompt', reply='', segments=None):
+    return [start, end, prompt, kind, reply, segments if segments is not None else [[start, end]]]
 
 
-def tdict(start, end, prompt='p', kind='prompt', reply=''):
-    return {'start': start, 'end': end, 'prompt': prompt, 'kind': kind, 'reply': reply}
+def tdict(start, end, prompt='p', kind='prompt', reply='', active=None):
+    return {'start': start, 'end': end, 'active': end - start if active is None else active,
+            'prompt': prompt, 'kind': kind, 'reply': reply}
 
 
 def core(turns):
@@ -19,13 +20,24 @@ def core(turns):
 
 
 class TestJoinTurns(unittest.TestCase):
-    def test_joins_turns_closer_than_the_gap_and_lists_only_prompts(self):
-        # turn ends 600, next prompt at 1200 (gap 600 < 1800): one block; the notification and the
-        # sub-agent run count as work but aren't listed; `final` is the last answer in the block
-        got = activity.join_turns([turn(0, 600, 'a', reply='first'), turn(1200, 1500, 'b', 'notification', 'second'),
-                                   turn(1000, 2500, '', 'subagent')], gap=1800)
-        self.assertEqual(got, [{'start': 0, 'end': 2500, 'final': 'second',
-                                'turns': [tdict(0, 600, 'a', reply='first')]}])
+    def test_joins_turns_closer_than_the_gap_and_lists_only_human_turns(self):
+        # turn 1 ends 600, turn 2 starts at 1200 (gap 600 < 1800): one block; a sub-agent run and
+        # activity nobody started count as work but aren't listed
+        got = activity.join_turns([turn(0, 600, 'a', reply='first'), turn(1200, 1500, 'b', 'answer', 'second'),
+                                   turn(1000, 2500, '', 'subagent'), turn(2600, 2700, '', 'resume')], gap=1800)
+        self.assertEqual(got, [{'start': 0, 'end': 2700, 'turns': [
+            tdict(0, 600, 'a', reply='first'), tdict(1200, 1500, 'b', 'answer', 'second')]}])
+
+    def test_a_turns_segments_are_separate_work_not_the_hours_between_them(self):
+        # one human turn with activity at 0-600 and again at 10 000-10 300 (idle in between)
+        t = turn(0, 10300, 'long', segments=[[0, 600], [10000, 10300]])
+        got = activity.join_turns([t], gap=1800)
+        self.assertEqual([(b['start'], b['end']) for b in got], [(0, 600), (10000, 10300)])
+        self.assertEqual([x['active'] for b in got for x in b['turns']], [600, 300])
+        # a gap setting wide enough joins them again into one block listing the turn once
+        joined = activity.join_turns([t], gap=3 * 3600)
+        self.assertEqual([(b['start'], b['end'], len(b['turns']), b['turns'][0]['active']) for b in joined],
+                         [(0, 10300, 1, 900)])
 
     def test_gap_is_exclusive_of_the_limit(self):
         # exactly the gap apart starts a new block
@@ -76,13 +88,16 @@ class TestTurnBuilder(unittest.TestCase):
         b.activity(20)
         self.assertEqual(core(b.finish()), [turn(10, 20, '')[:4]])
 
-    def test_a_long_silence_inside_a_turn_starts_a_new_turn(self):
+    def test_a_long_silence_inside_a_turn_opens_a_new_segment_of_the_same_turn(self):
         b = activity.TurnBuilder()
         b.prompt(0)
         b.activity(600)
-        b.activity(600 + 8 * 3600)          # the agent resumed hours later without a prompt
+        b.activity(600 + 8 * 3600)          # the agent carried on hours later without a prompt
         b.activity(600 + 8 * 3600 + 300)
-        self.assertEqual(core(b.finish()), [[0, 600, '', 'prompt'], [600 + 8 * 3600, 600 + 8 * 3600 + 300, '', 'resume']])
+        turns = b.finish()
+        self.assertEqual(len(turns), 1)
+        self.assertEqual(turns[0][5], [[0, 600], [600 + 8 * 3600, 600 + 8 * 3600 + 300]])
+        self.assertEqual(turns[0][1], 600 + 8 * 3600 + 300)
 
     def test_a_transcript_with_no_prompt_is_one_turn(self):
         b = activity.TurnBuilder()
@@ -137,17 +152,18 @@ class TestClaudeTurns(unittest.TestCase):
         # meta and command-output lines are skipped; sub-agent work still extends the turn
         self.assertEqual(core(got), [[epoch('01:00:00'), epoch('01:02:00'), 'go', 'prompt']])
 
-    def test_a_task_notification_wakes_the_agent_and_starts_a_turn(self):
+    def test_a_notification_continues_the_current_turn_and_does_not_start_one(self):
         got = self.turns([
-            line('user', '01:00:00', message={'role': 'user', 'content': 'go'}),
+            line('user', '01:00:00', origin={'kind': 'human'}, message={'role': 'user', 'content': 'go'}),
             line('assistant', '01:01:00', message={'role': 'assistant', 'content': 'started'}),
-            line('user', '03:00:00', message={'role': 'user', 'content': '<task-notification>done</task-notification>'}),
-            line('assistant', '03:01:00', message={'role': 'assistant', 'content': 'handled'}),
+            line('user', '01:20:00', message={'role': 'user', 'content': '<task-notification>done</task-notification>'}),
+            line('user', '01:21:00', message={'role': 'user', 'content': 'Another Claude session sent a message:\n<teammate-message>x</teammate-message>'}),
+            line('user', '01:22:00', origin={'kind': 'task-notification'}, message={'role': 'user', 'content': 'x y'}),
+            line('assistant', '01:23:00', message={'role': 'assistant', 'content': 'handled'}),
         ])
-        self.assertEqual(core(got), [[epoch('01:00:00'), epoch('01:01:00'), 'go', 'prompt'],
-                               [epoch('03:00:00'), epoch('03:01:00'), 'done', 'notification']])
+        self.assertEqual(core(got), [[epoch('01:00:00'), epoch('01:23:00'), 'go', 'prompt']])
 
-    def test_assistant_output_resuming_after_a_long_gap_without_a_prompt(self):
+    def test_assistant_output_resuming_after_a_long_gap_continues_the_turn_as_a_new_segment(self):
         got = self.turns([
             line('user', '02:00:00', message={'role': 'user', 'content': 'go'}),
             line('assistant', '02:29:00', message={'role': 'assistant', 'content': 'working'}),
@@ -155,8 +171,36 @@ class TestClaudeTurns(unittest.TestCase):
             line('assistant', '10:33:00', message={'role': 'assistant', 'content': 'again'}),
             line('assistant', '10:40:00', message={'role': 'assistant', 'content': 'more'}),
         ])
-        self.assertEqual(core(got), [[epoch('02:00:00'), epoch('02:29:00'), 'go', 'prompt'],
-                               [epoch('10:33:00'), epoch('10:40:00'), '', 'resume']])
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0][5], [[epoch('02:00:00'), epoch('02:29:00')], [epoch('10:33:00'), epoch('10:40:00')]])
+
+    def test_the_answer_to_a_question_starts_a_turn_the_question_ends_one(self):
+        # the shape of a real transcript: a typed prompt, notifications, an AskUserQuestion, its answer
+        ask = {'role': 'assistant', 'content': [{'type': 'tool_use', 'id': 'toolu_1', 'name': 'AskUserQuestion', 'input': {}}]}
+        answer = {'role': 'user', 'content': [{'type': 'tool_result', 'tool_use_id': 'toolu_1',
+                  'content': 'Your questions have been answered: "Which?"="Keep it". You can now continue.'}]}
+        got = self.turns([
+            line('user', '10:34:31', origin={'kind': 'human'}, message={'role': 'user', 'content': 'the logic is wrong'}),
+            line('assistant', '10:34:52', message={'role': 'assistant', 'content': [{'type': 'tool_use', 'name': 'Bash'}]}),
+            line('user', '10:35:03', message={'role': 'user', 'content': [{'type': 'tool_result', 'content': 'ok'}]}),
+            line('user', '10:38:43', message={'role': 'user', 'content': 'Another Claude session sent a message:\n<teammate-message>x</teammate-message>'}),
+            line('assistant', '10:41:06', message=ask),
+            line('user', '10:45:41', toolUseResult={'answers': {'Which?': 'Keep it'}}, message=answer),
+            line('assistant', '10:46:49', message={'role': 'assistant', 'content': [{'type': 'text', 'text': 'Kept as is.'}]}),
+            line('user', '10:52:09', origin={'kind': 'human'}, message={'role': 'user', 'content': 'that is all wrong'}),
+        ])
+        self.assertEqual(core(got), [
+            [epoch('10:34:31'), epoch('10:41:06'), 'the logic is wrong', 'prompt'],
+            [epoch('10:45:41'), epoch('10:46:49'), 'Keep it', 'answer'],
+            [epoch('10:52:09'), epoch('10:52:09'), 'that is all wrong', 'prompt'],
+        ])
+        self.assertEqual(got[1][4], 'Kept as is.')
+
+    def test_an_answer_is_read_from_the_tool_result_text_when_there_is_no_tool_use_result(self):
+        answer = {'role': 'user', 'content': [{'type': 'tool_result', 'tool_use_id': 't',
+                  'content': 'Your questions have been answered: "A"="x", "B"="y". Continue.'}]}
+        got = self.turns([line('user', '01:00:00', message=answer)])
+        self.assertEqual(core(got), [[epoch('01:00:00'), epoch('01:00:00'), 'x; y', 'answer']])
 
     def test_each_turn_keeps_the_agents_last_answer_from_the_main_thread(self):
         got = self.turns([
@@ -171,17 +215,17 @@ class TestClaudeTurns(unittest.TestCase):
         self.assertEqual(len(got[0][4]), activity.REPLY_CHARS)
         self.assertEqual(got[1][4], '')
 
-    def test_kinds_and_prompt_text(self):
+    def test_only_the_persons_own_input_starts_a_turn(self):
         got = self.turns([
             line('user', '03:00:00', message={'role': 'user', 'content': '<task-notification>done</task-notification>'}),
             line('user', '04:00:00', message={'role': 'user', 'content': 'Another Claude session sent a message: hi'}),
             line('user', '05:00:00', message={'role': 'user', 'content': '<command-name>/foo</command-name>'}),
             line('user', '06:00:00', origin={'kind': 'task-notification'}, message={'role': 'user', 'content': 'x y'}),
+            line('user', '06:30:00', message={'role': 'user', 'content': 'This session is being continued from a previous conversation'}),
             line('user', '07:00:00', message={'role': 'user', 'content': [{'type': 'text', 'text': 'z' * 500}]}),
         ])
-        self.assertEqual([t[3] for t in got], ['notification', 'notification', 'prompt', 'notification', 'prompt'])
-        self.assertEqual(got[0][2], 'done')
-        self.assertEqual(len(got[4][2]), activity.PROMPT_CHARS)
+        self.assertEqual([(t[2][:3], t[3]) for t in got], [('/fo', 'prompt'), ('zzz', 'prompt')])
+        self.assertEqual(len(got[1][2]), activity.PROMPT_CHARS)
 
     def test_a_slash_command_reads_as_one_line(self):
         got = self.turns([

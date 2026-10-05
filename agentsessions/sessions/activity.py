@@ -1,12 +1,15 @@
 """Activity spans: when an agent was actually working in a session.
 
-A *turn* runs from the moment a prompt reaches the agent (a typed prompt, or a notification
-that wakes it, e.g. a finished background task) to the last thing the agent recorded before the
-next prompt. Consecutive turns whose gap (end of one to the start of the next) is shorter than
-the gap setting are joined into one block, so a run of related work reads as one flow. This
-module holds the pure turn/span arithmetic, the cache of per-transcript turns, and the Claude
-Code transcript reader; the Codex and OpenCode readers live next to their own parsing
-(`agents/codex/rollout.py`, `agents/opencode/scan.py`).
+A *turn* starts with a human input (a typed prompt, a slash command the person typed, or the
+person's answer to a question the agent asked) and lasts until the agent's last output before
+the next human input. Anything else that reaches the agent in between (an injected notification,
+a system reminder, a compaction summary, a command's caveat or output) continues the current
+turn instead of starting one. Inside a turn, a silence of `SEGMENT_GAP_SECONDS` or more ends the
+activity there; records after it are a new *segment* of the same turn, so idle hours aren't
+counted. Segments, and the runs of a session's sub-agents, are joined into *blocks* when they are
+less than the gap setting apart. This module holds that arithmetic, the cache of per-transcript
+turns, and the Claude Code transcript reader; the Codex and OpenCode readers live next to their
+own parsing (`agents/codex/rollout.py`, `agents/opencode/scan.py`).
 """
 
 import json
@@ -24,15 +27,16 @@ MIN_SPAN_SECONDS = 60.0
 # A last turn whose final record is this recent is taken to still be running: it ends "now".
 LIVE_WINDOW_SECONDS = 120.0
 # Bumped whenever how turns are read changes: a cached entry of another version is recomputed.
-ACTIVITY_VERSION = 6
+ACTIVITY_VERSION = 7
 # How much of the agent's last answer is kept per turn (and per block, as `final`).
 REPLY_CHARS = 400
 # How much of a turn's prompt is kept (in the cache and in `json activity`).
 PROMPT_CHARS = 200
-# What started a turn: a typed prompt, an injected notification that woke the agent, the agent
-# carrying on by itself after a long silence, or (`subagent`) a run of a sub-agent's own
-# transcript. Only prompts are listed in `json activity`'s turns; the rest still count as work.
-KIND_PROMPT, KIND_NOTIFICATION, KIND_RESUME, KIND_SUBAGENT = 'prompt', 'notification', 'resume', 'subagent'
+# What started a turn: a typed prompt, or the person's answer to a question the agent asked.
+# `resume` (activity with no human input before it) and `subagent` (a run of a sub-agent's own
+# transcript) are not turns a person started: they count as work but are not listed.
+KIND_PROMPT, KIND_ANSWER, KIND_RESUME, KIND_SUBAGENT = 'prompt', 'answer', 'resume', 'subagent'
+LISTED_KINDS = (KIND_PROMPT, KIND_ANSWER)
 
 _TS_RE = re.compile(rb'"timestamp":"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?)Z"')
 # Claude Code user lines that are slash-command scaffolding (the caveat before a command, the
@@ -51,72 +55,85 @@ _NOT_A_TURN_PREFIXES = (
 
 
 class TurnBuilder:
-    """Feeds on events in transcript order and yields turns `[start, end, prompt, kind, reply]`. A
-    prompt starts a turn; activity extends the current one, unless it comes
-    `SEGMENT_GAP_SECONDS` or more after the turn's last record (the agent resumed on its own,
-    e.g. after a compaction or a resumed session), in which case it starts a `resume` turn."""
+    """Feeds on events in transcript order and yields turns
+    `[start, end, prompt, kind, reply, segments]`. A prompt (human input) starts a turn; activity
+    extends the current turn's last segment, or opens a new segment when it comes
+    `SEGMENT_GAP_SECONDS` or more after it. Activity before any human input is kept only when
+    there is no human input at all."""
 
     def __init__(self) -> None:
         self.turns: List[list] = []
         self._current: Optional[list] = None
-        self._pre: List[list] = []    # activity before the first prompt
-        self._pre_current: Optional[list] = None
+        self._pre: Optional[list] = None     # a `resume` pseudo-turn for activity before any prompt
 
     def prompt(self, t: float, text: str = '', kind: str = KIND_PROMPT) -> None:
-        self._current = [t, t, text[:PROMPT_CHARS], kind, '']
+        self._current = [t, t, text[:PROMPT_CHARS], kind, '', [[t, t]]]
         self.turns.append(self._current)
+
+    @staticmethod
+    def _extend(turn: list, t: float) -> None:
+        seg = turn[5][-1]
+        if t - seg[1] >= SEGMENT_GAP_SECONDS:
+            turn[5].append([t, t])
+        elif t > seg[1]:
+            seg[1] = t
+        turn[1] = max(turn[1], t)
+
+    def activity(self, t: float) -> None:
+        if self._current is not None:
+            self._extend(self._current, t)
+        elif self._pre is None:
+            self._pre = [t, t, '', KIND_RESUME, '', [[t, t]]]
+        else:
+            self._extend(self._pre, t)
 
     def reply(self, text) -> None:
         """The agent's latest answer in the current turn (the last one set wins)."""
         if self._current is not None:
             self._current[4] = text
 
-    def activity(self, t: float) -> None:
-        if self._current is not None:
-            if t - self._current[1] >= SEGMENT_GAP_SECONDS:
-                self.prompt(t, '', KIND_RESUME)
-            elif t > self._current[1]:
-                self._current[1] = t
-        elif self.turns:
-            return
-        elif self._pre_current is None or t - self._pre_current[1] >= SEGMENT_GAP_SECONDS:
-            self._pre_current = [t, t, '', KIND_RESUME, '']
-            self._pre.append(self._pre_current)
-        elif t > self._pre_current[1]:
-            self._pre_current[1] = t
-
     def finish(self) -> List[list]:
-        """Activity that precedes every prompt only counts when there is no prompt at all."""
-        return self.turns if self.turns else self._pre
+        if self.turns:
+            return self.turns
+        return [self._pre] if self._pre is not None else []
 
 
-def _turn_dict(t: list) -> dict:
-    return {'start': t[0], 'end': t[1], 'prompt': t[2], 'kind': t[3], 'reply': t[4] if len(t) > 4 else ''}
+def _segments(t: list) -> List[list]:
+    return t[5] if len(t) > 5 else [[t[0], t[1]]]
 
 
 def join_turns(turns: List[list], gap: float = DEFAULT_GAP_SECONDS,
                min_len: float = MIN_SPAN_SECONDS) -> List[dict]:
-    """Blocks `{start, end, final, turns: [{start, end, prompt, kind, reply}]}`: turns (any
-    order) are joined when the next one starts less than `gap` after the previous block's end; a
-    block shorter than `min_len` is extended to `min_len` so a one-message turn stays visible.
-    Every turn counts toward the block's time, but only typed prompts are listed in `turns` (with
-    their true times); `final` is the agent's last answer in the block (its main thread's)."""
+    """Blocks `{start, end, turns: [{start, end, active, prompt, kind, reply}]}`. Every segment
+    of every turn (and every sub-agent run) is an interval; intervals less than `gap` apart are
+    joined into one block, and a block shorter than `min_len` is extended to `min_len` so a
+    one-message turn stays visible. A block lists the human turns that have a segment in it, with
+    the part of the turn inside the block (`start`/`end`, and `active`: seconds of work in it);
+    turns nobody started (sub-agent runs, activity before any input) count but are not listed."""
+    items = sorted((s, e, i) for i, t in enumerate(turns) for s, e in _segments(t))
     blocks: List[dict] = []
-    for t in sorted(turns, key=lambda x: x[0]):
-        if blocks and t[0] - blocks[-1]['end'] < gap:
-            blk = blocks[-1]
-            blk['end'] = max(blk['end'], t[1])
+    cur: Optional[dict] = None
+    for s, e, i in items:
+        if cur is not None and s - cur['end'] < gap:
+            cur['end'] = max(cur['end'], e)
         else:
-            blk = {'start': t[0], 'end': t[1], 'final': '', 'turns': []}
-            blocks.append(blk)
-        if t[3] == KIND_PROMPT:
-            blk['turns'].append(_turn_dict(t))
-        if len(t) > 4 and t[4]:
-            blk['final'] = t[4]
-    for b in blocks:
-        if b['end'] - b['start'] < min_len:
-            b['end'] = b['start'] + min_len
-    return blocks
+            cur = {'start': s, 'end': e, 'segs': {}}
+            blocks.append(cur)
+        cur['segs'].setdefault(i, []).append((s, e))
+    out: List[dict] = []
+    for blk in blocks:
+        listed = []
+        for i, segs in sorted(blk['segs'].items(), key=lambda kv: kv[1][0][0]):
+            t = turns[i]
+            if t[3] in LISTED_KINDS:
+                listed.append({'start': segs[0][0], 'end': max(e for _s, e in segs),
+                               'active': sum(e - s for s, e in segs),
+                               'prompt': t[2], 'kind': t[3], 'reply': t[4] if len(t) > 4 else ''})
+        end = blk['end']
+        if end - blk['start'] < min_len:
+            end = blk['start'] + min_len
+        out.append({'start': blk['start'], 'end': end, 'turns': listed})
+    return out
 
 
 def extend_if_live(turns: List[list], now: float,
@@ -127,7 +144,11 @@ def extend_if_live(turns: List[list], now: float,
     last = max(range(len(turns)), key=lambda i: turns[i][1])
     if 0 <= now - turns[last][1] < window:
         turns = [list(t) for t in turns]
-        turns[last][1] = now
+        t = turns[last]
+        t[1] = now
+        if len(t) > 5:
+            t[5] = [list(seg) for seg in t[5]]
+            t[5][-1][1] = now
     return turns
 
 
@@ -139,7 +160,7 @@ def clip_spans(blocks: List[dict], start: float, end: float) -> List[dict]:
         a, b = max(blk['start'], start), min(blk['end'], end)
         if b > a:
             turns = [t for t in blk['turns'] if t['end'] > a and t['start'] < b]
-            out.append({'start': a, 'end': b, 'final': blk.get('final', ''), 'turns': turns})
+            out.append({'start': a, 'end': b, 'turns': turns})
     return out
 
 
@@ -174,21 +195,46 @@ def _command_line(raw: str) -> Optional[str]:
                      + (args.group(1).strip() if args else '')).split())
 
 
+def _answers_of(rec: dict) -> Optional[str]:
+    """The person's answer to an `AskUserQuestion` (a user line whose tool result carries
+    `toolUseResult.answers`), joined; `None` when this isn't one."""
+    result = rec.get('toolUseResult')
+    answers = result.get('answers') if isinstance(result, dict) else None
+    if isinstance(answers, dict) and answers:
+        text = '; '.join(str(v) for v in answers.values() if str(v).strip())
+        return text[:PROMPT_CHARS] if text else None
+    content = (rec.get('message') or {}).get('content')
+    if isinstance(content, list):
+        for b in content:
+            body = b.get('content') if isinstance(b, dict) and b.get('type') == 'tool_result' else None
+            if isinstance(body, str) and body.startswith('Your questions have been answered'):
+                found = re.findall(r'"="((?:[^"\\]|\\.)*)"', body)
+                if found:
+                    return '; '.join(found)[:PROMPT_CHARS]
+    return None
+
+
 def _turn_start(rec: dict) -> Optional[Tuple[str, str]]:
-    """`(prompt text, kind)` for a user line that is a prompt reaching the agent: typed text,
-    or an injected notification (a finished background task, another session's message). `None`
-    for tool results, meta lines, sub-agent lines, and command output."""
+    """`(text, kind)` for a user line that is the person's own input: what they typed (a slash
+    command included), or their answer to a question the agent asked. `None` for everything else,
+    which continues the current turn: tool results, meta and sub-agent lines, injected
+    notifications and reminders (another session's message, a finished background task), a
+    compaction summary, interruptions."""
     if rec.get('isMeta') or rec.get('isSidechain'):
         return None
+    answer = _answers_of(rec)
+    if answer is not None:
+        return answer, KIND_ANSWER
     content = (rec.get('message') or {}).get('content')
     raw, _tools = detail._texts_and_tools(content)
     head = raw.lstrip()
     if not head or head.startswith(_NOT_A_TURN_PREFIXES):
         return None
     command = _command_line(raw)
-    human = command is not None or detail.is_human_prompt(rec, raw)
+    if not (command is not None or detail.is_human_prompt(rec, raw)):
+        return None
     text = command or detail.clean_text(raw).strip() or head
-    return text[:PROMPT_CHARS], KIND_PROMPT if human else KIND_NOTIFICATION
+    return text[:PROMPT_CHARS], KIND_PROMPT
 
 
 def _assistant_text(line: bytes) -> str:
@@ -204,7 +250,8 @@ def _assistant_text(line: bytes) -> str:
 def claude_turns(path: str) -> List[list]:
     """Turns of a Claude Code transcript's main thread. Every user and assistant line is
     activity (tool results and sub-agent lines included: the agent was working); a line that
-    `_turn_start` accepts also starts a turn. Each turn keeps the agent's last text answer."""
+    `_turn_start` accepts (the person's own input) also starts a turn. Each turn keeps the
+    agent's last text answer."""
     b = TurnBuilder()
     try:
         f = open(path, 'rb')
@@ -222,9 +269,9 @@ def claude_turns(path: str) -> List[list]:
             t = parse_utc(m.group(1).decode()) if m else None
             if t is None:
                 continue
-            # Only user lines that carry text can start a turn; tool-result lines are the bulk
-            # of a transcript and are never parsed.
-            if is_user and (b'"type":"text"' in line or b'"content":"' in line):
+            # Only user lines that carry text, or a question's answer, can start a turn;
+            # other tool-result lines are the bulk of a transcript and are never parsed.
+            if is_user and (b'"type":"text"' in line or b'"content":"' in line or b'"answers":' in line):
                 try:
                     rec = json.loads(line)
                 except ValueError:
@@ -275,9 +322,9 @@ def subagent_runs(path: str) -> List[list]:
                 continue
             if runs and t - runs[-1][1] < SEGMENT_GAP_SECONDS:
                 if t > runs[-1][1]:
-                    runs[-1][1] = t
+                    runs[-1][1] = runs[-1][5][0][1] = t
             else:
-                runs.append([t, t, '', KIND_SUBAGENT, ''])
+                runs.append([t, t, '', KIND_SUBAGENT, '', [[t, t]]])
     return runs
 
 

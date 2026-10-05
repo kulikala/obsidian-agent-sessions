@@ -201,15 +201,22 @@ export interface StatsResult {
 	agents?: Record<string, { windows: StatsWindows }>;
 }
 
-/** One listed turn inside a block: from a typed prompt to the agent's last record before the next one. */
+/**
+ * One human turn in a block: it starts with the person's input (a typed prompt, a slash command,
+ * or their answer to a question the agent asked) and lasts until the agent's last output before
+ * the next input. Notifications and sub-agent work count toward the block's time but are not turns.
+ */
 export interface ActivityTurn {
+	/** The part of the turn inside the block. */
 	start: number;
 	end: number;
-	/** The first ~200 characters of the prompt (a slash command is one line, `/model best`). */
+	/** Seconds of work in that part (idle stretches of 30 minutes or more are not counted). */
+	active: number;
+	/** The first ~200 characters of the input (a slash command is one line, `/model best`); for an
+	 * `answer`, the answer itself. */
 	prompt: string;
-	/** Only prompts are listed; notifications and sub-agent runs count as work but are not turns here. */
-	kind: "prompt";
-	/** The agent's last answer in this turn (first ~400 characters); empty when it gave none. */
+	kind: "prompt" | "answer";
+	/** The agent's last answer in the turn (first ~400 characters); empty when it gave none. */
 	reply: string;
 }
 
@@ -217,8 +224,6 @@ export interface ActivityTurn {
 export interface ActivitySpan {
 	start: number;
 	end: number;
-	/** The agent's last answer within the block (first ~400 characters). */
-	final: string;
 	turns: ActivityTurn[];
 }
 

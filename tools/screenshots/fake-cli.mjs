@@ -184,6 +184,7 @@ function turnsOf(start, end, rand) {
 		turns.push({
 			start: at,
 			end: stop,
+			active: stop - at,
 			prompt: PROMPTS[Math.floor(rand() * PROMPTS.length)],
 			kind: "prompt",
 			reply: REPLIES[Math.floor(rand() * REPLIES.length)],
@@ -230,8 +231,7 @@ function activityOutput(from, to, gap) {
 			.map(([a, b]) => [Math.max(a, from), Math.min(b, to, now)])
 			.filter(([a, b]) => b > a)
 			.map(([a, b]) => {
-				const turns = turnsOf(a, b, rand);
-				return { start: a, end: b, final: turns[turns.length - 1].reply, turns };
+				return { start: a, end: b, turns: turnsOf(a, b, rand) };
 			});
 		if (spans.length === 0) {
 			return;

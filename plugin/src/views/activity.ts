@@ -645,17 +645,10 @@ export class ActivityView extends ItemView {
 			cls: "agent-sessions-activity-bd-times",
 			text: `${this.rangeText(span.start, span.end)} (${this.durationText(span.end - span.start)})`,
 		});
-		// The block's final response first: it's what the work came to.
-		if (span.final) {
-			const final = container.createDiv({ cls: "agent-sessions-activity-final" });
-			final.createDiv({ cls: "agent-sessions-activity-section", text: t("activity.finalResponse") });
-			final.createDiv({ cls: "agent-sessions-activity-final-text", text: span.final });
-		}
-		const turns = span.turns.filter((turn) => turn.kind === "prompt");
-		if (turns.length > 0) {
-			container.createDiv({ cls: "agent-sessions-activity-section", text: t("activity.prompts") });
+		// One row per human turn: when, how long, what was asked, and the answer it ended with.
+		if (span.turns.length > 0) {
 			const list = container.createDiv({ cls: "agent-sessions-activity-turns" });
-			for (const turn of turns) {
+			for (const turn of span.turns) {
 				this.renderTurn(list, turn);
 			}
 		}
@@ -665,13 +658,14 @@ export class ActivityView extends ItemView {
 		const item = list.createDiv({ cls: "agent-sessions-activity-turn" });
 		const meta = item.createDiv({ cls: "agent-sessions-activity-turn-meta" });
 		meta.createSpan({ text: `${formatTimeShort(turn.start, getLang())} – ${formatTimeShort(turn.end, getLang())}` });
-		meta.createSpan({ cls: "agent-sessions-activity-turn-dur", text: this.durationText(turn.end - turn.start) });
-		item.createDiv({ cls: "agent-sessions-activity-turn-prompt", text: turn.prompt });
-		// That turn's last answer, folded away until asked for.
+		meta.createSpan({ cls: "agent-sessions-activity-turn-dur", text: this.durationText(turn.active) });
+		const input = item.createDiv({ cls: "agent-sessions-activity-turn-prompt" });
+		if (turn.kind === "answer") {
+			input.createSpan({ cls: "agent-sessions-activity-turn-answer", text: t("activity.answer") });
+		}
+		input.appendText(turn.prompt);
 		if (turn.reply) {
-			const more = item.createEl("details", { cls: "agent-sessions-activity-turn-reply" });
-			more.createEl("summary", { text: t("activity.response") });
-			more.createDiv({ text: turn.reply });
+			item.createDiv({ cls: "agent-sessions-activity-final-text", text: turn.reply });
 		}
 	}
 }
