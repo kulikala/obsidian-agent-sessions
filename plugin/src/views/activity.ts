@@ -5,7 +5,7 @@
 // everything it computes lives in `activity-model.ts`.
 
 import { ItemView, Notice, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
-import { activity, stats, usage } from "../backend/backend";
+import { activityRaw, stats, usage } from "../backend/backend";
 import { getLang, t } from "../i18n";
 import { formatDateRange, formatDateTimeShort, formatTimeShort, formatWeekdayShort } from "../i18n/datetime";
 import type AgentSessionsPlugin from "../main";
@@ -13,7 +13,7 @@ import { paletteHueDeg } from "../sessions/category";
 import { listedInManager } from "../sessions/listing";
 import { renderCategoryChip } from "../ui/chip";
 import { ACTIVITY_GAPS, ACTIVITY_MODES, AGENT_IDS, type ActivityGap, type ActivityMode } from "../settings";
-import type { ActivityResult, ActivitySession, ActivitySpan, ActivityTurn, StatsResult } from "../types";
+import type { ActivitySession, ActivitySpan, ActivityTurn, StatsResult } from "../types";
 import {
 	agentCardState,
 	canGoNext,
@@ -41,6 +41,7 @@ import {
 	type DayRange,
 	type Period,
 } from "./activity-model";
+import { ActivityLoader, type FetchMode } from "./activity-data";
 import { renderDetail } from "./detail-render";
 import type { DetailContext } from "./detail";
 import { AGENT_ICON, AGENT_NAME_KEY } from "./rows";
@@ -75,11 +76,15 @@ export class ActivityView extends ItemView {
 	/** A reset of the usage limit's 7-day window (epoch seconds), when known: what "session" periods align to. */
 	private resetAnchor: number | null = null;
 	private period: Period;
-	private result: ActivityResult | null = null;
+	/** What the program returned, per local day; everything drawn is computed from it, so only unloaded days are ever requested. */
+	private loader = new ActivityLoader(async (from, to) => {
+		const result = await activityRaw(this.plugin.agentSessionsPath(), this.plugin.vaultPath(), from, to);
+		return result.sessions;
+	});
+	/** Own settings saves in flight: their `settings-changed` needn't redraw (the change was drawn already). */
+	private ownSaves = 0;
 	private filterText = "";
 	private error: string | null = null;
-	/** Bumped per fetch so a slow earlier response can't overwrite a newer period's. */
-	private fetchToken = 0;
 	private selected: SelectedBlock | null = null;
 	private lastLang = getLang();
 	/** Turns whose response is unfolded in the open details panel (by turn start), kept across reloads. */
@@ -141,7 +146,8 @@ export class ActivityView extends ItemView {
 		// Archiving or naming a session changes which ones are listed: redraw when the set changes.
 		this.register(
 			this.plugin.index.onChange(() => {
-				if (this.result && this.listedSessions().map((s) => s.id).join() !== this.renderedIds) {
+				const current = this.sessionsNow();
+				if (current && this.listedSessions().map((s) => s.id).join() !== this.renderedIds) {
 					this.renderBody();
 				}
 			})
@@ -158,12 +164,14 @@ export class ActivityView extends ItemView {
 				window.clearTimeout(this.refreshTimer);
 			}
 		});
+		this.renderBody(); // "Loading…" until the first days arrive
 		await this.loadAnchor();
 		// Realign to the reset once known, unless the user already moved somewhere.
 		if (!this.navigated) {
 			this.period = periodContaining(this.mode, new Date(), this.resetAnchor);
 			this.updateNav();
-			void this.fetchPeriod(true);
+			this.renderBody(true);
+			void this.ensure("missing", true);
 		}
 	}
 
@@ -190,9 +198,17 @@ export class ActivityView extends ItemView {
 		}, delay);
 	}
 
-	/** Fetches the current period again in place: the scroll position and the open details stay. */
+	/** Refreshes the days of the period that can still have grown (today, or any day loaded part-way), in place. */
 	private reload(): void {
-		void this.fetchPeriod(false, true);
+		void this.ensure("open", false, true);
+	}
+
+	/** Saves a setting, noting it is our own so the change isn't drawn a second time. */
+	private saveOwnSettings(): void {
+		this.ownSaves++;
+		void this.plugin.saveSettings().finally(() => {
+			this.ownSaves--;
+		});
 	}
 
 	/** The reset to align "session" periods to, from `json stats` (Claude's 7-day window, else Codex's). */
@@ -209,6 +225,9 @@ export class ActivityView extends ItemView {
 
 	/** A language change rebuilds everything; any other change (including this view's own saves) just redraws the body. */
 	private onSettingsChanged(): void {
+		if (this.ownSaves > 0 && getLang() === this.lastLang) {
+			return;
+		}
 		if (getLang() !== this.lastLang) {
 			this.lastLang = getLang();
 			const leaf = this.leaf as unknown as { updateHeader?: () => void };
@@ -251,7 +270,7 @@ export class ActivityView extends ItemView {
 		});
 		const latest = nav.createEl("button", { text: t("activity.latest"), cls: "agent-sessions-activity-today" });
 		this.registerDomEvent(latest, "click", () => this.go(periodContaining(this.mode, new Date(), this.resetAnchor)));
-		this.navButton(nav, "rotate-cw", t("activity.refresh"), () => void this.fetchPeriod(false));
+		this.navButton(nav, "rotate-cw", t("activity.refresh"), () => void this.ensure("all", false));
 		this.filterEl = nav.createEl("input", {
 			type: "text",
 			placeholder: t("activity.filterPlaceholder"),
@@ -294,7 +313,7 @@ export class ActivityView extends ItemView {
 				document.removeEventListener("pointermove", move);
 				document.removeEventListener("pointerup", up);
 				this.plugin.settings.activityDetailWidth = Math.round(percent);
-				void this.plugin.saveSettings();
+				this.saveOwnSettings();
 			};
 			document.addEventListener("pointermove", move);
 			document.addEventListener("pointerup", up);
@@ -313,15 +332,16 @@ export class ActivityView extends ItemView {
 		return t("activity.subtitle", { gap: t(`activity.gap.${this.plugin.settings.activityGapMinutes}`) });
 	}
 
-	/** Switches how far apart turns may be and still join into one block; the blocks are rebuilt by the program, so it refetches in place. */
+	/** Switches how far apart turns may be and still join into one block: recomputed from the loaded data, no request. */
 	private setGap(gap: ActivityGap): void {
 		if (gap === this.plugin.settings.activityGapMinutes) {
 			return;
 		}
 		this.plugin.settings.activityGapMinutes = gap;
-		void this.plugin.saveSettings();
+		this.saveOwnSettings();
 		this.updateNav();
-		void this.fetchPeriod(false, true);
+		this.renderBody(false);
+		this.refreshBlockDetail();
 	}
 
 	/** The range text, the active mode button, and whether "next" is allowed. */
@@ -349,63 +369,63 @@ export class ActivityView extends ItemView {
 		this.navigated = true;
 		this.period = period;
 		this.updateNav();
-		void this.fetchPeriod(true);
+		const hadData = this.loader.hasAny(periodDays(period));
+		this.renderBody(true); // what is loaded already (or "Loading…") at once
+		void this.ensure("missing", !hadData);
 	}
 
 	/** Switches the mode to the period of that mode containing `at` (never later than now), and remembers it. */
 	private setMode(mode: ActivityMode, at: Date): void {
 		this.mode = mode;
 		this.plugin.settings.activityMode = mode;
-		void this.plugin.saveSettings();
+		this.saveOwnSettings();
 		const now = new Date();
 		this.go(periodContaining(mode, at.getTime() > now.getTime() ? now : at, this.resetAnchor));
 	}
 
-	private async fetchPeriod(clear: boolean, keepView = false): Promise<void> {
-		const token = ++this.fetchToken;
+	/**
+	 * Asks the program only for the days of the period that `mode` says are due (see
+	 * `ActivityStore.plan`), one call per run of consecutive days, and redraws from the store.
+	 * A background reload (`quiet`) that fails changes nothing.
+	 */
+	private async ensure(mode: FetchMode, scrollToFirst: boolean, quiet = false): Promise<void> {
+		const period = this.period;
 		this.error = null;
-		if (clear) {
-			this.result = null;
-		}
-		if (!keepView) {
-			this.renderBody();
-		}
-		const { from, to } = this.period;
 		try {
-			const result = await activity(
-				this.plugin.agentSessionsPath(),
-				this.plugin.vaultPath(),
-				from,
-				to,
-				this.plugin.settings.activityGapMinutes
-			);
-			if (token !== this.fetchToken) {
+			if (!(await this.loader.load(periodDays(period), Date.now() / 1000, mode))) {
 				return;
 			}
-			this.result = result;
 		} catch (err) {
-			if (token !== this.fetchToken) {
+			if (quiet) {
 				return;
 			}
-			if (keepView) {
-				return; // a failed background reload leaves what is shown as it is
-			}
-			this.result = null;
 			this.error = err instanceof Error ? err.message : String(err);
 			new Notice(t("activity.loadFailed", { message: this.error }));
 		}
-		this.renderBody(!keepView);
-		if (keepView) {
+		// The data is valid whatever the view is showing now; only redraw for the period it was asked for.
+		if (period === this.period) {
+			this.renderBody(scrollToFirst);
 			this.refreshBlockDetail();
 		}
 	}
 
+	/** The sessions of the shown period as blocks, computed (and memoized) from the store; `null` until some of its days are loaded. */
+	private sessionsNow(): ActivitySession[] | null {
+		return this.loader.sessions(
+			periodDays(this.period),
+			this.plugin.settings.activityGapMinutes,
+			this.period.from.getTime() / 1000,
+			this.period.to.getTime() / 1000
+		);
+	}
+
 	/** After a reload: point the open block at its reloaded self and redraw just its panel. */
 	private refreshBlockDetail(): void {
-		if (!this.selected || !this.result) {
+		const data = this.sessionsNow();
+		if (!this.selected || !data) {
 			return;
 		}
-		const span = rematchSpan(this.selected, this.result.sessions);
+		const span = rematchSpan(this.selected, data);
 		if (!span) {
 			return;
 		}
@@ -417,7 +437,7 @@ export class ActivityView extends ItemView {
 		this.blockDetailEl.empty();
 		this.renderBlockDetail(
 			this.blockDetailEl,
-			this.result.sessions.find((x) => x.id === this.selected?.sessionId),
+			data.find((x) => x.id === this.selected?.sessionId),
 			span
 		);
 		this.blockDetailEl.scrollTop = keep;
@@ -432,7 +452,7 @@ export class ActivityView extends ItemView {
 	 * knows a session, the name and child flag in the activity data stand in.
 	 */
 	private listedSessions(): ActivitySession[] {
-		return (this.result?.sessions ?? []).filter((s) =>
+		return (this.sessionsNow() ?? []).filter((s) =>
 			listedInManager(this.plugin.index.sessions.get(s.id) ?? { name: s.name, child: s.child, archived: false })
 		);
 	}
@@ -454,11 +474,12 @@ export class ActivityView extends ItemView {
 		const keepTop = scrollEl?.scrollTop ?? 0;
 		const keepLeft = scrollEl?.scrollLeft ?? 0;
 		this.bodyEl.empty();
-		if (this.error && !this.result) {
+		const data = this.sessionsNow();
+		if (this.error && !data) {
 			this.bodyEl.createDiv({ cls: "agent-sessions-activity-message", text: t("activity.loadFailed", { message: this.error }) });
 			return;
 		}
-		if (!this.result) {
+		if (!data) {
 			this.bodyEl.createDiv({ cls: "agent-sessions-activity-message", text: t("activity.loading") });
 			return;
 		}
@@ -673,7 +694,8 @@ export class ActivityView extends ItemView {
 					return;
 				}
 				this.plugin.settings.activityHiddenAgents = toggleAgent(this.plugin.settings.activityHiddenAgents, s.agent, all);
-				void this.plugin.saveSettings();
+				this.saveOwnSettings();
+				this.renderBody(false);
 			};
 			this.registerDomEvent(card, "click", toggle);
 			this.registerDomEvent(card, "keydown", (evt) => {
@@ -760,7 +782,7 @@ export class ActivityView extends ItemView {
 			return;
 		}
 		const id = selected.sessionId;
-		const summary = this.result?.sessions.find((s) => s.id === id);
+		const summary = this.sessionsNow()?.find((s) => s.id === id);
 		const row = this.plugin.index.sessions.get(id);
 		const bar = this.detailEl.createDiv({ cls: "agent-sessions-activity-detail-bar" });
 		const open = bar.createEl("button", { text: t("activity.openSession") });

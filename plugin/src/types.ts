@@ -241,7 +241,36 @@ export interface ActivitySession {
 	spans: ActivitySpan[];
 }
 
-/** The full output of `json activity`. */
-export interface ActivityResult {
-	sessions: ActivitySession[];
+/** One turn as `json activity --raw` gives it (every kind; only prompts and answers are listed once blocks are built). */
+export interface RawTurn {
+	/** When it started; also the key runs point at. */
+	start: number;
+	end: number;
+	prompt: string;
+	kind: "prompt" | "answer" | "resume";
+	reply: string;
+}
+
+/** A stretch of work: one segment of a turn (`turn` = that turn's start) or a sub-agent run (`null`). */
+export interface RawRun {
+	start: number;
+	end: number;
+	turn: number | null;
+}
+
+/** One session's unjoined activity from `json activity --raw`. */
+export interface RawSession {
+	id: string;
+	agent: string;
+	name: string | null;
+	label: string | null;
+	category: string | null;
+	child: boolean;
+	turns: RawTurn[];
+	runs: RawRun[];
+}
+
+/** The full output of `json activity --raw`. */
+export interface RawActivityResult {
+	sessions: RawSession[];
 }

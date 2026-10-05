@@ -132,6 +132,17 @@ class TestActivityOutput(unittest.TestCase):
         self.assertEqual(blocks(60), [[epoch('01:00:00'), epoch('02:10:20')]])
         self.assertEqual(blocks(120), [[epoch('01:00:00'), epoch('02:10:20')]])
 
+    def test_raw_returns_the_building_blocks_not_joined_spans(self):
+        out = jsonout.activity_output(epoch('00:00:00'), epoch('23:59:59'), raw=True)
+        c = self.by_id(out)[CLAUDE_ID]
+        self.assertNotIn('spans', c)
+        self.assertEqual([(t['prompt'], t['kind']) for t in c['turns']], [('hello', 'prompt'), ('more', 'prompt'), ('again', 'prompt')])
+        # each turn is its own run: the 01:00 and 01:20 turns are not joined, and nothing is stretched
+        self.assertEqual([[r['start'], r['end']] for r in c['runs']], [
+            [epoch('01:00:00'), epoch('01:05:00')], [epoch('01:20:00'), epoch('01:25:00')],
+            [epoch('02:10:00'), epoch('02:10:20')]])
+        self.assertEqual([r['turn'] for r in c['runs']], [epoch('01:00:00'), epoch('01:20:00'), epoch('02:10:00')])
+
     def test_a_turn_still_being_written_ends_now(self):
         now = epoch('02:11:30')   # 70 s after the last record
         out = jsonout.activity_output(epoch('00:00:00'), epoch('23:59:59'), 1800, now=now)

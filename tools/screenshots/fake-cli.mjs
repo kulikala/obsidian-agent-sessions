@@ -174,70 +174,61 @@ const REPLIES = [
 	"The linter reported three unused imports; all removed, no other findings.",
 ];
 
-/** Turns of a block: the block split into one to three runs, each with a made-up prompt and answer. */
-function turnsOf(start, end, rand) {
-	const n = 1 + Math.floor(rand() * 3);
-	const turns = [];
-	let at = start;
-	for (let i = 0; i < n; i++) {
-		const stop = i === n - 1 ? end : at + (end - at) * (0.3 + rand() * 0.4);
-		turns.push({
-			start: at,
-			end: stop,
-			active: stop - at,
-			prompt: PROMPTS[Math.floor(rand() * PROMPTS.length)],
-			kind: "prompt",
-			reply: REPLIES[Math.floor(rand() * REPLIES.length)],
-		});
-		at = stop + 60;
-		if (at >= end) {
-			break;
-		}
-	}
-	return turns;
-}
-
-function mergeTimes(spans, gap) {
-	const sorted = [...spans].sort((x, y) => x[0] - y[0]);
-	const out = [];
-	for (const [a, b] of sorted) {
-		if (out.length && a - out[out.length - 1][1] < gap) {
-			out[out.length - 1][1] = Math.max(out[out.length - 1][1], b);
-		} else {
-			out.push([a, b]);
-		}
-	}
-	return out;
-}
-
-function activityOutput(from, to, gap) {
+function activityOutput(from, to, raw) {
 	const first = new Date(from * 1000);
 	const result = [];
 	activitySessions().forEach((s, si) => {
-		const rand = mulberry32(si * 7919 + 13);
-		const raw = [];
-		for (let d = 0; d < 8; d++) {
+		const days = Math.ceil((to - from) / 86400) + 1;
+		const runs = [];
+		const turns = [];
+		for (let d = -1; d < days; d++) {
 			const day = new Date(first.getFullYear(), first.getMonth(), first.getDate() + d).getTime() / 1000;
+			// seeded by the absolute day, so any range gives the same stretches for a day
+			const rand = mulberry32(si * 7919 + Math.round(day / 86400) * 104729);
 			if (rand() < 0.2) {
 				continue;
 			}
 			const n = 1 + Math.floor(rand() * 3);
 			for (let i = 0; i < n; i++) {
 				const a = day + (6 + rand() * 15) * 3600;
-				raw.push([a, a + (1 + rand() * 120) * 60]);
+				const length = (1 + rand() * 120) * 60;
+				const end = Math.min(a + length, now);
+				if (end <= a) {
+					continue;
+				}
+				// one to three turns per stretch, each with a made-up prompt and answer
+				let at = a;
+				const count = 1 + Math.floor(rand() * 3);
+				for (let k = 0; k < count && at < end; k++) {
+					const stop = k === count - 1 ? end : at + (end - at) * (0.3 + rand() * 0.4);
+					turns.push({
+						start: at,
+						end: stop,
+						prompt: PROMPTS[Math.floor(rand() * PROMPTS.length)],
+						kind: "prompt",
+						reply: REPLIES[Math.floor(rand() * REPLIES.length)],
+					});
+					runs.push({ start: at, end: stop, turn: at });
+					at = stop + 60;
+				}
 			}
 		}
-		const spans = mergeTimes(raw, gap)
-			.map(([a, b]) => [Math.max(a, from), Math.min(b, to, now)])
-			.filter(([a, b]) => b > a)
-			.map(([a, b]) => {
-				return { start: a, end: b, turns: turnsOf(a, b, rand) };
-			});
-		if (spans.length === 0) {
+		const inRange = runs.filter((r) => r.end > from && r.start < to);
+		if (inRange.length === 0) {
 			return;
 		}
+		const keys = new Set(inRange.map((r) => r.turn));
 		const [category, label] = s.name.includes(": ") ? s.name.split(": ", 2) : [null, s.name];
-		result.push({ id: s.id, agent: s.agent, name: s.name, label, category, child: false, spans });
+		result.push({
+			id: s.id,
+			agent: s.agent,
+			name: s.name,
+			label,
+			category,
+			child: false,
+			turns: turns.filter((t) => keys.has(t.start)),
+			runs: inRange,
+		});
 	});
 	return { sessions: result };
 }
@@ -288,8 +279,7 @@ if (args[0] === "--version") {
 		out(s ? usageOf(s) : { turns: [], total: null, from: null, to: null });
 	} else if (cmd === "activity") {
 		const opt = (name) => rest[rest.indexOf(name) + 1];
-		const gap = (opt("--gap-minutes") ? Number(opt("--gap-minutes")) : 30) * 60;
-		out(activityOutput(Date.parse(opt("--from")) / 1000, Date.parse(opt("--to")) / 1000, gap));
+		out(activityOutput(Date.parse(opt("--from")) / 1000, Date.parse(opt("--to")) / 1000, rest.includes("--raw")));
 	} else if (cmd === "resolve") {
 		out({ thread: null, transcript: null });
 	} else {

@@ -126,7 +126,7 @@ def scan_output(only: Optional[List[str]] = None) -> dict:
 
 
 def activity_output(from_ts: float, to_ts: float, gap: float = activity.DEFAULT_GAP_SECONDS,
-                    now: Optional[float] = None) -> dict:
+                    now: Optional[float] = None, raw: bool = False) -> dict:
     """`{"sessions": [{id, agent, name, label, category, child, spans}]}` for the sessions
     that were active inside `[from_ts, to_ts)`. `spans` are blocks `{start, end, final, turns}`
     (epoch seconds): each turn (from a prompt to the agent's last record before the next one) and,
@@ -134,7 +134,11 @@ def activity_output(from_ts: float, to_ts: float, gap: float = activity.DEFAULT_
     joined, clipped to the range (see `sessions/activity.py`). Names come
     from the shared scan cache and each transcript's turns from `activity-cache.json`, keyed by
     path, size, mtime and algorithm version, so only changed transcripts are parsed again; a
-    transcript last written before `from_ts` can't hold activity in range and is never opened."""
+    transcript last written before `from_ts` can't hold activity in range and is never opened.
+
+    `raw=True` returns the unjoined building blocks instead of `spans`: per session `turns` and
+    `runs` (see `activity.raw_runs`; no gap joining, no one-minute stretching), so a reader can
+    join with any gap itself."""
     now = time.time() if now is None else now
     c = cache.load(path=config.CACHE_PATH)
     ac = activity.load_cache(config.ACTIVITY_CACHE_PATH)
@@ -160,13 +164,18 @@ def activity_output(from_ts: float, to_ts: float, gap: float = activity.DEFAULT_
                 extra = getattr(adapter, 'activity_extra_files', None)
                 for sub in (extra(s.path) if extra else []):
                     turns = turns + _cached_file_turns(ac, sub, now, lambda a=adapter, p=sub: a.activity_extra_turns(p))
-            spans = activity.clip_spans(
-                activity.join_turns(activity.extend_if_live(turns, now), gap), from_ts, to_ts)
-            if not spans:
-                continue
+            turns = activity.extend_if_live(turns, now)
             d = _session_dict(s)
-            out.append({'id': d['id'], 'agent': d['agent'], 'name': d['name'], 'label': d['label'],
-                        'category': d['group'], 'child': d['child'], 'spans': spans})
+            meta = {'id': d['id'], 'agent': d['agent'], 'name': d['name'], 'label': d['label'],
+                    'category': d['group'], 'child': d['child']}
+            if raw:
+                turn_list, runs = activity.raw_runs(turns, from_ts, to_ts)
+                if runs:
+                    out.append(dict(meta, turns=turn_list, runs=runs))
+                continue
+            spans = activity.clip_spans(activity.join_turns(turns, gap), from_ts, to_ts)
+            if spans:
+                out.append(dict(meta, spans=spans))
     for p in list(ac):
         if any(p.startswith(roots[n]) for n in enabled) and not _has_owner(p, all_paths):
             del ac[p]

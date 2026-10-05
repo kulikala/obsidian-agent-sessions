@@ -136,6 +136,28 @@ def join_turns(turns: List[list], gap: float = DEFAULT_GAP_SECONDS,
     return out
 
 
+def raw_runs(turns: List[list], start: float, end: float) -> Tuple[List[dict], List[dict]]:
+    """The building blocks `join_turns` works from, without any joining or stretching: the runs
+    (each segment of each turn, and each sub-agent run) that fall inside `[start, end)`, and the
+    turns they belong to. A run is `{start, end, turn}` where `turn` is the owning turn's start
+    (a key into the turns list), or `None` for a sub-agent run; a turn is `{start, end, prompt,
+    kind, reply}` (every kind, including the unlisted `resume`; the reader decides what to list).
+    A run that crosses the range's edge is returned whole, so a reader can join it exactly as
+    `join_turns` would."""
+    turns_out: List[dict] = []
+    runs: List[dict] = []
+    for t in sorted(turns, key=lambda x: x[0]):
+        mine = [(a, b) for a, b in _segments(t) if (b > start or (a == b and a >= start)) and a < end]
+        if not mine:
+            continue
+        sub = t[3] == KIND_SUBAGENT
+        if not sub:
+            turns_out.append({'start': t[0], 'end': t[1], 'prompt': t[2], 'kind': t[3],
+                              'reply': t[4] if len(t) > 4 else ''})
+        runs.extend({'start': a, 'end': b, 'turn': None if sub else t[0]} for a, b in mine)
+    return turns_out, runs
+
+
 def extend_if_live(turns: List[list], now: float,
                    window: float = LIVE_WINDOW_SECONDS) -> List[list]:
     """The turn that is still running (its last record is within `window` of `now`) ends now."""

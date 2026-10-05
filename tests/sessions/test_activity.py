@@ -55,6 +55,27 @@ class TestJoinTurns(unittest.TestCase):
         self.assertEqual(activity.join_turns([]), [])
 
 
+class TestRawRuns(unittest.TestCase):
+    def test_runs_carry_their_turn_and_sub_agent_runs_have_none(self):
+        turns = [turn(0, 10300, 'long', segments=[[0, 600], [10000, 10300]]),
+                 turn(20000, 20100, '', 'subagent')]
+        turn_list, runs = activity.raw_runs(turns, 0, 30000)
+        self.assertEqual(turn_list, [{'start': 0, 'end': 10300, 'prompt': 'long', 'kind': 'prompt', 'reply': ''}])
+        self.assertEqual(runs, [{'start': 0, 'end': 600, 'turn': 0}, {'start': 10000, 'end': 10300, 'turn': 0},
+                                {'start': 20000, 'end': 20100, 'turn': None}])
+
+    def test_a_run_crossing_the_edge_is_returned_whole_and_others_are_left_out(self):
+        turns = [turn(0, 100, 'a'), turn(500, 900, 'b'), turn(2000, 2100, 'c')]
+        turn_list, runs = activity.raw_runs(turns, 600, 1000)
+        self.assertEqual([t['prompt'] for t in turn_list], ['b'])
+        self.assertEqual(runs, [{'start': 500, 'end': 900, 'turn': 500}])
+
+    def test_a_zero_length_run_counts_when_it_lies_in_the_range(self):
+        _t, runs = activity.raw_runs([turn(700, 700, 'x')], 600, 1000)
+        self.assertEqual(len(runs), 1)
+        self.assertEqual(activity.raw_runs([turn(500, 500, 'x')], 600, 1000)[1], [])
+
+
 class TestExtendIfLive(unittest.TestCase):
     def test_a_turn_still_being_written_ends_now(self):
         got = activity.extend_if_live([turn(0, 100), turn(500, 990)], now=1000)

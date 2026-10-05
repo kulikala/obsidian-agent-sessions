@@ -80,6 +80,8 @@ def main(args: List[str]) -> int:
 
     if sub == 'activity':
         from_ts, to_ts, gap = None, None, activity.DEFAULT_GAP_SECONDS
+        raw = '--raw' in rest
+        rest = [a for a in rest if a != '--raw']
         i = 0
         while i < len(rest):
             opt = rest[i]
@@ -102,7 +104,7 @@ def main(args: List[str]) -> int:
         if from_ts is None or to_ts is None:
             sys.stderr.write(i18n.t('cmd.json_activity_usage') + '\n')
             return 2
-        _print(json_output.activity_output(from_ts, to_ts, gap))
+        _print(json_output.activity_output(from_ts, to_ts, gap, raw=raw))
         return 0
 
     if sub == 'stats':
