@@ -128,7 +128,8 @@ class TestClaudeTurns(unittest.TestCase):
             line('user', '01:03:00', message={'role': 'user', 'content': '<local-command-stdout>x</local-command-stdout>'}),
             line('system', '05:00:00'),
         ])
-        self.assertEqual(got, [[epoch('01:00:00'), epoch('01:03:00'), 'go', 'prompt']])
+        # meta and command-output lines are skipped; sub-agent work still extends the turn
+        self.assertEqual(got, [[epoch('01:00:00'), epoch('01:02:00'), 'go', 'prompt']])
 
     def test_a_task_notification_wakes_the_agent_and_starts_a_turn(self):
         got = self.turns([
@@ -162,6 +163,27 @@ class TestClaudeTurns(unittest.TestCase):
         self.assertEqual([t[3] for t in got], ['notification', 'notification', 'prompt', 'notification', 'prompt'])
         self.assertEqual(got[0][2], 'done')
         self.assertEqual(len(got[4][2]), activity.PROMPT_CHARS)
+
+    def test_a_slash_command_reads_as_one_line(self):
+        got = self.turns([
+            line('user', '18:42:00', message={'role': 'user', 'content':
+                  '<command-name>/model</command-name>\n<command-message>model</command-message>\n'
+                  '<command-args>best</command-args>'}),
+            line('user', '18:43:00', message={'role': 'user', 'content':
+                  '<command-name>/clear</command-name><command-message>clear</command-message><command-args></command-args>'}),
+        ])
+        self.assertEqual([(t[2], t[3]) for t in got], [('/model best', 'prompt'), ('/clear', 'prompt')])
+
+    def test_command_caveat_and_output_never_create_or_resume_a_turn(self):
+        got = self.turns([
+            line('user', '18:42:00', message={'role': 'user', 'content': '<command-name>/model</command-name><command-args>best</command-args>'}),
+            line('user', '18:42:00', isMeta=True, message={'role': 'user', 'content': '<local-command-caveat>Caveat: x</local-command-caveat>'}),
+            # a stray output line stamped hours later must not become a "resume" turn
+            line('user', '21:30:00', message={'role': 'user', 'content': '<local-command-stdout>Set model</local-command-stdout>'}),
+            line('user', '18:42:30', message={'role': 'user', 'content': '<command-name>/effort</command-name><command-args>high</command-args>'}),
+        ])
+        self.assertEqual([(t[2], t[3]) for t in got], [('/model best', 'prompt'), ('/effort high', 'prompt')])
+        self.assertEqual(got[0][1], epoch('18:42:00'))
 
     def test_unreadable_file(self):
         self.assertEqual(activity.claude_turns('/nonexistent/x.jsonl'), [])
