@@ -35,7 +35,7 @@ Press Ctrl+G inside a session to edit the current prompt (or `/memory`, `/keybin
 
 A calendar of when each agent was working, with a toggle for the period:
 
-- **Session** (the default): 7 days aligned to the reset of your usage limit: Claude Code's 7-day window if Claude Code is enabled and its reset is known, else Codex's weekly window, else a Sunday-start week. Earlier periods step back by 7 days.
+- **7-day window** (the default): 7 days aligned to the reset of your usage limit: Claude Code's 7-day window if Claude Code is enabled and its reset is known, else Codex's weekly window, else a Sunday-start week. Earlier periods step back by 7 days.
 - **Week**: Sunday to Saturday, local time.
 - **Day**: one day, 0:00 to 24:00, one wide column per agent.
 

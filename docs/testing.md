@@ -305,7 +305,7 @@ Use a test vault. For the first-run items, a vault where the plugin was never en
 ### Activity calendar
 
 - [ ] "Open activity calendar" in the command palette, the Session Manager toolbar's calendar button, and the side panel's ⋯ menu all open the same single tab.
-- [ ] The title, the one-line explanation, the Session / Week / Day toggle, the period range, "Latest", and the filter box are shown; the language follows the plugin's setting (English and Japanese).
+- [ ] The title, the one-line explanation, the 7-day window / Week / Day toggle, the period range, "Latest", and the filter box are shown; the language follows the plugin's setting (English and Japanese).
 - [ ] The toggle defaults to Session. With Claude Code enabled and its 7-day reset known, the Session period ends at that reset and starts 7 days earlier (its first and last day are dimmed outside the period); with only Codex's weekly window known it follows that; with neither it is a Sunday-start week. Earlier periods step back by 7 days.
 - [ ] Week runs Sunday to Saturday; Day shows one date with one wide column per agent. The chosen mode is still selected after reloading the plugin.
 - [ ] The next arrow is disabled on the period that holds now (in all three modes), and "Latest" returns to it.
