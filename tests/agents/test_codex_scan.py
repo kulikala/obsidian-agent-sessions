@@ -170,7 +170,7 @@ class TestCodexPromptFiltering(unittest.TestCase):
         p = rollout_path(self.home, ID1)
         write_rollout(p, [
             session_meta(ID1, '/work/one'),
-            event_user_message('# AGENTS.md instructions for /Users/kuli/project\n...', '2026-09-24T01:30:31Z'),
+            event_user_message('# AGENTS.md instructions for /Users/x/project\n...', '2026-09-24T01:30:31Z'),
             event_user_message('DRAFT.md', '2026-09-24T01:30:32Z'),
         ])
         result = scan.scan([p], home=self.home)

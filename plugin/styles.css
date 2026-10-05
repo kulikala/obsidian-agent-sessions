@@ -610,7 +610,7 @@
 
 .agent-sessions-manager-col-folder {
 	/* `table-layout: fixed` requires an explicit width, so this can't be truly variable — set
-	   wide enough for a typical folder name (e.g. "obsidian-projects", 18 characters) not to clip
+	   wide enough for a typical folder name (e.g. "project-notes-2026", 18 characters) not to clip
 	   at a normal table width; it still hides below 600px (see the width-based rules further down). */
 	width: 160px;
 	color: var(--text-muted);

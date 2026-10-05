@@ -6,3 +6,4 @@ __pycache__/
 .superpowers/
 plan/
 tools/smoke/results/
+tools/smoke/targets.json

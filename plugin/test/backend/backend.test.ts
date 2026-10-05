@@ -215,24 +215,24 @@ describe("sortVersionsDesc", () => {
 });
 
 describe("commonBinDirs (search order: mise shims/installs, asdf, volta, nvm, then generic locations)", () => {
-	const base = { home: "/Users/kaz", isMac: true, miseNodeVersions: [], nvmNodeVersions: [], npmPrefix: "" };
+	const base = { home: "/Users/someone", isMac: true, miseNodeVersions: [], nvmNodeVersions: [], npmPrefix: "" };
 
 	it("puts mise's shims first, then its node installs newest-first, before anything else", () => {
 		const dirs = commonBinDirs({ ...base, miseNodeVersions: ["24.14.0", "24.18.0", "lts"] });
 		expect(dirs.slice(0, 4)).toEqual([
-			"/Users/kaz/.local/share/mise/shims",
-			"/Users/kaz/.local/share/mise/installs/node/24.18.0/bin",
-			"/Users/kaz/.local/share/mise/installs/node/24.14.0/bin",
-			"/Users/kaz/.local/share/mise/installs/node/lts/bin",
+			"/Users/someone/.local/share/mise/shims",
+			"/Users/someone/.local/share/mise/installs/node/24.18.0/bin",
+			"/Users/someone/.local/share/mise/installs/node/24.14.0/bin",
+			"/Users/someone/.local/share/mise/installs/node/lts/bin",
 		]);
 	});
 
 	it("includes asdf's shims, volta, and nvm's installs newest-first, in that order", () => {
 		const dirs = commonBinDirs({ ...base, nvmNodeVersions: ["v18.0.0", "v20.0.0"] });
-		expect(dirs).toContain("/Users/kaz/.asdf/shims");
-		expect(dirs).toContain("/Users/kaz/.volta/bin");
-		const nvmIdx18 = dirs.indexOf("/Users/kaz/.nvm/versions/node/v18.0.0/bin");
-		const nvmIdx20 = dirs.indexOf("/Users/kaz/.nvm/versions/node/v20.0.0/bin");
+		expect(dirs).toContain("/Users/someone/.asdf/shims");
+		expect(dirs).toContain("/Users/someone/.volta/bin");
+		const nvmIdx18 = dirs.indexOf("/Users/someone/.nvm/versions/node/v18.0.0/bin");
+		const nvmIdx20 = dirs.indexOf("/Users/someone/.nvm/versions/node/v20.0.0/bin");
 		expect(nvmIdx20).toBeGreaterThanOrEqual(0);
 		expect(nvmIdx20).toBeLessThan(nvmIdx18);
 	});
@@ -244,7 +244,7 @@ describe("commonBinDirs (search order: mise shims/installs, asdf, volta, nvm, th
 
 	it("ends with ~/.local/bin, ~/.opencode/bin, the homebrew/usr-local pair, then npm's prefix if given", () => {
 		const dirs = commonBinDirs({ ...base, npmPrefix: "/opt/custom-npm" });
-		expect(dirs.slice(-5)).toEqual(["/Users/kaz/.local/bin", "/Users/kaz/.opencode/bin", "/opt/homebrew/bin", "/usr/local/bin", "/opt/custom-npm/bin"]);
+		expect(dirs.slice(-5)).toEqual(["/Users/someone/.local/bin", "/Users/someone/.opencode/bin", "/opt/homebrew/bin", "/usr/local/bin", "/opt/custom-npm/bin"]);
 	});
 
 	it("omits npm's prefix dir entirely when npmPrefix is empty", () => {
@@ -254,8 +254,8 @@ describe("commonBinDirs (search order: mise shims/installs, asdf, volta, nvm, th
 
 describe("withBinDirOnPath (a version-manager-resolved binary needs its own dir on PATH — e.g. codex.js's #!/usr/bin/env node)", () => {
 	it("prepends bin's directory onto an existing PATH", () => {
-		const env = withBinDirOnPath({ PATH: "/usr/bin:/bin" }, "/Users/kaz/.local/share/mise/shims/codex");
-		expect(env.PATH).toBe("/Users/kaz/.local/share/mise/shims:/usr/bin:/bin");
+		const env = withBinDirOnPath({ PATH: "/usr/bin:/bin" }, "/Users/someone/.local/share/mise/shims/codex");
+		expect(env.PATH).toBe("/Users/someone/.local/share/mise/shims:/usr/bin:/bin");
 	});
 
 	it("sets PATH to just bin's directory when there was none", () => {
