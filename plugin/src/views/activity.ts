@@ -30,7 +30,8 @@ import {
 } from "./activity-model";
 import { renderDetail } from "./detail-render";
 import type { DetailContext } from "./detail";
-import { AGENT_NAME_KEY } from "./rows";
+import { AGENT_ICON, AGENT_NAME_KEY } from "./rows";
+import { renderAgentMark } from "./rows-render";
 
 export const VIEW_TYPE_ACTIVITY = "agent-sessions-activity";
 
@@ -288,8 +289,13 @@ export class ActivityView extends ItemView {
 			const lanes = cell.createDiv({ cls: "agent-sessions-activity-lane-names" });
 			for (const agent of agents) {
 				const name = lanes.createDiv({ cls: `agent-sessions-activity-lane-name is-agent-${agent}` });
+				// The agent's icon and the day's count; the name is the icon's tooltip (it never fits a narrow lane).
+				if (AGENT_ICON[agent]) {
+					renderAgentMark(name, agent);
+				} else {
+					name.createSpan({ cls: "agent-sessions-activity-lane-fallback", text: this.agentName(agent) });
+				}
 				name.createSpan({ cls: "agent-sessions-activity-lane-count", text: String(counts[i][agent] ?? 0) });
-				name.createSpan({ text: this.agentName(agent) });
 			}
 		});
 
