@@ -64,15 +64,21 @@ class Client:
             stash.append((kind, payload))
         raise TimeoutError('no reply for %s' % op)
 
-    def wait_event(self, ev):
-        deadline = time.monotonic() + TIMEOUT
-        while time.monotonic() < deadline:
-            kind, payload = self.frame()
-            if kind == protocol.FRAME_J:
-                obj = protocol.decode_json(payload)
-                if obj.get('ev') == ev:
-                    return obj
-        raise TimeoutError('no event %s' % ev)
+    def wait_event(self, ev, timeout=TIMEOUT):
+        deadline = time.monotonic() + timeout
+        # A slow CI runner can take longer than TIMEOUT to reap a killed child; the socket must
+        # wait as long as the deadline does.
+        self.sock.settimeout(timeout)
+        try:
+            while time.monotonic() < deadline:
+                kind, payload = self.frame()
+                if kind == protocol.FRAME_J:
+                    obj = protocol.decode_json(payload)
+                    if obj.get('ev') == ev:
+                        return obj
+            raise TimeoutError('no event %s' % ev)
+        finally:
+            self.sock.settimeout(TIMEOUT)
 
     def read_output(self, until, kinds=(protocol.FRAME_D,)):
         """Collect `D` frames (the default `kinds`) until `until(bytes)` returns true."""
@@ -337,7 +343,7 @@ class TestSessions(DaemonTestCase):
         c.request('attach', id='s1', cols=80, rows=24)
         c.replay()
         self.assertTrue(c.request('kill', id='s1')['ok'])
-        ev = c.wait_event('exit')
+        ev = c.wait_event('exit', timeout=20.0)
         self.assertEqual(ev['id'], 's1')
         self.assertIsInstance(ev['code'], int)
         row = c.request('list')['sessions'][0]
