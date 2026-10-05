@@ -4,7 +4,7 @@
 
 [Claude Code](https://claude.com/claude-code)・[Codex](https://github.com/openai/codex)・[OpenCode](https://opencode.ai) を、ノートの隣のターミナルタブで動かす [Obsidian](https://obsidian.md) のプラグインです。すべてのセッションの状態とコスト、エージェントごとの利用枠を1つの一覧で見られます。
 
-デスクトップ専用です。macOS、Linux、Windows（Claude Code のみ）で動きます。
+デスクトップ専用です。macOS、Linux、Windows で動きます。
 
 ![ターミナルタブで動く Claude Code のセッションと、開いているタブ・起動中・最近のセッションを並べたサイドパネル](docs/onboarding/ja/overview.png)
 
@@ -80,7 +80,7 @@ Ctrl+G で、ターミナルの下の枠にプロンプトを書けます。`@` 
 |---|---|---|
 | macOS | macOS | 対応 |
 | Linux | Linux | 対応 |
-| Windows 10（1809 以降）、11 | Windows | Claude Code のみ |
+| Windows 10（1809 以降）、11 | Windows | 対応 |
 | Windows | WSL | 非対応 |
 | WSL2（WSLg） | 同じ WSL ディストリビューション | 対応 |
 

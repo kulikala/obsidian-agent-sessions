@@ -24,7 +24,7 @@ CI (`.github/workflows/test.yml`) runs on every push and pull request:
 | Job | OS | What |
 | --- | --- | --- |
 | `python` | Linux, macOS | the whole Python suite, Python 3.11 |
-| `python-windows` | Windows | `tests/windows` (the ConPTY daemon and Windows process handling), `tests.test_transport` (the loopback transport) and `tests.claude.test_setup`. The rest of the Python suite drives Unix sockets and PTYs directly and assumes Unix. |
+| `python-windows` | Windows | `tests/windows` (the ConPTY daemon, Windows process handling, and Codex's and OpenCode's process trees, folder matching and SQLite paths), `tests.test_transport` (the loopback transport), `tests.test_paths` and `tests.claude.test_setup`. The rest of the Python suite drives Unix sockets and PTYs directly and assumes Unix. |
 | `plugin` | Linux | `npm ci`, `npm run typecheck`, `npm test` (Node 20) |
 | `smoke-tools` | Linux | `node --check tools/smoke/inject.js` and the smoke tool's unit tests (Node 22) |
 
@@ -242,7 +242,7 @@ Use a test vault. For the first-run items, a vault where the plugin was never en
 - [ ] With the pictures setting on, the pictures appear on the following steps (a development build: with `onboardingImageBase` pointing at a folder holding them); each frame has a fixed size and shows a description while loading.
 - [ ] Pictures that cannot load (offline, or a base URL that does not exist) are replaced after at most 10 seconds by the "Couldn't load the picture" note with the description and a link; the link turns the setting off.
 - [ ] The guide never asks about loading pictures. With "Load the guide's pictures from GitHub" off in Settings, or after choosing the link in a frame that failed to load, the guide shows descriptions only, and the developer tools' network panel shows no request to GitHub.
-- [ ] Setup: the program's state, the agents found (only Claude Code on Windows), the agent for the first session and the submit key. With an agent missing on macOS or Linux, its official command, a **Copy** button, the documentation link, the sentence about pasting it into a terminal, and **Detect again** appear; nothing is run for you. On Windows, the WinGet button installs Claude Code.
+- [ ] Setup: the program's state, the agents found, the agent for the first session and the submit key. With an agent missing, its official command (on Windows, npm's for Codex and OpenCode), a **Copy** button, the documentation link, the sentence about pasting it into a terminal, and **Detect again** appear; nothing is run for you. On Windows, the WinGet button installs Claude Code.
 - [ ] First session: **Start** begins a real session in a tab and the window at the bottom right appears without moving the keyboard focus out of the terminal. The first-run questions note is shown; after typing a message and getting the reply, the step is ticked and the window moves on.
 - [ ] A session left at a question (for example a permission) for a minute shows "Answer the question in the terminal".
 - [ ] Tabs: opening a note and then coming back to the session ticks the step; doing nothing does not.

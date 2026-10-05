@@ -59,12 +59,10 @@ Agent Sessions runs Claude Code, Codex and OpenCode sessions as terminal tabs in
 | --- | --- |
 | macOS | yes |
 | Linux, including Linux Obsidian under WSLg | yes |
-| Windows Obsidian with Claude Code on Windows | yes, Claude Code only |
-| Linux Obsidian in WSL2 (WSLg) with Claude Code in the same distribution | yes (it is Linux on both sides) |
-| Windows Obsidian with Claude Code in WSL1 | no |
-| Windows Obsidian with Claude Code in WSL2 | no |
-
-On Windows the settings offer only Claude Code: Codex and OpenCode are disabled there (`agentsSupportedOn("win32")` returns `["claude"]`).
+| Windows Obsidian with the agent on Windows (Claude Code, Codex, OpenCode) | yes |
+| Linux Obsidian in WSL2 (WSLg) with the agent in the same distribution | yes (it is Linux on both sides) |
+| Windows Obsidian with the agent in WSL1 | no |
+| Windows Obsidian with the agent in WSL2 | no |
 
 **Given up.**
 - Windows Obsidian with the agent in WSL1 or WSL2. The agent runs inside WSL, so its hooks, status line, transcripts, live-status ledger and processes all live on the Linux side. The plugin, running on Windows, cannot start the agent into a ConPTY it owns, observe its files with the same paths and watchers, or re-attach to its processes. Bridging that would mean running a second copy of the program inside WSL and translating paths and process identity in both directions.

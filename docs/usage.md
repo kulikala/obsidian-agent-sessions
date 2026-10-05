@@ -241,7 +241,7 @@ It opens on first install, and after an update only when the new version has som
 
 1. Choose the language.
 2. Read what Agent Sessions is.
-3. Set up the program and the agents. A missing agent shows its official install command to copy, a link to its documentation, and **Detect again**.
+3. Set up the program and the agents. A missing agent shows its official install command to copy, a link to its documentation, and **Detect again** (on Windows, Codex and OpenCode come from npm; Claude Code has an **Install Claude Code with WinGet** button).
 
    ![The Install agent-sessions dialog listing the install folder, Python, the hooks added to Claude Code's settings, and the two agent skills added to the vault](onboarding/en/install.png)
 
@@ -305,4 +305,5 @@ agent-sessions stats [--json]     # 5-hour/7-day usage windows per agent
 
 - **A Claude Code hook fails with something like `node: not found`** (often another plugin's hook script). Node is probably installed through a version manager (mise, nvm, asdf, volta) that loads only in an interactive shell (`.zshrc`, `.bashrc`). The plugin also reads an interactive shell's `PATH`, so the next session should work. If not, check in a terminal that `$SHELL -i -c 'echo $PATH'` includes node's folder.
 - **The program cannot be installed on Windows (Python or Claude Code not found).** The install dialog offers **Install Python with WinGet** and **Install Claude Code with WinGet**; each runs `winget install` per user, without an administrator prompt, when you click it. If the dialog says WinGet is missing, update "App Installer" from the Microsoft Store. A `python.exe` that is only the Microsoft Store's empty alias is not used; install Python with WinGet or from python.org.
-- **Claude Code in WSL, Obsidian on Windows.** Not supported (see [Supported environments](../README.md#supported-environments)). Run Obsidian in WSL through WSLg.
+- **Codex or OpenCode on Windows is not found.** Install it with npm (`npm install -g @openai/codex`, `npm install -g opencode-ai`) or as an `.exe` (WinGet, Scoop, Chocolatey), then press **Find again** in its settings block. A folder outside `PATH` can be set as the agent's executable path (for example `%APPDATA%\npm\codex.cmd`).
+- **An agent in WSL, Obsidian on Windows.** Not supported (see [Supported environments](../README.md#supported-environments)). Run Obsidian in WSL through WSLg.

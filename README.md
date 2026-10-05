@@ -4,7 +4,7 @@
 
 An [Obsidian](https://obsidian.md) plugin that runs [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex) and [OpenCode](https://opencode.ai) in terminal tabs next to your notes. One list shows every session's state and cost, plus each agent's usage limits.
 
-Desktop only: macOS, Linux, and Windows (Claude Code only).
+Desktop only: macOS, Linux, and Windows.
 
 ![A Claude Code session in a terminal tab, with the side panel listing open, running, and recent Claude Code and Codex sessions](docs/images/overview.png)
 
@@ -80,7 +80,7 @@ Two [agent skills](docs/usage.md#agent-skills) also let you ask an agent about y
 |---|---|---|
 | macOS | macOS | Yes |
 | Linux | Linux | Yes |
-| Windows 10 (1809+) or 11 | Windows | Claude Code only |
+| Windows 10 (1809+) or 11 | Windows | Yes |
 | Windows | WSL | No |
 | WSL2 through WSLg | the same WSL distribution | Yes |
 
