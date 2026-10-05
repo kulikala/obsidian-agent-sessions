@@ -35,7 +35,7 @@ How to do things with Agent Sessions, what each screen shows, and what to do whe
 
 ## Work in a session tab
 
-Each session is one Obsidian tab running the agent in a real terminal (a PTY, or a ConPTY on Windows; drawn with xterm.js).
+Each session is one Obsidian tab running the agent in a terminal.
 
 - **Closing the tab or quitting Obsidian does not end the session.** Reopen it and the last screen is shown again.
 - **Paths in the output** that point inside the vault become links.
@@ -55,11 +55,13 @@ Keys inside a session tab:
 | Action | macOS | Windows, Linux |
 |---|---|---|
 | Larger, smaller, reset font | `Cmd +`, `Cmd -`, `Cmd 0` | `Ctrl+Shift+=`, `Ctrl+Shift+-`, `Ctrl+Shift+0` |
-| Copy, paste | — | `Ctrl+Shift+C`, `Ctrl+Shift+V` |
-| Close the tab | — | `Ctrl+Shift+W` |
-| Command palette | — | `Ctrl+Shift+P` |
+| Copy, paste | `Cmd+C`, `Cmd+V` | `Ctrl+Shift+C`, `Ctrl+Shift+V` |
+| Copy (Windows) | — | `Ctrl+C` with a selection |
+| Paste (Windows) | — | `Ctrl+V` |
+| Close the tab | `Cmd+W` | `Ctrl+Shift+W` |
+| Command palette | `Cmd+P` | `Ctrl+Shift+P` |
 
-On Windows and Linux, plain `Ctrl+<key>` always goes to the agent, not to Obsidian.
+On Windows and Linux, other `Ctrl+<key>` combinations go to the agent, except `Ctrl+Tab` and `Ctrl+,`, which go to Obsidian. On Windows, `Ctrl+C` without a selection interrupts the agent as usual.
 
 ## Side panel
 
@@ -97,7 +99,7 @@ The tab, the side panel and the Session manager show the same icon, color and mo
 
 - Animated states respect `prefers-reduced-motion`.
 - A small icon next to the state shows the agent (Claude Code, Codex or OpenCode), in one color like the rest of the UI.
-- States are grouped the way Claude's own app filters sessions: **Needs input**, **Needs review**, **Running**, **Done**, plus **Archived**. The side panel shows the Needs input and Needs review counts, and the Session manager filters by these groups.
+- States are grouped into **Needs input**, **Needs review**, **Running**, **Done**, plus **Archived**. The side panel shows the Needs input and Needs review counts, and the Session manager filters by these groups.
 
 ## Session manager
 
@@ -105,7 +107,7 @@ The Session manager is what a new empty tab shows. It also opens from **Session 
 
 ![The Session manager: sessions grouped by category with model, effort and cost, and below, the 5-hour and 7-day windows and cost per category](images/manager.png)
 
-- **Session list.** Sessions grouped by category, plus an "Other" group and the archive. The table sorts by last activity, model, effort, 5h and 7d cost, and folder.
+- **Session list.** Sessions grouped by category, plus an "Other" group and the archive. The table sorts by **Last updated**, model, effort, 5h and 7d cost, and folder.
 - **Status filter** (toolbar): All, Needs input, Needs review, Running, Done, Archived.
 - **Analysis** (below, collapsible and resizable): 5-hour and 7-day cards with the time to reset, a weekly-pace forecast ("on track", or when it will run out), and cost by category. With more than one agent enabled, there is one section per agent.
 
@@ -113,7 +115,7 @@ The Session manager is what a new empty tab shows. It also opens from **Session 
 
 Open it with ⋯ on a row, or right-click the row, in the side panel or the Session manager.
 
-![A session's menu open in the side panel: Rename, Move to category, Compact session, Archive, Restart session, End session, Session analytics, Copy ID](onboarding/en/row-menu.png)
+![A session's menu in four groups: Rename, Move to category…, Suggest name and category…; Change model…, Compact session, Restart session; Session analytics, Copy ID; End session, Archive](onboarding/en/row-menu.png)
 
 | Item | Does |
 |---|---|
@@ -127,8 +129,6 @@ Open it with ⋯ on a row, or right-click the row, in the side panel or the Sess
 | **Copy ID** | copies the session ID |
 | **End session** | ends the agent |
 | **Archive** | moves the session to the archive |
-
-To archive a running session, end it first.
 
 ## Name and group sessions
 
@@ -163,7 +163,7 @@ An agent proposes a `Category: Name` for recent sessions from their folder, firs
 1. Open the session's ⋯ menu. (Restart is there for running sessions.)
 2. Choose **Restart session**. If the session is busy, it asks first.
 
-![The session menu with Restart session highlighted](onboarding/en/restart.png)
+![A session's menu with Restart session highlighted, between Compact session and Session analytics](onboarding/en/restart.png)
 
 **Change model…** (running Claude Code sessions) picks a model (an alias such as Opus, Sonnet or Haiku, or a full model ID) and an effort level, and sends `/model` and `/effort` for what changed. `/model` also becomes Claude Code's default for new sessions.
 
@@ -173,7 +173,7 @@ An agent proposes a `Category: Name` for recent sessions from their folder, firs
 2. Write in the pane under the terminal. It has `@` file completion, autosave, and normal paste, IME and undo. The output stays visible.
 3. Press **Send** to submit, or **Back to prompt (Esc)** to return without sending.
 
-![The built-in editor under a Claude Code session, with a multi-line prompt and the Send and Back to prompt buttons](onboarding/en/editor.png)
+![The built-in editor under a Claude Code session: a multi-line prompt, with Model and Effort dropdowns and the Send and Back to prompt buttons above it](onboarding/en/editor.png)
 
 - It also opens for anything the agent hands to an editor, such as `/memory` or `/keybindings`.
 - For a Claude Code prompt, the bar has **Model** and **Effort** dropdowns set to the current values. If you change one, **Send** applies it with `/model` and `/effort` before the prompt.
@@ -240,12 +240,15 @@ For a Claude Code session started with Remote Control, renaming it in Agent Sess
 It opens on first install, and after an update only when the new version has something to show.
 
 1. Choose the language.
-2. Set up the program and the agents. A missing agent shows its official install command to copy, a link to its documentation, and **Detect again**.
+2. Read what Agent Sessions is.
+3. Set up the program and the agents. A missing agent shows its official install command to copy, a link to its documentation, and **Detect again**.
 
-   ![The Install agent-sessions dialog listing the install folder, Python, the hooks added to Claude Code's settings, and the vault's skill folders](onboarding/en/install.png)
+   ![The Install agent-sessions dialog listing the install folder, Python, the hooks added to Claude Code's settings, and the two agent skills added to the vault](onboarding/en/install.png)
 
-3. Start a real session, switch tabs, rename it, and send a prompt from the built-in editor. Each step is ticked as you do it; **Skip** passes one over.
-4. Read about restart, organize and the Session manager.
+4. Start a real session, switch tabs, rename it, and send a prompt from the built-in editor. Each step is ticked as you do it; **Skip** passes one over. With Codex or OpenCode, only the tab switch is offered.
+5. Read about restart, organize and the Session manager.
+
+After an update, the guide shows only setup (when the program is missing) and what's new.
 
 - Closing the guide keeps your place: **Continue the welcome guide** (command palette or settings) resumes it, and **Start the welcome guide from the beginning** runs it again.
 - Its pictures load from GitHub while it is open; **Load the guide's pictures from GitHub** turns that off (see [Disclosures](../README.md#disclosures)).
@@ -266,15 +269,16 @@ It opens on first install, and after an update only when the new version has som
 | **Agents** | per agent: on/off, **Executable**, **Environment variables**, **Find again** |
 | **Launch with** (OpenCode) | `opencode` or `ollama launch opencode` |
 | **Ollama model** (OpenCode) | from `ollama list`, or typed |
-| **agent-sessions location** | path; empty uses `~/bin/agent-sessions` if it exists, else the installed copy |
+| **agent-sessions location** | path |
 | **Scrollback lines** | terminal history |
 | **Editor pane height (%)** | built-in editor height |
 | **Model for suggestions** | Sonnet, Haiku |
-| **Language** | Auto, English, Japanese |
+| **Language** | Auto, English, 日本語 |
 | **Show the welcome guide after updates** | on, off |
 | **Load the guide's pictures from GitHub** | on, off |
 
 - **Language: Auto** follows Obsidian's own language.
+- **agent-sessions location** left empty uses `~/bin/agent-sessions` if it exists, else the copy installed from the plugin.
 - The heights of the side panel's details pane and the Session manager's analysis panel are saved as you drag them.
 - With OpenCode on, a status line row in OpenCode's session screen shows the submit-key symbol and whether the session is busy, idle or waiting. There is nothing to configure.
 
@@ -294,12 +298,11 @@ agent-sessions show [ID|NAME] [--json]   # one session's usage and last messages
 agent-sessions stats [--json]     # 5-hour/7-day usage windows per agent
 ```
 
-- `agent-sessions json` is the machine-readable interface the plugin uses (`scan`, `live`, `detail`, `usage`, `stats`).
-- `hook` and `status` serve Claude Code's hooks and `statusLine`; `edit` receives the built-in editor.
+- `json`, `hook`, `status` and `edit` are the interfaces the plugin and the agents use.
 - On Windows, the terminal UI (`agent-sessions` with no arguments) and `agent-sessions attach` are not available (they need `curses` and `termios`). The other commands, the built-in editor included, work.
 
 ## More troubleshooting
 
-- **A Claude Code hook fails with something like `node: not found`** (often another plugin's hook script). Node is probably installed through a version manager (mise, nvm, asdf, volta) that loads only in an interactive shell (`.zshrc`, `.bashrc`). The plugin also reads an interactive shell's `PATH` ([design.md §4.2](design.md)), so the next session should work. If not, check in a terminal that `$SHELL -i -c 'echo $PATH'` includes node's folder.
+- **A Claude Code hook fails with something like `node: not found`** (often another plugin's hook script). Node is probably installed through a version manager (mise, nvm, asdf, volta) that loads only in an interactive shell (`.zshrc`, `.bashrc`). The plugin also reads an interactive shell's `PATH`, so the next session should work. If not, check in a terminal that `$SHELL -i -c 'echo $PATH'` includes node's folder.
 - **The program cannot be installed on Windows (Python or Claude Code not found).** The install dialog offers **Install Python with WinGet** and **Install Claude Code with WinGet**; each runs `winget install` per user, without an administrator prompt, when you click it. If the dialog says WinGet is missing, update "App Installer" from the Microsoft Store. A `python.exe` that is only the Microsoft Store's empty alias is not used; install Python with WinGet or from python.org.
 - **Claude Code in WSL, Obsidian on Windows.** Not supported (see [Supported environments](../README.md#supported-environments)). Run Obsidian in WSL through WSLg.
