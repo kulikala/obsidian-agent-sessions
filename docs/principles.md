@@ -39,8 +39,9 @@ Agent Sessions runs Claude Code, Codex and OpenCode sessions as terminal tabs in
 **Chosen.** The program changes only what a feature needs, and only in files the agent already reads:
 - Claude Code `settings.json`: the `Stop`, `SessionEnd`, `SessionStart` (matcher `compact`) and `UserPromptSubmit` hooks, and `statusLine`. Entries are recognised by their command (the program's launcher followed by `hook` or `status`), so setup updates only its own entries, leaves everyone else's untouched, and removal deletes exactly those. Before a write that changes the file, a byte-faithful `.bak-<timestamp>` copy is saved.
 - The built-in editor: the agent is started with `$VISUAL` pointing at the editor shim; no agent configuration file is edited for it.
-- Claude Code `keybindings.json`: only when the user changes the submit-key setting away from the default.
-- Codex and OpenCode: nothing in their user configuration; OpenCode gets a small plugin only while OpenCode is enabled, and it is removed with it.
+- Claude Code `keybindings.json`: only when the user changes the submit key or the editor key away from the default.
+- Codex `config.toml`: the submit and editor keys when changed from the default, and a status line when none is set; each line carries the program's mark, and the file is backed up before a change.
+- OpenCode, only while it is enabled: a status plugin and a status line file, both marked, and in `tui.json` the editor key, the submit keys when changed, and the status line entry; the previous `tui.json` values are kept and restored on removal.
 - The vault: the two skills' files (`SKILL.md`, plus the help skill's `reference.md`) in each enabled agent's project skill folder. A file the program did not write is never overwritten or removed.
 
 **Given up.**
