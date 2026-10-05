@@ -79,18 +79,17 @@ Where the program is installed, and installing from source: [`docs/installation.
 
 ## Supported environments
 
-| Setup | Supported | Verification |
-|---|---|---|
-| macOS | Yes | Smoke test passed (15 of 15 steps) on macOS 26.6, Python 3.14 |
-| Linux (Ubuntu Desktop) | Yes | Smoke test passed on Ubuntu 24.04 (kernel 6.8), Python 3.12 |
-| Windows ①: Windows Obsidian + Windows Claude Code | Yes, Claude Code only | Smoke test passed on Windows 11 build 26300, Python 3.13 |
-| Windows ②: Windows Obsidian + Claude Code in WSL1 | No | — |
-| Windows ③: Windows Obsidian + Claude Code in WSL2 | No | — |
-| Windows ④: Linux Obsidian in WSL2 (WSLg) + Claude Code in WSL2 | Expected to work | Not verified; steps in [`docs/testing.md`](docs/testing.md#4-platform--checks) |
+| Setup | Status |
+|---|---|
+| macOS | Supported |
+| Linux (Ubuntu Desktop) | Supported |
+| Windows: Windows Obsidian with Claude Code on Windows | Supported, Claude Code only |
+| Windows: Windows Obsidian with Claude Code in WSL (WSL1 or WSL2) | Not supported |
+| Windows: Linux Obsidian in WSL2 (WSLg) with Claude Code in the same distribution | Supported |
 
-The smoke test ran on 2026-10-04 on arm64 virtual machines with Obsidian 1.13.7 and a test agent; what it checks is in [`docs/testing.md`](docs/testing.md). Windows 10 1809 or later should work but has not been tested. On Windows, Codex and OpenCode show "Not available on Windows yet." in the settings.
+On Windows, the plugin needs Windows 10 version 1809 or later, or Windows 11. Codex and OpenCode show "Not available on Windows yet." in the settings.
 
-The plugin and the agent have to run in the same operating system. In ② and ③ the agent's files and processes are inside WSL, where the plugin cannot start or follow the session. If you use the agents in WSL, run Obsidian in WSL too (④). The reasoning is in [`docs/principles.md`](docs/principles.md#4-supported-platforms-are-the-ones-where-agent-and-plugin-share-an-os).
+The plugin and the agent have to run in the same operating system. When Obsidian runs on Windows and the agent runs in WSL, the agent's files and processes are inside WSL, where the plugin cannot start or follow the session. If you use the agents in WSL, run Obsidian in WSL too, through WSLg. The reasoning is in [`docs/principles.md`](docs/principles.md#4-supported-platforms-are-the-ones-where-agent-and-plugin-share-an-os).
 
 ## Troubleshooting
 

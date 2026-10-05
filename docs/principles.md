@@ -58,19 +58,19 @@ Agent Sessions runs Claude Code, Codex and OpenCode sessions as terminal tabs in
 | --- | --- |
 | macOS | yes |
 | Linux, including Linux Obsidian under WSLg | yes |
-| ① Windows Obsidian + Windows Claude Code | yes, Claude Code only |
-| ④ WSLg Linux Obsidian + WSL2 Claude Code | yes (it is Linux on both sides) |
-| ② Windows Obsidian + WSL1 Claude Code | no |
-| ③ Windows Obsidian + WSL2 Claude Code | no |
+| Windows Obsidian with Claude Code on Windows | yes, Claude Code only |
+| Linux Obsidian in WSL2 (WSLg) with Claude Code in the same distribution | yes (it is Linux on both sides) |
+| Windows Obsidian with Claude Code in WSL1 | no |
+| Windows Obsidian with Claude Code in WSL2 | no |
 
-On Windows (①) the settings offer only Claude Code: Codex and OpenCode are disabled there (`agentsSupportedOn("win32")` returns `["claude"]`).
+On Windows the settings offer only Claude Code: Codex and OpenCode are disabled there (`agentsSupportedOn("win32")` returns `["claude"]`).
 
 **Given up.**
-- ② The agent runs inside WSL, so its hooks, status line, transcripts, live-status ledger and processes all live on the Linux side. The plugin, running on Windows, cannot start the agent into a ConPTY it owns, observe its files with the same paths and watchers, or re-attach to its processes. Bridging that would mean running a second copy of the program inside WSL and translating paths and process identity in both directions.
-- ③ Everything in ② applies. In addition, under WSL2's default NAT networking WSL cannot reach Windows' `127.0.0.1`, so the editor round trip (the agent's `$VISUAL` shim connecting back to the plugin) fails. WSL2's mirrored networking mode might lift this; it is untested, so it is not claimed.
+- Windows Obsidian with the agent in WSL1 or WSL2. The agent runs inside WSL, so its hooks, status line, transcripts, live-status ledger and processes all live on the Linux side. The plugin, running on Windows, cannot start the agent into a ConPTY it owns, observe its files with the same paths and watchers, or re-attach to its processes. Bridging that would mean running a second copy of the program inside WSL and translating paths and process identity in both directions.
+- With WSL2 in particular, under its default NAT networking WSL cannot reach Windows' `127.0.0.1`, so the editor round trip (the agent's `$VISUAL` shim connecting back to the plugin) also fails. WSL2's mirrored networking mode might lift this; it is not part of the supported setups.
 - The terminal UI and `agent-sessions attach` on Windows (they need `curses` and `termios`). Every other command, the built-in editor included, works there.
 
-**Why.** Each added combination multiplies the places where paths, process ids, sockets and file watchers can disagree, and none of them can be verified cheaply. A small matrix that is actually exercised is worth more than a wide one that mostly works. Where the agent sits on the other side of an OS boundary, the supported way to use it is to run Obsidian on that side (④).
+**Why.** Each added combination multiplies the places where paths, process ids, sockets and file watchers can disagree, and none of them can be verified cheaply. A small matrix that is actually exercised is worth more than a wide one that mostly works. Where the agent sits on the other side of an OS boundary, the supported way to use it is to run Obsidian on that side: inside WSL, through WSLg.
 
 **Verification.** An automated backend smoke test drives the daemon, CLI and hooks with a fake agent on virtual machines for each supported OS (`tools/smoke`). A short manual UI checklist covers what the smoke test cannot see ([`testing.md`](testing.md)). The Python and TypeScript unit suites run in CI.
 

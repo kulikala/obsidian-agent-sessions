@@ -170,9 +170,9 @@ Settings -> Display -> "Language / 言語": Auto / 自動 (follows Obsidian), En
 
 ## Supported platforms
 
-- macOS: supported. Linux (Ubuntu verified): supported.
-- Windows with Windows Obsidian and Windows Claude Code (setup 1): supported for Claude Code only. Codex and OpenCode show "Not available on Windows yet / Windows ではまだ使えません" in the settings and stay off. The terminal UI (`agent-sessions` with no arguments) and `agent-sessions attach` are not available on Windows; the other commands and the built-in editor work. Windows 10 1809 and later has the needed ConPTY but is untested.
-- Windows Obsidian with Claude Code in WSL1 (setup 2) or WSL2 (setup 3): not supported. The agent's hooks, transcripts and processes live on the Linux side where the plugin cannot start or observe them; under WSL2's default networking the built-in editor round trip also fails. For WSL users: run Obsidian itself inside WSL through WSLg (setup 4: Linux Obsidian with the agent in the same WSL2 distribution), which is Linux on both sides; supported but not yet verified.
+- macOS: supported. Linux (Ubuntu Desktop): supported.
+- Windows with Windows Obsidian and Windows Claude Code: supported for Claude Code only. Codex and OpenCode show "Not available on Windows yet / Windows ではまだ使えません" in the settings and stay off. The terminal UI (`agent-sessions` with no arguments) and `agent-sessions attach` are not available on Windows; the other commands and the built-in editor work. It needs Windows 10 version 1809 or later (for ConPTY), or Windows 11.
+- Windows Obsidian with Claude Code in WSL1 or WSL2: not supported. The agent's hooks, transcripts and processes live on the Linux side where the plugin cannot start or observe them; under WSL2's default networking the built-in editor round trip also fails. For WSL users: run Obsidian itself inside WSL through WSLg (Linux Obsidian with the agent in the same WSL2 distribution), which is Linux on both sides; supported.
 - The plugin, the program and the agent must run in the same operating system.
 - Mobile and web builds of Obsidian: not supported (desktop only; the plugin starts processes and opens local sockets).
 - Obsidian older than 1.8.7: not supported.

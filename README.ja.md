@@ -79,18 +79,17 @@
 
 ## 対応環境
 
-| 構成 | 対応 | 確認状況 |
-|---|---|---|
-| macOS | 対応 | macOS 26.6（Python 3.14）でスモークテストに合格（15 ステップ中 15） |
-| Linux（Ubuntu Desktop） | 対応 | Ubuntu 24.04（カーネル 6.8、Python 3.12）でスモークテストに合格 |
-| Windows ①：Windows 版 Obsidian ＋ Windows 版 Claude Code | 対応（Claude Code のみ） | Windows 11 ビルド 26300（Python 3.13）でスモークテストに合格 |
-| Windows ②：Windows 版 Obsidian ＋ WSL1 内の Claude Code | 非対応 | — |
-| Windows ③：Windows 版 Obsidian ＋ WSL2 内の Claude Code | 非対応 | — |
-| Windows ④：WSL2 内の Linux 版 Obsidian（WSLg）＋ WSL2 内の Claude Code | 動く見込み | 未確認。手順は [`docs/testing.md`](docs/testing.md#4-platform--checks) |
+| 構成 | 対応 |
+|---|---|
+| macOS | 対応 |
+| Linux（Ubuntu Desktop） | 対応 |
+| Windows：Windows 版 Obsidian ＋ Windows 版 Claude Code | 対応（Claude Code のみ） |
+| Windows：Windows 版 Obsidian ＋ WSL 内の Claude Code（WSL1・WSL2） | 非対応 |
+| Windows：WSL2 内の Linux 版 Obsidian（WSLg）＋ 同じディストリビューション内の Claude Code | 対応 |
 
-スモークテストは 2026-10-04 に、arm64 の仮想マシン上で、Obsidian 1.13.7 とテスト用のエージェントを使って実施しました。確認する内容は [`docs/testing.md`](docs/testing.md) にあります。Windows 10 1809 以降でも動くはずですが、確認していません。Windows では、Codex と OpenCode の設定に「Windows ではまだ使えません。」と表示されます。
+Windows では、Windows 10 バージョン 1809 以降、または Windows 11 が必要です。Codex と OpenCode の設定には「Windows ではまだ使えません。」と表示されます。
 
-プラグインとエージェントは、同じ OS の上で動く必要があります。② と ③ では、エージェントのファイルとプロセスが WSL の中にあり、プラグインからセッションを始めたり追ったりできません。WSL でエージェントを使う場合は、Obsidian も WSL の中で動かしてください（④）。理由は [`docs/principles.md`](docs/principles.md#4-supported-platforms-are-the-ones-where-agent-and-plugin-share-an-os) にあります。
+プラグインとエージェントは、同じ OS の上で動く必要があります。Obsidian を Windows で、エージェントを WSL で動かすと、エージェントのファイルとプロセスが WSL の中にあり、プラグインからセッションを始めたり追ったりできません。WSL でエージェントを使う場合は、Obsidian も WSLg を使って WSL の中で動かしてください。理由は [`docs/principles.md`](docs/principles.md#4-supported-platforms-are-the-ones-where-agent-and-plugin-share-an-os) にあります。
 
 ## 困ったとき
 
