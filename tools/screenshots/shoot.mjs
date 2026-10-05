@@ -439,8 +439,8 @@ async function onboardingScenes(page, box, look) {
 	await pressEscape(page);
 	await page.waitFor(`!document.querySelector('.modal')`, { what: "the new session dialog to close" });
 
-	// The built-in editor under the terminal.
-	const draft = join(box.vault, ".agents", "draft-prompt.md");
+	// The built-in editor under the terminal. A Claude prompt file (claude-prompt-*) gets the model and effort dropdowns.
+	const draft = join(box.vault, ".agents", "claude-prompt-draft.md");
 	writeFileSync(draft, look.scenario.editorDraft);
 	await front(page, checkout.id);
 	await page.evaluate(`(() => {
