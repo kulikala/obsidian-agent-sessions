@@ -128,9 +128,10 @@ def scan_output(only: Optional[List[str]] = None) -> dict:
 def activity_output(from_ts: float, to_ts: float, gap: float = activity.DEFAULT_GAP_SECONDS,
                     now: Optional[float] = None) -> dict:
     """`{"sessions": [{id, agent, name, label, category, child, spans}]}` for the sessions
-    that were active inside `[from_ts, to_ts)`. `spans` are `[start, end]` epoch seconds:
-    each turn (from a prompt to the agent's last record before the next one) with turns less
-    than `gap` apart joined, clipped to the range (see `sessions/activity.py`). Names come
+    that were active inside `[from_ts, to_ts)`. `spans` are blocks `{start, end, final, turns}`
+    (epoch seconds): each turn (from a prompt to the agent's last record before the next one) and,
+    for Claude Code, each run of the session's sub-agents, with those less than `gap` apart
+    joined, clipped to the range (see `sessions/activity.py`). Names come
     from the shared scan cache and each transcript's turns from `activity-cache.json`, keyed by
     path, size, mtime and algorithm version, so only changed transcripts are parsed again; a
     transcript last written before `from_ts` can't hold activity in range and is never opened."""
@@ -152,16 +153,13 @@ def activity_output(from_ts: float, to_ts: float, gap: float = activity.DEFAULT_
             if s.mtime < from_ts:
                 continue
             if name == 'opencode':
-                size, mtime, trust = 0, s.mtime, True
+                turns = activity.cached_turns(ac, s.path, 0, s.mtime, lambda a=adapter, p=s.path: a.activity_turns(p))
             else:
-                try:
-                    st = os.stat(s.path)
-                except OSError:
-                    continue
-                size, mtime = st.st_size, st.st_mtime
-                trust = now - mtime >= scan_mod.RACY_WINDOW
-            turns = activity.cached_turns(ac, s.path, size, mtime,
-                                          lambda a=adapter, p=s.path: a.activity_turns(p), trust)
+                turns = _cached_file_turns(ac, s.path, now, lambda a=adapter, p=s.path: a.activity_turns(p))
+                # Sub-agent work (their own transcripts) is part of the session's activity.
+                extra = getattr(adapter, 'activity_extra_files', None)
+                for sub in (extra(s.path) if extra else []):
+                    turns = turns + _cached_file_turns(ac, sub, now, lambda a=adapter, p=sub: a.activity_extra_turns(p))
             spans = activity.clip_spans(
                 activity.join_turns(activity.extend_if_live(turns, now), gap), from_ts, to_ts)
             if not spans:
@@ -170,11 +168,35 @@ def activity_output(from_ts: float, to_ts: float, gap: float = activity.DEFAULT_
             out.append({'id': d['id'], 'agent': d['agent'], 'name': d['name'], 'label': d['label'],
                         'category': d['group'], 'child': d['child'], 'spans': spans})
     for p in list(ac):
-        if p not in all_paths and any(p.startswith(roots[n]) for n in enabled):
+        if any(p.startswith(roots[n]) for n in enabled) and not _has_owner(p, all_paths):
             del ac[p]
     cache.save(c, path=config.CACHE_PATH)
     activity.save_cache(ac, config.ACTIVITY_CACHE_PATH)
     return {'sessions': out}
+
+
+def _has_owner(path: str, listed: set) -> bool:
+    """Whether `path` is a listed transcript, or a sub-agent transcript under a listed
+    session's folder (`<id>/…/x.jsonl` next to `<id>.jsonl`)."""
+    if path in listed:
+        return True
+    parent = os.path.dirname(path)
+    while parent and parent != os.path.dirname(parent):
+        if parent + '.jsonl' in listed:
+            return True
+        parent = os.path.dirname(parent)
+    return False
+
+
+def _cached_file_turns(ac: dict, path: str, now: float, compute) -> List[list]:
+    """`path`'s turns from the activity cache (keyed by path, size, mtime, algorithm version),
+    or `compute()`d; a file written within the racy window is never trusted from the cache."""
+    try:
+        st = os.stat(path)
+    except OSError:
+        return []
+    trust = now - st.st_mtime >= scan_mod.RACY_WINDOW
+    return activity.cached_turns(ac, path, st.st_size, st.st_mtime, compute, trust)
 
 
 def _mtime(path: str) -> float:

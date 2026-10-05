@@ -65,3 +65,12 @@ def summarize_usage(turns: list, from_ts: Optional[float] = None,
 
 def activity_turns(path: str) -> List[list]:
     return _activity.claude_turns(path)
+
+
+def activity_extra_files(path: str) -> List[str]:
+    """Sub-agent transcripts whose work belongs to this session's activity."""
+    return _activity.subagent_files(path)
+
+
+def activity_extra_turns(path: str) -> List[list]:
+    return _activity.subagent_runs(path)

@@ -201,22 +201,24 @@ export interface StatsResult {
 	agents?: Record<string, { windows: StatsWindows }>;
 }
 
-/** What started a turn: a typed prompt, a notification that woke the agent, or the agent carrying on by itself. */
-export type ActivityTurnKind = "prompt" | "notification" | "resume";
-
-/** One turn inside a block: from a prompt to the agent's last record before the next one. */
+/** One listed turn inside a block: from a typed prompt to the agent's last record before the next one. */
 export interface ActivityTurn {
 	start: number;
 	end: number;
-	/** The first ~200 characters of the prompt; empty for a `resume`. */
+	/** The first ~200 characters of the prompt (a slash command is one line, `/model best`). */
 	prompt: string;
-	kind: ActivityTurnKind;
+	/** Only prompts are listed; notifications and sub-agent runs count as work but are not turns here. */
+	kind: "prompt";
+	/** The agent's last answer in this turn (first ~400 characters); empty when it gave none. */
+	reply: string;
 }
 
 /** A block of work: turns less than the gap apart, joined. Epoch seconds. */
 export interface ActivitySpan {
 	start: number;
 	end: number;
+	/** The agent's last answer within the block (first ~400 characters). */
+	final: string;
 	turns: ActivityTurn[];
 }
 

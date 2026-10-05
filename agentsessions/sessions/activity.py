@@ -10,6 +10,7 @@ Code transcript reader; the Codex and OpenCode readers live next to their own pa
 """
 
 import json
+import os
 import re
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
@@ -23,12 +24,15 @@ MIN_SPAN_SECONDS = 60.0
 # A last turn whose final record is this recent is taken to still be running: it ends "now".
 LIVE_WINDOW_SECONDS = 120.0
 # Bumped whenever how turns are read changes: a cached entry of another version is recomputed.
-ACTIVITY_VERSION = 4
+ACTIVITY_VERSION = 5
+# How much of the agent's last answer is kept per turn (and per block, as `final`).
+REPLY_CHARS = 400
 # How much of a turn's prompt is kept (in the cache and in `json activity`).
 PROMPT_CHARS = 200
-# What started a turn: a typed prompt, an injected notification that woke the agent, or the
-# agent carrying on by itself after a long silence.
-KIND_PROMPT, KIND_NOTIFICATION, KIND_RESUME = 'prompt', 'notification', 'resume'
+# What started a turn: a typed prompt, an injected notification that woke the agent, the agent
+# carrying on by itself after a long silence, or (`subagent`) a run of a sub-agent's own
+# transcript. Only prompts are listed in `json activity`'s turns; the rest still count as work.
+KIND_PROMPT, KIND_NOTIFICATION, KIND_RESUME, KIND_SUBAGENT = 'prompt', 'notification', 'resume', 'subagent'
 
 _TS_RE = re.compile(rb'"timestamp":"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?)Z"')
 # Claude Code user lines that are slash-command scaffolding (the caveat before a command, the
@@ -47,7 +51,7 @@ _NOT_A_TURN_PREFIXES = (
 
 
 class TurnBuilder:
-    """Feeds on events in transcript order and yields turns `[start, end, prompt, kind]`. A
+    """Feeds on events in transcript order and yields turns `[start, end, prompt, kind, reply]`. A
     prompt starts a turn; activity extends the current one, unless it comes
     `SEGMENT_GAP_SECONDS` or more after the turn's last record (the agent resumed on its own,
     e.g. after a compaction or a resumed session), in which case it starts a `resume` turn."""
@@ -59,8 +63,13 @@ class TurnBuilder:
         self._pre_current: Optional[list] = None
 
     def prompt(self, t: float, text: str = '', kind: str = KIND_PROMPT) -> None:
-        self._current = [t, t, text[:PROMPT_CHARS], kind]
+        self._current = [t, t, text[:PROMPT_CHARS], kind, '']
         self.turns.append(self._current)
+
+    def reply(self, text) -> None:
+        """The agent's latest answer in the current turn (the last one set wins)."""
+        if self._current is not None:
+            self._current[4] = text
 
     def activity(self, t: float) -> None:
         if self._current is not None:
@@ -71,7 +80,7 @@ class TurnBuilder:
         elif self.turns:
             return
         elif self._pre_current is None or t - self._pre_current[1] >= SEGMENT_GAP_SECONDS:
-            self._pre_current = [t, t, '', KIND_RESUME]
+            self._pre_current = [t, t, '', KIND_RESUME, '']
             self._pre.append(self._pre_current)
         elif t > self._pre_current[1]:
             self._pre_current[1] = t
@@ -82,22 +91,28 @@ class TurnBuilder:
 
 
 def _turn_dict(t: list) -> dict:
-    return {'start': t[0], 'end': t[1], 'prompt': t[2], 'kind': t[3]}
+    return {'start': t[0], 'end': t[1], 'prompt': t[2], 'kind': t[3], 'reply': t[4] if len(t) > 4 else ''}
 
 
 def join_turns(turns: List[list], gap: float = DEFAULT_GAP_SECONDS,
                min_len: float = MIN_SPAN_SECONDS) -> List[dict]:
-    """Blocks `{start, end, turns: [{start, end, prompt, kind}]}`: turns (any order) are joined
-    when the next one starts less than `gap` after the previous block's end; a block shorter
-    than `min_len` is extended to `min_len` so a one-message turn stays visible (its turns keep
-    their true times)."""
+    """Blocks `{start, end, final, turns: [{start, end, prompt, kind, reply}]}`: turns (any
+    order) are joined when the next one starts less than `gap` after the previous block's end; a
+    block shorter than `min_len` is extended to `min_len` so a one-message turn stays visible.
+    Every turn counts toward the block's time, but only typed prompts are listed in `turns` (with
+    their true times); `final` is the agent's last answer in the block (its main thread's)."""
     blocks: List[dict] = []
     for t in sorted(turns, key=lambda x: x[0]):
         if blocks and t[0] - blocks[-1]['end'] < gap:
-            blocks[-1]['end'] = max(blocks[-1]['end'], t[1])
-            blocks[-1]['turns'].append(_turn_dict(t))
+            blk = blocks[-1]
+            blk['end'] = max(blk['end'], t[1])
         else:
-            blocks.append({'start': t[0], 'end': t[1], 'turns': [_turn_dict(t)]})
+            blk = {'start': t[0], 'end': t[1], 'final': '', 'turns': []}
+            blocks.append(blk)
+        if t[3] == KIND_PROMPT:
+            blk['turns'].append(_turn_dict(t))
+        if len(t) > 4 and t[4]:
+            blk['final'] = t[4]
     for b in blocks:
         if b['end'] - b['start'] < min_len:
             b['end'] = b['start'] + min_len
@@ -124,7 +139,7 @@ def clip_spans(blocks: List[dict], start: float, end: float) -> List[dict]:
         a, b = max(blk['start'], start), min(blk['end'], end)
         if b > a:
             turns = [t for t in blk['turns'] if t['end'] > a and t['start'] < b]
-            out.append({'start': a, 'end': b, 'turns': turns})
+            out.append({'start': a, 'end': b, 'final': blk.get('final', ''), 'turns': turns})
     return out
 
 
@@ -176,10 +191,20 @@ def _turn_start(rec: dict) -> Optional[Tuple[str, str]]:
     return text[:PROMPT_CHARS], KIND_PROMPT if human else KIND_NOTIFICATION
 
 
+def _assistant_text(line: bytes) -> str:
+    """The text of an `assistant` line (its text blocks joined), cleaned and cut to `REPLY_CHARS`."""
+    try:
+        rec = json.loads(line)
+    except ValueError:
+        return ''
+    raw, _tools = detail._texts_and_tools((rec.get('message') or {}).get('content') if isinstance(rec, dict) else None)
+    return detail.clean_text(raw).strip()[:REPLY_CHARS]
+
+
 def claude_turns(path: str) -> List[list]:
-    """Turns of a Claude Code transcript. Every user and assistant line is activity (tool
-    results and sub-agent work included: the agent was working); a line that `_turn_start`
-    accepts also starts a turn."""
+    """Turns of a Claude Code transcript's main thread. Every user and assistant line is
+    activity (tool results and sub-agent lines included: the agent was working); a line that
+    `_turn_start` accepts also starts a turn. Each turn keeps the agent's last text answer."""
     b = TurnBuilder()
     try:
         f = open(path, 'rb')
@@ -190,7 +215,8 @@ def claude_turns(path: str) -> List[list]:
             if b'"timestamp"' not in line:
                 continue
             is_user = b'"type":"user"' in line
-            if not is_user and b'"type":"assistant"' not in line:
+            is_assistant = not is_user and b'"type":"assistant"' in line
+            if not is_user and not is_assistant:
                 continue
             m = _TS_RE.search(line)
             t = parse_utc(m.group(1).decode()) if m else None
@@ -210,7 +236,49 @@ def claude_turns(path: str) -> List[list]:
                     b.prompt(t, start[0], start[1])
                     continue
             b.activity(t)
-    return b.finish()
+            # The latest main-thread answer with text is kept as raw bytes, decoded once at the end.
+            if is_assistant and b'"type":"text"' in line and b'"isSidechain":true' not in line:
+                b.reply(line)
+    turns = b.finish()
+    for t in turns:
+        if isinstance(t[4], bytes):
+            t[4] = _assistant_text(t[4])
+    return turns
+
+
+def subagent_files(path: str) -> List[str]:
+    """The transcripts of a session's sub-agents (and background agents, teammates): every
+    `.jsonl` under the folder named like the session next to `<id>.jsonl`, at any depth."""
+    folder = path[:-len('.jsonl')] if path.endswith('.jsonl') else path
+    out: List[str] = []
+    if os.path.isdir(folder):
+        for root, _dirs, files in os.walk(folder):
+            out.extend(os.path.join(root, fn) for fn in files if fn.endswith('.jsonl'))
+    return sorted(out)
+
+
+def subagent_runs(path: str) -> List[list]:
+    """A sub-agent transcript as runs of work: first to last record, split where two records
+    are `SEGMENT_GAP_SECONDS` or more apart."""
+    runs: List[list] = []
+    try:
+        f = open(path, 'rb')
+    except OSError:
+        return runs
+    with f:
+        for line in f:
+            if b'"timestamp"' not in line:
+                continue
+            m = _TS_RE.search(line)
+            t = parse_utc(m.group(1).decode()) if m else None
+            if t is None:
+                continue
+            if runs and t - runs[-1][1] < SEGMENT_GAP_SECONDS:
+                if t > runs[-1][1]:
+                    runs[-1][1] = t
+            else:
+                runs.append([t, t, '', KIND_SUBAGENT, ''])
+    return runs
 
 
 def load_cache(path: str) -> Dict[str, dict]:

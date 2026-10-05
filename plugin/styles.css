@@ -3367,14 +3367,6 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	margin-top: var(--size-4-2);
 }
 
-.agent-sessions-activity-turn.is-notification {
-	border-left-color: var(--color-orange);
-}
-
-.agent-sessions-activity-turn.is-resume {
-	border-left-color: var(--text-faint);
-}
-
 .agent-sessions-activity-turn-meta {
 	display: flex;
 	flex-wrap: wrap;
@@ -3382,10 +3374,6 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 	font-variant-numeric: tabular-nums;
-}
-
-.agent-sessions-activity-turn-kind {
-	color: var(--text-faint);
 }
 
 .agent-sessions-activity-turn-prompt {
@@ -3434,4 +3422,37 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	justify-content: flex-end;
 	gap: var(--size-4-2);
 	margin-bottom: var(--size-4-2);
+}
+
+.agent-sessions-activity-section {
+	margin: var(--size-4-2) 0 var(--size-4-1);
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+}
+
+.agent-sessions-activity-final-text {
+	padding: var(--size-4-2) var(--size-4-3);
+	border-left: 3px solid var(--interactive-accent);
+	border-radius: var(--radius-s);
+	background-color: var(--background-secondary);
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
+}
+
+.agent-sessions-activity-turn-reply {
+	margin-top: 2px;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.agent-sessions-activity-turn-reply summary {
+	cursor: pointer;
+}
+
+.agent-sessions-activity-turn-reply div {
+	margin-top: 2px;
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
 }

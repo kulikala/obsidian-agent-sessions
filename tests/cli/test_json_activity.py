@@ -146,6 +146,34 @@ class TestActivityOutput(unittest.TestCase):
             self.assertEqual(spy.call_count, 1)           # grew: parsed again
             self.assertEqual(pairs(self.by_id(out)[CLAUDE_ID])[-1], [epoch('02:10:00'), epoch('02:12:00')])
 
+    def test_subagent_work_makes_up_the_block_not_just_the_main_thread(self):
+        sid = '44444444-4444-4444-4444-444444444444'
+        proj = os.path.join(self.proj_root, '-Users-k-vault')
+        write_jsonl(os.path.join(proj, sid + '.jsonl'), [
+            claude_line('user', '04:00:00', cwd='/Users/k/vault', message={'role': 'user', 'content': 'build it'}),
+            claude_line('assistant', '04:00:30', message={'role': 'assistant', 'content': [{'type': 'text', 'text': 'dispatching'}]}),
+            # the main thread only wakes for seconds when a background agent reports back
+            claude_line('user', '04:50:00', message={'role': 'user', 'content': '<task-notification>done</task-notification>'}),
+            claude_line('assistant', '04:50:20', message={'role': 'assistant', 'content': [{'type': 'text', 'text': 'all done'}]}),
+            {'type': 'custom-title', 'customTitle': 'Big job', 'sessionId': sid},
+        ])
+        args = (epoch('00:00:00'), epoch('23:59:59'), 1800)
+        before = self.by_id(jsonout.activity_output(*args))[sid]
+        self.assertEqual([round(b['end'] - b['start']) for b in before['spans']], [60, 60])   # two 1-minute blocks
+
+        subdir = os.path.join(proj, sid, 'subagents')
+        os.makedirs(subdir)
+        write_jsonl(os.path.join(subdir, 'agent-a.jsonl'), [
+            claude_line(k, hms, isSidechain=True, message={'role': k, 'content': 'x'})
+            for k, hms in (('user', '04:00:30'), ('assistant', '04:10:00'), ('assistant', '04:20:00'),
+                           ('assistant', '04:30:00'), ('assistant', '04:40:00'), ('assistant', '04:49:00'))])
+        after = self.by_id(jsonout.activity_output(*args))[sid]
+        self.assertEqual(pairs(after), [[epoch('04:00:00'), epoch('04:50:20')]])             # one 50-minute block
+        span = after['spans'][0]
+        # only the typed prompt is listed; the notification still counted as work
+        self.assertEqual([(t['prompt'], t['kind'], t['reply']) for t in span['turns']], [('build it', 'prompt', 'dispatching')])
+        self.assertEqual(span['final'], 'all done')
+
     def test_cli_args(self):
         import io
         import json

@@ -167,21 +167,28 @@ const PROMPTS = [
 	"Summarize what changed in this branch",
 ];
 
-/** Turns of a block: the block split into one to three runs, each with a made-up prompt. */
+const REPLIES = [
+	"The total came from a memo that ignored the coupon. I fixed the dependency list and added a regression test; the checkout suite passes.",
+	"Done. The changelog now lists the fix under 4.2.1 and links the issue.",
+	"The stale rows came from the rename hook skipping the cache key. It now invalidates by id; I added a test.",
+	"The linter reported three unused imports; all removed, no other findings.",
+];
+
+/** Turns of a block: the block split into one to three runs, each with a made-up prompt and answer. */
 function turnsOf(start, end, rand) {
 	const n = 1 + Math.floor(rand() * 3);
 	const turns = [];
 	let at = start;
 	for (let i = 0; i < n; i++) {
-		const stop = i === n - 1 ? end : at + ((end - at) * (0.3 + rand() * 0.4));
-		const kind = i > 0 && rand() < 0.2 ? "notification" : "prompt";
+		const stop = i === n - 1 ? end : at + (end - at) * (0.3 + rand() * 0.4);
 		turns.push({
 			start: at,
 			end: stop,
-			prompt: kind === "notification" ? "<task-notification> Background task finished" : PROMPTS[Math.floor(rand() * PROMPTS.length)],
-			kind,
+			prompt: PROMPTS[Math.floor(rand() * PROMPTS.length)],
+			kind: "prompt",
+			reply: REPLIES[Math.floor(rand() * REPLIES.length)],
 		});
-		at = stop + (end - stop) * 0 + 60;
+		at = stop + 60;
 		if (at >= end) {
 			break;
 		}
@@ -222,7 +229,10 @@ function activityOutput(from, to, gap) {
 		const spans = mergeTimes(raw, gap)
 			.map(([a, b]) => [Math.max(a, from), Math.min(b, to, now)])
 			.filter(([a, b]) => b > a)
-			.map(([a, b]) => ({ start: a, end: b, turns: turnsOf(a, b, rand) }));
+			.map(([a, b]) => {
+				const turns = turnsOf(a, b, rand);
+				return { start: a, end: b, final: turns[turns.length - 1].reply, turns };
+			});
 		if (spans.length === 0) {
 			return;
 		}

@@ -6,20 +6,26 @@ import unittest
 from agentsessions.sessions import activity
 
 
-def turn(start, end, prompt='p', kind='prompt'):
-    return [start, end, prompt, kind]
+def turn(start, end, prompt='p', kind='prompt', reply=''):
+    return [start, end, prompt, kind, reply]
 
 
-def tdict(start, end, prompt='p', kind='prompt'):
-    return {'start': start, 'end': end, 'prompt': prompt, 'kind': kind}
+def tdict(start, end, prompt='p', kind='prompt', reply=''):
+    return {'start': start, 'end': end, 'prompt': prompt, 'kind': kind, 'reply': reply}
+
+
+def core(turns):
+    return [t[:4] for t in turns]
 
 
 class TestJoinTurns(unittest.TestCase):
-    def test_joins_turns_closer_than_the_gap_and_keeps_them_in_order(self):
-        # turn ends 600, next prompt at 1200 (gap 600 < 1800): one block holding both turns
-        self.assertEqual(
-            activity.join_turns([turn(0, 600, 'a'), turn(1200, 1500, 'b', 'notification')], gap=1800),
-            [{'start': 0, 'end': 1500, 'turns': [tdict(0, 600, 'a'), tdict(1200, 1500, 'b', 'notification')]}])
+    def test_joins_turns_closer_than_the_gap_and_lists_only_prompts(self):
+        # turn ends 600, next prompt at 1200 (gap 600 < 1800): one block; the notification and the
+        # sub-agent run count as work but aren't listed; `final` is the last answer in the block
+        got = activity.join_turns([turn(0, 600, 'a', reply='first'), turn(1200, 1500, 'b', 'notification', 'second'),
+                                   turn(1000, 2500, '', 'subagent')], gap=1800)
+        self.assertEqual(got, [{'start': 0, 'end': 2500, 'final': 'second',
+                                'turns': [tdict(0, 600, 'a', reply='first')]}])
 
     def test_gap_is_exclusive_of_the_limit(self):
         # exactly the gap apart starts a new block
@@ -68,7 +74,7 @@ class TestTurnBuilder(unittest.TestCase):
         b.activity(1)
         b.prompt(10)
         b.activity(20)
-        self.assertEqual(b.finish(), [turn(10, 20, '')])
+        self.assertEqual(core(b.finish()), [turn(10, 20, '')[:4]])
 
     def test_a_long_silence_inside_a_turn_starts_a_new_turn(self):
         b = activity.TurnBuilder()
@@ -76,7 +82,7 @@ class TestTurnBuilder(unittest.TestCase):
         b.activity(600)
         b.activity(600 + 8 * 3600)          # the agent resumed hours later without a prompt
         b.activity(600 + 8 * 3600 + 300)
-        self.assertEqual(b.finish(), [turn(0, 600, '', 'prompt'), turn(600 + 8 * 3600, 600 + 8 * 3600 + 300, '', 'resume')])
+        self.assertEqual(core(b.finish()), [[0, 600, '', 'prompt'], [600 + 8 * 3600, 600 + 8 * 3600 + 300, '', 'resume']])
 
     def test_a_transcript_with_no_prompt_is_one_turn(self):
         b = activity.TurnBuilder()
@@ -117,7 +123,7 @@ class TestClaudeTurns(unittest.TestCase):
             line('user', '01:30:00', message={'role': 'user', 'content': [{'type': 'text', 'text': 'next'}]}),
             line('assistant', '01:31:00', message={'role': 'assistant', 'content': 'ok'}),
         ])
-        self.assertEqual(got, [[epoch('01:00:00'), epoch('01:04:00'), 'do it', 'prompt'],
+        self.assertEqual(core(got), [[epoch('01:00:00'), epoch('01:04:00'), 'do it', 'prompt'],
                                [epoch('01:30:00'), epoch('01:31:00'), 'next', 'prompt']])
 
     def test_meta_sidechain_and_command_output_do_not_start_turns(self):
@@ -129,7 +135,7 @@ class TestClaudeTurns(unittest.TestCase):
             line('system', '05:00:00'),
         ])
         # meta and command-output lines are skipped; sub-agent work still extends the turn
-        self.assertEqual(got, [[epoch('01:00:00'), epoch('01:02:00'), 'go', 'prompt']])
+        self.assertEqual(core(got), [[epoch('01:00:00'), epoch('01:02:00'), 'go', 'prompt']])
 
     def test_a_task_notification_wakes_the_agent_and_starts_a_turn(self):
         got = self.turns([
@@ -138,7 +144,7 @@ class TestClaudeTurns(unittest.TestCase):
             line('user', '03:00:00', message={'role': 'user', 'content': '<task-notification>done</task-notification>'}),
             line('assistant', '03:01:00', message={'role': 'assistant', 'content': 'handled'}),
         ])
-        self.assertEqual(got, [[epoch('01:00:00'), epoch('01:01:00'), 'go', 'prompt'],
+        self.assertEqual(core(got), [[epoch('01:00:00'), epoch('01:01:00'), 'go', 'prompt'],
                                [epoch('03:00:00'), epoch('03:01:00'), 'done', 'notification']])
 
     def test_assistant_output_resuming_after_a_long_gap_without_a_prompt(self):
@@ -149,8 +155,21 @@ class TestClaudeTurns(unittest.TestCase):
             line('assistant', '10:33:00', message={'role': 'assistant', 'content': 'again'}),
             line('assistant', '10:40:00', message={'role': 'assistant', 'content': 'more'}),
         ])
-        self.assertEqual(got, [[epoch('02:00:00'), epoch('02:29:00'), 'go', 'prompt'],
+        self.assertEqual(core(got), [[epoch('02:00:00'), epoch('02:29:00'), 'go', 'prompt'],
                                [epoch('10:33:00'), epoch('10:40:00'), '', 'resume']])
+
+    def test_each_turn_keeps_the_agents_last_answer_from_the_main_thread(self):
+        got = self.turns([
+            line('user', '01:00:00', message={'role': 'user', 'content': 'go'}),
+            line('assistant', '01:00:10', message={'role': 'assistant', 'content': [{'type': 'text', 'text': 'working on it'}]}),
+            line('assistant', '01:00:20', message={'role': 'assistant', 'content': [{'type': 'tool_use', 'name': 'Bash'}]}),
+            line('assistant', '01:00:30', isSidechain=True, message={'role': 'assistant', 'content': [{'type': 'text', 'text': 'sub-agent chatter'}]}),
+            line('assistant', '01:01:00', message={'role': 'assistant', 'content': [{'type': 'text', 'text': 'all done ' + 'x' * 600}]}),
+            line('user', '02:00:00', message={'role': 'user', 'content': 'again'}),
+        ])
+        self.assertTrue(got[0][4].startswith('all done'))
+        self.assertEqual(len(got[0][4]), activity.REPLY_CHARS)
+        self.assertEqual(got[1][4], '')
 
     def test_kinds_and_prompt_text(self):
         got = self.turns([
@@ -187,6 +206,33 @@ class TestClaudeTurns(unittest.TestCase):
 
     def test_unreadable_file(self):
         self.assertEqual(activity.claude_turns('/nonexistent/x.jsonl'), [])
+
+
+class TestSubagents(unittest.TestCase):
+    def test_files_are_found_at_any_depth_next_to_the_session_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            main = os.path.join(d, 'abc.jsonl')
+            write(main, [line('user', '01:00:00')])
+            os.makedirs(os.path.join(d, 'abc', 'subagents', 'deep'))
+            a = os.path.join(d, 'abc', 'subagents', 'agent-1.jsonl')
+            b = os.path.join(d, 'abc', 'subagents', 'deep', 'agent-2.jsonl')
+            write(a, [line('user', '01:00:00')])
+            write(b, [line('user', '01:00:00')])
+            write(os.path.join(d, 'abc', 'notes.txt'), ['x'])
+            self.assertEqual(activity.subagent_files(main), sorted([a, b]))
+            self.assertEqual(activity.subagent_files(os.path.join(d, 'none.jsonl')), [])
+
+    def test_a_run_is_first_to_last_record_split_at_long_silences(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = os.path.join(d, 'agent.jsonl')
+            write(p, [
+                line('user', '04:00:00', isSidechain=True), line('assistant', '04:10:00', isSidechain=True),
+                line('assistant', '04:20:00', isSidechain=True),
+                line('assistant', '06:00:00', isSidechain=True), line('assistant', '06:05:00', isSidechain=True),
+            ])
+            self.assertEqual([r[:2] for r in activity.subagent_runs(p)],
+                             [[epoch('04:00:00'), epoch('04:20:00')], [epoch('06:00:00'), epoch('06:05:00')]])
+            self.assertEqual({r[3] for r in activity.subagent_runs(p)}, {'subagent'})
 
 
 class TestCache(unittest.TestCase):

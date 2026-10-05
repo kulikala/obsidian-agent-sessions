@@ -30,7 +30,7 @@ import type { ActivitySession, StatsResult, StatsWindow } from "../../src/types"
 
 const local = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime() / 1000;
 
-const sp = (a: number, b: number): Interval & { turns: [] } => ({ start: a, end: b, turns: [] });
+const sp = (a: number, b: number): ActivitySession["spans"][number] => ({ start: a, end: b, final: "", turns: [] });
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min);
 
 describe("week math", () => {

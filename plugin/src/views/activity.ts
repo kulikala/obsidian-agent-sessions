@@ -645,22 +645,33 @@ export class ActivityView extends ItemView {
 			cls: "agent-sessions-activity-bd-times",
 			text: `${this.rangeText(span.start, span.end)} (${this.durationText(span.end - span.start)})`,
 		});
-		const list = container.createDiv({ cls: "agent-sessions-activity-turns" });
-		for (const turn of span.turns) {
-			this.renderTurn(list, turn);
+		// The block's final response first: it's what the work came to.
+		if (span.final) {
+			const final = container.createDiv({ cls: "agent-sessions-activity-final" });
+			final.createDiv({ cls: "agent-sessions-activity-section", text: t("activity.finalResponse") });
+			final.createDiv({ cls: "agent-sessions-activity-final-text", text: span.final });
+		}
+		const turns = span.turns.filter((turn) => turn.kind === "prompt");
+		if (turns.length > 0) {
+			container.createDiv({ cls: "agent-sessions-activity-section", text: t("activity.prompts") });
+			const list = container.createDiv({ cls: "agent-sessions-activity-turns" });
+			for (const turn of turns) {
+				this.renderTurn(list, turn);
+			}
 		}
 	}
 
 	private renderTurn(list: HTMLElement, turn: ActivityTurn): void {
-		const item = list.createDiv({ cls: `agent-sessions-activity-turn is-${turn.kind}` });
+		const item = list.createDiv({ cls: "agent-sessions-activity-turn" });
 		const meta = item.createDiv({ cls: "agent-sessions-activity-turn-meta" });
 		meta.createSpan({ text: `${formatTimeShort(turn.start, getLang())} – ${formatTimeShort(turn.end, getLang())}` });
 		meta.createSpan({ cls: "agent-sessions-activity-turn-dur", text: this.durationText(turn.end - turn.start) });
-		if (turn.kind !== "prompt") {
-			meta.createSpan({ cls: "agent-sessions-activity-turn-kind", text: t(`activity.kind.${turn.kind}`) });
-		}
-		if (turn.prompt) {
-			item.createDiv({ cls: "agent-sessions-activity-turn-prompt", text: turn.prompt });
+		item.createDiv({ cls: "agent-sessions-activity-turn-prompt", text: turn.prompt });
+		// That turn's last answer, folded away until asked for.
+		if (turn.reply) {
+			const more = item.createEl("details", { cls: "agent-sessions-activity-turn-reply" });
+			more.createEl("summary", { text: t("activity.response") });
+			more.createDiv({ text: turn.reply });
 		}
 	}
 }
