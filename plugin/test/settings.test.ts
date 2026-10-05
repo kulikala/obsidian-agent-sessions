@@ -37,6 +37,8 @@ describe("DEFAULT_SETTINGS", () => {
 			managerAnalysisFolded: { claude: false, codex: false, opencode: false },
 			managerStatusFilter: "all",
 			activityMode: "session",
+			activityHiddenAgents: [],
+			activityDetailWidth: 38,
 			agentSkillsStamp: "",
 			onboardingShownVersion: "",
 			onboardingOnUpdate: true,
@@ -81,6 +83,17 @@ describe("mergeSettings", () => {
 	it("keeps a known activityMode and drops an unknown one", () => {
 		expect(mergeSettings({ activityMode: "day" }).activityMode).toBe("day");
 		expect(mergeSettings({ activityMode: "month" }).activityMode).toBe("session");
+	});
+
+	it("keeps valid activity calendar choices and drops invalid ones", () => {
+		expect(mergeSettings({ activityHiddenAgents: ["codex"], activityDetailWidth: 50 })).toMatchObject({
+			activityHiddenAgents: ["codex"],
+			activityDetailWidth: 50,
+		});
+		expect(mergeSettings({ activityHiddenAgents: [1], activityDetailWidth: 5 })).toMatchObject({
+			activityHiddenAgents: [],
+			activityDetailWidth: 38,
+		});
 	});
 
 	it("drops an unrecognized managerStatusFilter value, falling back to the default (all)", () => {

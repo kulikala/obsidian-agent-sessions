@@ -191,6 +191,10 @@ export interface AgentSessionsSettings {
 	managerStatusFilter: ManagerStatusFilter;
 	/** The activity calendar's period mode. Default `session`. */
 	activityMode: ActivityMode;
+	/** Agents hidden in the activity calendar (their lanes, blocks and card). */
+	activityHiddenAgents: string[];
+	/** The activity calendar's details panel width, as a % of the view (when a block is open). */
+	activityDetailWidth: number;
 	/** What the agent skill in the vault was last written for (`skillsStamp`); empty = never. Not
 	 * shown in the settings tab. */
 	agentSkillsStamp: string;
@@ -225,6 +229,8 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	managerAnalysisFolded: defaultAnalysisFolded(),
 	managerStatusFilter: "all",
 	activityMode: "session",
+	activityHiddenAgents: [],
+	activityDetailWidth: 38,
 	agentSkillsStamp: "",
 	onboardingShownVersion: "",
 	onboardingOnUpdate: true,
@@ -306,6 +312,12 @@ export function mergeSettings(data: unknown, isMac = true, platform: string = pr
 	}
 	if (!ACTIVITY_MODES.includes(saved.activityMode as ActivityMode)) {
 		delete saved.activityMode;
+	}
+	if (!Array.isArray(saved.activityHiddenAgents) || !saved.activityHiddenAgents.every((a) => typeof a === "string")) {
+		delete saved.activityHiddenAgents;
+	}
+	if (typeof saved.activityDetailWidth !== "number" || !(saved.activityDetailWidth >= 20 && saved.activityDetailWidth <= 70)) {
+		delete saved.activityDetailWidth;
 	}
 	delete saved.installAgentSkills;
 	if (typeof saved.agentSkillsStamp !== "string") {

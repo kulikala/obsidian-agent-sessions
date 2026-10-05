@@ -12,7 +12,11 @@ import { windowsForAgent } from "./manager-model";
 
 export const SECONDS_PER_DAY = 86400;
 
-export type Span = [number, number];
+/** A half-open time interval, epoch seconds (or seconds since midnight inside a day piece). */
+export interface Interval {
+	start: number;
+	end: number;
+}
 
 /** Local midnight of `date`'s day. */
 export function startOfDay(date: Date): Date {
@@ -132,27 +136,43 @@ export function pickResetAnchor(stats: StatsResult | null, enabledAgents: readon
 }
 
 /** A span's part that falls on one day; `start`/`end` are seconds since that day's local midnight. */
-export interface DayPiece {
+export interface DayPiece<T extends Interval = Interval> {
 	day: number;
 	start: number;
 	end: number;
+	/** The span the piece was cut from. */
+	span: T;
 }
 
 /** Cuts `spans` at local midnights into per-day pieces (day index into `days`). Parts outside
  * `days` are dropped. */
-export function splitSpansByDay(spans: readonly Span[], days: readonly DayRange[]): DayPiece[] {
-	const out: DayPiece[] = [];
-	for (const [a, b] of spans) {
+export function splitSpansByDay<T extends Interval>(spans: readonly T[], days: readonly DayRange[]): DayPiece<T>[] {
+	const out: DayPiece<T>[] = [];
+	for (const span of spans) {
 		for (let i = 0; i < days.length; i++) {
 			const d = days[i];
-			const start = Math.max(a, d.start);
-			const end = Math.min(b, d.end);
+			const start = Math.max(span.start, d.start);
+			const end = Math.min(span.end, d.end);
 			if (end > start) {
-				out.push({ day: i, start: start - d.start, end: end - d.start });
+				out.push({ day: i, start: start - d.start, end: end - d.start, span });
 			}
 		}
 	}
 	return out;
+}
+
+/** The shortest a block is drawn: 6 px or 10 minutes at the current scale, whichever is longer (seconds). */
+export function minBlockSeconds(hourPx: number, minPx = 6, minMinutes = 10): number {
+	return Math.max((minPx / hourPx) * 3600, minMinutes * 60);
+}
+
+/**
+ * Pieces for drawing: each one at least `minSeconds` long (ends extended, never past the day's
+ * 24 h), so a one-minute block stays visible. The true times stay in `span`. Run the layout on
+ * the result so blocks that now overlap sit side by side instead of hiding each other.
+ */
+export function expandForMinHeight<T extends DayPiece>(pieces: readonly T[], minSeconds: number): T[] {
+	return pieces.map((p) => ({ ...p, end: Math.min(Math.max(p.end, p.start + minSeconds), Math.max(p.end, SECONDS_PER_DAY)) }));
 }
 
 export interface LaidOut<T> {
@@ -206,12 +226,12 @@ export function fitsLabel(durationSeconds: number, hourPx: number, minHeightPx =
 }
 
 /** Total seconds covered by `spans`, counting overlapping parts once. */
-export function unionSeconds(spans: readonly Span[]): number {
-	const sorted = [...spans].sort((a, b) => a[0] - b[0]);
+export function unionSeconds(spans: readonly Interval[]): number {
+	const sorted = [...spans].sort((a, b) => a.start - b.start);
 	let total = 0;
 	let curStart = 0;
 	let curEnd = -Infinity;
-	for (const [a, b] of sorted) {
+	for (const { start: a, end: b } of sorted) {
 		if (a > curEnd) {
 			if (curEnd > -Infinity) {
 				total += curEnd - curStart;
@@ -229,10 +249,10 @@ export function unionSeconds(spans: readonly Span[]): number {
 }
 
 /** The most spans open at the same moment (ends are exclusive: back-to-back spans don't count as concurrent). */
-export function maxConcurrency(spans: readonly Span[]): number {
+export function maxConcurrency(spans: readonly Interval[]): number {
 	const events: [number, number][] = [];
-	for (const [a, b] of spans) {
-		events.push([a, 1], [b, -1]);
+	for (const { start, end } of spans) {
+		events.push([start, 1], [end, -1]);
 	}
 	events.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
 	let cur = 0;
@@ -304,4 +324,63 @@ export function firstActiveSeconds(pieces: readonly DayPiece[], padSeconds = 180
 export function clockLabel(secondsSinceMidnight: number): string {
 	const m = Math.round(secondsSinceMidnight / 60);
 	return `${Math.floor(m / 60)}:${String(m % 60).padStart(2, "0")}`;
+}
+
+/** The agents to show: `all` minus the hidden ones. */
+export function visibleAgents(all: readonly string[], hidden: readonly string[]): string[] {
+	return all.filter((a) => !hidden.includes(a));
+}
+
+/**
+ * The hidden list after toggling `agent`. At least one of `all` stays shown: hiding the last
+ * visible agent changes nothing.
+ */
+export function toggleAgent(hidden: readonly string[], agent: string, all: readonly string[]): string[] {
+	if (hidden.includes(agent)) {
+		return hidden.filter((a) => a !== agent);
+	}
+	if (visibleAgents(all, hidden).filter((a) => a !== agent).length === 0) {
+		return [...hidden];
+	}
+	return [...hidden, agent];
+}
+
+export interface SessionColumn {
+	session: ActivitySession;
+	pieces: DayPiece<ActivitySession["spans"][number]>[];
+}
+
+/**
+ * Day mode: one column per session active on `day` (`dayIndex` into `days`), grouped by agent
+ * in `agentOrder` (other agents last), each group ordered by when its sessions first worked.
+ */
+export function dayColumns(
+	sessions: readonly ActivitySession[],
+	agentOrder: readonly string[],
+	days: readonly DayRange[],
+	dayIndex = 0
+): SessionColumn[] {
+	const rank = (agent: string) => {
+		const i = agentOrder.indexOf(agent);
+		return i === -1 ? agentOrder.length : i;
+	};
+	const columns: SessionColumn[] = [];
+	for (const session of sessions) {
+		const pieces = splitSpansByDay(session.spans, days).filter((p) => p.day === dayIndex);
+		if (pieces.length > 0) {
+			columns.push({ session, pieces });
+		}
+	}
+	return columns.sort(
+		(a, b) =>
+			rank(a.session.agent) - rank(b.session.agent) ||
+			Math.min(...a.pieces.map((p) => p.start)) - Math.min(...b.pieces.map((p) => p.start)) ||
+			a.session.id.localeCompare(b.session.id)
+	);
+}
+
+/** `seconds` as whole hours and minutes (minutes rounded); both 0 for under 30 seconds. */
+export function splitDuration(seconds: number): { h: number; m: number } {
+	const total = Math.round(Math.max(0, seconds) / 60);
+	return { h: Math.floor(total / 60), m: total % 60 };
 }

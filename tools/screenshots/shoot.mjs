@@ -233,6 +233,13 @@ async function readmeScenes(page, box, look) {
 	await page.click(`.agent-sessions-activity [aria-label=${JSON.stringify(msg(look.lang, "activity.prev"))}]`);
 	await sleep(1500);
 	await page.waitFor(`document.querySelector('.agent-sessions-activity-block')`, { what: "the previous period's blocks" });
+	// Open the details of one block of a session the sandbox knows (the block's turns above, the session below).
+	const known = box.sessions.find((x) => x.agent === "claude");
+	await page.evaluate(`(() => {
+		const blocks = [...document.querySelectorAll('.agent-sessions-activity-block')].filter((b) => b.dataset.sessionId === ${JSON.stringify(known.id)});
+		(blocks.sort((a, b) => b.offsetHeight - a.offsetHeight)[0] ?? document.querySelector('.agent-sessions-activity-block')).click();
+	})()`);
+	await sleep(1500);
 	await capture(page, "calendar");
 	await page.evaluate(`app.workspace.getLeavesOfType('agent-sessions-activity').forEach((l) => l.detach())`);
 

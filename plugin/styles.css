@@ -2984,9 +2984,31 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	max-width: 18em;
 }
 
-.agent-sessions-activity-body {
+/* The calendar on the left; a details panel on the right once a block is opened. */
+.agent-sessions-activity-split {
 	display: flex;
 	flex: 1 1 auto;
+	min-height: 0;
+	gap: 0;
+}
+
+.agent-sessions-activity-divider,
+.agent-sessions-activity-detail {
+	display: none;
+}
+
+.agent-sessions-activity-split.has-detail .agent-sessions-activity-detail {
+	display: flex;
+}
+
+.agent-sessions-activity-split.has-detail .agent-sessions-activity-divider {
+	display: block;
+}
+
+.agent-sessions-activity-body {
+	display: flex;
+	flex: 1 1 0;
+	min-width: 0;
 	flex-direction: column;
 	gap: var(--size-4-3);
 	min-height: 0;
@@ -3173,6 +3195,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
    agent's lane color when it has none. */
 .agent-sessions-activity-block {
 	position: absolute;
+	min-height: 6px;
 	box-sizing: border-box;
 	overflow: hidden;
 	border-radius: 2px;
@@ -3257,7 +3280,8 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 }
 
 /* A single day is wide: no minimum width forcing a sideways scroll. */
-.agent-sessions-activity-grid.is-single-day {
+/* Day mode: a column per session, wide enough to read, scrolling sideways when there are many. */
+.agent-sessions-activity-grid.is-day-mode {
 	min-width: 0;
 }
 
@@ -3283,13 +3307,126 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 
 /* The detail pane under the grid. */
 .agent-sessions-activity-detail {
-	flex: 0 0 auto;
-	max-height: 40%;
-	margin-top: var(--size-4-3);
+	flex: 0 0 var(--as-detail-w, 38%);
+	flex-direction: column;
+	min-width: 0;
+	gap: var(--size-4-2);
+	overflow: hidden;
+}
+
+.agent-sessions-activity-divider {
+	flex: 0 0 var(--size-4-2);
+	cursor: col-resize;
+	background-image: linear-gradient(var(--background-modifier-border), var(--background-modifier-border));
+	background-size: 1px 100%;
+	background-position: center;
+	background-repeat: no-repeat;
+}
+
+.agent-sessions-activity-divider:hover {
+	background-image: linear-gradient(var(--interactive-accent), var(--interactive-accent));
+}
+
+/* Top: the block; bottom: the session. Each scrolls on its own. */
+.agent-sessions-activity-block-detail,
+.agent-sessions-activity-session-detail {
+	flex: 1 1 0;
+	min-height: 0;
 	padding: var(--size-4-2) var(--size-4-3);
 	overflow: auto;
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
+}
+
+.agent-sessions-activity-bd-head {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	font-weight: var(--font-semibold);
+}
+
+.agent-sessions-activity-bd-name {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.agent-sessions-activity-bd-times {
+	margin: var(--size-4-1) 0 var(--size-4-2);
+	color: var(--text-muted);
+	font-variant-numeric: tabular-nums;
+}
+
+.agent-sessions-activity-turn {
+	padding: var(--size-4-1) 0 var(--size-4-1) var(--size-4-2);
+	border-left: 2px solid var(--interactive-accent);
+}
+
+.agent-sessions-activity-turn + .agent-sessions-activity-turn {
+	margin-top: var(--size-4-2);
+}
+
+.agent-sessions-activity-turn.is-notification {
+	border-left-color: var(--color-orange);
+}
+
+.agent-sessions-activity-turn.is-resume {
+	border-left-color: var(--text-faint);
+}
+
+.agent-sessions-activity-turn-meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+}
+
+.agent-sessions-activity-turn-kind {
+	color: var(--text-faint);
+}
+
+.agent-sessions-activity-turn-prompt {
+	margin-top: 2px;
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
+}
+
+/* The agent toggles under the controls. */
+.agent-sessions-activity-agents {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+	margin-bottom: var(--size-4-3);
+}
+
+.agent-sessions-activity-agent {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-4-1);
+}
+
+.agent-sessions-activity-agent.is-off {
+	opacity: 0.45;
+	text-decoration: line-through;
+}
+
+/* Day mode's column heads: the session's agent icon and name. */
+.agent-sessions-activity-session-head {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	min-width: 0;
+	font-weight: var(--font-semibold);
+}
+
+.agent-sessions-activity-session-name {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
 }
 
 .agent-sessions-activity-detail-bar {

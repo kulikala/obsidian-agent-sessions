@@ -310,7 +310,10 @@ Use a test vault. For the first-run items, a vault where the plugin was never en
 - [ ] Cards per enabled agent show hours, session count, and peak concurrency; the day headers show per-agent counts; the grid has one lane per agent in each day and a 0:00–24:00 axis.
 - [ ] The grid starts scrolled to about half an hour before the period's first activity.
 - [ ] Blocks are colored by the session's category (as its chip) or by the agent when it has none; overlapping sessions sit side by side; tall enough blocks carry their name.
-- [ ] Hovering a block shows `HH:MM–HH:MM name`; clicking it shows that session's details under the grid (with Open session and Close), not its tab; Open session opens the tab.
+- [ ] There is a toggle per agent (icon and name); hiding one removes its lanes, blocks, and card, the choice survives reloading the plugin, and the last visible agent cannot be hidden.
+- [ ] Every block is at least about 6 px tall: a one-minute block is visible, its tooltip shows the true times, and two such blocks a few minutes apart sit side by side.
+- [ ] Day mode shows one column per session active that day (grouped by agent, each headed by the agent icon and session name, scrolling sideways when many), not one lane per agent.
+- [ ] Hovering a block shows `HH:MM–HH:MM name`. Clicking it splits the view: the calendar stays on the left, a panel opens on the right (drag the divider to resize; Close returns to full width). The panel's top shows the block (session, start–end and duration, and each turn with its times, duration and prompt text; notifications and self-resumed turns are marked); its bottom shows the session's details. Open session opens the tab.
 - [ ] A block runs from the moment a prompt was submitted until the agent finished that turn; two prompts less than 30 minutes apart (end of one to the start of the next) show as one block, and more than 30 minutes apart as two. Reopening the calendar for an unchanged week is quick (turns are cached in `activity-cache.json`).
 - [ ] Typing in the filter narrows the blocks, counts, and cards.
 - [ ] A block that crosses midnight appears on both days. In a period with a daylight-saving change, every column still starts at midnight.

@@ -158,6 +158,37 @@ function activitySessions() {
 	return [...known, ...extra];
 }
 
+const PROMPTS = [
+	"Fix the failing test in the checkout total",
+	"Can you also add a regression test for it?",
+	"Looks good, now update the changelog",
+	"Why does the cache return stale rows after a rename?",
+	"Run the linter and fix what it reports",
+	"Summarize what changed in this branch",
+];
+
+/** Turns of a block: the block split into one to three runs, each with a made-up prompt. */
+function turnsOf(start, end, rand) {
+	const n = 1 + Math.floor(rand() * 3);
+	const turns = [];
+	let at = start;
+	for (let i = 0; i < n; i++) {
+		const stop = i === n - 1 ? end : at + ((end - at) * (0.3 + rand() * 0.4));
+		const kind = i > 0 && rand() < 0.2 ? "notification" : "prompt";
+		turns.push({
+			start: at,
+			end: stop,
+			prompt: kind === "notification" ? "<task-notification> Background task finished" : PROMPTS[Math.floor(rand() * PROMPTS.length)],
+			kind,
+		});
+		at = stop + (end - stop) * 0 + 60;
+		if (at >= end) {
+			break;
+		}
+	}
+	return turns;
+}
+
 function mergeTimes(spans, gap) {
 	const sorted = [...spans].sort((x, y) => x[0] - y[0]);
 	const out = [];
@@ -177,7 +208,7 @@ function activityOutput(from, to, gap) {
 	activitySessions().forEach((s, si) => {
 		const rand = mulberry32(si * 7919 + 13);
 		const raw = [];
-		for (let d = 0; d < 7; d++) {
+		for (let d = 0; d < 8; d++) {
 			const day = new Date(first.getFullYear(), first.getMonth(), first.getDate() + d).getTime() / 1000;
 			if (rand() < 0.2) {
 				continue;
@@ -185,12 +216,13 @@ function activityOutput(from, to, gap) {
 			const n = 1 + Math.floor(rand() * 3);
 			for (let i = 0; i < n; i++) {
 				const a = day + (6 + rand() * 15) * 3600;
-				raw.push([a, a + (8 + rand() * 120) * 60]);
+				raw.push([a, a + (1 + rand() * 120) * 60]);
 			}
 		}
 		const spans = mergeTimes(raw, gap)
 			.map(([a, b]) => [Math.max(a, from), Math.min(b, to, now)])
-			.filter(([a, b]) => b > a);
+			.filter(([a, b]) => b > a)
+			.map(([a, b]) => ({ start: a, end: b, turns: turnsOf(a, b, rand) }));
 		if (spans.length === 0) {
 			return;
 		}

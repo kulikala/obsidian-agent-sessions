@@ -201,7 +201,26 @@ export interface StatsResult {
 	agents?: Record<string, { windows: StatsWindows }>;
 }
 
-/** One session's working time from `json activity`: `spans` are `[start, end]` epoch seconds. */
+/** What started a turn: a typed prompt, a notification that woke the agent, or the agent carrying on by itself. */
+export type ActivityTurnKind = "prompt" | "notification" | "resume";
+
+/** One turn inside a block: from a prompt to the agent's last record before the next one. */
+export interface ActivityTurn {
+	start: number;
+	end: number;
+	/** The first ~200 characters of the prompt; empty for a `resume`. */
+	prompt: string;
+	kind: ActivityTurnKind;
+}
+
+/** A block of work: turns less than the gap apart, joined. Epoch seconds. */
+export interface ActivitySpan {
+	start: number;
+	end: number;
+	turns: ActivityTurn[];
+}
+
+/** One session's working time from `json activity`. */
 export interface ActivitySession {
 	id: string;
 	agent: string;
@@ -210,7 +229,7 @@ export interface ActivitySession {
 	/** The part of the name before `': '`, if any. */
 	category: string | null;
 	child: boolean;
-	spans: [number, number][];
+	spans: ActivitySpan[];
 }
 
 /** The full output of `json activity`. */

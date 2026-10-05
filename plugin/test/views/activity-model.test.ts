@@ -8,22 +8,29 @@ import {
 	pickResetAnchor,
 	shiftPeriod,
 	clockLabel,
+	dayColumns,
 	dayCounts,
+	expandForMinHeight,
 	filterSessions,
 	firstActiveSeconds,
 	fitsLabel,
 	layoutOverlaps,
 	maxConcurrency,
+	minBlockSeconds,
+	splitDuration,
+	toggleAgent,
+	visibleAgents,
 	splitSpansByDay,
 	summarizeByAgent,
 	unionSeconds,
 	weekStartOf,
-	type Span,
+	type Interval,
 } from "../../src/views/activity-model";
 import type { ActivitySession, StatsResult, StatsWindow } from "../../src/types";
 
 const local = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min).getTime() / 1000;
 
+const sp = (a: number, b: number): Interval & { turns: [] } => ({ start: a, end: b, turns: [] });
 const at = (y: number, m: number, d: number, h = 0, min = 0) => new Date(y, m - 1, d, h, min);
 
 describe("week math", () => {
@@ -147,13 +154,13 @@ describe("splitSpansByDay", () => {
 	const days = periodDays({ mode: "week", from: new Date(2026, 8, 14), to: new Date(2026, 8, 21) });
 
 	it("keeps a same-day span as one piece (seconds since midnight)", () => {
-		expect(splitSpansByDay([[local(2026, 9, 14, 10), local(2026, 9, 14, 11, 30)]], days)).toEqual([
+		expect(splitSpansByDay([sp(local(2026, 9, 14, 10), local(2026, 9, 14, 11, 30))], days).map(({ span: _s, ...p }) => p)).toEqual([
 			{ day: 0, start: 36000, end: 41400 },
 		]);
 	});
 
 	it("cuts a span at midnight", () => {
-		const pieces = splitSpansByDay([[local(2026, 9, 14, 23), local(2026, 9, 15, 1)]], days);
+		const pieces = splitSpansByDay([sp(local(2026, 9, 14, 23), local(2026, 9, 15, 1))], days).map(({ span: _s, ...p }) => p);
 		expect(pieces).toEqual([
 			{ day: 0, start: 23 * 3600, end: days[0].end - days[0].start },
 			{ day: 1, start: 0, end: 3600 },
@@ -161,9 +168,9 @@ describe("splitSpansByDay", () => {
 	});
 
 	it("cuts a multi-day span into each day and drops parts outside the week", () => {
-		const pieces = splitSpansByDay([[local(2026, 9, 13, 22), local(2026, 9, 16, 2)]], days);
+		const pieces = splitSpansByDay([sp(local(2026, 9, 13, 22), local(2026, 9, 16, 2))], days);
 		expect(pieces.map((p) => p.day)).toEqual([0, 1, 2]);
-		expect(pieces[2]).toEqual({ day: 2, start: 0, end: 7200 });
+		expect(pieces[2]).toMatchObject({ day: 2, start: 0, end: 7200 });
 	});
 });
 
@@ -203,23 +210,23 @@ describe("layoutOverlaps", () => {
 
 describe("hours and concurrency", () => {
 	it("unions overlapping spans once", () => {
-		expect(unionSeconds([[0, 100], [50, 150], [200, 250]])).toBe(200);
-		expect(unionSeconds([[0, 100], [10, 20]])).toBe(100);
+		expect(unionSeconds([sp(0, 100), sp(50, 150), sp(200, 250)])).toBe(200);
+		expect(unionSeconds([sp(0, 100), sp(10, 20)])).toBe(100);
 		expect(unionSeconds([])).toBe(0);
 	});
 
 	it("finds the peak overlap, ends exclusive", () => {
-		expect(maxConcurrency([[0, 10], [5, 15], [8, 9]])).toBe(3);
-		expect(maxConcurrency([[0, 10], [10, 20]])).toBe(1);
+		expect(maxConcurrency([sp(0, 10), sp(5, 15), sp(8, 9)])).toBe(3);
+		expect(maxConcurrency([sp(0, 10), sp(10, 20)])).toBe(1);
 		expect(maxConcurrency([])).toBe(0);
 	});
 
 	it("summarizes per agent", () => {
-		const s = (id: string, agent: string, spans: Span[]): ActivitySession => ({
+		const s = (id: string, agent: string, spans: ActivitySession["spans"]): ActivitySession => ({
 			id, agent, name: id, label: id, category: null, child: false, spans,
 		});
 		const out = summarizeByAgent(
-			[s("a", "claude", [[0, 3600]]), s("b", "claude", [[1800, 5400]]), s("c", "codex", [[0, 7200]])],
+			[s("a", "claude", [sp(0, 3600)]), s("b", "claude", [sp(1800, 5400)]), s("c", "codex", [sp(0, 7200)])],
 			["claude", "codex", "opencode"]
 		);
 		expect(out).toEqual([
@@ -231,7 +238,7 @@ describe("hours and concurrency", () => {
 });
 
 describe("filter, counts, scroll, labels", () => {
-	const mk = (id: string, name: string | null, spans: Span[], agent = "claude"): ActivitySession => ({
+	const mk = (id: string, name: string | null, spans: ActivitySession["spans"], agent = "claude"): ActivitySession => ({
 		id, agent, name, label: name, category: name?.includes(": ") ? name.split(": ")[0] : null, child: false, spans,
 	});
 
@@ -246,8 +253,8 @@ describe("filter, counts, scroll, labels", () => {
 	it("counts distinct sessions per day and agent", () => {
 		const days = periodDays({ mode: "week", from: new Date(2026, 8, 14), to: new Date(2026, 8, 21) });
 		const list = [
-			mk("a", "A", [[local(2026, 9, 14, 23), local(2026, 9, 15, 1)], [local(2026, 9, 14, 10), local(2026, 9, 14, 11)]]),
-			mk("b", "B", [[local(2026, 9, 15, 5), local(2026, 9, 15, 6)]], "codex"),
+			mk("a", "A", [sp(local(2026, 9, 14, 23), local(2026, 9, 15, 1)), sp(local(2026, 9, 14, 10), local(2026, 9, 14, 11))]),
+			mk("b", "B", [sp(local(2026, 9, 15, 5), local(2026, 9, 15, 6))], "codex"),
 		];
 		const c = dayCounts(list, days);
 		expect(c[0]).toEqual({ claude: 1 });
@@ -256,8 +263,8 @@ describe("filter, counts, scroll, labels", () => {
 	});
 
 	it("scrolls to just before the first activity, else 08:00", () => {
-		expect(firstActiveSeconds([{ day: 2, start: 5 * 3600, end: 6 * 3600 }, { day: 0, start: 9 * 3600, end: 10 * 3600 }])).toBe(4.5 * 3600);
-		expect(firstActiveSeconds([{ day: 0, start: 600, end: 900 }])).toBe(0);
+		expect(firstActiveSeconds([{ day: 2, start: 5 * 3600, end: 6 * 3600, span: sp(0, 0) }, { day: 0, start: 9 * 3600, end: 10 * 3600, span: sp(0, 0) }])).toBe(4.5 * 3600);
+		expect(firstActiveSeconds([{ day: 0, start: 600, end: 900, span: sp(0, 0) }])).toBe(0);
 		expect(firstActiveSeconds([])).toBe(8 * 3600);
 	});
 
@@ -274,19 +281,90 @@ describe("filter, counts, scroll, labels", () => {
 	});
 });
 
-describe("day mode", () => {
-	it("is one 0-24 h column; overlapping pieces within an agent's lane sit side by side", () => {
-		const days = periodDays(periodContaining("day", at(2026, 9, 23, 12), null));
-		expect(days).toHaveLength(1);
-		const spans: Span[] = [
-			[at(2026, 9, 23, 9).getTime() / 1000, at(2026, 9, 23, 11).getTime() / 1000],
-			[at(2026, 9, 23, 10).getTime() / 1000, at(2026, 9, 23, 12).getTime() / 1000],
-			[at(2026, 9, 22, 23).getTime() / 1000, at(2026, 9, 23, 1).getTime() / 1000],
+describe("agent toggles", () => {
+	const all = ["claude", "codex", "opencode"];
+
+	it("shows what is not hidden", () => {
+		expect(visibleAgents(all, ["codex"])).toEqual(["claude", "opencode"]);
+		expect(visibleAgents(all, [])).toEqual(all);
+	});
+
+	it("hides and shows an agent", () => {
+		expect(toggleAgent([], "codex", all)).toEqual(["codex"]);
+		expect(toggleAgent(["codex"], "codex", all)).toEqual([]);
+	});
+
+	it("keeps at least one agent on", () => {
+		expect(toggleAgent(["claude", "codex"], "opencode", all)).toEqual(["claude", "codex"]);
+		expect(toggleAgent([], "claude", ["claude"])).toEqual([]);
+	});
+});
+
+describe("minimum block height", () => {
+	it("is 6 px or 10 minutes, whichever is longer", () => {
+		expect(minBlockSeconds(40)).toBe(600); // 6 px = 9 min at 40 px/h, so 10 min wins
+		expect(minBlockSeconds(10)).toBe(2160); // 6 px = 36 min at 10 px/h
+	});
+
+	it("extends a one-minute piece, keeps the span's true times, and never goes past the day", () => {
+		const span = sp(0, 60);
+		const out = expandForMinHeight([{ day: 0, start: 100, end: 160, span }, { day: 0, start: 86350, end: 86400, span }], 600);
+		expect(out[0]).toMatchObject({ start: 100, end: 700 });
+		expect(out[0].span).toBe(span);
+		expect(out[1].end).toBe(86400);
+	});
+
+	it("puts two one-minute blocks a few minutes apart side by side instead of on top of each other", () => {
+		const span = sp(0, 60);
+		const pieces = [
+			{ day: 0, start: 1000, end: 1060, span },
+			{ day: 0, start: 1240, end: 1300, span },
+			{ day: 0, start: 5000, end: 5060, span },
 		];
-		const pieces = splitSpansByDay(spans, days);
+		const laid = layoutOverlaps(expandForMinHeight(pieces, 600));
+		expect(laid.map((l) => [l.col, l.cols])).toEqual([[0, 2], [1, 2], [0, 1]]);
+	});
+});
+
+describe("day mode columns", () => {
+	const days = periodDays(periodContaining("day", at(2026, 9, 23, 12), null));
+	const mk = (id: string, agent: string, spans: ActivitySession["spans"]): ActivitySession => ({
+		id, agent, name: id, label: id, category: null, child: false, spans,
+	});
+	const h = (hour: number) => at(2026, 9, 23, hour).getTime() / 1000;
+
+	it("makes one column per session active that day, grouped by agent order, then by first activity", () => {
+		const sessions = [
+			mk("late-codex", "codex", [sp(h(15), h(16))]),
+			mk("early-claude", "claude", [sp(h(8), h(9))]),
+			mk("none", "claude", [sp(at(2026, 9, 22, 8).getTime() / 1000, at(2026, 9, 22, 9).getTime() / 1000)]),
+			mk("late-claude", "claude", [sp(h(14), h(15))]),
+			mk("early-codex", "codex", [sp(h(7), h(8))]),
+		];
+		const cols = dayColumns(sessions, ["claude", "codex"], days);
+		expect(cols.map((c) => c.session.id)).toEqual(["early-claude", "late-claude", "early-codex", "late-codex"]);
+	});
+
+	it("keeps only the part of a session that falls on the day", () => {
+		const cols = dayColumns([mk("x", "claude", [sp(at(2026, 9, 22, 23).getTime() / 1000, h(1))])], ["claude"], days);
+		expect(cols[0].pieces).toHaveLength(1);
+		expect(cols[0].pieces[0]).toMatchObject({ start: 0, end: 3600 });
+	});
+
+	it("is one 0-24 h column; overlapping pieces within a lane sit side by side", () => {
+		expect(days).toHaveLength(1);
+		const pieces = splitSpansByDay([sp(h(9), h(11)), sp(h(10), h(12)), sp(h(1) - 7200, h(1))], days);
 		expect(pieces).toHaveLength(3);
 		const laid = layoutOverlaps(pieces);
 		expect(laid.filter((l) => l.cols === 2)).toHaveLength(2);
 		expect(laid.find((l) => l.item.start === 0)).toMatchObject({ col: 0, cols: 1 });
+	});
+});
+
+describe("splitDuration", () => {
+	it("rounds to whole minutes", () => {
+		expect(splitDuration(20)).toEqual({ h: 0, m: 0 });
+		expect(splitDuration(90)).toEqual({ h: 0, m: 2 });
+		expect(splitDuration(3600 + 5 * 60)).toEqual({ h: 1, m: 5 });
 	});
 });
