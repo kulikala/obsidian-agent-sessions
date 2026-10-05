@@ -43,7 +43,7 @@ import tempfile
 from dataclasses import asdict, dataclass
 from typing import Dict, List, Optional, Tuple
 
-from ... import config
+from ... import config, paths
 
 DB_FILENAME = 'state_5.sqlite'
 
@@ -74,13 +74,13 @@ def _connect(path: str) -> Tuple[Optional[sqlite3.Connection], Optional[str]]:
     """`(connection, temp_dir_to_clean_up_afterward)` -- the second element is
     `None` unless the copy-to-temp-dir fallback was used. `(None, None)` if
     every strategy failed."""
-    conn = _connect_and_probe('file:%s?mode=ro' % path, uri=True, timeout=1.0)
+    conn = _connect_and_probe(paths.sqlite_uri(path, 'mode=ro'), uri=True, timeout=1.0)
     if conn is not None:
         return conn, None
 
     wal_path = path + '-wal'
     if not os.path.exists(wal_path):
-        conn = _connect_and_probe('file:%s?mode=ro&immutable=1' % path, uri=True, timeout=1.0)
+        conn = _connect_and_probe(paths.sqlite_uri(path, 'mode=ro&immutable=1'), uri=True, timeout=1.0)
         if conn is not None:
             return conn, None
 

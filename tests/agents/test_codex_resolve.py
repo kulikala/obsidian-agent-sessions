@@ -1,6 +1,8 @@
 import tempfile
 import unittest
+from unittest import mock
 
+from agentsessions import paths, procs
 from agentsessions.agents.codex import resolve
 from tests.agents.codex_helpers import rollout_path, session_meta, user_message, write_rollout
 
@@ -44,10 +46,37 @@ class TestPickFallback(unittest.TestCase):
         picked = resolve.pick_fallback(candidates, since=0.0, cwd='/work/x', already_linked={'claimed'})
         self.assertIsNone(picked)
 
+    def test_windows_cwd_matches_however_it_is_spelled(self):
+        candidates = [('win', 'C:\\c\\w.jsonl', 200.0, 'C:\\Users\\Me\\Vault', 'cli')]
+        with mock.patch.object(paths, 'IS_WINDOWS', True):
+            picked = resolve.pick_fallback(candidates, since=0.0, cwd='c:/users/me/vault/', already_linked=set())
+        self.assertEqual(picked, ('win', 'C:\\c\\w.jsonl'))
+        with mock.patch.object(paths, 'IS_WINDOWS', False):
+            self.assertIsNone(resolve.pick_fallback(candidates, since=0.0, cwd='c:/users/me/vault/', already_linked=set()))
+
     def test_excludes_before_since(self):
         candidates = [('too-old', '/p/o.jsonl', 10.0, '/work/x', 'cli')]
         picked = resolve.pick_fallback(candidates, since=50.0, cwd='/work/x', already_linked=set())
         self.assertIsNone(picked)
+
+
+class TestWindowsProcesses(unittest.TestCase):
+    def test_rollout_path_shape_with_backslashes(self):
+        self.assertTrue(resolve._ROLLOUT_PATH_RE.search(
+            'C:\\Users\\a\\.codex\\sessions\\2026\\10\\06\\rollout-2026-10-06T01-02-03-x.jsonl'))
+        self.assertTrue(resolve._ROLLOUT_PATH_RE.search('/h/.codex/sessions/2026/10/06/rollout-x.jsonl'))
+        self.assertFalse(resolve._ROLLOUT_PATH_RE.search('C:\\Users\\a\\notes\\rollout-x.jsonl'))
+
+    def test_process_tree_comes_from_the_platform_table(self):
+        with mock.patch.object(procs, 'parent_table', return_value={10: 1, 11: 10}):
+            self.assertEqual(sorted(resolve._ps_tree()), [(10, 1), (11, 10)])
+        with mock.patch.object(procs, 'parent_table', return_value=None):
+            self.assertEqual(resolve._ps_tree(), [])
+
+    def test_no_open_file_inspection_on_windows(self):
+        with mock.patch.object(procs, 'IS_WINDOWS', True), \
+                mock.patch.object(resolve, '_open_paths', side_effect=AssertionError('not on Windows')):
+            self.assertIsNone(resolve.rollout_open_by(1234))
 
 
 class TestResolveEndToEnd(unittest.TestCase):

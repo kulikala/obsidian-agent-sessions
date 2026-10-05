@@ -55,7 +55,7 @@ def fmt_time(mtime: float) -> str:
 def folder_of(cwd: str) -> str:
     if not cwd:
         return ''
-    base = os.path.basename(cwd.rstrip('/'))
+    base = os.path.basename(cwd.rstrip('/' + os.sep))
     return base or cwd
 
 

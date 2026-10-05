@@ -17,8 +17,6 @@ see `waiting`.
 """
 import json
 import os
-import shutil
-import subprocess
 import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional
@@ -86,20 +84,21 @@ def read_status_files(status_dir: Optional[str] = None) -> Dict[str, Live]:
     return out
 
 
+def is_opencode_program(comm: str) -> bool:
+    """Whether a process table's program name is OpenCode's: `opencode`, or `opencode.exe` on
+    Windows (any case, as Windows compares names)."""
+    name = os.path.basename(comm.strip().replace('\\', '/'))
+    if procs.IS_WINDOWS:
+        name = name.lower()
+        if name.endswith('.exe'):
+            name = name[:-len('.exe')]
+    return name == 'opencode'
+
+
 def _opencode_pids() -> List[int]:
-    """Pids of running `opencode` processes (best effort, via `ps`)."""
-    ps = shutil.which('ps') or 'ps'
-    try:
-        out = subprocess.run([ps, '-eo', 'pid=,comm='], stdout=subprocess.PIPE,
-                              stderr=subprocess.DEVNULL, timeout=5).stdout.decode('utf-8', 'replace')
-    except (OSError, subprocess.SubprocessError):
-        return []
-    pids = []
-    for line in out.splitlines():
-        pid, _, comm = line.strip().partition(' ')
-        if pid.isdigit() and os.path.basename(comm.strip()) == 'opencode':
-            pids.append(int(pid))
-    return pids
+    """Pids of running `opencode` processes (best effort, via the process table)."""
+    table = procs.process_table('comm')
+    return [pid for pid, comm in (table or {}).items() if is_opencode_program(comm)]
 
 
 def _in_progress(d: '_db.Db', session_id: str) -> bool:

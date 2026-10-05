@@ -13,10 +13,12 @@ Two strategies, tried in order:
    of its descendants (in case Codex re-execs or forks a wrapper before opening
    its rollout, which team-lead flagged as sometimes happening) has the rollout
    file open right now. macOS: `lsof -a -p <pid> -Fn`. Linux: `/proc/<pid>/fd/*`.
-   Exact when it works -- no ambiguity, no clock dependency.
+   Exact when it works -- no ambiguity, no clock dependency. Windows has no
+   equivalent short of walking the system handle table, so there only step 2 runs.
 2. **`session_meta` fallback**: the newest rollout whose `session_meta.timestamp
-   >= since`, `cwd` matches, `source == 'cli'`, and whose thread id isn't
-   already linked to a *different* daemon session (`already_linked`, read from
+   >= since`, `cwd` matches (`paths.same_folder`: case- and separator-blind on
+   Windows), `source == 'cli'`, and whose thread id isn't already linked
+   to a *different* daemon session (`already_linked`, read from
    `sessions.json`'s existing thread links by the caller). Used when step 1
    can't find an open fd (lsof/proc unavailable, or Codex hadn't opened the file
    at the moment this was called).
@@ -33,13 +35,14 @@ import shutil
 import subprocess
 from typing import Dict, List, Optional, Set, Tuple
 
+from ... import paths, procs
 from . import rollout
 
 # A rollout's path always ends .../sessions/YYYY/MM/DD/rollout-....jsonl (see
 # rollout.py's docstring) -- matched loosely (not against rollout.SESSION_ID_RE)
 # since this only needs to recognize the *shape*, not extract the id (that's
 # `rollout.session_id_of`, applied by the caller once a path is found).
-_ROLLOUT_PATH_RE = re.compile(r'/sessions/\d{4}/\d\d/\d\d/rollout-.*\.jsonl$')
+_ROLLOUT_PATH_RE = re.compile(r'[\\/]sessions[\\/]\d{4}[\\/]\d\d[\\/]\d\d[\\/]rollout-.*\.jsonl$')
 
 
 # ---- Strategy 1: open-fd inspection ----------------------------------------
@@ -63,18 +66,10 @@ def child_pids(root_pid: int, all_procs: List[Tuple[int, int]]) -> List[int]:
 
 
 def _ps_tree() -> List[Tuple[int, int]]:
-    ps = shutil.which('ps') or 'ps'
-    try:
-        out = subprocess.run([ps, '-eo', 'pid=,ppid='], stdout=subprocess.PIPE,
-                              stderr=subprocess.DEVNULL, timeout=5).stdout.decode('utf-8', 'replace')
-    except (OSError, subprocess.SubprocessError):
-        return []
-    procs = []
-    for line in out.splitlines():
-        parts = line.split()
-        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
-            procs.append((int(parts[0]), int(parts[1])))
-    return procs
+    """`[(pid, ppid)]` for every process (`ps` on Unix, a Toolhelp snapshot on Windows); empty
+    if it can't be read."""
+    table = procs.parent_table()
+    return list(table.items()) if table else []
 
 
 def parse_lsof_fn(text: str) -> List[str]:
@@ -121,7 +116,9 @@ def _open_paths(pid: int) -> List[str]:
 
 
 def rollout_open_by(pid: int) -> Optional[str]:
-    """The rollout path open by `pid` or one of its descendants, if any."""
+    """The rollout path open by `pid` or one of its descendants, if any (never on Windows)."""
+    if procs.IS_WINDOWS:
+        return None
     for p in child_pids(pid, _ps_tree()):
         for path in _open_paths(p):
             if _ROLLOUT_PATH_RE.search(path):
@@ -140,7 +137,7 @@ def pick_fallback(candidates: List[Tuple[str, str, Optional[float], str, str]],
     best = None
     best_ts = -1.0
     for thread_id, path, ts, candidate_cwd, source in candidates:
-        if thread_id in already_linked or source != 'cli' or candidate_cwd != cwd:
+        if thread_id in already_linked or source != 'cli' or not paths.same_folder(candidate_cwd, cwd):
             continue
         if ts is None or ts < since:
             continue

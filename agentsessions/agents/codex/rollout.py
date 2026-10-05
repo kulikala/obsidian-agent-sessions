@@ -79,7 +79,7 @@ def is_real_user_text(text: str) -> bool:
 def codex_home() -> str:
     """env `CODEX_HOME`, or `~/.codex`. Re-read on every call (not cached at import
     time) since the plugin can pass a different value per invocation."""
-    return os.environ.get('CODEX_HOME') or os.path.expanduser('~/.codex')
+    return os.environ.get('CODEX_HOME') or os.path.join(os.path.expanduser('~'), '.codex')
 
 
 def session_id_of(path: str) -> Optional[str]:

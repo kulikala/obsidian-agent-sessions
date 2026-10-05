@@ -3,7 +3,7 @@ import os
 import unittest
 from unittest import mock
 
-from agentsessions import config
+from agentsessions import config, paths
 from agentsessions.agents import opencode
 from agentsessions.agents.opencode import resolve as ocresolve
 from tests.agents.opencode_helpers import Fixture, make_db
@@ -64,6 +64,15 @@ class TestResolve(OpencodeCase):
             f.session(S3, directory='/work/x', created=7_000)
         self.assertEqual(self._resolve(already={S3}), (None, None))
         self.assertEqual(self._resolve()[0], S3)
+
+    def test_windows_directory_matches_however_it_is_spelled(self):
+        with Fixture(self.path) as f:
+            f.session(S1, directory='C:\\Users\\Me\\Vault', created=6_000)
+            f.session(S2, directory='C:\\Users\\Me\\Other', created=7_000)
+        with mock.patch.object(paths, 'IS_WINDOWS', True):
+            self.assertEqual(self._resolve(cwd='c:/users/me/vault/')[0], S1)
+        with mock.patch.object(paths, 'IS_WINDOWS', False):
+            self.assertEqual(self._resolve(cwd='c:/users/me/vault/'), (None, None))
 
     def test_status_file_of_the_process_tree_is_exact(self):
         with Fixture(self.path) as f:

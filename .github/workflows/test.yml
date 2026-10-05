@@ -21,7 +21,7 @@ jobs:
       - name: unittest
         run: python3 -W error -m unittest discover -s tests -t .
 
-  # Native Windows: the ConPTY daemon, the loopback transport, process checks and the parts of
+  # Native Windows: the ConPTY daemon, the loopback transport, process checks, path matching and the parts of
   # setup that differ there. The rest of the suite drives Unix sockets and PTYs directly.
   python-windows:
     runs-on: windows-latest
@@ -35,7 +35,7 @@ jobs:
           python-version: "3.11"
 
       - name: unittest
-        run: python -W error -m unittest discover -s tests/windows -t . && python -W error -m unittest tests.test_transport tests.claude.test_setup
+        run: python -W error -m unittest discover -s tests/windows -t . && python -W error -m unittest tests.test_transport tests.test_paths tests.claude.test_setup
 
   plugin:
     runs-on: ubuntu-latest

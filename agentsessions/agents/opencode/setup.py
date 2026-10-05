@@ -29,7 +29,7 @@ TUI_PLUGIN_FILENAME = 'agent-sessions-tui.jsx'
 
 
 def default_plugin_path() -> str:
-    base = os.environ.get('XDG_CONFIG_HOME') or os.path.expanduser('~/.config')
+    base = os.environ.get('XDG_CONFIG_HOME') or os.path.join(os.path.expanduser('~'), '.config')
     return os.path.join(base, 'opencode', 'plugins', PLUGIN_FILENAME)
 
 

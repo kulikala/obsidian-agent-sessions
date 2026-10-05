@@ -22,13 +22,15 @@ import sqlite3
 import tempfile
 from typing import Any, Iterable, List, Optional, Tuple
 
+from ... import paths
+
 DB_FILENAME = 'opencode.db'
 PSEUDO_PREFIX = 'opencode:'
 DEFAULT_TITLE_PREFIX = 'New session - '
 
 
 def data_dir() -> str:
-    base = os.environ.get('XDG_DATA_HOME') or os.path.expanduser('~/.local/share')
+    base = os.environ.get('XDG_DATA_HOME') or os.path.join(os.path.expanduser('~'), '.local', 'share')
     return os.path.join(base, 'opencode')
 
 
@@ -128,11 +130,11 @@ def open_db(path: Optional[str] = None) -> Optional[Db]:
     path = path or db_path()
     if not os.path.isfile(path):
         return None
-    conn = _probe('file:%s?mode=ro' % path, uri=True, timeout=1.0)
+    conn = _probe(paths.sqlite_uri(path, 'mode=ro'), uri=True, timeout=1.0)
     if conn is not None:
         return Db(conn)
     if not os.path.exists(path + '-wal'):
-        conn = _probe('file:%s?mode=ro&immutable=1' % path, uri=True, timeout=1.0)
+        conn = _probe(paths.sqlite_uri(path, 'mode=ro&immutable=1'), uri=True, timeout=1.0)
         if conn is not None:
             return Db(conn)
     tmpdir = tempfile.mkdtemp(prefix='agent-sessions-opencode-db-')

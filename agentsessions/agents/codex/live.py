@@ -15,19 +15,20 @@ unverified against real data -- worth confirming the actual `event_msg.type`
 string next time an approval-gated Codex session is available, rather than
 trusting the source-derived name blind.
 
-Process liveness is best-effort, via `ps`: Codex has no per-session pid file, so
-a session's pid is inferred by matching a running `codex` process's cwd against
-the session's own `cwd` (from `agents.codex.scan`), which can fail to match (a
-different invocation style, a moved directory, `ps` unavailable) -- in which
-case `pid` stays `0` but the status itself (read straight from the transcript,
-not from `ps`) is unaffected.
+Process liveness is best-effort, via the process table (`procs.process_table`):
+Codex has no per-session pid file, so a session's pid is inferred by matching a
+running `codex` process's command line against the session's own `cwd` (from
+`agents.codex.scan`), which can fail to match (a different invocation style, a
+moved directory, no process table; on Windows the table holds executable names
+only, so it never matches there) -- in which case `pid` stays `0` but the status
+itself (read straight from the transcript, not from the process table) is
+unaffected.
 """
 import json
-import shutil
-import subprocess
 from dataclasses import dataclass
 from typing import Dict, Optional
 
+from ... import procs
 from ...sessions.model import Session
 from ...sessions.scan import TAIL_CHUNK, TAIL_LIMIT, iter_tail_lines
 from . import rollout
@@ -77,20 +78,12 @@ def _status_from_tail(path: str) -> Optional[Live]:
 
 
 def _codex_processes() -> Optional[list]:
-    """`[(pid, args)]` for every running process whose command line mentions
-    `codex`. `None` if `ps` isn't usable."""
-    ps = shutil.which('ps') or 'ps'
-    try:
-        out = subprocess.run([ps, '-eo', 'pid=,args='], stdout=subprocess.PIPE,
-                              stderr=subprocess.DEVNULL, timeout=5).stdout.decode('utf-8', 'replace')
-    except (OSError, subprocess.SubprocessError):
+    """`[(pid, args)]` for every running process whose command line (on Windows: executable
+    name) mentions `codex`. `None` if the process table can't be read."""
+    table = procs.process_table()
+    if table is None:
         return None
-    procs = []
-    for line in out.splitlines():
-        pid, _, cmd = line.strip().partition(' ')
-        if pid.isdigit() and 'codex' in cmd.lower():
-            procs.append((int(pid), cmd))
-    return procs
+    return [(pid, cmd) for pid, cmd in table.items() if 'codex' in cmd.lower()]
 
 
 def live_sessions(sessions: Dict[str, Session]) -> Dict[str, Live]:

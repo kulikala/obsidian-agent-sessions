@@ -10,8 +10,9 @@ Two strategies, in order:
 1. **Status file**: the plugin's status file whose `pid` is `pid` or one of its
    descendants (the PTY child may be a wrapper around the real process) --
    exact. The plugin writes it when the session is created (at TUI launch).
-2. **Database**: the top-level, interactive session with `directory == cwd`,
-   `time_created >= since` (epoch seconds) that isn't in `already_linked`.
+2. **Database**: the top-level, interactive session whose `directory` is `cwd`
+   (`paths.same_folder`), with `time_created >= since` (epoch seconds), that
+   isn't in `already_linked`.
    The session row is created at TUI launch, before any message, so no user
    message is required. `opencode run` sessions (`db.is_non_interactive`) are
    skipped, and with more than one candidate nothing is returned: guessing
@@ -20,7 +21,7 @@ Two strategies, in order:
 """
 from typing import Optional, Set, Tuple
 
-from ... import config
+from ... import config, paths
 from ..codex.resolve import _ps_tree, child_pids
 from . import db as _db
 from . import live as _live
@@ -42,14 +43,16 @@ def resolve(pid: int, since: float, cwd: str, already_linked: Optional[Set[str]]
                         and d.query('SELECT 1 FROM session WHERE id = ?', (sid,)):
                     return sid, _db.pseudo_path(sid)
         have = d.columns('session')
-        where = ['directory = ?', 'time_created >= ?']
+        # The folder is compared here, not in SQL: Windows spells one folder several ways.
+        where = ['time_created >= ?']
         if 'parent_id' in have:
             where.append('parent_id IS NULL')
         rows = d.query('SELECT %s FROM session WHERE %s ORDER BY time_created DESC, id DESC'
-                       % (d.select_columns('session', ('id', 'permission')), ' AND '.join(where)),
-                       (cwd, int(since * 1000)))
+                       % (d.select_columns('session', ('id', 'directory', 'permission')), ' AND '.join(where)),
+                       (int(since * 1000),))
         candidates = [r['id'] for r in rows
-                      if r['id'] not in already_linked and not _db.is_non_interactive(r['permission'])]
+                      if r['id'] not in already_linked and paths.same_folder(r['directory'] or '', cwd)
+                      and not _db.is_non_interactive(r['permission'])]
         if len(candidates) == 1:
             return candidates[0], _db.pseudo_path(candidates[0])
         return None, None

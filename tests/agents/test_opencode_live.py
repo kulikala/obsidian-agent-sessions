@@ -4,13 +4,35 @@ import time
 import unittest
 from unittest import mock
 
-from agentsessions import config
+from agentsessions import config, procs
 from agentsessions.agents import opencode
 from agentsessions.agents.opencode import live
 from tests.agents.opencode_helpers import Fixture, make_db
 from tests.agents.test_opencode_scan import S1, S2, OpencodeCase
 
 DEAD_PID = 2 ** 22 + 12345   # beyond any real pid_max default; kill(pid, 0) fails
+
+
+class TestOpencodeProcesses(unittest.TestCase):
+    def test_program_names(self):
+        with mock.patch.object(procs, 'IS_WINDOWS', False):
+            self.assertTrue(live.is_opencode_program('opencode'))
+            self.assertTrue(live.is_opencode_program('/Users/a/.opencode/bin/opencode'))
+            self.assertFalse(live.is_opencode_program('opencode.exe'))
+            self.assertFalse(live.is_opencode_program('node'))
+        with mock.patch.object(procs, 'IS_WINDOWS', True):
+            self.assertTrue(live.is_opencode_program('opencode.exe'))
+            self.assertTrue(live.is_opencode_program('OpenCode.EXE'))
+            self.assertTrue(live.is_opencode_program('C:\\npm\\opencode.exe'))
+            self.assertFalse(live.is_opencode_program('node.exe'))
+
+    def test_pids_from_the_process_table(self):
+        table = {1: 'node.exe', 7: 'opencode.exe', 9: 'opencode'}
+        with mock.patch.object(procs, 'IS_WINDOWS', True), \
+                mock.patch.object(procs, 'process_table', return_value=table):
+            self.assertEqual(sorted(live._opencode_pids()), [7, 9])
+        with mock.patch.object(procs, 'process_table', return_value=None):
+            self.assertEqual(live._opencode_pids(), [])
 
 
 class TestLive(OpencodeCase):

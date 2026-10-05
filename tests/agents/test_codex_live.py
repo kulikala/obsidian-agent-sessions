@@ -1,6 +1,8 @@
 import tempfile
 import unittest
+from unittest import mock
 
+from agentsessions import procs
 from agentsessions.agents.codex import live
 from agentsessions.sessions.model import Session
 from tests.agents.codex_helpers import event, rollout_path, session_meta, write_rollout
@@ -12,6 +14,15 @@ ID3 = '02000000-0000-0000-0000-000000000003'
 
 def _session(path, cwd='/work/x'):
     return Session(id='x', name=None, cwd=cwd, mtime=0.0, path=path, agent='codex')
+
+
+class TestCodexProcesses(unittest.TestCase):
+    def test_codex_entries_of_the_process_table(self):
+        table = {1: '/usr/bin/zsh', 2: 'node /x/codex.js', 3: 'codex.exe', 4: 'Codex.EXE'}
+        with mock.patch.object(procs, 'process_table', return_value=table):
+            self.assertEqual(sorted(live._codex_processes()), [(2, 'node /x/codex.js'), (3, 'codex.exe'), (4, 'Codex.EXE')])
+        with mock.patch.object(procs, 'process_table', return_value=None):
+            self.assertIsNone(live._codex_processes())
 
 
 class TestCodexLive(unittest.TestCase):

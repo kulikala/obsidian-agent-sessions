@@ -36,7 +36,7 @@ from .. import i18n
 MANAGED_MARKER = '# managed by Agent Sessions'
 
 DEFAULT_CONFIG_TOML_PATH = os.path.join(
-    os.environ.get('CODEX_HOME') or os.path.expanduser('~/.codex'), 'config.toml')
+    os.environ.get('CODEX_HOME') or os.path.join(os.path.expanduser('~'), '.codex'), 'config.toml')
 
 
 def _is_managed_line(line: str) -> bool:
