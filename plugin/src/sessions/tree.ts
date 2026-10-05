@@ -2,6 +2,7 @@
 // A group is whatever comes before `': '` in a name (matches `agentsessions/model.py`'s `split_name`).
 
 import type { Row } from "./index";
+import { listedInManager } from "./listing";
 import type { Store } from "./store";
 
 /**
@@ -68,12 +69,11 @@ function byMtimeDesc(list: Labeled[]): Labeled[] {
  * unnamed sessions where `child` is false (unnamed child sessions don't appear anywhere).
  */
 export function buildManagerTree(rows: Row[], store: Store): ManagerTree {
-	const active = rows.filter((r) => !r.archived);
+	const active = rows.filter((r) => listedInManager(r));
 	const archivedRows = rows.filter((r) => r.archived);
 
 	const named = active.filter((r) => !!r.name);
-	const unnamed = active.filter((r) => !r.name);
-	const unnamedOthers = unnamed.filter((r) => !r.child);
+	const unnamedOthers = active.filter((r) => !r.name);
 
 	const groupMap = new Map<string, Labeled[]>();
 	const singleRows: Row[] = [];
@@ -157,11 +157,7 @@ export function buildSideList(rows: Row[], leavesOrder: string[], recentCount: n
 
 	const recent = rows
 		.filter(
-			(r) =>
-				!openIds.has(r.id) &&
-				!runningIds.has(r.id) &&
-				!r.archived &&
-				!(!r.name && r.child)
+			(r) => !openIds.has(r.id) && !runningIds.has(r.id) && listedInManager(r)
 		)
 		.sort((a, b) => b.last_activity - a.last_activity)
 		.slice(0, recentCount);

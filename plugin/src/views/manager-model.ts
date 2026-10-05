@@ -5,6 +5,7 @@
 import type { Row } from "../sessions/index";
 import { getLang, t, type Lang } from "../i18n";
 import { formatTimeShort, formatWeekdayTimeShort } from "../i18n/datetime";
+import { listedInManager } from "../sessions/listing";
 import { statusGroup, type ManagerStatusFilter, type TerminalStatus } from "../sessions/terminal-status";
 import { OTHER_GROUP, splitName, type ManagerTree } from "../sessions/tree";
 import type { StatsResult, StatsWindow, StatsWindows } from "../types";
@@ -280,13 +281,12 @@ export interface CategoryTotal {
 
 /**
  * Total cost and session count within `window`, per category (a group name, or "Other" if none).
- * Excludes archived sessions and unnamed child sessions from the count (the same filter
- * `buildManagerTree` uses for `active`/`unnamedOthers`).
+ * Counts only the sessions the manager lists (`listedInManager`: no archived or unnamed child ones).
  */
 function categoryTotalsWith(rows: Row[], costOf: (row: Row) => number | null): CategoryTotal[] {
 	const buckets = new Map<string, CategoryTotal>();
 	for (const row of rows) {
-		if (row.archived || (!row.name && row.child)) {
+		if (!listedInManager(row)) {
 			continue;
 		}
 		const key = categoryKeyOf(row);

@@ -10,6 +10,7 @@ import { getLang, t } from "../i18n";
 import { formatDateRange, formatDateTimeShort, formatTimeShort, formatWeekdayShort } from "../i18n/datetime";
 import type AgentSessionsPlugin from "../main";
 import { paletteHueDeg } from "../sessions/category";
+import { listedInManager } from "../sessions/listing";
 import { renderCategoryChip } from "../ui/chip";
 import { ACTIVITY_MODES, AGENT_IDS, type ActivityMode } from "../settings";
 import type { ActivityResult, ActivitySession, ActivitySpan, ActivityTurn, StatsResult } from "../types";
@@ -82,6 +83,8 @@ export class ActivityView extends ItemView {
 	private lastLang = getLang();
 	/** Turns whose response is unfolded in the open details panel (by turn start), kept across reloads. */
 	private openReplies = new Set<number>();
+	/** The ids drawn last, so an index change only redraws when the listed set really changed. */
+	private renderedIds = "";
 	private refreshTimer: number | null = null;
 	/** A reload was due while the view was hidden. */
 	private stale = false;
@@ -133,6 +136,14 @@ export class ActivityView extends ItemView {
 			})
 		);
 		this.register(this.plugin.index.registry.onIdle(() => this.scheduleReload(IDLE_REFRESH_DELAY_MS)));
+		// Archiving or naming a session changes which ones are listed: redraw when the set changes.
+		this.register(
+			this.plugin.index.onChange(() => {
+				if (this.result && this.listedSessions().map((s) => s.id).join() !== this.renderedIds) {
+					this.renderBody();
+				}
+			})
+		);
 		const timer = window.setInterval(() => {
 			if (canGoNext(this.period, new Date())) {
 				return; // a past period doesn't change
@@ -381,6 +392,17 @@ export class ActivityView extends ItemView {
 		});
 	}
 
+	/**
+	 * The sessions the calendar draws: the ones the Session Manager lists (`listedInManager`:
+	 * not archived, not an unnamed child session). The index's row is authoritative; before it
+	 * knows a session, the name and child flag in the activity data stand in.
+	 */
+	private listedSessions(): ActivitySession[] {
+		return (this.result?.sessions ?? []).filter((s) =>
+			listedInManager(this.plugin.index.sessions.get(s.id) ?? { name: s.name, child: s.child, archived: false })
+		);
+	}
+
 	/** The agents that get a lane: every enabled one, plus any other that has activity in the data. */
 	private laneAgents(sessions: readonly ActivitySession[]): string[] {
 		const enabled = AGENT_IDS.filter((id) => this.plugin.settings.agents[id].enabled) as string[];
@@ -427,15 +449,17 @@ export class ActivityView extends ItemView {
 			this.bodyEl.createDiv({ cls: "agent-sessions-activity-message", text: t("activity.loading") });
 			return;
 		}
-		const all = this.laneAgents(this.result.sessions);
+		const listed = this.listedSessions();
+		this.renderedIds = listed.map((s) => s.id).join();
+		const all = this.laneAgents(listed);
 		const hidden = this.plugin.settings.activityHiddenAgents;
 		this.renderAgentToggles(all, hidden);
 		const agents = visibleAgents(all, hidden);
-		const sessions = filterSessions(this.result.sessions, this.filterText).filter((s) => agents.includes(s.agent));
+		const sessions = filterSessions(listed, this.filterText).filter((s) => agents.includes(s.agent));
 		const days = periodDays(this.period);
 
 		this.renderCards(this.bodyEl, sessions, agents);
-		if (this.result.sessions.length === 0) {
+		if (listed.length === 0) {
 			this.bodyEl.createDiv({ cls: "agent-sessions-activity-message", text: t("activity.empty") });
 			return;
 		}
