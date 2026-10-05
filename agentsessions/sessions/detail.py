@@ -8,6 +8,7 @@ from .scan import TAIL_CHUNK, iter_tail_lines
 
 DETAIL_LIMIT = 1 << 25          # max bytes to scan backward from the end (32 MiB, enough to reach the most recent instruction even in a long transcript)
 MAX_CHARS = 1200                # max characters passed to the panel per entry
+RECENT_PROMPTS = 4              # human prompts kept in `recent_user` (the last one included)
 # Blocks to drop entirely (machine-inserted notices, command output)
 _TAG_RE = re.compile(r'[ \t]*<(system-reminder|local-command-stdout|local-command-caveat)>'
                      r'.*?</\1>[ \t]*\n?', re.S)
@@ -31,6 +32,7 @@ class Detail:
     last_assistant: str = ''    # most recent Claude response (one that has text)
     tools: List[str] = None     # names of tools called in the most recent response
     last_command: Optional[str] = None   # most recent slash command name (no arguments)
+    recent_user: List[str] = None   # the last few human prompts, oldest first (Claude Code only; used to name sessions)
     # Claude Code carries model/effort via statusLine's StatusInfo instead (§14), so
     # these stay None here; Codex has no statusLine, so agents.codex.detail populates
     # them from the most recent turn_context (see plan/段9-Codex対応.md).
@@ -40,6 +42,8 @@ class Detail:
     def __post_init__(self):
         if self.tools is None:
             self.tools = []
+        if self.recent_user is None:
+            self.recent_user = []
 
 
 def clean_text(s: str) -> str:
@@ -107,6 +111,7 @@ def read_detail(path: str, chunk: int = TAIL_CHUNK, limit: int = DETAIL_LIMIT) -
     d = Detail()
     tools: List[str] = []
     seen: set = set()
+    recent: List[str] = []      # newest first while scanning backward
     try:
         lines = iter_tail_lines(path, chunk, limit)
     except OSError:
@@ -135,12 +140,17 @@ def read_detail(path: str, chunk: int = TAIL_CHUNK, limit: int = DETAIL_LIMIT) -
         elif kind == 'user':
             if d.last_command is None and text.strip():
                 d.last_command = _extract_command(text)
-            if not d.last_user and text.strip() and is_human_prompt(rec, text):
+            if text.strip() and is_human_prompt(rec, text):
                 cleaned = clean_text(text)
                 if cleaned:
-                    d.last_user = cleaned
-        if d.last_user and d.last_assistant and d.last_command is not None:
+                    if not d.last_user:
+                        d.last_user = cleaned
+                    if len(recent) < RECENT_PROMPTS:
+                        recent.append(cleaned)
+        if (d.last_user and d.last_assistant and d.last_command is not None
+                and len(recent) >= RECENT_PROMPTS):
             break
+    d.recent_user = recent[::-1]
     return d
 
 

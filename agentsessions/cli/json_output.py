@@ -345,6 +345,9 @@ def _detail_dict(d) -> dict:
     # only agents.codex/agents.opencode -- Claude Code carries model/effort via statusLine instead,
     # see design.md §14), so an existing consumer reading just the four keys above
     # sees no difference.
+    recent = getattr(d, 'recent_user', None)
+    if recent:
+        out['recent_user'] = recent
     if d.model is not None:
         out['model'] = d.model
     if d.effort is not None:

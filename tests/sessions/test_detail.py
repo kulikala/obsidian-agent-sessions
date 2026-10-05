@@ -76,6 +76,20 @@ class TestReadDetail(unittest.TestCase):
         self.assertEqual(d.last_assistant, 'new response')
         self.assertEqual(d.tools, ['Bash'])
 
+    def test_recent_user_keeps_the_last_human_prompts_oldest_first(self):
+        write_jsonl(self.path, [
+            user('p1', origin={'kind': 'human'}),
+            user('p2', origin={'kind': 'human'}),
+            user('<task-notification>x</task-notification>', origin={'kind': 'task-notification'}),
+            user('p3', origin={'kind': 'human'}),
+            user('<teammate-message>hi</teammate-message>'),
+            user('p4', origin={'kind': 'human'}),
+            user('p5', origin={'kind': 'human'}),
+        ])
+        d = read_detail(self.path)
+        self.assertEqual(d.recent_user, ['p2', 'p3', 'p4', 'p5'])
+        self.assertEqual(d.last_user, 'p5')
+
     def test_skips_sidechain_and_meta(self):
         write_jsonl(self.path, [
             user('main instruction', origin={'kind': 'human'}),
