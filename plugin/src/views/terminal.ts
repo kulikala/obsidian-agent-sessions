@@ -671,10 +671,11 @@ export class TerminalView extends ItemView {
 		// override any of the above (e.g. a custom VISUAL) if they really want to.
 		// `withBinDirOnPath`: `bin` can be a version-manager-resolved `#!/usr/bin/env node` script
 		// (Codex's `codex.js`) — its own directory needs to be on PATH for that shebang to resolve.
+		const launchEnv = await loginEnv(Platform.isMacOS);
 		const env = withBinDirOnPath(
 			{
-				...(await loginEnv(Platform.isMacOS)),
-				...this.plugin.editorEnv(agent),
+				...launchEnv,
+				...(await this.plugin.editorEnv(agent, launchEnv)),
 				AGENT_SESSIONS_VAULT: this.plugin.vaultPath(),
 				...parseEnvLines(agentSettings.env),
 			},

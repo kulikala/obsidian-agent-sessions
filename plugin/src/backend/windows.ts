@@ -133,11 +133,23 @@ export function isBatchFile(file: string): boolean {
 	return /\.(cmd|bat)$/i.test(file);
 }
 
+/** The `cmd.exe` line that prints `file`'s 8.3 form (`%~sI`). `file` has to exist. Pure. */
+export function shortPathLine(file: string): string {
+	return `for %I in ("${file}") do @echo %~sI`;
+}
+
+/** `shim` named through `shortDir`, its folder's 8.3 form, keeping its own base name (Claude Code
+ * recognizes the editor by "code" in that name). Pure. */
+export function shimInShortDir(shim: string, shortDir: string): string {
+	return path.win32.join(shortDir, path.win32.basename(shim));
+}
+
 // ---- I/O ----------------------------------------------------------------------------------
 
-function run(cmd: string, args: string[], timeoutMs: number, env?: NodeJS.ProcessEnv): Promise<string> {
+function run(cmd: string, args: string[], timeoutMs: number, env?: NodeJS.ProcessEnv, verbatim?: boolean): Promise<string> {
 	return new Promise((resolve, reject) => {
-		execFile(cmd, args, { encoding: "utf8", timeout: timeoutMs, windowsHide: true, env }, (err, stdout) => {
+		const options = { encoding: "utf8" as const, timeout: timeoutMs, windowsHide: true, env, windowsVerbatimArguments: verbatim };
+		execFile(cmd, args, options, (err, stdout) => {
 			if (err) reject(err);
 			else resolve(stdout);
 		});
@@ -333,4 +345,34 @@ export function programInvocation(cmd: string, args: string[]): Invocation {
 		// Not readable: still a batch file, so it goes through cmd.exe and fails there with its own path.
 	}
 	return cmdShimInvocation(cmd, args, process.env.ComSpec || process.env.COMSPEC || "cmd.exe");
+}
+
+const shortPaths = new Map<string, string>();
+
+/** `file`'s 8.3 form when it has a space, else `file` itself — also when Windows has no short name
+ * for it (8.3 names can be turned off per volume) or it doesn't exist. Cached per path. */
+export async function windowsShortPath(file: string): Promise<string> {
+	if (!file.includes(" ")) return file;
+	const cached = shortPaths.get(file);
+	if (cached !== undefined) return cached;
+	let short = file;
+	try {
+		const comspec = process.env.ComSpec || process.env.COMSPEC || "cmd.exe";
+		const out = (await run(comspec, ["/d", "/s", "/c", `"${shortPathLine(file)}"`], 5000, undefined, true)).trim();
+		if (out && !out.includes(" ")) short = out;
+	} catch {
+		// Keep the long form.
+	}
+	shortPaths.set(file, short);
+	return short;
+}
+
+/**
+ * The built-in editor's shim as the agents' `VISUAL`/`EDITOR` take it on Windows: a path without
+ * spaces. OpenCode splits the variable at every space and Codex at unquoted ones, so a folder with a
+ * space (a user name such as "Jane Doe") is named by its 8.3 form; the base name stays as it is.
+ */
+export async function windowsEditorShimPath(shim: string): Promise<string> {
+	const dir = path.win32.dirname(shim);
+	return dir.includes(" ") ? shimInShortDir(shim, await windowsShortPath(dir)) : shim;
 }

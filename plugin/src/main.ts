@@ -54,7 +54,13 @@ import {
 	type InstallInfo,
 	type PythonInfo,
 } from "./backend/bundle";
-import { windowsPythonCandidates, wingetInstall, type WingetPackage } from "./backend/windows";
+import {
+	windowsEditorShimPath,
+	windowsPythonCandidates,
+	windowsShortPath,
+	wingetInstall,
+	type WingetPackage,
+} from "./backend/windows";
 import { DaemonClient, defaultSockPath, ensureDaemon } from "./backend/daemon-client";
 import { waitUntilReady } from "./backend/headless-ready";
 import { OllamaModelCache } from "./backend/ollama-models";
@@ -807,10 +813,26 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/** The built-in editor's env for `agent`'s process: `VISUAL` (Claude Code, Codex) — and
-	 * `EDITOR` too for OpenCode, which reads `$EDITOR` only. Same shim either way. */
-	editorEnv(agent: AgentId): Record<string, string> {
-		const shim = this.visualPath();
-		return agent === "opencode" ? { VISUAL: shim, EDITOR: shim } : { VISUAL: shim };
+	 * `EDITOR` too for OpenCode, which reads `$EDITOR` only. Same shim either way. On Windows the
+	 * shim is named without spaces (`windowsEditorShimPath`), and OpenCode, which runs the editor
+	 * through `cmd.exe` with its temp file unquoted, also gets `TEMP`/`TMP` without spaces;
+	 * `launchEnv` is the environment the session starts with. */
+	async editorEnv(agent: AgentId, launchEnv: Record<string, string>): Promise<Record<string, string>> {
+		const windows = process.platform === "win32";
+		const shim = windows ? await windowsEditorShimPath(this.visualPath()) : this.visualPath();
+		if (agent !== "opencode") {
+			return { VISUAL: shim };
+		}
+		const vars: Record<string, string> = { VISUAL: shim, EDITOR: shim };
+		if (windows) {
+			for (const name of ["TEMP", "TMP"]) {
+				const value = launchEnv[name];
+				if (value?.includes(" ")) {
+					vars[name] = await windowsShortPath(value);
+				}
+			}
+		}
+		return vars;
 	}
 
 	/**
@@ -1995,10 +2017,11 @@ export default class AgentSessionsPlugin extends Plugin {
 			const agentSettings = this.settings.agents[agent];
 			const bin = await resolveAgentBinary(agent, agentSettings.path, Platform.isMacOS);
 			// `AGENT_SESSIONS_VAULT`/`withBinDirOnPath`: same reason as terminal.ts's startSession.
+			const launchEnv = await loginEnv(Platform.isMacOS);
 			const env = withBinDirOnPath(
 				{
-					...(await loginEnv(Platform.isMacOS)),
-					...this.editorEnv(agent),
+					...launchEnv,
+					...(await this.editorEnv(agent, launchEnv)),
 					AGENT_SESSIONS_VAULT: this.vaultPath(),
 					...parseEnvLines(agentSettings.env),
 				},

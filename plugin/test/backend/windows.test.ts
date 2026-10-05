@@ -10,6 +10,8 @@ import {
 	parseWindowsLauncher,
 	pathExts,
 	programInvocation,
+	shimInShortDir,
+	shortPathLine,
 	pythonOrgCandidates,
 	windowsLauncherSource,
 	wingetInstallArgs,
@@ -117,5 +119,19 @@ describe("npm shims through cmd.exe", () => {
 			return;
 		}
 		expect(programInvocation("/usr/local/bin/codex.cmd", ["exec"])).toEqual({ file: "/usr/local/bin/codex.cmd", args: ["exec"] });
+	});
+});
+
+describe("the editor shim without spaces", () => {
+	it("asks cmd.exe for a path's 8.3 form", () => {
+		expect(shortPathLine("C:\\Users\\Jane Doe\\AppData\\Local\\agent-sessions\\bin")).toBe(
+			'for %I in ("C:\\Users\\Jane Doe\\AppData\\Local\\agent-sessions\\bin") do @echo %~sI'
+		);
+	});
+
+	it("keeps the shim's own name, which has to contain \"code\"", () => {
+		expect(
+			shimInShortDir("C:\\Users\\Jane Doe\\AppData\\Local\\agent-sessions\\bin\\agent-sessions-code.cmd", "C:\\Users\\JANEDO~1\\AppData\\Local\\AGENT-~1\\bin")
+		).toBe("C:\\Users\\JANEDO~1\\AppData\\Local\\AGENT-~1\\bin\\agent-sessions-code.cmd");
 	});
 });
