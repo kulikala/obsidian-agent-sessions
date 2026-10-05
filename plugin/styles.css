@@ -3375,26 +3375,93 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	font-variant-numeric: tabular-nums;
 }
 
+/* One row per human turn: spacing and a hairline between rows, no side borders. */
 .agent-sessions-activity-turn {
-	padding: var(--size-4-1) 0 var(--size-4-1) var(--size-4-2);
-	border-left: 2px solid var(--interactive-accent);
+	padding: var(--size-4-3) 0;
 }
 
 .agent-sessions-activity-turn + .agent-sessions-activity-turn {
-	margin-top: var(--size-4-2);
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.agent-sessions-activity-turn:first-child {
+	padding-top: var(--size-4-1);
 }
 
 .agent-sessions-activity-turn-meta {
 	display: flex;
 	flex-wrap: wrap;
-	gap: var(--size-4-2);
+	gap: var(--size-4-1) var(--size-4-2);
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 	font-variant-numeric: tabular-nums;
 }
 
+.agent-sessions-activity-turn-dur::before {
+	content: "·";
+	margin-right: var(--size-4-2);
+	color: var(--text-faint);
+}
+
+/* The input is the row's main text. */
 .agent-sessions-activity-turn-prompt {
-	margin-top: 2px;
+	margin-top: var(--size-4-1);
+	overflow-wrap: anywhere;
+	white-space: pre-wrap;
+}
+
+.agent-sessions-activity-turn-answer {
+	margin-right: var(--size-4-1);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+/* The response: folded behind a disclosure, a subtle filled box when open. */
+.agent-sessions-activity-turn-reply {
+	margin-top: var(--size-4-2);
+}
+
+.agent-sessions-activity-turn-reply > summary {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	cursor: pointer;
+	list-style: none;
+	user-select: none;
+}
+
+.agent-sessions-activity-turn-reply > summary::-webkit-details-marker {
+	display: none;
+}
+
+.agent-sessions-activity-turn-reply > summary::before {
+	content: "";
+	width: 5px;
+	height: 5px;
+	border-right: 1.5px solid currentColor;
+	border-bottom: 1.5px solid currentColor;
+	transform: rotate(-45deg);
+	transition: transform 0.1s ease;
+}
+
+.agent-sessions-activity-turn-reply[open] > summary::before {
+	transform: rotate(45deg);
+}
+
+.agent-sessions-activity-turn-reply > summary:hover {
+	color: var(--text-normal);
+}
+
+.agent-sessions-activity-reply-text {
+	max-height: 14em;
+	margin-top: var(--size-4-1);
+	padding: var(--size-4-2) var(--size-4-3);
+	overflow: auto;
+	border-radius: var(--radius-s);
+	background-color: var(--background-secondary);
+	color: var(--text-muted);
 	overflow-wrap: anywhere;
 	white-space: pre-wrap;
 }
@@ -3439,22 +3506,4 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	justify-content: flex-end;
 	gap: var(--size-4-2);
 	margin-bottom: var(--size-4-2);
-}
-
-.agent-sessions-activity-final-text {
-	padding: var(--size-4-2) var(--size-4-3);
-	border-left: 3px solid var(--interactive-accent);
-	border-radius: var(--radius-s);
-	background-color: var(--background-secondary);
-	overflow-wrap: anywhere;
-	white-space: pre-wrap;
-}
-
-
-.agent-sessions-activity-turn-answer {
-	color: var(--text-muted);
-}
-
-.agent-sessions-activity-turn .agent-sessions-activity-final-text {
-	margin-top: var(--size-4-1);
 }

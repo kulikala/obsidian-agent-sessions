@@ -664,8 +664,11 @@ export class ActivityView extends ItemView {
 			input.createSpan({ cls: "agent-sessions-activity-turn-answer", text: t("activity.answer") });
 		}
 		input.appendText(turn.prompt);
+		// The turn's final response, folded away (every row opens collapsed).
 		if (turn.reply) {
-			item.createDiv({ cls: "agent-sessions-activity-final-text", text: turn.reply });
+			const more = item.createEl("details", { cls: "agent-sessions-activity-turn-reply" });
+			more.createEl("summary", { text: t("activity.response") });
+			more.createDiv({ cls: "agent-sessions-activity-reply-text", text: turn.reply });
 		}
 	}
 }

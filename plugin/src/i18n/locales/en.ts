@@ -577,6 +577,7 @@ export const en = {
 	"activity.dur.m": "{m} min",
 	"activity.dur.hm": "{h} h {m} min",
 	"activity.answer": "Answer: ",
+	"activity.response": "Response",
 	"activity.openSession": "Open session",
 	"activity.closeDetail": "Close",
 	"activity.filterPlaceholder": "Filter by title",

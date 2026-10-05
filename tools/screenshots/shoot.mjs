@@ -240,6 +240,8 @@ async function readmeScenes(page, box, look) {
 		(blocks.sort((a, b) => b.offsetHeight - a.offsetHeight)[0] ?? document.querySelector('.agent-sessions-activity-block')).click();
 	})()`);
 	await sleep(1500);
+	// One row's response unfolded, to show what the disclosure holds.
+	await page.evaluate(`document.querySelector('.agent-sessions-activity-turn-reply')?.setAttribute('open', '')`);
 	await capture(page, "calendar");
 	await page.evaluate(`app.workspace.getLeavesOfType('agent-sessions-activity').forEach((l) => l.detach())`);
 

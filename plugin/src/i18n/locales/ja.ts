@@ -578,6 +578,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"activity.dur.m": "{m} 分",
 	"activity.dur.hm": "{h} 時間 {m} 分",
 	"activity.answer": "回答：",
+	"activity.response": "応答",
 	"activity.openSession": "セッションを開く",
 	"activity.closeDetail": "閉じる",
 	"activity.filterPlaceholder": "題名で絞り込み",
