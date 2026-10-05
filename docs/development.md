@@ -50,4 +50,5 @@ Pushing the tag runs `.github/workflows/release.yml`, which builds the plugin an
 - [`architecture.md`](architecture.md): the architecture.
 - [`requirements.md`](requirements.md): the requirements the plugin is built against.
 - [`testing.md`](testing.md): automated tests, the smoke test, and the UI checklist.
+- [`readme-guide.md`](readme-guide.md): who the README is for, and how to review a change to it.
 - [`../tools/screenshots/README.md`](../tools/screenshots/README.md): the screenshot tool.

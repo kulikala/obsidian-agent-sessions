@@ -1,11 +1,11 @@
 # Testing
 
-Agent Sessions is tested at three levels: automated unit tests that run on every push, a smoke test that drives a running Obsidian on a real machine with a fake agent, and a UI checklist that a person runs by hand before a release. This document covers all three, and the extra checks for the WSLg platform (④ in [principles.md](principles.md#4-supported-platforms-are-the-ones-where-agent-and-plugin-share-an-os)).
+Agent Sessions is tested at three levels: automated unit tests that run on every push, a smoke test that drives a running Obsidian on a real machine with a fake agent, and a UI checklist that a person runs by hand before a release. This document covers all three, and the extra checks for Linux Obsidian running under WSLg (see [principles.md](principles.md#4-supported-platforms-are-the-ones-where-agent-and-plugin-share-an-os)).
 
 1. [Automated tests](#1-automated-tests)
 2. [Smoke test](#2-smoke-test)
 3. [Running on a real machine](#3-running-on-a-real-machine)
-4. [Platform ④ checks](#4-platform--checks)
+4. [WSLg checks](#4-wslg-checks)
 5. [UI checklist](#5-ui-checklist)
 
 ## 1. Automated tests
@@ -134,11 +134,11 @@ A common failure is step 2: `the daemon is older than the installed program; res
 
 ## 3. Running on a real machine
 
-The runner can also run on the machine under test (`--local`). This is the way to test a platform with no prepared VM, including ④.
+The runner can also run on the machine under test (`--local`). This is the way to test a platform with no prepared VM, including Linux Obsidian under WSLg.
 
 ### Prerequisites
 
-- Where the runner runs: on the machine that runs Obsidian. For ④ that is inside WSL (the WSLg Obsidian is a Linux program).
+- Where the runner runs: on the machine that runs Obsidian. For Obsidian under WSLg that is inside WSL (the WSLg Obsidian is a Linux program).
 - Node.js 22 or newer. The runner uses Node's built-in WebSocket and `node --test`. A distribution's `apt` package is often Node 18; use the official binaries from nodejs.org or a version manager such as nvm. Check with `node --version`.
 - git.
 - Python 3.9 or newer, the distribution's `python3`.
@@ -196,11 +196,9 @@ The same as in [What the smoke test touches](#what-the-smoke-test-touches), and 
 
 Before pasting the results `.md` into an issue or a message, read it. The runner replaces the home folder with `~`, but the file still holds the environment block and messages, and a vault path or a machine name outside the home folder is not replaced. It must contain no private paths or names.
 
-<a id="4-platform--checks"></a>
+## 4. WSLg checks
 
-## 4. Platform ④ checks
-
-Platform ④ is a Linux Obsidian running under WSLg with Claude Code installed in the same WSL2 distribution. On top of the smoke test, run the checks below by hand, with a real Claude Code session, and record what is asked for.
+This setup is a Linux Obsidian running under WSLg with Claude Code installed in the same WSL2 distribution. On top of the smoke test, run the checks below by hand, with a real Claude Code session, and record what is asked for.
 
 ### Setting up
 
