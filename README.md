@@ -2,141 +2,144 @@
 
 # Agent Sessions
 
-An [Obsidian](https://obsidian.md) plugin that runs [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex) and [OpenCode](https://opencode.ai) in terminal tabs next to your notes. It lists your agent sessions in one place, with their state, your usage limits and estimated cost.
+An [Obsidian](https://obsidian.md) plugin that runs [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex) and [OpenCode](https://opencode.ai) in terminal tabs next to your notes, and lists all your sessions in one place with their state, usage limits and estimated cost.
 
 ![A Claude Code session in a terminal tab, with the side panel listing open, running, and recent Claude Code and Codex sessions](docs/images/overview.png)
 
-## What it does
+## Features
 
-### The agent runs as its own CLI, in a terminal tab
-
-Each session is the agent's command-line program running in an Obsidian tab, the same program you would run in a terminal. Its slash commands, plan mode, permission prompts, hooks, skills and MCP servers work as usual, with your existing settings and login. File paths in the output that point into the vault open as links, and a button in the tab header inserts the current note as `@path`.
-
-Sessions keep running when you close the tab or quit Obsidian. Reopen one and the last screen is shown again, so you can continue where you left off.
+- **The agent's own CLI in a tab.** Your settings, login, slash commands, hooks, skills and MCP servers work as in a terminal. Vault paths in the output open as links.
+- **Sessions keep running** when you close the tab or quit Obsidian. Reopen one to see its last screen and continue.
+- **State at a glance.** Working, waiting for you, unread reply, or done: the same icon in the tab, the side panel and the Session manager. A notice tells you when a session in another tab finishes or asks a question.
 
 ![A Codex session waiting for approval, while a notice reports that a Claude Code session in another tab has finished](docs/images/codex.png)
 
-### Many sessions at once, grouped and labeled by state
-
-- Run several sessions in parallel, with Claude Code, Codex and OpenCode in the same list.
-- Each session shows whether it is working, waiting for your answer, finished with a reply you haven't read, or done. The same icon appears in the tab, the side panel and the **Session manager**. A notice tells you when a session in another tab finishes or asks a question.
-- Name a session `Category: Name` to group it. The Session manager shows the groups in a sortable table with a status filter (needs input, needs review, running, done, archived).
-- **Organize names and categories** suggests a name and category for recent sessions from what was said in them, using one of your installed agents. You review each suggestion, and nothing is renamed until you press **Apply selected**.
+- **Session manager.** Name a session `Category: Name` to group it. Sort, and filter by state.
+- **Organize names and categories.** One of your agents suggests a name and category for recent sessions. Nothing is renamed until you apply.
 
 ![The Session manager: sessions grouped by category with cost per window, and the 5-hour and 7-day usage analytics below](docs/images/manager.png)
 
 ![The Organize names and categories dialog, with a suggested category and name for each session](docs/images/organize.png)
 
-### Usage, cost, and an activity calendar
-
-- The 5-hour and 7-day usage windows of each agent, with the time left until reset and a projection of whether you will reach the weekly limit at your current pace. OpenCode has no usage windows.
-- Estimated cost per session and per category, and **Session analytics**, a turn-by-turn view of one session's tokens, tool use and cost that can be copied as Markdown. Costs are calculated on your machine from the agents' own transcripts, so they are estimates.
-- The **Activity calendar** shows when each agent was working, as blocks per day, by 7-day window, week or day. Click a block to see the prompts in it and open the session.
+- **Usage and cost.** Each agent's 5-hour and 7-day windows, time to reset, and whether you will reach the weekly limit at your current pace. Estimated cost per session and category, and a turn-by-turn analysis of one session you can copy as Markdown. All calculated on your machine from the agents' transcripts.
+- **Activity calendar.** When each agent was working, by 7-day window, week or day. Click a block to see its prompts and open the session.
 
 ![The activity calendar: a week of sessions as colored blocks, one lane per agent in each day, with hours and concurrency per agent](docs/images/calendar.png)
 
-### Getting started and everyday use
-
-- A **welcome guide** opens on first install. It checks Python and your agents, installs the helper program after listing what it will write, and has you start a real session, switch tabs, rename it and send a prompt, ticking off each step.
-- A **built-in editor** (Ctrl+G) opens the current prompt in a pane under the terminal, with `@` file completion and normal paste, undo and IME input, while the output stays visible.
-- **Change model…** switches the model and effort of a running Claude Code session. **Restart session** restarts the agent and continues the same conversation in the same tab, for example after you change its settings or skills.
-- Two agent skills are added to the vault, so you can ask an agent about your usage or other sessions, or how to use the plugin.
+- **Built-in editor** (Ctrl+G). Write the prompt in a pane under the terminal, with `@` file completion, normal paste, undo and IME, while the output stays visible.
+- **Restart session** picks up changed settings or skills and continues the same conversation. **Change model…** switches a running Claude Code session's model and effort.
+- **Welcome guide.** Checks Python and your agents, installs the helper program, and walks you through your first session.
+- **Agent skills.** Ask an agent about your usage, your other sessions, or how to use the plugin.
 
 ![The welcome guide](docs/images/welcome.png)
 
-The full feature list is in [`docs/usage.md`](docs/usage.md).
+All features: [`docs/usage.md`](docs/usage.md).
 
-### What it does not do
-
-- It has no chat panel and does not edit the open note inline; the agent works in the terminal tab.
-- It is desktop only (not on Obsidian mobile).
-- **Change model…** is for Claude Code only, and on Windows only Claude Code is supported.
-- OpenCode sub-agent sessions and sessions started with `opencode run` are not listed.
-
-## Privacy
-
-- The plugin does not use the network for its own work. The one exception is the welcome guide, which loads its pictures from GitHub while it is open; a setting turns this off. The agents connect to their own services under your accounts, as they do in a terminal.
-- No telemetry, no account. Open source under the MIT license.
-- The plugin edits the agents' settings files only to add its own entries (Claude Code's and Codex's are backed up first), and removing the program takes out only those entries.
-- The agents have the same permissions as in your own terminal.
-- **Organize names and categories** is the only feature that sends session text to a model, through your own agent, and only when you press its button.
-
-The full list of network use, files and programs is in [Disclosures](#disclosures).
+**Not included:** a chat panel, inline editing of notes, and Obsidian mobile. **Change model…** is for Claude Code only. OpenCode has no usage windows, and its sub-agent sessions and `opencode run` sessions are not listed.
 
 ## Requirements
 
 - Obsidian 1.8.7 or later, desktop.
-- macOS, Linux, or Windows (Windows: Claude Code only).
-- Python 3.9 or later; no extra packages. On Windows the install dialog can install it with WinGet.
-- At least one of Claude Code, Codex, or OpenCode, installed.
+- Python 3.9 or later, no extra packages. It runs the helper program that keeps sessions alive.
+- Claude Code, Codex or OpenCode, installed.
+- One of the setups below.
+
+## Supported environments
+
+| Obsidian runs on | Agent runs on | Supported |
+|---|---|---|
+| macOS | macOS | Yes |
+| Linux (Ubuntu Desktop) | Linux | Yes |
+| Windows 10 (1809+) or 11 | Windows | Claude Code only |
+| Windows | WSL | No |
+| WSL2 through WSLg | the same WSL distribution | Yes |
+
+Obsidian and the agent must run in the same operating system, because the plugin starts and follows the agent's processes and files. If your agents run in WSL, run Obsidian in WSL through WSLg. Reasoning: [`docs/principles.md`](docs/principles.md#4-supported-platforms-are-the-ones-where-agent-and-plugin-share-an-os).
 
 ## Install
 
 1. In Obsidian, open **Settings → Community plugins → Browse**, search for **Agent Sessions**, install and enable it.
-2. The welcome guide opens. Follow it to install the `agent-sessions` helper program and start your first session. You can close it and come back with **Continue the welcome guide** in the command palette.
+2. Follow the welcome guide that opens. It installs the `agent-sessions` helper program and starts your first session. To come back to it later, run **Continue the welcome guide** from the command palette.
 
-Where the program is installed, and installing from source: [`docs/installation.md`](docs/installation.md).
-
-## Supported environments
-
-| Setup | Status |
-|---|---|
-| macOS | Supported |
-| Linux (Ubuntu Desktop) | Supported |
-| Windows: Windows Obsidian with Claude Code on Windows | Supported, Claude Code only |
-| Windows: Windows Obsidian with Claude Code in WSL (WSL1 or WSL2) | Not supported |
-| Windows: Linux Obsidian in WSL2 (WSLg) with Claude Code in the same distribution | Supported |
-
-On Windows, the plugin needs Windows 10 version 1809 or later, or Windows 11. Codex and OpenCode show "Not available on Windows yet." in the settings.
-
-The plugin and the agent have to run in the same operating system. When Obsidian runs on Windows and the agent runs in WSL, the agent's files and processes are inside WSL, where the plugin cannot start or follow the session. If you use the agents in WSL, run Obsidian in WSL too, through WSLg. The reasoning is in [`docs/principles.md`](docs/principles.md#4-supported-platforms-are-the-ones-where-agent-and-plugin-share-an-os).
+Where the program goes, and installing from source: [`docs/installation.md`](docs/installation.md).
 
 ## Troubleshooting
 
-- **"agent-sessions was not found"**: the helper program is not installed yet. Click **Install agent-sessions** in the side panel, or set its location in the plugin's settings if you installed it yourself.
-- **An agent is not detected**: set its path in the plugin's settings under the agent, or run **Detect again** in the welcome guide.
-- **A session does not pick up changed settings, hooks or skills**: use **Restart session** from the session's ⋯ menu.
-- **Windows: Python or Claude Code is missing**: the install dialog offers to install them with WinGet, per user and without an administrator prompt.
-- More cases, including hooks that fail with `node: not found`: [`docs/usage.md`](docs/usage.md#more-troubleshooting).
+- **"agent-sessions was not found"**: click **Install agent-sessions** in the side panel, or set the program's location in the plugin's settings.
+- **An agent is not detected**: set its path in the plugin's settings, or click **Detect again** in the welcome guide.
+- **A session ignores changed settings, hooks or skills**: choose **Restart session** in the session's ⋯ menu.
+- **Windows: Python or Claude Code is missing**: the install dialog installs them with WinGet, per user, without an administrator prompt.
+- **A hook fails with `node: not found`**, and other cases: [`docs/usage.md`](docs/usage.md#more-troubleshooting).
 
 ## Uninstall
 
-First open **Settings → agent-sessions program → Remove**. This ends running sessions, removes the entries the program added to the agents' settings and the skills it added to the vault, and deletes the program. Then disable and remove **Agent Sessions** under Community plugins. For a source install, see [`docs/installation.md`](docs/installation.md#uninstall).
+1. **Settings → agent-sessions program → Remove.** This ends running sessions, takes out what the program added (see [Disclosures](#disclosures)), and deletes the program.
+2. Disable and remove **Agent Sessions** under Community plugins.
 
-## How it works
-
-The plugin bundles a small Python program, `agent-sessions`, as readable source (standard library only) and installs it when you click Install. Its background process (daemon) holds each session's terminal (a PTY; a ConPTY on Windows) and talks to the plugin over a local socket, which is why a session keeps running without a tab or while Obsidian is closed. Session lists, state, usage and cost come from the agents' own transcripts and status files, which are only read, and from hooks and a status line the program adds to the agents. The tab draws the terminal with xterm.js. Design: [`docs/principles.md`](docs/principles.md), [`docs/design.md`](docs/design.md), [`docs/architecture.md`](docs/architecture.md).
+Source installs: [`docs/installation.md`](docs/installation.md#uninstall).
 
 ## Disclosures
 
-**Network.** The plugin and the program open no network connections for their own work. The plugin talks to its daemon on this machine through a Unix socket (mode 0600); on Windows through `127.0.0.1` on a random port, where a client must first send a secret token. Exception: while the welcome guide is open, its pictures are loaded from GitHub (`raw.githubusercontent.com`, pinned to the plugin's version). No data of yours is sent; GitHub sees your IP address and which picture is requested. Turn this off with **Load the guide's pictures from GitHub** in the settings. Claude Code, Codex and OpenCode connect to their own services under your own accounts.
+No telemetry and no account. The agents have the same permissions as in your terminal and connect to their own services under your accounts.
 
-**Programs it starts.**
-- The `agent-sessions` program, with the Python it finds on your machine. The program is written out from the plugin when you click Install; nothing is downloaded.
-- The Claude Code, Codex and OpenCode CLIs you have installed (or `ollama launch opencode` if you choose it), and your login shell, to read the same `PATH` as in a terminal.
-- On Windows also `reg.exe` (to read `PATH`) and `py.exe` (to find Python), without a console window, and `winget.exe` only when you click an install button.
+### Network
 
-**Files it reads outside the vault** (to list sessions and calculate usage): `~/.claude/projects/`, `~/.claude/sessions/` and `~/.claude/settings.json`; `~/.codex/` (or `$CODEX_HOME`); OpenCode's database `~/.local/share/opencode/opencode.db` (opened read-only).
+- The plugin and its program make no network connections for their own work. The plugin talks to the program's background process on this machine: a Unix socket (mode 0600), or on Windows `127.0.0.1` on a random port with a secret token.
+- While the welcome guide is open, it loads its pictures from `raw.githubusercontent.com`. No data of yours is sent; GitHub sees your IP address and which picture is requested. Turn this off with **Load the guide's pictures from GitHub** in the settings.
 
-**Files it writes outside the vault.**
-- `~/.agents/sessions/`: the daemon's socket, logs, status files and caches.
-- The program's own folder (`~/.local/share/agent-sessions`, or `%LOCALAPPDATA%\agent-sessions` on Windows; details in [`docs/installation.md`](docs/installation.md#where-the-program-goes)).
-- `~/.claude/settings.json`: four hooks and the `statusLine`, after a backup. `~/.claude/keybindings.json`: only if you change the submit key or editor key from the default.
-- With Codex enabled, `~/.codex/config.toml`: the submit key, editor key and a default status line, after a backup, each line marked as its own.
-- With OpenCode enabled: a status plugin `~/.config/opencode/plugins/agent-sessions.js` and a status line `~/.config/opencode/agent-sessions-tui.jsx`, both marked and overwritten only if they carry the mark; and in `~/.config/opencode/tui.json` the editor key, the submit keys (only if you change the submit key) and the status line entry in its `plugin` list. Your previous `tui.json` values are kept in `~/.agents/sessions/opencode-tui-backup.json` and restored when you turn OpenCode off or remove the program.
-- The temporary file the agent hands to the built-in editor.
+### Programs it starts
 
-**Files it writes in the vault.** `<vault>/.agents/sessions/sessions.json` (archive, category colors, folded groups), and, once the program is installed, the `agent-sessions` and `agent-sessions-help` skills in `<vault>/.claude/skills/` (Claude Code) and `<vault>/.agents/skills/` (Codex), which OpenCode also reads, or in `<vault>/.opencode/skills/` when OpenCode is the only agent enabled. Skill files carry an `agent-sessions:managed` mark; files without it are never changed.
+- `agent-sessions`, with the Python found on your machine. It is written out from the plugin when you click Install; nothing is downloaded.
+- The Claude Code, Codex and OpenCode CLIs you installed (or `ollama launch opencode` if you choose it), and your login shell, to get the same `PATH` as a terminal.
+- On Windows: `reg.exe` (to read `PATH`), `py.exe` (to find Python), and `winget.exe` only when you click an install button.
 
-**Removal.** **Settings → agent-sessions program → Remove** (or `agent-sessions setup --remove`) takes out the entries and files listed above that it added, puts back your previous OpenCode keybinds, and removes the skills from the vault.
+### Files it reads outside the vault
 
-**What Organize sends.** When you press **Suggest** in **Organize names and categories**, the plugin runs one of your agents once: Claude Code (`claude -p`, Sonnet by default, or Haiku in the settings; no tools, no transcript saved), else Codex (`codex exec`, read-only sandbox), else OpenCode (`opencode run`, its stored session deleted afterwards). The dialog names the agent first. For up to 30 sessions (or the one you chose) it sends the folder, the first prompt, the last three prompts you typed and a short excerpt of the last reply, plus your existing category names with up to three example session names each, and, if you ask again, the previous suggestion and your comments. This goes to that agent's service under your account and counts toward its usage limits. Nothing is sent before you press the button.
+To list sessions and calculate usage:
 
-**Other access.** The vault's file list is read only to complete `@` paths in the built-in editor. The clipboard is used only when you copy a session ID or an analysis table, or press Ctrl+Shift+C / Ctrl+Shift+V in a terminal tab (not on macOS).
+- `~/.claude/projects/`, `~/.claude/sessions/`, `~/.claude/settings.json`
+- `~/.codex/` (or `$CODEX_HOME`)
+- `~/.local/share/opencode/opencode.db`, opened read-only
+
+### Files it writes
+
+| Path | Contents | When |
+|---|---|---|
+| `~/.agents/sessions/` | socket, logs, status files, caches | always |
+| `~/.local/share/agent-sessions` (Windows: `%LOCALAPPDATA%\agent-sessions`) | the program | on Install |
+| `~/.claude/settings.json` | four hooks, `statusLine` | on Install |
+| `~/.claude/keybindings.json` | submit key, editor key | if changed from the default |
+| `~/.codex/config.toml` | submit key, editor key, status line | Codex enabled |
+| `~/.config/opencode/plugins/agent-sessions.js` | status plugin | OpenCode enabled |
+| `~/.config/opencode/agent-sessions-tui.jsx` | status line | OpenCode enabled |
+| `~/.config/opencode/tui.json` | editor key, submit keys, status line entry | OpenCode enabled |
+| a temporary file | the prompt being edited | built-in editor open |
+| `<vault>/.agents/sessions/sessions.json` | archive, category colors, folded groups | always |
+| `<vault>/.claude/skills/`, `<vault>/.agents/skills/` | the `agent-sessions` and `agent-sessions-help` skills | on Install |
+
+- `~/.claude/settings.json` and `~/.codex/config.toml` are backed up before they are changed. The previous `tui.json` values are kept in `~/.agents/sessions/opencode-tui-backup.json` and restored on removal.
+- Only the plugin's own entries are added or removed. Skill files and OpenCode files carry its mark; files without the mark are never changed.
+- When OpenCode is the only agent enabled, the skills go to `<vault>/.opencode/skills/` instead.
+- Other folders the program may be installed in: [`docs/installation.md`](docs/installation.md#where-the-program-goes).
+
+### What Organize sends
+
+Nothing is sent until you press **Suggest** in **Organize names and categories**. Then the plugin runs one of your agents once, and the dialog names which:
+
+- Claude Code (`claude -p`, Sonnet, or Haiku in the settings; no tools, no transcript saved), else
+- Codex (`codex exec`, read-only sandbox), else
+- OpenCode (`opencode run`, its stored session deleted afterwards).
+
+For up to 30 sessions, or the one you chose, it sends the folder, the first prompt, your last three prompts and a short excerpt of the last reply; your existing category names with up to three example session names each; and, if you ask again, the previous suggestion and your comments. This goes to that agent's service under your account and counts toward its usage limits.
+
+### Other access
+
+- The vault's file list: only to complete `@` paths in the built-in editor.
+- The clipboard: only when you copy a session ID or an analysis table, or press Ctrl+Shift+C / Ctrl+Shift+V in a terminal tab (not on macOS).
 
 ## Development
 
-Building, testing, screenshots, adding a language and releasing are in [`docs/development.md`](docs/development.md). Test levels and the manual checklist are in [`docs/testing.md`](docs/testing.md).
+Build, test, release and design: [`docs/development.md`](docs/development.md).
 
 ## License
 
