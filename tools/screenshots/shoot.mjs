@@ -301,6 +301,8 @@ async function openOrganizeResult(page, look) {
 		const comment = target.querySelector('.agent-sessions-organize-comment');
 		comment.value = ${JSON.stringify(look.scenario.comment)};
 		comment.dispatchEvent(new Event('input', { bubbles: true }));
+		// Bring the comment into view: in a smaller window it sits below the list's fold.
+		comment.scrollIntoView({ block: "nearest" });
 	})()`);
 }
 
