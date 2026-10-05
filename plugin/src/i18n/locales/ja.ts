@@ -552,7 +552,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 
 	// ---- views/activity.ts ----
 	"activity.title": "稼働カレンダー",
-	"activity.subtitle": "会話ログの記録時刻から、各エージェントが動いていた時間帯を並べます（ローカル時刻・30分以上の空きで区切り）。",
+	"activity.subtitle": "プロンプトを送ってからエージェントが終えるまでを、各エージェントごとに並べます（ローカル時刻・30分未満の間隔のターンはひとつにつなぎます）。",
 	"activity.mode.session": "セッション",
 	"activity.mode.session.hint": "使用量の上限がリセットされる時刻に揃えた 7 日間（Claude Code の 7 日枠、なければ Codex の枠。どちらも分からなければ日曜始まりの週）",
 	"activity.mode.week": "週",

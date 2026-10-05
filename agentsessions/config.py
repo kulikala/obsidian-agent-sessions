@@ -67,6 +67,8 @@ LOG_PATH = os.path.join(RUNTIME_DIR, 'daemon.log')
 EXITED_PATH = os.path.join(RUNTIME_DIR, 'exited.json')
 EVENTS_LOG = os.path.join(RUNTIME_DIR, 'events.log')
 CACHE_PATH = os.path.join(RUNTIME_DIR, 'scan-cache.json')
+# Per-transcript activity turns for `json activity` (see sessions/activity.py).
+ACTIVITY_CACHE_PATH = os.path.join(RUNTIME_DIR, 'activity-cache.json')
 STATUS_DIR = os.path.join(RUNTIME_DIR, 'status')
 STATS_CACHE_PATH = os.path.join(RUNTIME_DIR, 'stats-cache.json')
 # Per-session status files written by the OpenCode plugin that `setup --opencode`

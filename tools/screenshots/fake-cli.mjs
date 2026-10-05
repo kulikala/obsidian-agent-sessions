@@ -131,7 +131,7 @@ function usageOf(s) {
 }
 
 // ---- json activity: made-up working spans, a few per day for every session, then merged the way
-// the real command does (gap of 30 minutes or more splits, clipped to the range, none after now).
+// the real command does (turns less than 30 minutes apart are joined, clipped to the range, none after now).
 
 function mulberry32(seed) {
 	let a = seed >>> 0;

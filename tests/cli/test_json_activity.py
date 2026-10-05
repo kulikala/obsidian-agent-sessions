@@ -1,6 +1,8 @@
+import json
 import os
 import shutil
 import tempfile
+import time
 import unittest
 from datetime import datetime, timezone
 from unittest import mock
@@ -40,27 +42,36 @@ class TestActivityOutput(unittest.TestCase):
         write_jsonl(os.path.join(proj, CLAUDE_ID + '.jsonl'), [
             claude_line('user', '01:00:00', cwd='/Users/k/vault', message={'role': 'user', 'content': 'hello'}),
             claude_line('assistant', '01:05:00', message={'role': 'assistant', 'content': 'hi'}),
+            # a second prompt 15 minutes after the first turn ended: joined into one block
             claude_line('user', '01:20:00', message={'role': 'user', 'content': 'more'}),
-            # 40 minutes later: a new span; one message only
-            claude_line('assistant', '02:00:00', message={'role': 'assistant', 'content': 'x'}),
+            claude_line('assistant', '01:25:00', message={'role': 'assistant', 'content': 'x'}),
+            # 45 minutes later: a new block; one short turn
+            claude_line('user', '02:10:00', message={'role': 'user', 'content': 'again'}),
+            claude_line('assistant', '02:10:20', message={'role': 'assistant', 'content': 'y'}),
             {'type': 'custom-title', 'customTitle': 'RIM: Notes', 'sessionId': CLAUDE_ID},
         ])
         self.codex_home = os.path.join(self.tmp, 'codex-home')
         write_rollout(rollout_path(self.codex_home, CODEX_ID), [
             session_meta(CODEX_ID, '/work/x', ts='%sT03:00:00Z' % DAY),
+            event_user_message('# AGENTS.md instructions for /work/x', '%sT03:00:01Z' % DAY),
             event_user_message('codex prompt', '%sT03:00:05Z' % DAY),
             assistant_message('done', '%sT03:10:00Z' % DAY),
+            event_user_message('and again', '%sT03:20:00Z' % DAY),
+            assistant_message('done again', '%sT03:21:00Z' % DAY),
         ])
         oc = make_db(self.tmp)
         with Fixture(oc) as f:
             f.session(OC_ID, title='Oc title', created=int(epoch('04:00:00') * 1000),
-                      updated=int(epoch('04:10:00') * 1000))
+                      updated=int(epoch('04:25:00') * 1000))
             f.user(OC_ID, 'hi', int(epoch('04:00:00') * 1000))
             f.assistant(OC_ID, 'yo', int(epoch('04:10:00') * 1000))
+            f.user(OC_ID, 'once more', int(epoch('04:20:00') * 1000))
+            f.assistant(OC_ID, 'sure', int(epoch('04:25:00') * 1000))
         patches = [
             mock.patch.object(config, 'PROJECTS_DIR', self.proj_root),
             mock.patch.object(config, 'STORE_PATH', os.path.join(self.tmp, 'sessions.json')),
             mock.patch.object(config, 'CACHE_PATH', os.path.join(self.tmp, 'scan-cache.json')),
+            mock.patch.object(config, 'ACTIVITY_CACHE_PATH', os.path.join(self.tmp, 'activity-cache.json')),
             mock.patch.object(config, 'UI_STATE_PATH', os.path.join(self.tmp, 'ui.json')),
             mock.patch.dict(os.environ, {'CODEX_HOME': self.codex_home, 'XDG_DATA_HOME': self.tmp,
                                          'AGENT_SESSIONS_AGENTS': 'claude,codex,opencode'}),
@@ -78,15 +89,14 @@ class TestActivityOutput(unittest.TestCase):
         self.assertEqual(set(by), {CLAUDE_ID, CODEX_ID, OC_ID})
         c = by[CLAUDE_ID]
         self.assertEqual((c['agent'], c['name'], c['category'], c['label']), ('claude', 'RIM: Notes', 'RIM', 'Notes'))
-        self.assertEqual(c['spans'], [[epoch('01:00:00'), epoch('01:20:00')],
-                                      [epoch('02:00:00'), epoch('02:01:00')]])
+        self.assertEqual(c['spans'], [[epoch('01:00:00'), epoch('01:25:00')],
+                                      [epoch('02:10:00'), epoch('02:11:00')]])
         x = by[CODEX_ID]
         self.assertEqual(x['agent'], 'codex')
-        self.assertEqual(x['spans'], [[epoch('03:00:00'), epoch('03:10:00')]])
+        self.assertEqual(x['spans'], [[epoch('03:00:05'), epoch('03:21:00')]])
         o = by[OC_ID]
         self.assertEqual(o['agent'], 'opencode')
-        self.assertEqual(o['spans'][0][0], epoch('04:00:00'))
-        self.assertEqual(o['spans'][-1][1], epoch('04:10:00'))
+        self.assertEqual(o['spans'], [[epoch('04:00:00'), epoch('04:25:00')]])
 
     def test_clipped_to_range_and_filtered(self):
         out = jsonout.activity_output(epoch('01:10:00'), epoch('01:15:00'), 1800)
@@ -98,9 +108,34 @@ class TestActivityOutput(unittest.TestCase):
         self.assertEqual(out, {'sessions': []})
 
     def test_gap_minutes_option(self):
-        # a 5-minute gap splits 01:00 / 01:05 / 01:20 into three spans
+        # with a 5-minute gap the 01:00 and 01:20 turns are no longer joined
         out = jsonout.activity_output(epoch('00:00:00'), epoch('23:59:59'), 5 * 60)
-        self.assertEqual(len(self.by_id(out)[CLAUDE_ID]['spans']), 4)
+        self.assertEqual(self.by_id(out)[CLAUDE_ID]['spans'], [
+            [epoch('01:00:00'), epoch('01:05:00')], [epoch('01:20:00'), epoch('01:25:00')],
+            [epoch('02:10:00'), epoch('02:11:00')]])
+
+    def test_a_turn_still_being_written_ends_now(self):
+        now = epoch('02:11:30')   # 70 s after the last record
+        out = jsonout.activity_output(epoch('00:00:00'), epoch('23:59:59'), 1800, now=now)
+        self.assertEqual(self.by_id(out)[CLAUDE_ID]['spans'][-1], [epoch('02:10:00'), now])
+
+    def test_turns_are_cached_and_recomputed_only_for_a_changed_file(self):
+        from agentsessions.agents import claude as claude_agent
+        args = (epoch('00:00:00'), epoch('23:59:59'), 1800)
+        path = os.path.join(self.proj_root, '-Users-k-vault', CLAUDE_ID + '.jsonl')
+        old = time.time() - 3600      # a file written moments ago is never trusted from the cache
+        os.utime(path, (old, old))
+        jsonout.activity_output(*args)
+        self.assertTrue(os.path.exists(config.ACTIVITY_CACHE_PATH))
+        with mock.patch.object(claude_agent, 'activity_turns', wraps=claude_agent.activity_turns) as spy:
+            jsonout.activity_output(*args)
+            self.assertEqual(spy.call_count, 0)           # unchanged: from the cache
+            with open(path, 'a') as f:
+                f.write(json.dumps(claude_line('assistant', '02:12:00', message={'role': 'assistant', 'content': 'z'}), separators=(',', ':')) + '\n')
+            os.utime(path, (old + 10, old + 10))
+            out = jsonout.activity_output(*args)
+            self.assertEqual(spy.call_count, 1)           # grew: parsed again
+            self.assertEqual(self.by_id(out)[CLAUDE_ID]['spans'][-1], [epoch('02:10:00'), epoch('02:12:00')])
 
     def test_cli_args(self):
         import io

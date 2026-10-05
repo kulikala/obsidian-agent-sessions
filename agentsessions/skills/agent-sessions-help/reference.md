@@ -114,10 +114,10 @@ Change model, Restart session and End session appear for running sessions (held 
 ## Activity calendar
 
 - Open it from the command palette ("Open activity calendar / 稼働カレンダーを開く"), the Session Manager toolbar's calendar button, or the side panel's `⋯` menu. One tab.
-- It shows when each agent was working: per day, one lane per agent, a colored block for each stretch a session was working. A block is colored by the session's category (the chip's color), or by the agent when it has none; overlapping sessions sit side by side; a tall enough block shows its name. Hover a block for "HH:MM-HH:MM name".
+- It shows when each agent was working: per day, one lane per agent, a colored block for each stretch of work (see below). A block is colored by the session's category (the chip's color), or by the agent when it has none; overlapping sessions sit side by side; a tall enough block shows its name. Hover a block for "HH:MM-HH:MM name".
 - A toggle picks the period: "Session / セッション" (default; 7 days aligned to the reset of the usage limit's 7-day window: Claude Code's if enabled and known, else Codex's, else a Sunday-start week), "Week / 週" (Sunday to Saturday, local time), "Day / 日" (one day, one wide column per agent). The arrows (previous/next, "Latest / 最新") move by one period and never go past the one holding now. Clicking a date in a day header opens that day. The mode is remembered.
 - Cards per agent: hours (overlaps counted once), number of sessions, and the most sessions working at once. The filter box narrows by title.
-- A stretch comes from the transcript's message times: a new block starts after a gap of 30 minutes or more, a block ends at the last message recorded in it, and a stretch with a single message shows as one minute. So a block is not the time until a response ended; it is the span of recorded activity, with pauses under 30 minutes inside it.
+- A block is close to the real working time: it runs from the moment you submit a prompt (or a notification, such as a finished background task, wakes the agent) until the agent finished that turn (its last recorded output before the next prompt). Turns less than 30 minutes apart are joined into one block, so related work shows as one flow instead of chopped pieces; a turn under a minute is shown as one minute; a turn still running ends now.
 - Clicking a block shows that session's details (the same as the side panel's details pane) under the grid, with "Open session / セッションを開く" and "Close / 閉じる".
 
 ## Usage and limits

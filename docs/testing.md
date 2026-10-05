@@ -311,6 +311,7 @@ Use a test vault. For the first-run items, a vault where the plugin was never en
 - [ ] The grid starts scrolled to about half an hour before the period's first activity.
 - [ ] Blocks are colored by the session's category (as its chip) or by the agent when it has none; overlapping sessions sit side by side; tall enough blocks carry their name.
 - [ ] Hovering a block shows `HH:MM–HH:MM name`; clicking it shows that session's details under the grid (with Open session and Close), not its tab; Open session opens the tab.
+- [ ] A block runs from the moment a prompt was submitted until the agent finished that turn; two prompts less than 30 minutes apart (end of one to the start of the next) show as one block, and more than 30 minutes apart as two. Reopening the calendar for an unchanged week is quick (turns are cached in `activity-cache.json`).
 - [ ] Typing in the filter narrows the blocks, counts, and cards.
 - [ ] A block that crosses midnight appears on both days. In a period with a daylight-saving change, every column still starts at midnight.
 - [ ] Light and dark themes are both legible; narrowing the pane scrolls the grid sideways instead of squeezing it.

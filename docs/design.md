@@ -745,13 +745,15 @@ Backs the activity calendar (§10.4), which asks for one period at a time: a day
                "category": "RIM", "child": false, "spans": [[1790220000.0, 1790221200.0]]}]}
 ```
 
-`spans` are `[start, end]` epoch seconds, sorted, clipped to the range; a session with no span in the range is left out. They come from the transcript's message timestamps (`sessions/activity.py`): sorted, a new span starts when the distance to the previous timestamp is the gap or more, a span shorter than one minute is extended to one minute, and the result is clipped. A span therefore runs from the first to the last recorded message of a stretch; it is not "until the response ended" (the end is the last line's timestamp), and pauses shorter than the gap stay inside it. The timestamps per agent:
+`spans` are `[start, end]` epoch seconds, sorted, clipped to the range; a session with no span in the range is left out. They are built from **turns** (`sessions/activity.py`): a turn runs from the moment a prompt reaches the agent to the last thing the agent recorded before the next prompt (or the end of the transcript), so a span is close to the real working time, not the time between messages. Turns whose gap (end of one to the start of the next) is shorter than `--gap-minutes` are joined into one block, so related work reads as one flow; a block shorter than one minute is extended to one minute; a last turn whose final record is under two minutes old is taken to be still running and ends now. What starts a turn and what counts as the agent's activity, per agent:
 
-- **Claude Code**: every `user` and `assistant` line with a `timestamp`, sub-agent sidechains and tool results included (the agent was working then).
-- **Codex**: the `timestamp` of every rollout record.
-- **OpenCode**: `time_created` and `time_updated` of the session's `message` and `part` rows.
+- **Claude Code**: a `user` line that carries text starts a turn: a typed prompt, or a notification that wakes the agent (a finished background task, another session's message). Tool results, `isMeta` and sidechain lines, command output (`<local-command-…>`), "[Request interrupted…", and the compaction summary do not. Every `user` and `assistant` line is activity (sub-agent work and tool results included), so the turn ends at the last of them.
+- **Codex**: an `event_msg` `user_message` (or `item_completed` UserMessage) with real text starts a turn (injected context such as AGENTS.md and bare slash commands do not); every record is activity.
+- **OpenCode**: a `user` message starts a turn; the `time_created` and `time_updated` of every `message` and `part` row are activity.
 
-Name, label, and category are the ones `json scan` reports (`category` is the group before `': '`). The scan cache supplies the names; a transcript file last written before `--from` cannot hold activity in the range and is never opened. Timestamps are not cached: a week of recently written transcripts is read once per call.
+Activity before the first prompt counts only when a transcript has no prompt at all.
+
+Name, label, and category are the ones `json scan` reports (`category` is the group before `': '`). The scan cache supplies the names. Turns are cached per transcript in `activity-cache.json` (next to `scan-cache.json`): `path → {version, size, mtime, turns}`, recomputed only when the size or mtime changed, the algorithm `version` (`ACTIVITY_VERSION`) differs, or the file was written within the last two seconds (the same racy-mtime guard as the scan cache); OpenCode has no file, so its entry is keyed by the session's last-updated time. A changed transcript is parsed again in full. Entries for transcripts that no longer exist are dropped. A transcript file last written before `--from` cannot hold activity in the range and is never opened.
 
 ## 14. statusLine
 

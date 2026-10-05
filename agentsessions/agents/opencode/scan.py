@@ -111,20 +111,30 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
         d.close()
 
 
-def activity_times(session_id: str, path: Optional[str] = None) -> List[float]:
-    """Epoch seconds of every message and message part of a session (for the
-    activity calendar)."""
+def activity_turns(session_id: str, path: Optional[str] = None) -> List[List[float]]:
+    """Turns of a session (for the activity calendar): a user message starts one, and every
+    message and part time counts as activity up to the next user message."""
+    from ...sessions.activity import TurnBuilder
     d = _db.open_db(path)
     if d is None:
         return []
     try:
-        rows = d.query('SELECT time_created, time_updated FROM message WHERE session_id = ?', (session_id,))
-        rows += d.query('SELECT time_created, time_updated FROM part WHERE session_id = ?', (session_id,))
+        messages = d.query('SELECT time_created, time_updated, data FROM message WHERE session_id = ?', (session_id,))
+        parts = d.query('SELECT time_created, time_updated FROM part WHERE session_id = ?', (session_id,))
     finally:
         d.close()
-    out: List[float] = []
-    for r in rows:
+    events = []   # (time, is_prompt); at the same instant a prompt sorts first
+    for r in messages:
+        created, updated = r['time_created'], r['time_updated']
+        if isinstance(created, (int, float)) and created > 0:
+            events.append((created / 1000.0, 0 if _db.loads(r['data']).get('role') == 'user' else 1))
+        if isinstance(updated, (int, float)) and updated > 0:
+            events.append((updated / 1000.0, 1))
+    for r in parts:
         for v in (r['time_created'], r['time_updated']):
             if isinstance(v, (int, float)) and v > 0:
-                out.append(v / 1000.0)
-    return out
+                events.append((v / 1000.0, 1))
+    b = TurnBuilder()
+    for t, kind in sorted(events):
+        b.prompt(t) if kind == 0 else b.activity(t)
+    return b.finish()

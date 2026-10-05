@@ -61,5 +61,5 @@ def summarize_usage(turns: list, from_ts: Optional[float] = None,
     return _usage.summarize(turns, from_ts=from_ts, to_ts=to_ts)
 
 
-def activity_times(path: str) -> List[float]:
-    return rollout.activity_times(path)
+def activity_turns(path: str) -> List[List[float]]:
+    return rollout.activity_turns(path)

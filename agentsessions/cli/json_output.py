@@ -20,6 +20,7 @@ from ..agents import codex as codex_agent
 from ..agents import opencode as opencode_agent
 from ..daemon import protocol
 from ..sessions import activity, cache, store
+from ..sessions import scan as scan_mod
 from ..sessions.live import STATUS_LABEL_KEY
 from ..sessions.model import Session, folder_of, split_name
 from ..tui.items import OTHER_LABEL_LEN
@@ -124,32 +125,55 @@ def scan_output(only: Optional[List[str]] = None) -> dict:
     return {'sessions': sessions, 'store': _store_dict()}
 
 
-def activity_output(from_ts: float, to_ts: float,
-                    gap: float = activity.DEFAULT_GAP_SECONDS) -> dict:
+def activity_output(from_ts: float, to_ts: float, gap: float = activity.DEFAULT_GAP_SECONDS,
+                    now: Optional[float] = None) -> dict:
     """`{"sessions": [{id, agent, name, label, category, child, spans}]}` for the sessions
-    that were active inside `[from_ts, to_ts)`. `spans` are `[start, end]` epoch seconds
-    built from the transcript's message timestamps (see `sessions/activity.py`), clipped
-    to the range. Reuses the shared scan cache for names; a transcript file last written
-    before `from_ts` can't hold activity in range and is never opened."""
-    cache_path = config.CACHE_PATH
-    c = cache.load(path=cache_path)
+    that were active inside `[from_ts, to_ts)`. `spans` are `[start, end]` epoch seconds:
+    each turn (from a prompt to the agent's last record before the next one) with turns less
+    than `gap` apart joined, clipped to the range (see `sessions/activity.py`). Names come
+    from the shared scan cache and each transcript's turns from `activity-cache.json`, keyed by
+    path, size, mtime and algorithm version, so only changed transcripts are parsed again; a
+    transcript last written before `from_ts` can't hold activity in range and is never opened."""
+    now = time.time() if now is None else now
+    c = cache.load(path=config.CACHE_PATH)
+    ac = activity.load_cache(config.ACTIVITY_CACHE_PATH)
+    enabled = agents.enabled_agents()
+    roots = _agent_roots()
+    all_paths = set()
     out: List[dict] = []
-    for name in agents.enabled_agents():
+    for name in enabled:
         adapter = _adapter(name)
-        paths = adapter.list_transcripts()
+        all_listed = adapter.list_transcripts()
+        all_paths.update(all_listed)
+        paths = all_listed
         if name != 'opencode':   # OpenCode's pseudo paths name no file
             paths = [p for p in paths if _mtime(p) >= from_ts]
         for s in adapter.scan(paths, cache=c).values():
             if s.mtime < from_ts:
                 continue
+            if name == 'opencode':
+                size, mtime, trust = 0, s.mtime, True
+            else:
+                try:
+                    st = os.stat(s.path)
+                except OSError:
+                    continue
+                size, mtime = st.st_size, st.st_mtime
+                trust = now - mtime >= scan_mod.RACY_WINDOW
+            turns = activity.cached_turns(ac, s.path, size, mtime,
+                                          lambda a=adapter, p=s.path: a.activity_turns(p), trust)
             spans = activity.clip_spans(
-                activity.spans_from_times(adapter.activity_times(s.path), gap), from_ts, to_ts)
+                activity.join_turns(activity.extend_if_live(turns, now), gap), from_ts, to_ts)
             if not spans:
                 continue
             d = _session_dict(s)
             out.append({'id': d['id'], 'agent': d['agent'], 'name': d['name'], 'label': d['label'],
                         'category': d['group'], 'child': d['child'], 'spans': spans})
-    cache.save(c, path=cache_path)
+    for p in list(ac):
+        if p not in all_paths and any(p.startswith(roots[n]) for n in enabled):
+            del ac[p]
+    cache.save(c, path=config.CACHE_PATH)
+    activity.save_cache(ac, config.ACTIVITY_CACHE_PATH)
     return {'sessions': out}
 
 

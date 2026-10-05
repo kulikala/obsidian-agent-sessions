@@ -41,7 +41,7 @@ A calendar of when each agent was working, with a toggle for the period:
 
 The arrows move by one period and never go past the one that holds now; "Latest" returns to it. The chosen mode is remembered. Click a date in a day header to open that day.
 
-Per day and per agent, a colored block marks each stretch a session was working, read from the transcripts' timestamps (a new block starts after a gap of 30 minutes or more; a block's end is the last message recorded in the stretch, and a stretch of one message shows as one minute). Overlapping sessions sit side by side. A title filter and per-agent cards show hours, session count, and peak concurrency. Hover a block for its time range and name; click it to see that session's details under the grid (with "Open session" to jump to its tab). Open the calendar from the Session Manager toolbar, the side panel's ⋯ menu, or the command palette.
+Per day and per agent, a colored block marks the time a session was working, read from the transcripts: from the moment you submit a prompt (or a notification wakes the agent) until the agent finished its turn. Turns less than 30 minutes apart are joined into one block, so related work reads as one flow; a turn under a minute shows as one minute. Overlapping sessions sit side by side. A title filter and per-agent cards show hours, session count, and peak concurrency. Hover a block for its time range and name; click it to see that session's details under the grid (with "Open session" to jump to its tab). Open the calendar from the Session Manager toolbar, the side panel's ⋯ menu, or the command palette.
 
 ## Usage and limits
 

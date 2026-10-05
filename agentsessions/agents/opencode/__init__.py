@@ -56,7 +56,7 @@ def summarize_usage(turns: list, from_ts: Optional[float] = None,
     return _usage.summarize(turns, from_ts=from_ts, to_ts=to_ts)
 
 
-def activity_times(path: str) -> List[float]:
+def activity_turns(path: str) -> List[List[float]]:
     from . import db as _db
     sid = _db.session_id_of(path)
-    return _scan.activity_times(sid) if sid else []
+    return _scan.activity_turns(sid) if sid else []

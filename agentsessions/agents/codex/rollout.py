@@ -105,14 +105,31 @@ def parse_ts(value) -> Optional[float]:
         return None
 
 
-def activity_times(path: str) -> List[float]:
-    """Timestamps of every record of a rollout (for the activity calendar)."""
-    out: List[float] = []
+def activity_turns(path: str) -> List[List[float]]:
+    """Turns of a rollout (for the activity calendar): a typed user message (`event_msg`
+    `user_message` or `item_completed` UserMessage, injected context and bare slash commands
+    excluded) starts one, and every record counts as activity up to the next prompt."""
+    from ...sessions.activity import TurnBuilder
+    b = TurnBuilder()
     for d in iter_records(path):
         t = parse_ts(d.get('timestamp'))
-        if t is not None:
-            out.append(t)
-    return out
+        if t is None:
+            continue
+        starts = False
+        if d.get('type') == 'event_msg':
+            payload = d.get('payload') or {}
+            etype = payload.get('type')
+            if etype == 'user_message':
+                msg = payload.get('message')
+                starts = isinstance(msg, str) and is_real_user_text(msg)
+            elif etype == 'item_completed':
+                item = payload.get('item') or {}
+                starts = item.get('type') == 'UserMessage' and is_real_user_text(text_of(item.get('content')))
+        if starts:
+            b.prompt(t)
+        else:
+            b.activity(t)
+    return b.finish()
 
 
 def iter_records(path: str) -> Iterator[dict]:
