@@ -17,7 +17,9 @@ function lastActivity(s) {
 }
 
 function scanSession(s) {
-	const [group, label] = s.name.includes(": ") ? s.name.split(": ", 2) : [null, s.name];
+	const [group] = s.name.includes(": ") ? s.name.split(": ", 2) : [null];
+	// A real scan's label is the session's first prompt; the scenario's latest prompt stands in for it.
+	const label = s.detail?.last_user ?? s.name;
 	const row = {
 		id: s.id,
 		agent: s.agent,

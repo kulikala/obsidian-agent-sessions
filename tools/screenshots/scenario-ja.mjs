@@ -76,31 +76,31 @@ export const ORGANIZE_SUGGESTIONS_JA = [
 		id: "5f0c8a4e-3b1d-4f6a-9c2e-7d8b1a0e4c11",
 		category: "ストアフロント",
 		name: "チェックアウトの古いクーポン合計",
-		summary: "クーポンを見ていないメモ化を直し、チェックアウトの合計が一瞬古い金額に戻らないようにした。",
+		reason: "クーポンを見ていないメモ化を直し、チェックアウトの合計が一瞬古い金額に戻らないようにした。",
 	},
 	{
 		id: "8e2b6d17-4c90-4a3e-b5f1-2a7c9e0d3f58",
 		category: "ドキュメント",
 		name: "v4 移行ガイド",
-		summary: "3つの破壊的変更を変更前後のコード付きでまとめた、v3 から v4 への1ページの移行ガイド。",
+		reason: "3つの破壊的変更を変更前後のコード付きでまとめた、v3 から v4 への1ページの移行ガイド。",
 	},
 	{
 		id: "3a7e5c90-1f2d-4b6a-8c3e-9d0f4a2b7e65",
 		category: "信頼性",
 		name: "バックオフ付きの Webhook 再試行",
-		summary: "失敗した Webhook を指数バックオフとデッドレターキューで再試行する。",
+		reason: "失敗した Webhook を指数バックオフとデッドレターキューで再試行する。",
 	},
 	{
 		id: "c41d9f02-6a3b-4e8c-9d7f-1b5e2a8c0f93",
 		category: "インフラ",
 		name: "ステージング用バケットの削除",
-		summary: "modules/staging-legacy にある未使用のリソース6件と IAM の紐づけを削除する。",
+		reason: "modules/staging-legacy にある未使用のリソース6件と IAM の紐づけを削除する。",
 	},
 	{
 		id: "b95f1e28-7d4c-4a0b-9e6f-3c2a8d5b1f07",
 		category: "調査",
 		name: "ベクトルインデックスの比較",
-		summary: "200万件のサンプルで pgvector とホスト型インデックスを比較する。k=10 の遅延と再現率。",
+		reason: "200万件のサンプルで pgvector とホスト型インデックスを比較する。k=10 の遅延と再現率。",
 	},
 ];
 export const ORGANIZE_COMMENT_JA = "比べる2つのシステムの名前を入れてください";

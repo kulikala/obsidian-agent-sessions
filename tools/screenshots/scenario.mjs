@@ -268,31 +268,31 @@ export const ORGANIZE_SUGGESTIONS = [
 		id: "5f0c8a4e-3b1d-4f6a-9c2e-7d8b1a0e4c11",
 		category: "Storefront",
 		name: "Stale coupon total in checkout",
-		summary: "Fixed a memo that ignored the coupon, so the checkout total no longer flashes the old amount.",
+		reason: "Fixed a memo that ignored the coupon, so the checkout total no longer flashes the old amount.",
 	},
 	{
 		id: "8e2b6d17-4c90-4a3e-b5f1-2a7c9e0d3f58",
 		category: "Docs",
 		name: "v4 migration guide",
-		summary: "One-page v3 to v4 guide covering the three breaking changes with before/after snippets.",
+		reason: "One-page v3 to v4 guide covering the three breaking changes with before/after snippets.",
 	},
 	{
 		id: "3a7e5c90-1f2d-4b6a-8c3e-9d0f4a2b7e65",
 		category: "Reliability",
 		name: "Webhook retries with backoff",
-		summary: "Retries failed webhooks with exponential backoff and a dead-letter queue.",
+		reason: "Retries failed webhooks with exponential backoff and a dead-letter queue.",
 	},
 	{
 		id: "c41d9f02-6a3b-4e8c-9d7f-1b5e2a8c0f93",
 		category: "Infra",
 		name: "Remove staging buckets",
-		summary: "Destroys six unused staging resources and their IAM bindings under modules/staging-legacy.",
+		reason: "Destroys six unused staging resources and their IAM bindings under modules/staging-legacy.",
 	},
 	{
 		id: "b95f1e28-7d4c-4a0b-9e6f-3c2a8d5b1f07",
 		category: "Research",
 		name: "Vector index benchmark",
-		summary: "Comparing pgvector and a hosted index on a 2M-document sample: latency and recall at k=10.",
+		reason: "Comparing pgvector and a hosted index on a 2M-document sample: latency and recall at k=10.",
 	},
 ];
 export const ORGANIZE_COMMENT = "Name it after the two systems being compared";

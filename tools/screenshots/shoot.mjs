@@ -468,6 +468,8 @@ async function onboardingScenes(page, box, look) {
 		${PLUGIN}.openInstallBackend();
 	})()`);
 	await page.waitFor(`document.querySelector('.agent-sessions-install-plan')`, { what: "the install plan" });
+	// Open "Details" so the picture shows where the program goes and what it adds.
+	await page.evaluate(`document.querySelector('.agent-sessions-install-details').open = true`);
 	await shoot("install", await unionOf(page, [".modal"]));
 	await pressEscape(page);
 	await page.waitFor(`!document.querySelector('.modal')`, { what: "the install dialog to close" });
