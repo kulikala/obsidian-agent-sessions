@@ -24,7 +24,7 @@ MIN_SPAN_SECONDS = 60.0
 # A last turn whose final record is this recent is taken to still be running: it ends "now".
 LIVE_WINDOW_SECONDS = 120.0
 # Bumped whenever how turns are read changes: a cached entry of another version is recomputed.
-ACTIVITY_VERSION = 5
+ACTIVITY_VERSION = 6
 # How much of the agent's last answer is kept per turn (and per block, as `final`).
 REPLY_CHARS = 400
 # How much of a turn's prompt is kept (in the cache and in `json activity`).

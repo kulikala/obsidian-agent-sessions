@@ -174,6 +174,38 @@ class TestActivityOutput(unittest.TestCase):
         self.assertEqual([(t['prompt'], t['kind'], t['reply']) for t in span['turns']], [('build it', 'prompt', 'dispatching')])
         self.assertEqual(span['final'], 'all done')
 
+    def test_real_shaped_subagent_files_lengthen_the_blocks(self):
+        sid = '55555555-5555-5555-5555-555555555555'
+        proj = os.path.join(self.proj_root, '-Users-k-vault')
+        write_jsonl(os.path.join(proj, sid + '.jsonl'), [
+            claude_line('user', '05:00:00', cwd='/Users/k/vault', message={'role': 'user', 'content': 'run the team'}),
+            claude_line('assistant', '05:00:20', message={'role': 'assistant', 'content': 'started'}),
+            claude_line('user', '07:30:00', message={'role': 'user', 'content': 'status?'}),
+            claude_line('assistant', '07:30:20', message={'role': 'assistant', 'content': 'reporting'}),
+            {'type': 'custom-title', 'customTitle': 'Team job', 'sessionId': sid},
+        ])
+        args = (epoch('00:00:00'), epoch('23:59:59'), 1800)
+        before = self.by_id(jsonout.activity_output(*args))[sid]
+        self.assertEqual([round(b['end'] - b['start']) for b in before['spans']], [60, 60])
+
+        # the exact line shape of a teammate / background-agent transcript, several files, plus a meta file
+        subdir = os.path.join(proj, sid, 'subagents')
+        os.makedirs(subdir)
+
+        def agent_line(kind, hms, agent):
+            return {'parentUuid': None, 'isSidechain': True, 'agentId': agent, 'type': kind,
+                    'message': {'role': kind, 'content': 'x'}, 'timestamp': '%sT%s.000Z' % (DAY, hms),
+                    'sessionId': sid, 'cwd': '/Users/k/vault'}
+
+        for agent, hours in (('acalendar-aaaa', ('05:00:30', '05:20:00', '05:45:00', '06:10:00')),
+                             ('aonb-bbbb', ('06:00:00', '06:25:00', '06:50:00', '07:15:00', '07:29:00'))):
+            write_jsonl(os.path.join(subdir, 'agent-%s.jsonl' % agent),
+                        [agent_line('user' if i == 0 else 'assistant', h, agent) for i, h in enumerate(hours)])
+        with open(os.path.join(subdir, 'agent-acalendar-aaaa.meta.json'), 'w') as f:
+            f.write('{"agentType": "teammate"}')
+        after = self.by_id(jsonout.activity_output(*args))[sid]
+        self.assertEqual(pairs(after), [[epoch('05:00:00'), epoch('07:30:20')]])   # one 2.5-hour block
+
     def test_cli_args(self):
         import io
         import json
