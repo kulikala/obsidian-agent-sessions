@@ -6,6 +6,7 @@ import {
 	periodContaining,
 	periodDays,
 	pickResetAnchor,
+	nowLinePosition,
 	rematchSpan,
 	shiftPeriod,
 	clockLabel,
@@ -413,5 +414,35 @@ describe("agent card state", () => {
 
 	it("always lets an off card be turned back on", () => {
 		expect(agentCardState("codex", ["codex", "opencode"], all).canToggle).toBe(true);
+	});
+});
+
+describe("nowLinePosition", () => {
+	const week = periodDays({ mode: "week", from: new Date(2026, 8, 13), to: new Date(2026, 8, 20) });
+
+	it("is the day holding now and the seconds since its midnight", () => {
+		const now = new Date(2026, 8, 16, 22, 43, 30).getTime() / 1000;
+		expect(nowLinePosition(week, now)).toEqual({ day: 3, seconds: 22 * 3600 + 43 * 60 + 30 });
+	});
+
+	it("is the first second of a day at its midnight, and null before or after the period", () => {
+		expect(nowLinePosition(week, week[0].start)).toEqual({ day: 0, seconds: 0 });
+		expect(nowLinePosition(week, week[6].end)).toBeNull();
+		expect(nowLinePosition(week, week[0].start - 1)).toBeNull();
+	});
+
+	it("finds today inside a session period that starts mid-day", () => {
+		const reset = new Date(2026, 9, 8, 14, 30).getTime() / 1000;
+		const now = new Date(2026, 9, 5, 9).getTime() / 1000;
+		const days = periodDays(periodContaining("session", new Date(now * 1000), reset));
+		const pos = nowLinePosition(days, now);
+		expect(pos).not.toBeNull();
+		expect(days[pos!.day].start + pos!.seconds).toBe(now);
+	});
+
+	it("is a single day in day mode", () => {
+		const day = periodDays(periodContaining("day", new Date(2026, 8, 16, 12), null));
+		expect(nowLinePosition(day, new Date(2026, 8, 16, 1).getTime() / 1000)).toEqual({ day: 0, seconds: 3600 });
+		expect(nowLinePosition(day, new Date(2026, 8, 17, 1).getTime() / 1000)).toBeNull();
 	});
 });

@@ -562,7 +562,7 @@ export const en = {
 
 	// ---- views/activity.ts ----
 	"activity.title": "Activity calendar",
-	"activity.subtitle": "When each agent was working, from your prompt until the agent finished (local time; turns less than {gap} apart are joined).",
+	"activity.about": "A block runs from your input to the agent's last output before your next input, plus the time its sub-agents were working. Turns less than {gap} apart are joined. Local time.",
 	"activity.mode.session": "7d",
 	"activity.mode.session.hint": "7 days aligned to the usage limit's reset (Claude Code's 7-day window, else Codex's; weeks from Sunday if neither is known)",
 	"activity.mode.week": "Week",

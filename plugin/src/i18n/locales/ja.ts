@@ -563,7 +563,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 
 	// ---- views/activity.ts ----
 	"activity.title": "稼働カレンダー",
-	"activity.subtitle": "プロンプトを送ってからエージェントが終えるまでを、各エージェントごとに並べます（ローカル時刻・{gap}未満の間隔のターンはひとつにつなぎます）。",
+	"activity.about": "ブロックは、あなたの入力から、次の入力の前にエージェントが最後に出力するまで（サブエージェントの稼働を含む）。{gap}未満の間隔のターンはつなぎます。ローカル時刻。",
 	"activity.mode.session": "7日枠",
 	"activity.mode.session.hint": "使用量の上限がリセットされる時刻に揃えた 7 日間（Claude Code の 7 日枠、なければ Codex の枠。どちらも分からなければ日曜始まりの週）",
 	"activity.mode.week": "週",

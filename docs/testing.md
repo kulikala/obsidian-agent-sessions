@@ -305,7 +305,7 @@ Use a test vault. For the first-run items, a vault where the plugin was never en
 ### Activity calendar
 
 - [ ] "Open activity calendar" in the command palette, the Session Manager toolbar's calendar button, and the side panel's ⋯ menu all open the same single tab.
-- [ ] The title, the one-line explanation, the 7d / Week / Day toggle and the 30 min / 1 h / 2 h join control (the explanation names the chosen gap; switching refetches in place, and the choice survives reloading the plugin; the 7d tooltip explains the reset alignment), the period range, "Latest", and the filter box are shown; the language follows the plugin's setting (English and Japanese).
+- [ ] The title with an ⓘ tooltip (what a block is, naming the chosen gap; there is no subtitle on the page), the 7d / Week / Day toggle and the 30 min / 1 h / 2 h join control (the choice survives reloading the plugin; the 7d tooltip explains the reset alignment), the period range, "Latest", and the filter box are shown; the language follows the plugin's setting (English and Japanese).
 - [ ] The toggle defaults to Session. With Claude Code enabled and its 7-day reset known, the Session period ends at that reset and starts 7 days earlier (its first and last day are dimmed outside the period); with only Codex's weekly window known it follows that; with neither it is a Sunday-start week. Earlier periods step back by 7 days.
 - [ ] Week runs Sunday to Saturday; Day shows one date with one wide column per agent. The chosen mode is still selected after reloading the plugin.
 - [ ] The next arrow is disabled on the period that holds now (in all three modes), and "Latest" returns to it.
@@ -325,6 +325,7 @@ Use a test vault. For the first-run items, a vault where the plugin was never en
 - [ ] Switching the join gap (30 min / 1 h / 2 h), the mode (7d / Week / Day), the agent switches, or typing in the filter redraws at once with no spinner and without calling the program (check the tab's process list or the daemon log: nothing is spawned); the scroll position stays. Moving to a period not seen before asks only for the days it lacks, and draws the cached part first.
 - [ ] The calendar stays current: finish a turn in a session and, within a few seconds, the block and an open details panel show the new end and response; leaving the calendar tab and coming back reloads it; with the tab in the background nothing is requested; scroll position, the selected block, and unfolded responses survive a reload.
 - [ ] The calendar draws the same sessions as the Session Manager: an archived session and an unnamed child session (for example one started by another session with `claude -p`) are not drawn and not counted in the cards; naming such a session, or restoring it from the archive, makes it appear.
+- [ ] When the period holds now (7d, Week, Day), a thin accent line crosses today's column (all the session columns in Day mode) at the current time, with the time on the axis, and it moves on by itself every minute without a reload; a past period has no line.
 - [ ] Typing in the filter narrows the blocks, counts, and cards.
 - [ ] A block that crosses midnight appears on both days. In a period with a daylight-saving change, every column still starts at midnight.
 - [ ] Light and dark themes are both legible; narrowing the pane scrolls the grid sideways instead of squeezing it.

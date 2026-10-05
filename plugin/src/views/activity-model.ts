@@ -430,3 +430,15 @@ export function agentCardState(agent: string, hidden: readonly string[], all: re
 	const on = !hidden.includes(agent);
 	return { on, canToggle: !on || visibleAgents(all, hidden).length > 1 };
 }
+
+/**
+ * Where the "now" line goes: the index of the day of `days` that holds `nowSeconds` and the
+ * seconds since that day's midnight, or `null` when the period doesn't hold now.
+ */
+export function nowLinePosition(days: readonly DayRange[], nowSeconds: number): { day: number; seconds: number } | null {
+	const day = days.findIndex((d) => nowSeconds >= d.start && nowSeconds < d.end);
+	if (day === -1) {
+		return null;
+	}
+	return { day, seconds: nowSeconds - days[day].start };
+}

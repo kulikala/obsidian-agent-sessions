@@ -2976,12 +2976,25 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	margin: 0 0 var(--size-4-1);
 }
 
-.agent-sessions-activity-subtitle {
-	margin: 0 0 var(--size-4-2);
-	color: var(--text-muted);
-	font-size: var(--font-ui-small);
+.agent-sessions-activity-title {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
 }
 
+.agent-sessions-activity-about {
+	display: inline-flex;
+	color: var(--text-faint);
+}
+
+.agent-sessions-activity-about svg {
+	width: 16px;
+	height: 16px;
+}
+
+.agent-sessions-activity-about:hover {
+	color: var(--text-muted);
+}
 .agent-sessions-activity-nav {
 	display: flex;
 	flex-wrap: wrap;
@@ -3565,4 +3578,50 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	justify-content: flex-end;
 	gap: var(--size-4-2);
 	margin-bottom: var(--size-4-2);
+}
+
+/* The current time: a thin accent line across today, its time at the axis. */
+.agent-sessions-activity-main {
+	position: relative;
+}
+
+.agent-sessions-activity-now {
+	position: absolute;
+	left: 0;
+	right: 0;
+	z-index: 3;
+	height: 0;
+	border-top: 1.5px solid var(--interactive-accent);
+	pointer-events: none;
+}
+
+.agent-sessions-activity-now::before {
+	content: "";
+	position: absolute;
+	left: -3px;
+	top: -4.5px;
+	width: 7px;
+	height: 7px;
+	border-radius: 50%;
+	background-color: var(--interactive-accent);
+}
+
+/* In day mode the line spans the whole row, so it starts after the axis. */
+.agent-sessions-activity-now.is-day-mode {
+	left: 3.4em;
+}
+
+.agent-sessions-activity-now-label {
+	position: absolute;
+	right: var(--size-4-1);
+	z-index: 3;
+	padding: 0 4px;
+	border-radius: var(--radius-s);
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-size: var(--font-ui-smaller);
+	font-variant-numeric: tabular-nums;
+	white-space: nowrap;
+	transform: translateY(-50%);
+	pointer-events: none;
 }

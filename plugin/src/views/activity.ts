@@ -25,6 +25,7 @@ import {
 	firstActiveSeconds,
 	fitsLabel,
 	layoutOverlaps,
+	nowLinePosition,
 	minBlockSeconds,
 	periodContaining,
 	periodDays,
@@ -104,7 +105,13 @@ export class ActivityView extends ItemView {
 	private detailEl!: HTMLElement;
 	private blockDetailEl!: HTMLElement;
 	private sessionDetailEl!: HTMLElement;
-	private subtitleEl!: HTMLElement;
+	private aboutEl!: HTMLElement;
+	/** The now line's elements (rebuilt by `placeNowLine`). */
+	private nowEls: HTMLElement[] = [];
+	private axisEl: HTMLElement | null = null;
+	private mainEl: HTMLElement | null = null;
+	private dayEls: HTMLElement[] = [];
+	private dayMode = false;
 	private gapBtns = new Map<ActivityGap, HTMLElement>();
 	private filterEl!: HTMLInputElement;
 
@@ -153,6 +160,7 @@ export class ActivityView extends ItemView {
 			})
 		);
 		const timer = window.setInterval(() => {
+			this.placeNowLine(); // moves with the clock, no refetch
 			if (canGoNext(this.period, new Date())) {
 				return; // a past period doesn't change
 			}
@@ -240,9 +248,12 @@ export class ActivityView extends ItemView {
 
 	private buildSkeleton(): void {
 		const head = this.contentEl.createDiv({ cls: "agent-sessions-activity-head" });
-		head.createEl("h2", { text: t("activity.title") });
-		this.subtitleEl = head.createEl("p", { cls: "agent-sessions-activity-subtitle" });
-		this.subtitleEl.setText(this.subtitleText());
+		const title = head.createEl("h2", { cls: "agent-sessions-activity-title" });
+		title.createSpan({ text: t("activity.title") });
+		// The explanation lives in a tooltip, not on the page.
+		this.aboutEl = title.createSpan({ cls: "agent-sessions-activity-about" });
+		setIcon(this.aboutEl, "info");
+		this.updateAbout();
 
 		const nav = head.createDiv({ cls: "agent-sessions-activity-nav" });
 		const modes = nav.createDiv({ cls: "agent-sessions-activity-modes" });
@@ -328,8 +339,9 @@ export class ActivityView extends ItemView {
 		return btn;
 	}
 
-	private subtitleText(): string {
-		return t("activity.subtitle", { gap: t(`activity.gap.${this.plugin.settings.activityGapMinutes}`) });
+	/** The title's tooltip: what a block is, with the current join gap. */
+	private updateAbout(): void {
+		setTooltip(this.aboutEl, t("activity.about", { gap: t(`activity.gap.${this.plugin.settings.activityGapMinutes}`) }));
 	}
 
 	/** Switches how far apart turns may be and still join into one block: recomputed from the loaded data, no request. */
@@ -362,7 +374,7 @@ export class ActivityView extends ItemView {
 		for (const [gap, btn] of this.gapBtns) {
 			btn.toggleClass("is-active", gap === this.plugin.settings.activityGapMinutes);
 		}
-		this.subtitleEl.setText(this.subtitleText());
+		this.updateAbout();
 	}
 
 	private go(period: Period): void {
@@ -513,6 +525,11 @@ export class ActivityView extends ItemView {
 		header.createDiv({ cls: "agent-sessions-activity-axis-cell" });
 		const body = grid.createDiv({ cls: "agent-sessions-activity-row agent-sessions-activity-main" });
 		const axis = body.createDiv({ cls: "agent-sessions-activity-axis" });
+		this.mainEl = body;
+		this.axisEl = axis;
+		this.dayEls = [];
+		this.dayMode = dayMode;
+		this.nowEls = [];
 		for (let h = 0; h < 24; h += 2) {
 			const tick = axis.createDiv({ cls: "agent-sessions-activity-tick", text: clockLabel(h * 3600) });
 			tick.style.top = `${(h / 24) * 100}%`;
@@ -528,6 +545,7 @@ export class ActivityView extends ItemView {
 
 		// Scrolling: to the first active hour of the (filtered) period when the data just changed,
 		// otherwise where the user left it.
+		this.placeNowLine();
 		if (scrollToFirst || !scrollEl) {
 			scroll.scrollTop = (firstActiveSeconds(drawn) / 3600) * HOUR_PX;
 		} else {
@@ -583,6 +601,7 @@ export class ActivityView extends ItemView {
 
 		days.forEach((d, i) => {
 			const col = body.createDiv({ cls: "agent-sessions-activity-day" });
+			this.dayEls[i] = col;
 			if (i === todayIdx) {
 				col.addClass("is-today");
 			}
@@ -644,6 +663,37 @@ export class ActivityView extends ItemView {
 			drawn.push(l.item);
 			this.renderBlock(lane, l.item.session, l.item, dayStart, l.col, l.cols);
 		}
+	}
+
+	/**
+	 * The "now" line: a thin accent line across today's column (across all the session columns in
+	 * day mode) at the current time, with the time at the axis. Only when the period holds now;
+	 * redrawn every minute from the clock, without touching the data.
+	 */
+	private placeNowLine(): void {
+		for (const el of this.nowEls) {
+			el.remove();
+		}
+		this.nowEls = [];
+		if (!this.axisEl || !this.mainEl) {
+			return;
+		}
+		const nowSec = Date.now() / 1000;
+		const pos = nowLinePosition(periodDays(this.period), nowSec);
+		if (!pos) {
+			return;
+		}
+		const top = `${(pos.seconds / SECONDS_PER_DAY) * 100}%`;
+		const host = this.dayMode ? this.mainEl : this.dayEls[pos.day];
+		if (!host) {
+			return;
+		}
+		const line = host.createDiv({ cls: "agent-sessions-activity-now" });
+		line.toggleClass("is-day-mode", this.dayMode);
+		line.style.top = top;
+		const label = this.axisEl.createDiv({ cls: "agent-sessions-activity-now-label", text: clockLabel(pos.seconds) });
+		label.style.top = top;
+		this.nowEls = [line, label];
 	}
 
 	private renderOutside(col: HTMLElement, from: number, to: number): void {
