@@ -378,7 +378,7 @@ class TestHelpSkill(SkillsTestCase):
         self.assertIn('agent-sessions` skill', text)
         head = text.split('---\n')[1]
         description = head.split('description: ', 1)[1].split('\n')[0]
-        for word in ('side panel', 'Session Manager', 'built-in editor', 'in any language'):
+        for word in ('side panel', 'Session manager', 'built-in editor', 'in any language'):
             self.assertIn(word, text)
         self.assertIn('Use when the user asks how to', description)
 

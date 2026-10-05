@@ -1,6 +1,6 @@
 ---
 name: agent-sessions-help
-description: Explain how to use the Agent Sessions plugin for Obsidian - running Claude Code, Codex and OpenCode sessions as terminal tabs - from the side panel and the Session Manager. Use when the user asks how to do something with Agent Sessions or where something is - starting, switching, renaming, categorizing, organizing, archiving, restarting or ending sessions, the built-in editor (Ctrl+G), the welcome guide, usage and limits, settings, install, update or removal, supported platforms, or why something does not work - in any language.
+description: Explain how to use the Agent Sessions plugin for Obsidian - running Claude Code, Codex and OpenCode sessions as terminal tabs - from the side panel and the Session manager. Use when the user asks how to do something with Agent Sessions or where something is - starting, switching, renaming, categorizing, organizing, archiving, restarting or ending sessions, the built-in editor (Ctrl+G), the welcome guide, usage and limits, settings, install, update or removal, supported platforms, or why something does not work - in any language.
 ---
 {{MARKER}}
 
