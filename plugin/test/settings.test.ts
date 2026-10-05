@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
 	submitKeyOptionLabel,
-	agentsSupportedOn,
 	agentsWithLimits,
 	asAgentId,
 	DEFAULT_SETTINGS,
@@ -355,14 +354,12 @@ describe("agentsWithLimits", () => {
 	});
 });
 
-describe("agents on Windows", () => {
-	it("supports Claude Code only and keeps the others off whatever was saved", () => {
-		expect(agentsSupportedOn("win32")).toEqual(["claude"]);
-		expect(agentsSupportedOn("linux")).toEqual(["claude", "codex", "opencode"]);
-		const merged = mergeSettings({ agents: { codex: { enabled: true }, opencode: { enabled: true } } }, false, "win32");
+describe("agents off macOS", () => {
+	it("keeps every saved agent toggle", () => {
+		const merged = mergeSettings({ agents: { codex: { enabled: true }, opencode: { enabled: true } } }, false);
 		expect(merged.agents.claude.enabled).toBe(true);
-		expect(merged.agents.codex.enabled).toBe(false);
-		expect(merged.agents.opencode.enabled).toBe(false);
+		expect(merged.agents.codex.enabled).toBe(true);
+		expect(merged.agents.opencode.enabled).toBe(true);
 	});
 });
 

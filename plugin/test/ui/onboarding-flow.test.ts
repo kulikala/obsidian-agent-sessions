@@ -100,17 +100,18 @@ describe("canContinue", () => {
 
 describe("guideAgent", () => {
 	const all = { claude: true, codex: true, opencode: true };
-	it("uses the remembered agent when it is enabled here", () => {
-		expect(guideAgent("codex", all, "darwin")).toBe("codex");
+	it("uses the remembered agent when it is enabled", () => {
+		expect(guideAgent("codex", all)).toBe("codex");
+		expect(guideAgent("opencode", all)).toBe("opencode");
 	});
 
-	it("falls back to the first enabled agent that works on the platform", () => {
-		expect(guideAgent("codex", { claude: false, codex: false, opencode: true }, "linux")).toBe("opencode");
-		expect(guideAgent("codex", all, "win32")).toBe("claude");
+	it("falls back to the first enabled agent", () => {
+		expect(guideAgent("codex", { claude: false, codex: false, opencode: true })).toBe("opencode");
+		expect(guideAgent("opencode", { claude: true, codex: true, opencode: false })).toBe("claude");
 	});
 
 	it("is Claude Code when nothing is enabled", () => {
-		expect(guideAgent("codex", { claude: false, codex: false, opencode: false }, "darwin")).toBe("claude");
+		expect(guideAgent("codex", { claude: false, codex: false, opencode: false })).toBe("claude");
 	});
 });
 
@@ -125,8 +126,11 @@ describe("agentInstallHelp", () => {
 		}
 	});
 
-	it("gives none on Windows, which has its own WinGet button", () => {
+	it("gives npm's command for Codex and OpenCode on Windows, and none for Claude Code (its WinGet button)", () => {
 		expect(agentInstallHelp("claude", "win32")).toBeNull();
+		expect(agentInstallHelp("codex", "win32")?.command).toBe("npm install -g @openai/codex");
+		expect(agentInstallHelp("opencode", "win32")?.command).toBe("npm install -g opencode-ai");
+		expect(agentInstallHelp("opencode", "win32")?.docsUrl).toMatch(/^https:\/\//);
 	});
 });
 

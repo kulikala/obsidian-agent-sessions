@@ -2,7 +2,7 @@
 // parsing of its output — one pure place per agent. The process spawning lives in
 // `backend/headless.ts`. Kept free of any `obsidian` import so tests can import it directly.
 
-import { agentsSupportedOn, type AgentId, type OrganizeModel } from "../settings";
+import type { AgentId, OrganizeModel } from "../settings";
 
 /** What the dialog needs of an agent's settings to choose. */
 export type AgentEnabled = Record<AgentId, { enabled: boolean }>;
@@ -10,11 +10,10 @@ export type AgentEnabled = Record<AgentId, { enabled: boolean }>;
 /** The order in which an enabled agent is preferred: Claude Code first. */
 const PREFERENCE: readonly AgentId[] = ["claude", "codex", "opencode"];
 
-/** The agent that answers: Claude Code when enabled, else Codex, else OpenCode — among the ones
- * this platform supports. `null` when none of them is enabled. */
-export function pickOrganizeAgent(agents: AgentEnabled, platform: string): AgentId | null {
-	const supported = agentsSupportedOn(platform);
-	return PREFERENCE.find((id) => supported.includes(id) && agents[id].enabled) ?? null;
+/** The agent that answers: Claude Code when enabled, else Codex, else OpenCode. `null` when none
+ * of them is enabled. */
+export function pickOrganizeAgent(agents: AgentEnabled): AgentId | null {
+	return PREFERENCE.find((id) => agents[id].enabled) ?? null;
 }
 
 /** The model asked for, where the CLI lets one be named (Claude Code: the "Model for suggestions"

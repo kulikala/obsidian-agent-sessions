@@ -88,7 +88,7 @@ export class OrganizeModal extends Modal {
 	onOpen(): void {
 		this.modalEl.addClass("agent-sessions-organize");
 		this.setTitle(t(this.single ? "organize.titleSingle" : "organize.title"));
-		this.agent = pickOrganizeAgent(this.plugin.settings.agents, process.platform);
+		this.agent = pickOrganizeAgent(this.plugin.settings.agents);
 		this.statusEl = this.contentEl.createDiv({ cls: "agent-sessions-organize-status" });
 		this.views = {
 			start: this.contentEl.createDiv({ cls: "agent-sessions-organize-view" }),
@@ -347,7 +347,7 @@ export class OrganizeModal extends Modal {
 	}
 
 	private async generate(): Promise<void> {
-		this.agent = pickOrganizeAgent(this.plugin.settings.agents, process.platform);
+		this.agent = pickOrganizeAgent(this.plugin.settings.agents);
 		const agent = this.agent;
 		if (!agent) {
 			this.setStatus(t("organize.noAgent"), true);

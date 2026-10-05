@@ -10,7 +10,7 @@ import { App, getLanguage, Modal, Notice, Platform, Setting, setIcon } from "obs
 import { detectAgents } from "../backend/backend";
 import { languageOptions, resolveLang, t, type LanguageSetting, type MessageKey } from "../i18n";
 import type AgentSessionsPlugin from "../main";
-import { agentsSupportedOn, submitKeyChoices, submitKeyOptionLabel, type AgentId, type SubmitKey } from "../settings";
+import { AGENT_IDS, submitKeyChoices, submitKeyOptionLabel, type AgentId, type SubmitKey } from "../settings";
 import { editorKeyLabel } from "../terminal/keys";
 import { AGENT_ICON_ID } from "./icons";
 import {
@@ -278,7 +278,7 @@ export class OnboardingModal extends Modal {
 			void this.detect();
 		}
 		body.createEl("p", { text: t("onboarding.settings.desc") });
-		for (const id of agentsSupportedOn(process.platform)) {
+		for (const id of AGENT_IDS) {
 			const setting = new Setting(body);
 			setIcon(setting.nameEl.createSpan({ cls: "agent-sessions-settings-agent-icon" }), AGENT_ICON_ID[id]);
 			setting.nameEl.createSpan({ text: t(AGENT_NAME_KEY[id]) });
@@ -295,7 +295,7 @@ export class OnboardingModal extends Modal {
 					this.render();
 				})
 			);
-			// Windows has the WinGet button above; elsewhere a missing agent gets the vendor's own command.
+			// A missing agent gets the vendor's own command; Claude Code on Windows has the WinGet button above instead.
 			if (found === null && (id === "claude" || this.plugin.settings.agents[id].enabled)) {
 				this.renderInstallHelp(body, id);
 			}
@@ -305,7 +305,7 @@ export class OnboardingModal extends Modal {
 		);
 
 		const agents = this.plugin.settings.agents;
-		const usable = agentsSupportedOn(process.platform).filter((id) => agents[id].enabled);
+		const usable = AGENT_IDS.filter((id) => agents[id].enabled);
 		if (usable.length > 1) {
 			new Setting(body)
 				.setName(t("onboarding.setup.agentForGuide"))
@@ -338,7 +338,7 @@ export class OnboardingModal extends Modal {
 		this.image(body, "agents");
 	}
 
-	/** The official install command for a missing agent (macOS, Linux), with a Copy button and the
+	/** The official install command for a missing agent, with a Copy button and the
 	 * docs. Nothing is run. Returns whether anything was shown. */
 	private renderInstallHelp(body: HTMLElement, id: AgentId): boolean {
 		const help = agentInstallHelp(id, process.platform);

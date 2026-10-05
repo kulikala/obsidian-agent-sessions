@@ -3,7 +3,7 @@
 // to show for a missing agent, and when a picture counts as not loading.
 
 import type { MessageKey } from "../i18n";
-import { AGENT_IDS, agentsSupportedOn, type AgentId } from "../settings";
+import { AGENT_IDS, type AgentId } from "../settings";
 import {
 	completeStep,
 	nextIndex,
@@ -69,23 +69,19 @@ export function canContinue(p: OnboardingProgress | null): p is OnboardingProgre
 }
 
 /**
- * The agent the guide's session runs: the one the new-session dialog remembers if it is enabled and
- * works on this platform, else the first enabled one that does, else Claude Code.
+ * The agent the guide's session runs: the one the new-session dialog remembers if it is enabled,
+ * else the first enabled one, else Claude Code.
  */
-export function guideAgent(
-	last: AgentId,
-	enabled: Readonly<Record<AgentId, boolean>>,
-	platform: string
-): AgentId {
-	const usable = AGENT_IDS.filter((id) => enabled[id] && agentsSupportedOn(platform).includes(id));
+export function guideAgent(last: AgentId, enabled: Readonly<Record<AgentId, boolean>>): AgentId {
+	const usable = AGENT_IDS.filter((id) => enabled[id]);
 	if (usable.includes(last)) {
 		return last;
 	}
 	return usable[0] ?? "claude";
 }
 
-/** What to show for an agent that isn't installed on macOS or Linux: the vendor's own command, to be
- * pasted into a terminal by the user (the guide never runs it), and where its documentation is. */
+/** What to show for an agent that isn't installed: the vendor's own command, to be pasted into a
+ * terminal by the user (the guide never runs it), and where its documentation is. */
 export interface AgentInstallHelp {
 	command: string;
 	docsUrl: string;
@@ -97,9 +93,19 @@ const INSTALL_HELP: Record<AgentId, AgentInstallHelp> = {
 	opencode: { command: "curl -fsSL https://opencode.ai/install | bash", docsUrl: "https://opencode.ai/docs/" },
 };
 
+/** On Windows Codex and OpenCode come from npm (the vendors' shell installers are for macOS and
+ * Linux); Claude Code has its WinGet button instead. */
+const WINDOWS_INSTALL_HELP: Partial<Record<AgentId, AgentInstallHelp>> = {
+	codex: INSTALL_HELP.codex,
+	opencode: { command: "npm install -g opencode-ai", docsUrl: "https://opencode.ai/docs/" },
+};
+
 /** The install help for `agent` on `platform`, or `null` where the guide has its own button (Windows
  * installs Claude Code with WinGet) or no help to give. */
 export function agentInstallHelp(agent: AgentId, platform: string): AgentInstallHelp | null {
+	if (platform === "win32") {
+		return WINDOWS_INSTALL_HELP[agent] ?? null;
+	}
 	return platform === "darwin" || platform === "linux" ? INSTALL_HELP[agent] : null;
 }
 

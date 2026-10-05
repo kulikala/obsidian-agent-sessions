@@ -96,7 +96,6 @@ import { resolveRowStatus } from "./sessions/terminal-status";
 import { renameRoute, sessionAgentOf } from "./sessions/rename";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./sessions/open-session";
 import {
-	agentsSupportedOn,
 	AGENT_IDS,
 	AgentSessionsSettings,
 	type OrganizeModel,
@@ -1242,8 +1241,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		const agents = this.settings.agents;
 		return guideAgent(
 			this.settings.lastNewSessionAgent,
-			{ claude: agents.claude.enabled, codex: agents.codex.enabled, opencode: agents.opencode.enabled },
-			process.platform
+			{ claude: agents.claude.enabled, codex: agents.codex.enabled, opencode: agents.opencode.enabled }
 		);
 	}
 
@@ -2631,11 +2629,6 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 				const iconEl = heading.nameEl.createSpan({ cls: "agent-sessions-settings-agent-icon" });
 				setIcon(iconEl, AGENT_ICON_ID[id]);
 				heading.nameEl.createSpan({ text: t(AGENT_DISPLAY_NAME_KEY[id]) });
-				if (!agentsSupportedOn(process.platform).includes(id)) {
-					heading.setDesc(t("settings.agents.unsupportedOnPlatform"));
-					heading.addToggle((toggle) => toggle.setValue(false).setDisabled(true));
-					continue;
-				}
 				heading.addToggle((toggle) =>
 					toggle.setValue(agentSettings.enabled).onChange(async (value) => {
 						if (!(await this.plugin.setAgentEnabled(id, value))) {

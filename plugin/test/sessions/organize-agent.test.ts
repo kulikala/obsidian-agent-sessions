@@ -16,15 +16,13 @@ const on = (claude: boolean, codex: boolean, opencode: boolean) => ({
 
 describe("pickOrganizeAgent", () => {
 	it("prefers Claude Code, then Codex, then OpenCode", () => {
-		expect(pickOrganizeAgent(on(true, true, true), "darwin")).toBe("claude");
-		expect(pickOrganizeAgent(on(false, true, true), "darwin")).toBe("codex");
-		expect(pickOrganizeAgent(on(false, false, true), "linux")).toBe("opencode");
+		expect(pickOrganizeAgent(on(true, true, true))).toBe("claude");
+		expect(pickOrganizeAgent(on(false, true, true))).toBe("codex");
+		expect(pickOrganizeAgent(on(false, false, true))).toBe("opencode");
 	});
 
-	it("is null when no supported agent is enabled, and Windows only has Claude Code", () => {
-		expect(pickOrganizeAgent(on(false, false, false), "darwin")).toBeNull();
-		expect(pickOrganizeAgent(on(false, true, true), "win32")).toBeNull();
-		expect(pickOrganizeAgent(on(true, true, true), "win32")).toBe("claude");
+	it("is null when no agent is enabled", () => {
+		expect(pickOrganizeAgent(on(false, false, false))).toBeNull();
 	});
 });
 

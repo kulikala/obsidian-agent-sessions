@@ -68,11 +68,6 @@ export type AgentId = "claude" | "codex" | "opencode";
 
 export const AGENT_IDS: readonly AgentId[] = ["claude", "codex", "opencode"];
 
-/** The agents this platform can run. Native Windows supports Claude Code only so far. */
-export function agentsSupportedOn(platform: string): readonly AgentId[] {
-	return platform === "win32" ? ["claude"] : AGENT_IDS;
-}
-
 /** Agents whose vendor exposes usage windows (5-hour, weekly, …). OpenCode has none, so it gets no
  * usage bar, category bars or rate-limit rows. */
 export const AGENTS_WITHOUT_LIMITS: readonly AgentId[] = ["opencode"];
@@ -313,7 +308,7 @@ function mergeAnalysisFolded(data: unknown): Record<AgentId, boolean> {
  * saved data (a fresh install) — a `fontFamily` that was ever saved is never overwritten just
  * because the platform changed.
  */
-export function mergeSettings(data: unknown, isMac = true, platform: string = process.platform): AgentSessionsSettings {
+export function mergeSettings(data: unknown, isMac = true): AgentSessionsSettings {
 	const saved = (typeof data === "object" && data !== null ? { ...(data as Record<string, unknown>) } : {}) as Record<
 		string,
 		unknown
@@ -372,12 +367,6 @@ export function mergeSettings(data: unknown, isMac = true, platform: string = pr
 	}
 	delete saved.claudePath;
 	saved.agents = mergeAgentSettings(saved.agents);
-	const supported = agentsSupportedOn(platform);
-	for (const id of AGENT_IDS) {
-		if (!supported.includes(id)) {
-			(saved.agents as Record<AgentId, AgentSettings>)[id].enabled = false;
-		}
-	}
 	saved.managerAnalysisFolded = mergeAnalysisFolded(saved.managerAnalysisFolded);
 	if (!AGENT_IDS.includes(saved.lastNewSessionAgent as AgentId)) {
 		delete saved.lastNewSessionAgent;

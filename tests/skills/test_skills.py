@@ -360,7 +360,7 @@ class TestHelpSkill(SkillsTestCase):
         'modal.newSession.nameField', 'modal.newSession.agentField', 'install.winget.python',
         'install.winget.claude', 'install.skills', 'action.changeModel', 'action.apply', 'modal.changeModel.title',
         'modal.changeModel.model', 'modal.changeModel.effort', 'modal.changeModel.other', 'editor.model',
-        'editor.effort', 'editor.keepCurrent', 'effort.auto', 'settings.agents.unsupportedOnPlatform',
+        'editor.effort', 'editor.keepCurrent', 'effort.auto',
     )
 
     @staticmethod
@@ -405,7 +405,7 @@ class TestHelpSkill(SkillsTestCase):
 
     def test_the_reference_names_the_unsupported_setups(self):
         text = skills.render(self.HELP, LAUNCHER, file='reference.md')
-        for phrase in ('WSL1', 'WSL2', 'WSLg', 'Codex and OpenCode show', 'not supported'):
+        for phrase in ('WSL1', 'WSL2', 'WSLg', 'not supported'):
             self.assertIn(phrase, text)
 
     def test_the_reference_is_installed_next_to_skill_md_in_every_folder(self):
