@@ -77,6 +77,7 @@ export function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): voi
 	const items: Record<RowMenuId, (item: MenuItem) => void> = {
 		rename: (item) => item.setTitle(t("action.rename")).setIcon("pencil").onClick(() => actions.rename(row.id, row.name ?? "")),
 		moveToCategory: (item) => item.setTitle(t("action.moveToCategory")).setIcon("folder-input").onClick(() => actions.moveToCategory(row)),
+		suggestName: (item) => item.setTitle(t("action.suggestNameCategory")).setIcon("sparkles").onClick(() => actions.suggestName(row)),
 		changeModel: (item) => {
 			item.setTitle(t("action.changeModel")).setIcon("cpu").onClick(() => actions.changeModel(row));
 			if (row.agent !== "claude") {

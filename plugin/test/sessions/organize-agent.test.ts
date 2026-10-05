@@ -30,7 +30,8 @@ describe("pickOrganizeAgent", () => {
 
 describe("agentLabel", () => {
 	it("names the model only where one is asked for", () => {
-		expect(agentLabel("claude")).toBe("Claude Code (haiku)");
+		expect(agentLabel("claude")).toBe("Claude Code (sonnet)");
+		expect(agentLabel("claude", "haiku")).toBe("Claude Code (haiku)");
 		expect(agentLabel("codex")).toBe("Codex");
 		expect(agentLabel("opencode")).toBe("OpenCode");
 	});
@@ -40,7 +41,8 @@ describe("headlessArgs", () => {
 	it("runs Claude Code in print mode with no tools, MCP, hooks, skills or transcript", () => {
 		const args = headlessArgs("claude");
 		expect(args).toEqual(expect.arrayContaining(["-p", "--strict-mcp-config", "--disable-slash-commands", "--no-session-persistence"]));
-		expect(args[args.indexOf("--model") + 1]).toBe("haiku");
+		expect(args[args.indexOf("--model") + 1]).toBe("sonnet");
+		expect(headlessArgs("claude", "haiku")[headlessArgs("claude", "haiku").indexOf("--model") + 1]).toBe("haiku");
 		expect(args[args.indexOf("--tools") + 1]).toBe("");
 		expect(args[args.indexOf("--output-format") + 1]).toBe("stream-json");
 		expect(args).toContain("--verbose");

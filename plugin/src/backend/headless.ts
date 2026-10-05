@@ -13,7 +13,7 @@ import {
 	parseAgentOutput,
 	streamedChars,
 } from "../sessions/organize-agent";
-import type { AgentId } from "../settings";
+import type { AgentId, OrganizeModel } from "../settings";
 
 const TIMEOUT_MS = 180000;
 
@@ -24,6 +24,8 @@ export interface HeadlessRun {
 	/** A folder with no CLAUDE.md above it, so the run doesn't pick up a project's instructions. */
 	cwd: string;
 	prompt: string;
+	/** The Claude Code model (ignored by the other agents). */
+	model?: OrganizeModel;
 	signal?: AbortSignal;
 	/** Called with the running total of answer characters received so far. */
 	onProgress?: (chars: number) => void;
@@ -37,7 +39,7 @@ export function runHeadless(run: HeadlessRun): Promise<string> {
 			reject(new Error("aborted"));
 			return;
 		}
-		const child = spawn(run.bin, headlessArgs(run.agent), {
+		const child = spawn(run.bin, headlessArgs(run.agent, run.model), {
 			cwd: run.cwd,
 			env: run.env,
 			stdio: ["pipe", "pipe", "pipe"],

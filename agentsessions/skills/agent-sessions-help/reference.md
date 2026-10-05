@@ -72,18 +72,18 @@ A walkthrough with pictures: it opens by itself on first install and, after an u
 
 ## Organize names and categories
 
-For many sessions at once: `⋯` menu of the side panel or the Session Manager -> "Organize names and categories / セッション名とカテゴリを整理".
+For many sessions at once: `⋯` menu of the side panel or the Session Manager -> "Organize names and categories / セッション名とカテゴリを整理". For one session: its row menu -> "Suggest name and category… / 名前とカテゴリを提案…" opens the same dialog for just that session (press "Suggest / 提案する"; the result has a comment field and "Suggest again / もう一度提案" for another try, then "Apply selected / 選択を適用").
 1. The dialog says which agent will make the suggestions ("Suggestions by ... / 提案するエージェント: ..."): Claude Code if enabled, otherwise Codex, otherwise OpenCode (on Windows, Claude Code only).
 2. "Only unnamed or uncategorized sessions / 名前またはカテゴリが未設定のセッションだけ" (on by default) limits it to incomplete sessions. At most 30 recent, non-archived sessions are considered.
-3. "Suggest / 提案する" runs the agent once, headless, and shows progress (spinner, seconds, "Show log / ログを表示").
+3. "Suggest / 提案する" runs the agent once, headless, and shows progress (spinner, seconds, "Show log / ログを表示"). With Claude Code the model is Sonnet; Settings -> "Model for suggestions / 提案に使うモデル" switches to Haiku (faster, less accurate). Names come out short (about 20 Japanese characters or 5 words), categories are your existing ones where they fit, and each row has a one-line reason.
 4. The result lists each session: current category and name, suggested category and name, and a round apply toggle. Untick the ones to skip; unticked rows get a comment field (and one comment for all). "Suggest again for unchecked / チェックを外した行だけ再提案" re-asks for only those; "Suggest all again / すべてやり直す" redoes all.
 5. "Apply selected / 選択を適用" renames the ticked sessions. Nothing changes before that; closing the dialog changes nothing.
-It sends excerpts of the sessions (folder name, first prompt, a short excerpt of the latest prompt and reply, existing category names) to that agent under the user's own account, and counts against its usage limits. See Privacy.
+It sends excerpts of the sessions (folder, first prompt, the last three prompts, a short excerpt of the last reply, existing category names with a few example session names) to that agent under the user's own account, and counts against its usage limits. See Privacy.
 
 ## Row menu, change model, compact, archive
 
 The row menu (`⋯` or right-click on a row, side panel and Session Manager) is in four groups with separators:
-1. "Rename / 名前を変更", "Move to category… / カテゴリに移動…"
+1. "Rename / 名前を変更", "Move to category… / カテゴリに移動…", "Suggest name and category… / 名前とカテゴリを提案…"
 2. "Change model… / モデルを変更…", "Compact session / セッションを圧縮", "Restart session / セッションを再起動"
 3. "Session analytics / セッション解析結果", "Copy ID / ID をコピー"
 4. "End session / セッションを終了", "Archive / アーカイブ" (or "Remove from archive / アーカイブ解除") (end first, then archive)

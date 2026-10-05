@@ -292,6 +292,9 @@ Use a test vault. For the first-run items, a vault where the plugin was never en
 - [ ] Unticking a row shows a comment field on that row only; there is also a comment for all.
 - [ ] "Suggest again for unchecked" re-suggests only the unticked rows; ticked rows stay as they are.
 - [ ] "Apply selected" renames and recategorizes the ticked sessions, and nothing changes before it is pressed. Closing the dialog before that changes nothing.
+- [ ] Suggested names are short noun phrases (about 20 Japanese characters or 5 English words at most, no verb endings, the category not repeated), each row has a muted one-line reason, and the categories are the ones already in use where the session fits one; a new category is a short project or area noun, not a task type such as Debug or Research.
+- [ ] A row menu's "Suggest name and category…" (in the first group, after "Move to category…") opens the dialog for that one session: no "only unnamed" toggle, the agent line names Claude Code (sonnet), Suggest sends nothing until pressed, the result is one row with a comment field, "Suggest again" takes the comment into account, and Apply renames only that session.
+- [ ] Settings > "Model for suggestions": Sonnet by default; Haiku makes the dialog's agent line read Claude Code (haiku).
 
 ### Agent skills
 

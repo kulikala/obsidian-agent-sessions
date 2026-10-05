@@ -1,7 +1,8 @@
 // "Organize names and categories": asks a headless agent (Claude Code, else Codex, else OpenCode)
-// for a `Category: Name` and a one-line summary per session, lets the user edit, pick and
+// for a `Category: Name` and a one-line reason per session, lets the user edit, pick and
 // comment, and applies the picked ones through the same rename path as the row menu
-// (`plugin.renameSession`). Nothing is applied without pressing Apply.
+// (`plugin.renameSession`). Nothing is applied without pressing Apply. Opened with a session id
+// (the row menu's "Suggest name and category…"), the same dialog covers that one session.
 
 import { homedir } from "os";
 import { join } from "path";
@@ -14,13 +15,15 @@ import type { Row } from "../sessions/index";
 import {
 	buildFollowUpPrompt,
 	buildPrompt,
+	categoryProfiles,
 	changesName,
 	excerpt,
 	fullName,
 	ORGANIZE_BATCH_CAP,
-	parseSuggestions,
+	resolveSuggestions,
 	selectSessions,
 	toCandidate,
+	type CategoryProfile,
 	type OrganizeCandidate,
 	type Suggestion,
 } from "../sessions/organize";
@@ -41,7 +44,7 @@ const SUMMARY_FALLBACK_MAX = 120;
 interface ReviewRow {
 	row: Row;
 	candidate: OrganizeCandidate;
-	/** The first prompt, shown when the model gave no summary. */
+	/** The first prompt, shown under the current name. */
 	fallback: string;
 	el: HTMLElement;
 	check: RoundCheck;
@@ -50,7 +53,7 @@ interface ReviewRow {
 	category: string;
 	name: string;
 	nameEl: HTMLElement;
-	summaryEl: HTMLElement;
+	reasonEl: HTMLElement;
 	commentEl: HTMLInputElement;
 }
 
@@ -73,13 +76,18 @@ export class OrganizeModal extends Modal {
 	private reviewRows: ReviewRow[] = [];
 	private ticker: number | null = null;
 
-	constructor(private plugin: AgentSessionsPlugin) {
+	/** `sessionId` limits the dialog to that one session (the row menu's entry). */
+	constructor(private plugin: AgentSessionsPlugin, private sessionId?: string) {
 		super(plugin.app);
+	}
+
+	private get single(): boolean {
+		return this.sessionId !== undefined;
 	}
 
 	onOpen(): void {
 		this.modalEl.addClass("agent-sessions-organize");
-		this.setTitle(t("organize.title"));
+		this.setTitle(t(this.single ? "organize.titleSingle" : "organize.title"));
 		this.agent = pickOrganizeAgent(this.plugin.settings.agents, process.platform);
 		this.statusEl = this.contentEl.createDiv({ cls: "agent-sessions-organize-status" });
 		this.views = {
@@ -111,16 +119,18 @@ export class OrganizeModal extends Modal {
 	}
 
 	private buildStartView(el: HTMLElement): void {
-		el.createEl("p", { text: t("organize.intro"), cls: "agent-sessions-organize-intro" });
+		el.createEl("p", { text: t(this.single ? "organize.introSingle" : "organize.intro"), cls: "agent-sessions-organize-intro" });
 		el.createEl("p", {
-			text: this.agent ? t("organize.agentUsing", { agent: agentLabel(this.agent) }) : t("organize.noAgent"),
+			text: this.agent ? t("organize.agentUsing", { agent: this.label(this.agent) }) : t("organize.noAgent"),
 			cls: this.agent ? "agent-sessions-organize-agent" : "agent-sessions-organize-agent is-error",
 		});
-		new Setting(el).setName(t("organize.onlyIncomplete")).addToggle((toggle) =>
-			toggle.setValue(this.onlyIncomplete).onChange((value) => {
-				this.onlyIncomplete = value;
-			})
-		);
+		if (!this.single) {
+			new Setting(el).setName(t("organize.onlyIncomplete")).addToggle((toggle) =>
+				toggle.setValue(this.onlyIncomplete).onChange((value) => {
+					this.onlyIncomplete = value;
+				})
+			);
+		}
 		this.startActionsEl = el.createDiv({ cls: "agent-sessions-organize-actions" });
 		const setting = new Setting(this.startActionsEl);
 		setting.addButton((b) => b.setButtonText(t("action.cancel")).onClick(() => this.close()));
@@ -131,6 +141,11 @@ export class OrganizeModal extends Modal {
 				.setCta()
 				.onClick(() => void this.generate())
 		);
+	}
+
+	/** The agent's name with the model that will answer (Claude Code's comes from the settings). */
+	private label(agent: AgentId): string {
+		return agentLabel(agent, this.plugin.settings.organizeModel);
 	}
 
 	private buildWorkingView(el: HTMLElement): void {
@@ -145,6 +160,7 @@ export class OrganizeModal extends Modal {
 
 	private buildResultView(el: HTMLElement): void {
 		this.listEl = el.createDiv({ cls: "agent-sessions-organize-list" });
+		this.listEl.toggleClass("is-single", this.single);
 		this.overallEl = el.createEl("input", {
 			type: "text",
 			cls: "agent-sessions-organize-overall",
@@ -172,17 +188,24 @@ export class OrganizeModal extends Modal {
 		setting.addButton((b) => b.setButtonText(t("action.cancel")).onClick(() => this.close()));
 		const state = reviewState(this.reviewRows.map((r) => r.check.get()));
 		const unchecked = state.unchecked;
-		if (state.showResuggest) {
+		if (this.single) {
+			// One session: the comment is always there and "Suggest again" takes it into account.
 			setting.addButton((b) =>
-				b.setButtonText(t("organize.resuggest", { count: unchecked })).onClick(() => void this.resuggest())
+				b.setButtonText(t("organize.suggestSingleAgain")).setDisabled(!this.agent).onClick(() => void this.resuggest())
+			);
+		} else {
+			if (state.showResuggest) {
+				setting.addButton((b) =>
+					b.setButtonText(t("organize.resuggest", { count: unchecked })).onClick(() => void this.resuggest())
+				);
+			}
+			setting.addButton((b) =>
+				b
+					.setButtonText(t("organize.suggestAgain"))
+					.setDisabled(!this.agent)
+					.onClick(() => void this.generate())
 			);
 		}
-		setting.addButton((b) =>
-			b
-				.setButtonText(t("organize.suggestAgain"))
-				.setDisabled(!this.agent)
-				.onClick(() => void this.generate())
-		);
 		setting.addButton((b) =>
 			b
 				.setButtonText(t("organize.apply"))
@@ -190,7 +213,7 @@ export class OrganizeModal extends Modal {
 				.setDisabled(!state.canApply)
 				.onClick(() => void this.applySelected())
 		);
-		this.overallEl.toggle(state.showResuggest);
+		this.overallEl.toggle(!this.single && state.showResuggest);
 	}
 
 	// ---- Progress -----------------------------------------------------------------
@@ -216,7 +239,7 @@ export class OrganizeModal extends Modal {
 		const tick = (): void => {
 			const seconds = Math.floor((Date.now() - started) / 1000);
 			const chars = received();
-			const params = { agent: agentLabel(agent), seconds, chars };
+			const params = { agent: this.label(agent), seconds, chars };
 			this.liveEl.setText(chars > 0 ? t("organize.workingChars", params) : t("organize.working", params));
 		};
 		tick();
@@ -266,8 +289,36 @@ export class OrganizeModal extends Modal {
 		}
 	}
 
-	/** One headless request for `prompt`; resolves with the suggestions for `ids`. */
-	private async ask(agent: AgentId, prompt: string, ids: string[], signal: AbortSignal): Promise<Suggestion[]> {
+	/**
+	 * Suggestions for `candidates` from `prompt`: one headless request, and a second only for the
+	 * answers that broke the naming rules (`resolveSuggestions`).
+	 */
+	private async ask(
+		agent: AgentId,
+		prompt: string,
+		candidates: OrganizeCandidate[],
+		categories: CategoryProfile[],
+		signal: AbortSignal
+	): Promise<Suggestion[]> {
+		const started = Date.now();
+		const { suggestions, repaired } = await resolveSuggestions({
+			candidates,
+			categories,
+			prompt,
+			signal,
+			ask: (text) => this.askOnce(agent, text, signal),
+		});
+		if (repaired > 0) {
+			this.log(t("organize.logRepaired", { count: repaired }));
+		}
+		this.log(
+			t("organize.logReceived", { count: suggestions.length, seconds: Math.round((Date.now() - started) / 1000) })
+		);
+		return suggestions;
+	}
+
+	/** One headless request for `prompt`; resolves with the reply text. */
+	private async askOnce(agent: AgentId, prompt: string, signal: AbortSignal): Promise<string> {
 		const settings = this.plugin.settings.agents[agent];
 		const bin = await resolveAgentBinary(agent, settings.path, Platform.isMacOS);
 		const env = withBinDirOnPath(
@@ -279,8 +330,7 @@ export class OrganizeModal extends Modal {
 			bin
 		);
 		let received = 0;
-		const started = Date.now();
-		this.log(t("organize.logAsked", { agent: agentLabel(agent) }));
+		this.log(t("organize.logAsked", { agent: this.label(agent) }));
 		this.startTicker(agent, () => received);
 		const text = await runHeadless({
 			agent,
@@ -288,15 +338,12 @@ export class OrganizeModal extends Modal {
 			env,
 			cwd: HEADLESS_CWD,
 			prompt,
+			model: this.plugin.settings.organizeModel,
 			signal,
 			onProgress: (chars) => (received = chars),
 		});
-		const suggestions = parseSuggestions(text, ids);
 		this.stopTicker();
-		this.log(
-			t("organize.logReceived", { count: suggestions.length, seconds: Math.round((Date.now() - started) / 1000) })
-		);
-		return suggestions;
+		return text;
 	}
 
 	private async generate(): Promise<void> {
@@ -307,7 +354,13 @@ export class OrganizeModal extends Modal {
 			return;
 		}
 		this.setStatus("");
-		const rows = selectSessions([...this.plugin.index.sessions.values()], { onlyIncomplete: this.onlyIncomplete });
+		const all = [...this.plugin.index.sessions.values()];
+		const only = this.sessionId !== undefined ? this.plugin.index.sessions.get(this.sessionId) : undefined;
+		if (this.single && !only) {
+			this.setStatus(t("organize.noSession"), true);
+			return;
+		}
+		const rows = only ? [only] : selectSessions(all, { onlyIncomplete: this.onlyIncomplete });
 		if (rows.length === 0) {
 			this.setStatus(t("organize.none"));
 			return;
@@ -316,12 +369,8 @@ export class OrganizeModal extends Modal {
 			this.log(t("organize.logReading", { count: rows.length }));
 			const candidates = await this.readCandidates(rows, signal);
 			this.log(t("organize.logRead", { count: rows.length }));
-			const suggestions = await this.ask(
-				agent,
-				buildPrompt(candidates, this.plugin.index.categories()),
-				rows.map((r) => r.id),
-				signal
-			);
+			const categories = categoryProfiles(all);
+			const suggestions = await this.ask(agent, buildPrompt(candidates, categories), candidates, categories, signal);
 			if (suggestions.length === 0) {
 				this.setStatus(t("organize.noSuggestions"), true);
 				return false;
@@ -334,6 +383,7 @@ export class OrganizeModal extends Modal {
 			this.reviewRows = [];
 			this.overallEl.value = "";
 			this.renderReview(rows, candidates, suggestions);
+			this.noteUnchanged();
 			return true;
 		});
 	}
@@ -341,15 +391,16 @@ export class OrganizeModal extends Modal {
 	/** Asks again for the unchecked rows only, with the user's comments; the checked ones stay. */
 	private async resuggest(): Promise<void> {
 		const agent = this.agent;
-		const targets = this.reviewRows.filter((r) => !r.check.get());
+		const targets = this.single ? this.reviewRows : this.reviewRows.filter((r) => !r.check.get());
 		if (!agent || targets.length === 0) {
 			return;
 		}
-		const overall = this.overallEl.value;
+		const overall = this.single ? "" : this.overallEl.value;
+		const categories = categoryProfiles([...this.plugin.index.sessions.values()]);
 		await this.runBusy(async (signal) => {
 			const prompt = buildFollowUpPrompt(
 				targets.map((r) => r.candidate),
-				this.plugin.index.categories(),
+				categories,
 				targets.map((r) => ({
 					id: r.row.id,
 					previous: { category: r.category, name: r.name },
@@ -360,7 +411,8 @@ export class OrganizeModal extends Modal {
 			const suggestions = await this.ask(
 				agent,
 				prompt,
-				targets.map((r) => r.row.id),
+				targets.map((r) => r.candidate),
+				categories,
 				signal
 			);
 			const byId = new Map(suggestions.map((s) => [s.id, s]));
@@ -375,8 +427,16 @@ export class OrganizeModal extends Modal {
 				}
 			}
 			this.refreshChips();
+			this.noteUnchanged();
 			return true;
 		});
+	}
+
+	/** One session whose current name and category the agent found fine: says so, as there is nothing to apply. */
+	private noteUnchanged(): void {
+		if (this.single && this.reviewRows.length === 1 && !this.reviewRows[0].check.get()) {
+			this.setStatus(t("organize.unchanged"));
+		}
 	}
 
 	/** The excerpts, a few sessions at a time (each is one `json detail` process). */
@@ -387,7 +447,7 @@ export class OrganizeModal extends Modal {
 			while (next < rows.length && !signal.aborted) {
 				const i = next++;
 				const detail = await this.plugin.index.getDetail(rows[i].id).catch(() => null);
-				out[i] = toCandidate(rows[i], detail);
+				out[i] = toCandidate(rows[i], detail, this.plugin.vaultPath());
 			}
 		};
 		await Promise.all(Array.from({ length: Math.min(DETAIL_CONCURRENCY, rows.length) }, worker));
@@ -419,7 +479,7 @@ export class OrganizeModal extends Modal {
 	private renderRow(row: Row, candidate: OrganizeCandidate, suggestion: Suggestion): ReviewRow {
 		const el = this.listEl.createDiv({ cls: "agent-sessions-organize-row" });
 
-		// Current: chip + name on the first line, the session summary muted below.
+		// Current: chip + name on the first line, the first prompt muted below.
 		const current = el.createDiv({ cls: "agent-sessions-organize-cell-current" });
 		const currentLine = current.createDiv({ cls: "agent-sessions-organize-current-line" });
 		const [currentCategory, currentName] = row.name ? splitName(row.name) : [null, ""];
@@ -430,13 +490,14 @@ export class OrganizeModal extends Modal {
 		currentLine.createSpan({ text: nameText || t("organize.noName"), cls: "agent-sessions-organize-current-name" });
 		current.setAttr("title", row.name || row.label || row.id);
 		const fallback = excerpt(candidate.firstPrompt, SUMMARY_FALLBACK_MAX);
-		const summaryEl = current.createDiv({ cls: "agent-sessions-organize-summary" });
+		current.createDiv({ cls: "agent-sessions-organize-summary", text: fallback });
 
 		// Suggested: the category as a read-only chip + the name as plain text.
 		const suggested = el.createDiv({ cls: "agent-sessions-organize-cell-suggested" });
 		suggested.createSpan({ text: "→", cls: "agent-sessions-organize-arrow" }).setAttr("aria-hidden", "true");
 		const chipEl = suggested.createSpan({ cls: "agent-sessions-row-chip agent-sessions-organize-chip" });
 		const nameEl = suggested.createSpan({ cls: "agent-sessions-organize-suggested-name" });
+		const reasonEl = suggested.createDiv({ cls: "agent-sessions-organize-reason" });
 
 		const checkWrap = el.createDiv({ cls: "agent-sessions-organize-cell-check" });
 		const commentEl = el.createEl("input", {
@@ -459,7 +520,7 @@ export class OrganizeModal extends Modal {
 			}
 		});
 
-		const entry: ReviewRow = { row, candidate, fallback, el, check, chipEl, category: "", name: "", nameEl, summaryEl, commentEl };
+		const entry: ReviewRow = { row, candidate, fallback, el, check, chipEl, category: "", name: "", nameEl, reasonEl, commentEl };
 		this.fillRow(entry, suggestion);
 		return entry;
 	}
@@ -470,8 +531,8 @@ export class OrganizeModal extends Modal {
 		entry.name = suggestion.name;
 		entry.chipEl.setText(entry.category || t("organize.noCategory"));
 		entry.nameEl.setText(suggestion.name);
-		entry.summaryEl.setText(suggestion.summary || entry.fallback);
-		entry.summaryEl.setAttr("title", suggestion.summary || entry.fallback);
+		entry.reasonEl.setText(suggestion.reason);
+		entry.reasonEl.setAttr("title", suggestion.reason);
 		const on = changesName(entry.row.name, suggestion);
 		entry.check.set(on);
 		entry.el.toggleClass("is-unchecked", !on);

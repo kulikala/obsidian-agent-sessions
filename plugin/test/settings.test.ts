@@ -36,6 +36,7 @@ describe("DEFAULT_SETTINGS", () => {
 			managerAnalysisCollapsed: false,
 			managerAnalysisFolded: { claude: false, codex: false, opencode: false },
 			managerStatusFilter: "all",
+			organizeModel: "sonnet",
 			activityMode: "session",
 			activityHiddenAgents: [],
 			activityDetailWidth: 38,
@@ -78,6 +79,11 @@ describe("mergeSettings", () => {
 
 	it("keeps a managerStatusFilter value that's a registered filter", () => {
 		expect(mergeSettings({ managerStatusFilter: "running" }).managerStatusFilter).toBe("running");
+	});
+
+	it("keeps a known organizeModel and drops an unknown one", () => {
+		expect(mergeSettings({ organizeModel: "haiku" }).organizeModel).toBe("haiku");
+		expect(mergeSettings({ organizeModel: "opus" }).organizeModel).toBe("sonnet");
 	});
 
 	it("keeps a known activityMode and drops an unknown one", () => {

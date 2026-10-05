@@ -7,7 +7,7 @@ const ids = (row: { agent: string; daemon: boolean }, s = state) => rowMenuGroup
 describe("rowMenuGroups", () => {
 	it("orders a running Claude session into groups, destructive last", () => {
 		expect(ids({ agent: "claude", daemon: true })).toEqual([
-			["rename", "moveToCategory"],
+			["rename", "moveToCategory", "suggestName"],
 			["changeModel", "compact", "restartSession"],
 			["usage", "copyId"],
 			["endSession", "archive"],
@@ -16,7 +16,7 @@ describe("rowMenuGroups", () => {
 
 	it("leaves out restart, end session and change model for a Claude session not in the daemon", () => {
 		expect(ids({ agent: "claude", daemon: false })).toEqual([
-			["rename", "moveToCategory"],
+			["rename", "moveToCategory", "suggestName"],
 			["compact"],
 			["usage", "copyId"],
 			["archive"],
@@ -31,6 +31,6 @@ describe("rowMenuGroups", () => {
 	it("keeps the disabled states", () => {
 		const groups = rowMenuGroups({ agent: "claude", daemon: true } as never, { categorizable: false, justCompacted: true, canRestart: false });
 		const flat = Object.fromEntries(groups.flat().map((e) => [e.id, e.enabled]));
-		expect(flat).toMatchObject({ moveToCategory: false, compact: false, restartSession: false, changeModel: true });
+		expect(flat).toMatchObject({ moveToCategory: false, suggestName: true, compact: false, restartSession: false, changeModel: true });
 	});
 });

@@ -92,6 +92,7 @@ import {
 	agentsSupportedOn,
 	AGENT_IDS,
 	AgentSessionsSettings,
+	type OrganizeModel,
 	asAgentId,
 	DEFAULT_SETTINGS,
 	EDITOR_KEYS,
@@ -2529,6 +2530,22 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 					}
 				})
+			);
+
+		new Setting(containerEl)
+			.setName(t("settings.organizeModel.name"))
+			.setDesc(t("settings.organizeModel.desc"))
+			.addDropdown((dropdown) =>
+				dropdown
+					.addOptions({
+						sonnet: t("settings.organizeModel.sonnet"),
+						haiku: t("settings.organizeModel.haiku"),
+					})
+					.setValue(this.plugin.settings.organizeModel)
+					.onChange(async (value) => {
+						this.plugin.settings.organizeModel = value as OrganizeModel;
+						await this.plugin.saveSettings();
+					})
 			);
 
 		this.renderAgentsSetting(containerEl);

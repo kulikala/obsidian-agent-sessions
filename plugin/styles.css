@@ -2789,6 +2789,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	grid-area: suggested;
 	display: flex;
 	flex-wrap: wrap;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: var(--size-4-1);
 	min-width: 0;
@@ -2862,7 +2863,19 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	overflow-wrap: anywhere;
 }
 
-/* The comment field belongs to an unticked row only. */
+/* Why the agent chose this category and name: a muted line under the suggestion. */
+.agent-sessions-organize-reason {
+	flex-basis: 100%;
+	margin-top: var(--size-4-1);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.agent-sessions-organize-reason:empty {
+	display: none;
+}
+
+/* The comment field belongs to an unticked row only (always shown when the dialog is for one session). */
 .agent-sessions-organize-comment {
 	grid-column: 1 / -1;
 	display: none;
@@ -2871,6 +2884,10 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 }
 
 .agent-sessions-organize-row.is-unchecked .agent-sessions-organize-comment {
+	display: block;
+}
+
+.agent-sessions-organize-list.is-single .agent-sessions-organize-comment {
 	display: block;
 }
 

@@ -91,6 +91,8 @@ export interface LiveResult {
 export interface Detail {
 	last_user: string | null;
 	last_assistant: string | null;
+	/** The last few human prompts, oldest first (Claude Code only; absent for the other agents and older programs). */
+	recent_user?: string[];
 	/** The most recent slash command's name (e.g. `/compact`; arguments aren't included). `null` if there isn't one. */
 	last_command: string | null;
 	tools: string[];

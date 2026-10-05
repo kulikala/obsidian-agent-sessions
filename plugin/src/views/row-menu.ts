@@ -7,6 +7,7 @@ import type { Row } from "../sessions/index";
 export type RowMenuId =
 	| "rename"
 	| "moveToCategory"
+	| "suggestName"
 	| "changeModel"
 	| "compact"
 	| "restartSession"
@@ -28,7 +29,7 @@ export interface RowMenuState {
 }
 
 /**
- * Groups: naming; the running session (model, compact, restart); information; then end session and
+ * Groups: naming (rename, move to category, suggest a name and category); the running session (model, compact, restart); information; then end session and
  * archive (in that order), the destructive ones, last. Restart and End session exist for daemon sessions only;
  * Change model for Claude's (running) ones, and disabled for the other agents.
  */
@@ -52,6 +53,7 @@ export function rowMenuGroups(row: Pick<Row, "agent" | "daemon">, state: RowMenu
 		[
 			{ id: "rename", enabled: true },
 			{ id: "moveToCategory", enabled: state.categorizable },
+			{ id: "suggestName", enabled: true },
 		],
 		session,
 		[

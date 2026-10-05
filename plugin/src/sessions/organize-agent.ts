@@ -2,7 +2,7 @@
 // parsing of its output — one pure place per agent. The process spawning lives in
 // `backend/headless.ts`. Kept free of any `obsidian` import so tests can import it directly.
 
-import { agentsSupportedOn, type AgentId } from "../settings";
+import { agentsSupportedOn, type AgentId, type OrganizeModel } from "../settings";
 
 /** What the dialog needs of an agent's settings to choose. */
 export type AgentEnabled = Record<AgentId, { enabled: boolean }>;
@@ -17,15 +17,16 @@ export function pickOrganizeAgent(agents: AgentEnabled, platform: string): Agent
 	return PREFERENCE.find((id) => supported.includes(id) && agents[id].enabled) ?? null;
 }
 
-/** The model asked for, where the CLI has a cheap one to name; others use their own default. */
-export function organizeModel(agent: AgentId): string | null {
-	return agent === "claude" ? "haiku" : null;
+/** The model asked for, where the CLI lets one be named (Claude Code: the "Model for suggestions"
+ * setting, Sonnet by default); the others use their own default. */
+export function organizeModel(agent: AgentId, setting: OrganizeModel = "sonnet"): string | null {
+	return agent === "claude" ? setting : null;
 }
 
-/** Display name of the agent and (when named) its model: "Claude Code (haiku)". */
-export function agentLabel(agent: AgentId): string {
+/** Display name of the agent and (when named) its model: "Claude Code (sonnet)". */
+export function agentLabel(agent: AgentId, setting: OrganizeModel = "sonnet"): string {
 	const name = agent === "claude" ? "Claude Code" : agent === "codex" ? "Codex" : "OpenCode";
-	const model = organizeModel(agent);
+	const model = organizeModel(agent, setting);
 	return model ? `${name} (${model})` : name;
 }
 
@@ -36,13 +37,13 @@ export function agentLabel(agent: AgentId): string {
  *   user's execpolicy rules off; events as JSONL.
  * - OpenCode: `run` without external plugins, events as JSON.
  */
-export function headlessArgs(agent: AgentId): string[] {
+export function headlessArgs(agent: AgentId, setting: OrganizeModel = "sonnet"): string[] {
 	switch (agent) {
 		case "claude":
 			return [
 				"-p",
 				"--model",
-				organizeModel("claude") ?? "haiku",
+				organizeModel("claude", setting) ?? "sonnet",
 				"--output-format",
 				"stream-json",
 				"--verbose",

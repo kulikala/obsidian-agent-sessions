@@ -17,6 +17,8 @@ export interface RowActions {
 	openSession(id: string): void;
 	rename(id: string, currentName: string): void;
 	moveToCategory(row: Row): void;
+	/** Opens "Organize names and categories" for this one session. */
+	suggestName(row: Row): void;
 	compact(id: string): void;
 	/** Opens the model/effort dialog (Claude sessions running in the daemon). */
 	changeModel(row: Row): void;
@@ -336,6 +338,12 @@ export function createRowActions(
 			const { MoveToCategoryModal } = require("../ui/modals") as typeof import("../ui/modals");
 			const [category] = row.name ? splitName(row.name) : [""];
 			new MoveToCategoryModal(plugin, category ?? "", label, sessionDisplayName(row), (name) => void plugin.renameSession(row.id, name)).open();
+		},
+		suggestName: (row) => {
+			// See `rename`'s comment on why `../ui/organize-modal` is required lazily here.
+			// eslint-disable-next-line @typescript-eslint/no-require-imports -- see rename's comment above
+			const { OrganizeModal } = require("../ui/organize-modal") as typeof import("../ui/organize-modal");
+			new OrganizeModal(plugin, row.id).open();
 		},
 		compact: (id) => void plugin.compactSession(id),
 		changeModel: (row) => {

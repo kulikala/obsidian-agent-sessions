@@ -156,6 +156,11 @@ export type ActivityMode = "session" | "week" | "day";
 
 export const ACTIVITY_MODES: readonly ActivityMode[] = ["session", "week", "day"];
 
+/** The model "Organize names and categories" asks Claude Code for: Sonnet is the default, Haiku is faster. */
+export type OrganizeModel = "sonnet" | "haiku";
+
+export const ORGANIZE_MODELS: readonly OrganizeModel[] = ["sonnet", "haiku"];
+
 export interface AgentSessionsSettings {
 	fontFamily: string;
 	fontSize: number;
@@ -189,6 +194,8 @@ export interface AgentSessionsSettings {
 	managerAnalysisFolded: Record<AgentId, boolean>;
 	/** The manager's status-filter menu selection (next to the name filter). Default `all`. */
 	managerStatusFilter: ManagerStatusFilter;
+	/** The model for name and category suggestions with Claude Code (Codex and OpenCode use their own default). */
+	organizeModel: OrganizeModel;
 	/** The activity calendar's period mode. Default `session`. */
 	activityMode: ActivityMode;
 	/** Agents hidden in the activity calendar (their lanes, blocks and card). */
@@ -228,6 +235,7 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	managerAnalysisCollapsed: false,
 	managerAnalysisFolded: defaultAnalysisFolded(),
 	managerStatusFilter: "all",
+	organizeModel: "sonnet",
 	activityMode: "session",
 	activityHiddenAgents: [],
 	activityDetailWidth: 38,
@@ -309,6 +317,9 @@ export function mergeSettings(data: unknown, isMac = true, platform: string = pr
 	}
 	if (!MANAGER_STATUS_FILTERS.includes(saved.managerStatusFilter as ManagerStatusFilter)) {
 		delete saved.managerStatusFilter;
+	}
+	if (!ORGANIZE_MODELS.includes(saved.organizeModel as OrganizeModel)) {
+		delete saved.organizeModel;
 	}
 	if (!ACTIVITY_MODES.includes(saved.activityMode as ActivityMode)) {
 		delete saved.activityMode;
