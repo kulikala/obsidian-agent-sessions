@@ -2,74 +2,45 @@
 
 # Agent Sessions
 
-**Run [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex) and [OpenCode](https://opencode.ai) as real terminal tabs in [Obsidian](https://obsidian.md), and keep track of every session and every dollar.**
+An [Obsidian](https://obsidian.md) plugin that runs [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex) and [OpenCode](https://opencode.ai) in terminal tabs, with a session list and usage and cost figures.
 
-*Real terminal. Many sessions. Full picture.*
+![A Claude Code session in a terminal tab, with the side panel listing open, running, and recent Claude Code and Codex sessions](docs/images/overview.png)
 
-Agent Sessions runs your agent CLIs exactly as they run in a terminal, keeps every session alive in the background, and shows what each one costs you, in a session manager and usage analytics view that sit next to the tabs.
+- Each session is one Obsidian tab backed by a PTY (xterm.js). Sessions keep running in a background process when you close a tab or quit Obsidian.
+- A side panel and the **Session manager** list sessions with their state (working, waiting for input, unread, done), grouped as `Category: Name`.
+- A usage view shows the 5-hour and 7-day windows with time to reset, and cost per session and per category, estimated locally from each agent's transcripts.
+- Claude Code, Codex and OpenCode sessions appear in one list. Codex and OpenCode have fewer integrations than Claude Code (see [Requirements in detail](#requirements-in-detail)).
+- A built-in prompt editor (Ctrl+G) with `@` file completion, **Restart session**, and **Change model…** for Claude Code.
 
-![A Claude Code session in a real terminal tab, with the side panel listing open, running, and recent Claude Code and Codex sessions](docs/images/overview.png)
+## Scope
 
-## Why Agent Sessions
-
-### Many agents in parallel, one overview
-
-For people who run several agent sessions at once. Sessions keep running when you close a tab or quit Obsidian, and reopening one replays its last screen. A side panel and the **Session Manager** show every session's state (working, waiting for you, unread, done), grouped by category and name. Sessions are named `Category: Name`, and **Organize names and categories** proposes names and categories for you with an agent you already have. Claude Code, Codex, and OpenCode sessions sit in the same list.
-
-### See what they cost
-
-For people who watch their limits. See your 5-hour and 7-day usage windows with a countdown to reset, a weekly-pace projection, cost per session and per category, a turn-by-turn breakdown of any session, and an activity calendar of when sessions were working. Everything is computed on your machine from each agent's own transcripts.
-
-![The Session Manager: sessions grouped by category with cost per window, and the 5-hour and 7-day usage analytics below](docs/images/manager.png)
-
-### The real CLI in a real terminal
-
-For people who already live in the agent CLIs. Claude Code, Codex, and OpenCode run in real PTY-backed terminal tabs (a real terminal, or TTY), so slash commands, plan mode, hooks, skills, and MCP are the agent's own. There is no chat screen to re-implement, so a feature the agent ships works in Agent Sessions the day it ships.
-
-### Made for heavy use, easy to start
-
-A welcome guide walks you through the first session with pictures and checks each step as you do it. A built-in editor (Ctrl+G) opens under the terminal for long prompts, with `@` file completion. You can switch the model and effort of a running Claude Code session from a menu, restart a session to pick up new settings, and organize a long list of sessions in one dialog. Tab icons, colors, and notifications show which session needs you.
-
-![A Codex session waiting for approval, while a notice reports that a Claude Code session in another tab has finished](docs/images/codex.png)
-
-## Is it for you?
-
-**A good fit** if you:
-
-- already use Claude Code, Codex, or OpenCode in a terminal and want them next to your notes;
-- run several sessions at once and want to find, name, and group them;
-- want to see usage and cost per session without leaving Obsidian;
-- want sessions that survive closing a tab or quitting Obsidian.
-
-**Maybe not** if you:
-
-- want an AI chat panel that edits the open note inline: a chat plugin fits that better, and Agent Sessions is for running the agent CLIs themselves;
-- use Obsidian on mobile (desktop only);
-- run Windows Obsidian with an agent inside WSL (see [Supported environments](#supported-environments)).
+- Runs the agent CLIs in terminal tabs, lists and groups their sessions, and shows usage and estimated cost.
+- Does not provide a chat panel that edits the open note inline.
+- Desktop only; not available on Obsidian mobile.
+- Does not support Windows Obsidian with an agent inside WSL (see [Supported environments](#supported-environments)).
 
 ## Privacy and safety
 
-- The plugin makes no network connections of its own. It talks to its own background process over a local socket on your machine. The one exception is the welcome guide's pictures, loaded from GitHub while the guide is open (switch it off in settings). The agents you run connect to their own services under your own accounts.
-- No telemetry, no accounts, no ads, no payments. MIT licensed.
-- Agent settings are edited only after a backup, and only the lines the plugin adds; `agent-sessions setup --remove` takes exactly those out, and **Settings → agent-sessions program → Remove** does the same.
+- The plugin makes no network connections of its own. It talks to its background process over a local socket on this machine. The one exception is the welcome guide's pictures, loaded from GitHub while the guide is open (can be turned off in settings). The agents connect to their own services under your accounts.
+- Agent settings are edited only after a backup, and only the lines the plugin adds. `agent-sessions setup --remove` and **Settings → agent-sessions program → Remove** remove only those lines.
 - The installer shows where it will write, which Python will run it, and the change to Claude Code's settings before anything is written.
-- The program is Python standard library only, shipped as readable source inside the plugin; it never downloads code.
-- The agents have the same permissions as in your terminal, because they run in a terminal.
-- The one feature that sends text to an agent is **Organize names and categories**, and only when you press its button.
+- The program uses only the Python standard library and ships as readable source inside the plugin.
+- The agents have the same permissions as in your terminal.
+- **Organize names and categories** is the only feature that sends text to an agent, and only when you press its button.
 
-Every file it reads or writes and every program it starts is listed in [Disclosures](#disclosures).
+Every file read or written and every program started is listed in [Disclosures](#disclosures).
 
-## Requirements at a glance
+## Requirements
 
-- **Obsidian** 1.8.7 or later, desktop only.
-- **macOS, Linux, or Windows** (on Windows, Claude Code only; WSL setups are covered in [Supported environments](#supported-environments)).
-- **Python 3.9+**, standard library only.
-- **At least one agent CLI**: Claude Code, Codex, or OpenCode.
+- Obsidian 1.8.7 or later, desktop only.
+- macOS, Linux, or Windows (on Windows, Claude Code only).
+- Python 3.9 or later, standard library only.
+- At least one agent CLI: Claude Code, Codex, or OpenCode.
 
 ## Install
 
 1. In Obsidian, open **Settings → Community plugins → Browse**, search for **Agent Sessions**, then install and enable it.
-2. Open the side panel (the **Agent Sessions** ribbon icon). The welcome guide opens on first install and walks you through the rest: it checks Python and your agents, and installs the `agent-sessions` program with one click after showing exactly what it will write. Close the guide any time and resume it from the command palette.
+2. Open the side panel (the **Agent Sessions** ribbon icon). The welcome guide opens on first install. It checks Python and your agents, and installs the `agent-sessions` program with one click after listing what it will write. You can close the guide and resume it from the command palette.
 
 Installing from source, and where the program goes, is in [`docs/installation.md`](docs/installation.md).
 
@@ -82,7 +53,7 @@ Installing from source, and where the program goes, is in [`docs/installation.md
 | Windows ①: Windows Obsidian + Windows Claude Code | Yes, Claude Code only | Smoke test passed on Windows 11 build 26300, Python 3.13 |
 | Windows ②: Windows Obsidian + WSL1 Claude Code | No | — |
 | Windows ③: Windows Obsidian + WSL2 Claude Code | No | — |
-| Windows ④: WSLg Linux Obsidian + WSL2 Claude Code | Yes | Supported; not yet verified — steps in [`docs/testing.md`](docs/testing.md#4-platform--checks) |
+| Windows ④: WSLg Linux Obsidian + WSL2 Claude Code | Expected to work | Not verified; steps in [`docs/testing.md`](docs/testing.md#4-platform--checks) |
 
 The smoke test ran on 2026-10-04 on arm64 virtual machines with Obsidian 1.13.7 and a fake agent ([`docs/testing.md`](docs/testing.md)). Windows 10 1809 and later has the ConPTY the daemon needs, but is untested. On Windows ① Codex and OpenCode show "Not available on Windows yet" in the settings and stay off.
 
@@ -92,7 +63,7 @@ The plugin, the program and the agent have to run in the same operating system (
 - **③** The same applies. In addition, under WSL2's default NAT networking WSL cannot reach Windows' `127.0.0.1`, so the built-in editor round trip fails (mirrored networking is untested).
 - **For WSL users**, run Obsidian itself in WSL through WSLg (④): it is Linux on both sides.
 
-### Requirements
+### Requirements in detail
 
 | | |
 |---|---|
@@ -101,21 +72,25 @@ The plugin, the program and the agent have to run in the same operating system (
 | **Claude Code, Codex, and/or OpenCode** | At least one of the three, either on your `PATH` or pointed to from the plugin's Agents settings (auto-detected on first run). Claude Code: the plugin relies on its hooks (`Stop`, `SessionEnd`, `SessionStart` with matcher `compact`, `UserPromptSubmit`), its `statusLine`, and — only if you change the submit-key setting away from the default — its `keybindings.json`. Codex: no hooks/statusLine equivalent is used yet; hands-on verification is still pending (see [`docs/design.md`](docs/design.md) §7.7, §25). OpenCode: sessions are read from its SQLite database, and busy/idle/waiting comes from a small OpenCode plugin the program installs when OpenCode is enabled. To start a session through `ollama launch opencode`, [Ollama](https://ollama.com) has to be installed as well. On Windows only Claude Code is available; its hooks and `statusLine` are run by Claude Code through Git Bash when that is installed, otherwise through PowerShell (Git for Windows is optional), and the install dialog can install Claude Code with WinGet. |
 | **Node.js / npm** | Only if you are building the plugin from source (see [Development](#development)); CI builds with Node.js 20. |
 
-## Features in detail
+## Features
 
-Each feature is described in full in [`docs/usage.md`](docs/usage.md).
+Each feature is described in [`docs/usage.md`](docs/usage.md).
 
-- **Sessions and tabs**: one session per Obsidian tab, backed by a real PTY (a ConPTY on Windows; xterm.js). Claude Code, Codex, and OpenCode sessions mix in one list; agents are auto-detected, and OpenCode can also start through `ollama launch opencode` for a local model. Icons, colors, and motion show each session's state, and a notice reports when a session in another tab finishes or needs an answer. File paths in the output become clickable links into the vault.
-- **Side panel and Session Manager**: the right sidebar lists open tabs, running sessions, and recent sessions, with a details pane and a 5-hour/7-day rate-limit view with a countdown. The Session Manager groups sessions by category in a sortable table, with a status filter and a usage-analytics panel below it.
-- **Naming, categories, and Organize**: name a session `Category: Name`; categories get a stable color and their own group. **Organize names and categories** proposes short names and categories for recent sessions from their conversation, preferring the categories you already use, with the agent you already have (Claude Code, else Codex, else OpenCode). A session's row menu has **Suggest name and category…** for just that one. You review the proposals, and nothing changes until you press Apply. It sends session excerpts to that agent, see [Disclosures](#disclosures).
+- **Sessions and tabs**: one session per Obsidian tab, backed by a PTY (a ConPTY on Windows; xterm.js). The agent runs unmodified, so its own slash commands, plan mode, hooks, skills and MCP are available in the tab. Agents are auto-detected, and OpenCode can also start through `ollama launch opencode` for a local model. Icons, colors, and motion show each session's state, and a notice reports when a session in another tab finishes or needs an answer. File paths in the output become links into the vault.
+- **Side panel and Session manager**: the right sidebar lists open tabs, running sessions, and recent sessions, with a details pane and a 5-hour/7-day rate-limit view with a countdown. The Session manager groups sessions by category in a sortable table, with a status filter and a usage-analytics panel below it.
+- **Naming, categories, and Organize**: name a session `Category: Name`; each category gets a color and its own group. **Organize names and categories** proposes names and categories for recent sessions from their conversation, preferring existing categories, using an agent you have installed (Claude Code, else Codex, else OpenCode). **Suggest name and category…** in a session's row menu does the same for one session. Nothing changes until you press Apply. Session excerpts are sent to that agent; see [Disclosures](#disclosures).
 - **Restart, model, and effort**: **Restart session** ends the agent and resumes the same conversation in the same tab, to pick up changed settings, hooks, skills, or environment. **Change model…** switches the model and effort of a running Claude Code session without typing `/model` or `/effort`.
-- **Built-in editor**: press Ctrl+G to edit the current prompt in a split pane under the terminal, with `@` file completion, autosave, and native paste, IME, and undo; the terminal output stays visible. In a Claude Code prompt its bar switches model and effort.
-- **Activity calendar**: a 7d window, a week, or a day at a glance (switch with the toggle; the 7d window is aligned to your usage limit's reset; turns less than 30 minutes, 1 hour or 2 hours apart are joined, your choice), one lane per agent in each day, with a colored block for each stretch a session was working, read from the transcripts: from your prompt until the agent finished, with turns less than 30 minutes apart joined. Hover a block for its time range and name; click it to open a details panel with the block's turns and prompts and the session's details; toggle each agent on or off.
-- **Usage and limits**: account-wide 5-hour and 7-day windows per agent with a countdown and a weekly-pace projection, cost per session and per category, and a turn-by-turn **session analysis** you can copy as Markdown. All of it is computed from each agent's own transcripts.
-- **Agent skills**: two skills are installed into the vault with the program. `agent-sessions` lets an agent in the vault read usage, list other sessions, and, only when you ask, start a new one. `agent-sessions-help` answers questions about the plugin in the language you ask in.
+- **Built-in editor**: Ctrl+G opens the current prompt in a split pane under the terminal, with `@` file completion, autosave, and native paste, IME, and undo. The terminal output stays visible. In a Claude Code prompt its bar switches model and effort.
+- **Activity calendar**: shows when sessions were working, one lane per agent per day, in 7-day, week, or day views. A block spans from your prompt until the agent finished, read from the transcripts; turns less than 30 minutes (or 1 or 2 hours, selectable) apart are joined. Hover a block for its time range and name; click it for its turns, prompts, and the session's details. Each agent can be toggled on or off.
+- **Usage and limits**: account-wide 5-hour and 7-day windows per agent with a countdown and a weekly-pace projection, cost per session and per category, and a turn-by-turn **session analysis** that can be copied as Markdown. Cost figures are estimates computed locally from each agent's transcripts.
+- **Agent skills**: two skills are installed into the vault with the program. `agent-sessions` lets an agent in the vault read usage, list other sessions, and, only when you ask, start a new one. `agent-sessions-help` answers questions about the plugin in the language of the question.
 - **Remote Control**: renaming a Claude Code session started with Remote Control also renames its Remote Control session (claude.ai and the Claude app).
-- **Welcome guide**: opens on first install, and after an update only when the new version has something to show. It sets up the program and the agents, then has you start a real session, switch tabs, rename it, and use the built-in editor, checking each step as you go.
-- **CLI and TUI**: a standalone `agent-sessions` command for scripting and for working outside Obsidian.
+- **Welcome guide**: opens on first install, and after an update only when the new version has something to show. It sets up the program and the agents, then has you start a session, switch tabs, rename it, and use the built-in editor, checking each step.
+- **CLI and TUI**: a standalone `agent-sessions` command for scripting and for use outside Obsidian.
+
+![The Session manager: sessions grouped by category with cost per window, and the 5-hour and 7-day usage analytics below](docs/images/manager.png)
+
+![A Codex session waiting for approval, while a notice reports that a Claude Code session in another tab has finished](docs/images/codex.png)
 
 ![The activity calendar: a week of sessions as colored blocks, one lane per agent in each day, with hours and concurrency per agent](docs/images/calendar.png)
 
@@ -150,7 +125,6 @@ Session states, settings, the CLI, and the less common troubleshooting cases are
 - **Lists the vault's files** only to complete `@` file paths in the built-in editor.
 - **Uses the clipboard** only when you ask: copying a session ID or an analysis table, and Ctrl+Shift+C / Ctrl+Shift+V in a terminal tab (Linux keybindings).
 - **No accounts, payments, ads, or telemetry** of its own. Everything is open source under the MIT license.
-
 
 ## Uninstall
 
