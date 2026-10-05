@@ -150,6 +150,12 @@ function defaultAnalysisFolded(): Record<AgentId, boolean> {
 	return { claude: false, codex: false, opencode: false };
 }
 
+/** The activity calendar's period: a 7-day period aligned to the usage limit's reset, a
+ * Sunday-start week, or one day. */
+export type ActivityMode = "session" | "week" | "day";
+
+export const ACTIVITY_MODES: readonly ActivityMode[] = ["session", "week", "day"];
+
 export interface AgentSessionsSettings {
 	fontFamily: string;
 	fontSize: number;
@@ -183,6 +189,8 @@ export interface AgentSessionsSettings {
 	managerAnalysisFolded: Record<AgentId, boolean>;
 	/** The manager's status-filter menu selection (next to the name filter). Default `all`. */
 	managerStatusFilter: ManagerStatusFilter;
+	/** The activity calendar's period mode. Default `session`. */
+	activityMode: ActivityMode;
 	/** What the agent skill in the vault was last written for (`skillsStamp`); empty = never. Not
 	 * shown in the settings tab. */
 	agentSkillsStamp: string;
@@ -216,6 +224,7 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	managerAnalysisCollapsed: false,
 	managerAnalysisFolded: defaultAnalysisFolded(),
 	managerStatusFilter: "all",
+	activityMode: "session",
 	agentSkillsStamp: "",
 	onboardingShownVersion: "",
 	onboardingOnUpdate: true,
@@ -294,6 +303,9 @@ export function mergeSettings(data: unknown, isMac = true, platform: string = pr
 	}
 	if (!MANAGER_STATUS_FILTERS.includes(saved.managerStatusFilter as ManagerStatusFilter)) {
 		delete saved.managerStatusFilter;
+	}
+	if (!ACTIVITY_MODES.includes(saved.activityMode as ActivityMode)) {
+		delete saved.activityMode;
 	}
 	delete saved.installAgentSkills;
 	if (typeof saved.agentSkillsStamp !== "string") {

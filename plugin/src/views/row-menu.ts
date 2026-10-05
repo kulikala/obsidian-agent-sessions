@@ -28,8 +28,8 @@ export interface RowMenuState {
 }
 
 /**
- * Groups: naming; the running session (model, compact, restart); information; then archive and
- * end session, the destructive ones, last. Restart and End session exist for daemon sessions only;
+ * Groups: naming; the running session (model, compact, restart); information; then end session and
+ * archive (in that order), the destructive ones, last. Restart and End session exist for daemon sessions only;
  * Change model for Claude's (running) ones, and disabled for the other agents.
  */
 export function rowMenuGroups(row: Pick<Row, "agent" | "daemon">, state: RowMenuState): RowMenuEntry[][] {
@@ -42,10 +42,12 @@ export function rowMenuGroups(row: Pick<Row, "agent" | "daemon">, state: RowMenu
 	if (row.daemon) {
 		session.push({ id: "restartSession", enabled: state.canRestart });
 	}
-	const last: RowMenuEntry[] = [{ id: "archive", enabled: true }];
+	// Ending comes first: the real flow is end the session, then archive it.
+	const last: RowMenuEntry[] = [];
 	if (row.daemon) {
 		last.push({ id: "endSession", enabled: true });
 	}
+	last.push({ id: "archive", enabled: true });
 	return [
 		[
 			{ id: "rename", enabled: true },

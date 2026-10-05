@@ -4,7 +4,7 @@
 
 Facts about the Agent Sessions plugin for Obsidian, by task. Each name is written as "English / 日本語": the label in an English UI and in a Japanese UI. Where nothing is given in Japanese, the label is the same (an agent or program name). Source: the plugin's README, its design and testing docs, and its English and Japanese UI strings.
 
-Contents: What it is - Where things are - Install, update, remove - Welcome guide - Start and resume a session - Close, end and restart - Name and categorize - Organize names and categories - Row menu, change model, compact, archive - Session list and states - Session Manager - Usage and limits - Built-in editor - Keys and terminal tab - Settings - Agents - Language - Supported platforms - Troubleshooting - What the agent can do - Privacy
+Contents: What it is - Where things are - Install, update, remove - Welcome guide - Start and resume a session - Close, end and restart - Name and categorize - Organize names and categories - Row menu, change model, compact, archive - Session list and states - Session Manager - Activity calendar - Usage and limits - Built-in editor - Keys and terminal tab - Settings - Agents - Language - Supported platforms - Troubleshooting - What the agent can do - Privacy
 
 ## What it is
 
@@ -86,7 +86,7 @@ The row menu (`⋯` or right-click on a row, side panel and Session Manager) is 
 1. "Rename / 名前を変更", "Move to category… / カテゴリに移動…"
 2. "Change model… / モデルを変更…", "Compact session / セッションを圧縮", "Restart session / セッションを再起動"
 3. "Session analytics / セッション解析結果", "Copy ID / ID をコピー"
-4. "Archive / アーカイブ" (or "Remove from archive / アーカイブ解除"), "End session / セッションを終了"
+4. "End session / セッションを終了", "Archive / アーカイブ" (or "Remove from archive / アーカイブ解除") (end first, then archive)
 Change model, Restart session and End session appear for running sessions (held by the daemon) only. Change model is disabled, with a tooltip, for Codex and OpenCode sessions.
 
 - "Change model… / モデルを変更…" (Claude Code, running): the dialog "Change model / モデルを変更" shows "Now: <model> · <effort> / 現在: ..." and has "Model / モデル" (Default, Best available, Opus Plan, the Opus/Sonnet/Haiku aliases, or "Other… / その他…" for a full model ID such as `claude-opus-5-5`) and "Effort / エフォート" (including "Auto (clear the saved level)"). "Apply / 適用" sends only what changed: `/model <x>` and/or `/effort <y>` to the session. `/model` also becomes Claude Code's default for new sessions; `/effort max` applies to this session only; not every model supports every effort level. If Claude Code opens its "Switch model?" confirmation (a conversation with history), the plugin answers it for the user, so nothing has to be typed in the terminal. A draft being typed in the prompt is kept.
@@ -108,8 +108,17 @@ Change model, Restart session and End session appear for running sessions (held 
 ## Session Manager
 
 - A tree of sessions grouped by category (foldable), then "Other / その他", then the archive when shown. Columns: state, name, "Last updated / 最終更新", "Model / モデル", "Effort / エフォート", 5h and 7d cost, "Folder / フォルダ".
-- Toolbar: `+` new session, Rescan / 再走査, a name filter ("Filter / 絞込"), a status filter ("Filter by status / 状態で絞り込む"), `⋯` (Show archive, Organize). Clicking a row opens it; Up/Down moves the selection, Enter opens, `/` focuses the filter. Clicking the 5h or 7d column header sorts and flattens the tree.
+- Toolbar: `+` new session, Rescan / 再走査, the calendar button (Activity calendar, below), a name filter ("Filter / 絞込"), a status filter ("Filter by status / 状態で絞り込む"), `⋯` (Show archive, Organize). Clicking a row opens it; Up/Down moves the selection, Enter opens, `/` focuses the filter. Clicking the 5h or 7d column header sorts and flattens the tree.
 - Below the table: the usage analytics panel (see Usage and limits), foldable and resizable by dragging the handle. With more than one agent enabled each agent gets its own panel.
+
+## Activity calendar
+
+- Open it from the command palette ("Open activity calendar / 稼働カレンダーを開く"), the Session Manager toolbar's calendar button, or the side panel's `⋯` menu. One tab.
+- It shows when each agent was working: per day, one lane per agent, a colored block for each stretch a session was working. A block is colored by the session's category (the chip's color), or by the agent when it has none; overlapping sessions sit side by side; a tall enough block shows its name. Hover a block for "HH:MM-HH:MM name".
+- A toggle picks the period: "Session / セッション" (default; 7 days aligned to the reset of the usage limit's 7-day window: Claude Code's if enabled and known, else Codex's, else a Sunday-start week), "Week / 週" (Sunday to Saturday, local time), "Day / 日" (one day, one wide column per agent). The arrows (previous/next, "Latest / 最新") move by one period and never go past the one holding now. Clicking a date in a day header opens that day. The mode is remembered.
+- Cards per agent: hours (overlaps counted once), number of sessions, and the most sessions working at once. The filter box narrows by title.
+- A stretch comes from the transcript's message times: a new block starts after a gap of 30 minutes or more, a block ends at the last message recorded in it, and a stretch with a single message shows as one minute. So a block is not the time until a response ended; it is the span of recorded activity, with pauses under 30 minutes inside it.
+- Clicking a block shows that session's details (the same as the side panel's details pane) under the grid, with "Open session / セッションを開く" and "Close / 閉じる".
 
 ## Usage and limits
 
@@ -122,7 +131,7 @@ Change model, Restart session and End session appear for running sessions (held 
 ## Built-in editor
 
 - Press Ctrl+G inside a session (the "Editor key", see Settings) to edit the current prompt, or what `/memory` and `/keybindings` open, in a pane under the terminal. The terminal output stays visible. The pane's height is Settings -> "Editor pane height (%) / 編集領域の高さ（%）" (default 40).
-- For a Claude Code prompt the bar also has "Model / モデル" and "Effort / エフォート" dropdowns, set to the current values ("Keep current / 現在のまま"). If one is changed, "Send" first applies it with `/model` / `/effort` and then submits the prompt text intact. Other edits (`/memory` and so on) and other agents show no dropdowns.
+- For a Claude Code prompt the bar also has "Model / モデル" and "Effort / エフォート" dropdowns (narrow; a long model name is shortened in the closed dropdown, for example "Opus Plan", and shown in full as a tooltip), set to the current values ("Keep current / 現在のまま"). If one is changed, "Send" first applies it with `/model` / `/effort` and then submits the prompt text intact. Other edits (`/memory` and so on) and other agents show no dropdowns.
 - Type `@` to complete a file name from the vault; autosave; paste, IME and undo work natively; Tab indents.
 - "Send (<submit key>) / 送る（<キー>）" submits a prompt at once; Esc ("Back to prompt (Esc) / 入力欄に戻る（Esc）") returns to the agent's input without sending. Files other than a prompt (for example `/keybindings`) are saved but not submitted.
 - While the pane is open Ctrl+W (Cmd+W on macOS) does not close the tab.

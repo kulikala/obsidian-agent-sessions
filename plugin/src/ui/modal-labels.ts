@@ -18,6 +18,19 @@ export function modelAliasLabel(alias: string): string {
 	}
 }
 
+/** A shorter label for narrow dropdowns (the built-in editor's bar); the full `modelAliasLabel`
+ * goes in the option's tooltip. */
+export function modelAliasShortLabel(alias: string): string {
+	switch (alias) {
+		case "best":
+			return t("model.alias.bestShort");
+		case "opusplan":
+			return "Opus Plan";
+		default:
+			return modelAliasLabel(alias);
+	}
+}
+
 /** The label an effort level shows in the dropdowns. */
 export function effortLabel(level: string): string {
 	return level === EFFORT_AUTO ? t("effort.auto") : level;

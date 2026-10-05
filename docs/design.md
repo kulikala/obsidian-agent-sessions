@@ -639,13 +639,15 @@ The analysis area's own heading (caret + "Analysis") toggles folding — only vi
 
 ### 10.4 The activity calendar (`agent-sessions-activity`)
 
-A week of sessions as a calendar (`views/activity.ts`; the pure parts in `views/activity-model.ts`). It opens from the Session Manager's toolbar (calendar icon), the side panel's ⋯ menu, and the command "Open activity calendar" (`openActivityTab`, one tab: an open one is brought to front).
+Sessions' working time as a calendar (`views/activity.ts`; the pure parts in `views/activity-model.ts`). It opens from the Session Manager's toolbar (calendar icon), the side panel's ⋯ menu, and the command "Open activity calendar" (`openActivityTab`, one tab: an open one is brought to front).
 
-- **Data**: `json activity` (§13.4) for `[Monday 00:00, next Monday 00:00)` in local time. Weeks are built from local calendar days (`new Date(y, m, d + n)`), never from 86400-second steps, so a daylight-saving week still has seven days that start at local midnight. Switching weeks refetches; a response for a week that is no longer shown is dropped (`fetchToken`).
-- **Grid**: seven day columns, each split into one lane per enabled agent (plus any other agent present in the data). Each span is cut at local midnights into per-day pieces (`splitSpansByDay`) positioned by seconds since that day's midnight on a fixed 0–24 h axis (40 px per hour). Within a lane, overlapping pieces go side by side: `layoutOverlaps` groups chains of overlapping pieces into clusters, gives each piece the first free column, and every piece of a cluster shares the cluster's widest column count. A piece shows its label when `fitsLabel` says it is tall enough (and the cluster is at most three wide).
+- **Period modes** (a segmented toggle; the choice is saved as `activityMode`, default `session`): *session* is the 7 × 24 h period ending at a reset of the usage limit's 7-day window; *week* is Sunday 00:00 to the next Sunday 00:00 (local); *day* is one local day. `periodContaining(mode, at, resetAnchor)` gives the period holding `at`; `shiftPeriod` steps by 7 days (session, week) or one day. The session anchor comes from `json stats` (`pickResetAnchor`): Claude Code's 7-day window when Claude is enabled and the window is tracked (`used_percentage` not null, otherwise `end` is only "now"), else Codex's weekly window, else none, and with none a *session* period is a *week* (`effectiveMode`). Session periods step in absolute 7-day seconds, so they follow the reset exactly; week and day periods are built from local calendar days (`new Date(y, m, d + n)`), never 86400-second steps, so a daylight-saving period still starts at local midnight.
+- **No future**: "next" is disabled once the period holds now (`canGoNext`); "Latest" returns to the period holding now.
+- **Data**: `json activity` (§13.4) for `[period.from, period.to)`. Switching period refetches; a response for a period that is no longer shown is dropped (`fetchToken`).
+- **Grid**: one column per local day the period touches (`periodDays`): seven for a week, one for a day, eight for a session period that starts mid-day (the part of the first and last day outside the period is dimmed). Each day is split into one lane per enabled agent (plus any other agent present in the data); in *day* mode the single day gives each agent a wide lane. Each span is cut at local midnights into per-day pieces (`splitSpansByDay`) positioned by seconds since that day's midnight on a fixed 0–24 h axis (40 px per hour). Within a lane, overlapping pieces go side by side: `layoutOverlaps` groups chains of overlapping pieces into clusters, gives each piece the first free column, and every piece of a cluster shares the cluster's widest column count. A piece shows its label when `fitsLabel` says it is tall enough (and the cluster is at most three wide). Clicking a day header's date (a day that has started) switches to *day* mode on that date.
 - **Color**: a block takes its session's category color (the same palette slot as the category chip, `SessionIndex.categoryColorIndex`); without a category it takes its agent's lane color. Light and dark come from Obsidian's CSS variables plus a lightness switch under `.theme-light`.
 - **Cards**: per agent, hours (the union of all its spans, so overlapping sessions count once), the number of sessions, and the highest number of spans open at the same moment (`unionSeconds`, `maxConcurrency`). The title filter (name, label, category, id) applies to the cards, the day counts, and the grid alike.
-- **Interaction**: hover shows `HH:MM–HH:MM name` (Obsidian's `setTooltip`); click opens the session through `plugin.openSession`. After each load the grid scrolls to half an hour before the first activity of the week (08:00 when there is none).
+- **Interaction**: hover shows `HH:MM–HH:MM name` (Obsidian's `setTooltip`). Clicking a block selects it and shows the session's detail under the grid: the same `renderDetail` the side panel's and the manager's details panes use, with "Open session" (`plugin.openSession`) and "Close". After each load the grid scrolls to half an hour before the first activity of the period (08:00 when there is none).
 
 ## 11. Names and categories
 
@@ -736,14 +738,14 @@ Cache-write cost is input × 1.25 for a 5-minute TTL, input × 2 for a 1-hour TT
 
 ### 13.4 `agent-sessions json activity --from ISO --to ISO [--gap-minutes N]`
 
-Backs the activity calendar (§10.4). `--from`/`--to` are required ISO 8601 (UTC when no zone is given); `--gap-minutes` defaults to 30.
+Backs the activity calendar (§10.4), which asks for one period at a time: a day, a Sunday-start week, or a 7-day period aligned to a usage-limit reset. `--from`/`--to` are required ISO 8601 (UTC when no zone is given); `--gap-minutes` defaults to 30.
 
 ```json
 {"sessions": [{"id": "…", "agent": "claude", "name": "RIM: Notes", "label": "Notes",
                "category": "RIM", "child": false, "spans": [[1790220000.0, 1790221200.0]]}]}
 ```
 
-`spans` are `[start, end]` epoch seconds, sorted, clipped to the range; a session with no span in the range is left out. They come from the transcript's message timestamps (`sessions/activity.py`): sorted, a new span starts when the distance to the previous timestamp is the gap or more, a span shorter than one minute is extended to one minute, and the result is clipped. The timestamps per agent:
+`spans` are `[start, end]` epoch seconds, sorted, clipped to the range; a session with no span in the range is left out. They come from the transcript's message timestamps (`sessions/activity.py`): sorted, a new span starts when the distance to the previous timestamp is the gap or more, a span shorter than one minute is extended to one minute, and the result is clipped. A span therefore runs from the first to the last recorded message of a stretch; it is not "until the response ended" (the end is the last line's timestamp), and pauses shorter than the gap stay inside it. The timestamps per agent:
 
 - **Claude Code**: every `user` and `assistant` line with a `timestamp`, sub-agent sidechains and tool results included (the agent was working then).
 - **Codex**: the `timestamp` of every rollout record.

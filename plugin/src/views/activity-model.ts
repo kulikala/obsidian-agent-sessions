@@ -6,7 +6,9 @@
 // so a week that contains a daylight-saving change still has seven days that start at local
 // midnight (a day can be 23 or 25 hours long).
 
-import type { ActivitySession } from "../types";
+import type { ActivityMode } from "../settings";
+import type { ActivitySession, StatsResult } from "../types";
+import { windowsForAgent } from "./manager-model";
 
 export const SECONDS_PER_DAY = 86400;
 
@@ -22,9 +24,62 @@ export function addDays(date: Date, n: number): Date {
 	return new Date(date.getFullYear(), date.getMonth(), date.getDate() + n);
 }
 
-/** Monday 00:00 (local) of the week containing `date`. */
+/** Sunday 00:00 (local) of the week containing `date`. */
 export function weekStartOf(date: Date): Date {
-	return addDays(date, -((date.getDay() + 6) % 7));
+	return addDays(date, -date.getDay());
+}
+
+const SEVEN_DAYS_MS = 7 * SECONDS_PER_DAY * 1000;
+
+/** `[from, to)` shown at once. `from`/`to` are instants; in "week" and "day" mode they sit on local midnights. */
+export interface Period {
+	mode: ActivityMode;
+	from: Date;
+	to: Date;
+}
+
+/**
+ * The mode that actually applies: "session" needs a known reset (`resetAnchor`, epoch seconds of
+ * a reset of the usage limit's 7-day window); without one it behaves as "week".
+ */
+export function effectiveMode(mode: ActivityMode, resetAnchor: number | null): ActivityMode {
+	return mode === "session" && resetAnchor === null ? "week" : mode;
+}
+
+/**
+ * The period of `mode` that contains `at`. "session": 7 × 24 h ending at a reset (resets repeat
+ * every 7 days from `resetAnchor`, so the period is `[reset − 7 d, reset)`, in absolute time);
+ * "week": Sunday 00:00 to the next Sunday 00:00; "day": one local day.
+ */
+export function periodContaining(mode: ActivityMode, at: Date, resetAnchor: number | null): Period {
+	const eff = effectiveMode(mode, resetAnchor);
+	if (eff === "session" && resetAnchor !== null) {
+		const anchorMs = resetAnchor * 1000;
+		const k = Math.floor((at.getTime() - anchorMs) / SEVEN_DAYS_MS) + 1;
+		const end = anchorMs + k * SEVEN_DAYS_MS;
+		return { mode: "session", from: new Date(end - SEVEN_DAYS_MS), to: new Date(end) };
+	}
+	if (eff === "day") {
+		const from = startOfDay(at);
+		return { mode: "day", from, to: addDays(from, 1) };
+	}
+	const from = weekStartOf(at);
+	return { mode: eff, from, to: addDays(from, 7) };
+}
+
+/** The period `n` steps away (negative = earlier): 7 days in "session" and "week", one day in "day". */
+export function shiftPeriod(p: Period, n: number): Period {
+	if (p.mode === "session") {
+		const from = new Date(p.from.getTime() + n * SEVEN_DAYS_MS);
+		return { mode: "session", from, to: new Date(from.getTime() + SEVEN_DAYS_MS) };
+	}
+	const from = addDays(p.from, p.mode === "day" ? n : 7 * n);
+	return { mode: p.mode, from, to: addDays(from, p.mode === "day" ? 1 : 7) };
+}
+
+/** Whether there is a later period to go to: not once the period holds `now`, since nothing has happened after it. */
+export function canGoNext(p: Period, now: Date): boolean {
+	return p.to.getTime() <= now.getTime();
 }
 
 export interface DayRange {
@@ -33,21 +88,47 @@ export interface DayRange {
 	/** The next local midnight, epoch seconds. */
 	end: number;
 	date: Date;
+	/** Seconds since `start` where the period begins on this day (0 unless the period starts mid-day). */
+	activeFrom: number;
+	/** Seconds since `start` where the period ends on this day (the day's length unless it ends mid-day). */
+	activeTo: number;
 }
 
-/** The seven local days of the week starting at `weekStart` (Monday). */
-export function weekDays(weekStart: Date): DayRange[] {
+/**
+ * The local calendar days a period touches, in order: seven for a week, one for a day, and eight
+ * for a "session" period that doesn't start at midnight (the first and last day are partly outside it).
+ */
+export function periodDays(p: Period): DayRange[] {
+	const from = p.from.getTime() / 1000;
+	const to = p.to.getTime() / 1000;
 	const out: DayRange[] = [];
-	for (let i = 0; i < 7; i++) {
-		const date = addDays(weekStart, i);
-		out.push({ date, start: date.getTime() / 1000, end: addDays(date, 1).getTime() / 1000 });
+	for (let date = startOfDay(p.from); date.getTime() / 1000 < to; date = addDays(date, 1)) {
+		const start = date.getTime() / 1000;
+		const end = addDays(date, 1).getTime() / 1000;
+		out.push({ date, start, end, activeFrom: Math.max(0, from - start), activeTo: Math.min(end, to) - start });
 	}
 	return out;
 }
 
-/** `[from, to)` of the whole week, as Dates (what `json activity` is asked for). */
-export function weekRange(weekStart: Date): { from: Date; to: Date } {
-	return { from: weekStart, to: addDays(weekStart, 7) };
+/**
+ * The reset (epoch seconds) of the usage limit's 7-day window to align "session" periods to:
+ * Claude Code's if it is enabled and its window is known, else Codex's, else `null`. A window is
+ * known when `used_percentage` is tracked (otherwise `end` is just "now").
+ */
+export function pickResetAnchor(stats: StatsResult | null, enabledAgents: readonly string[]): number | null {
+	for (const agent of ["claude", "codex"]) {
+		if (!enabledAgents.includes(agent)) {
+			continue;
+		}
+		const windows = windowsForAgent(stats, agent);
+		const weekly = windows
+			? Object.values(windows).find((w) => Math.abs(w.minutes - 10080) <= 5 && w.used_percentage !== null)
+			: undefined;
+		if (weekly) {
+			return weekly.end;
+		}
+	}
+	return null;
 }
 
 /** A span's part that falls on one day; `start`/`end` are seconds since that day's local midnight. */

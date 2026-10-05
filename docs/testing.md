@@ -264,7 +264,7 @@ Use a test vault. For the first-run items, a vault where the plugin was never en
 - [ ] Rename: the row menu's Rename changes the name in the panel, the manager and the tab title.
 - [ ] Move to category: the dialog shows the session's name, offers the existing categories in a dropdown and accepts a new one; the row moves to that category.
 - [ ] Archive: the row leaves the side panel; in the Session Manager with archived sessions shown, "Remove from archive" brings it back.
-- [ ] The menu order is: Rename, Move to category | Change model, Compact session, Restart session | Session analytics, Copy ID | Archive, End session, with a separator between the groups (Change model, Restart and End session appear for running sessions; Change model is disabled with a tooltip for Codex and OpenCode).
+- [ ] The menu order is: Rename, Move to category | Change model, Compact session, Restart session | Session analytics, Copy ID | End session, Archive, with a separator between the groups (Change model, Restart and End session appear for running sessions; Change model is disabled with a tooltip for Codex and OpenCode).
 - [ ] End session and copy ID work from the menu.
 - [ ] Change model…: the dialog shows the current model and effort preselected; choosing another model and/or effort and pressing Apply sends only `/model <x>` and/or `/effort <y>` to the session, and the status line (detail pane badges) shows the new values. "Other…" takes a full model ID. A draft being typed in the prompt is kept.
 
@@ -275,6 +275,7 @@ Use a test vault. For the first-run items, a vault where the plugin was never en
 - [ ] Send (or the save action) returns the edited text to the agent's prompt; Esc returns to the input without sending.
 - [ ] `Ctrl+W`/`Cmd+W` while the editor is open does not close the tab.
 - [ ] A Claude prompt edit shows Model and Effort dropdowns in the bar, set to the current values; other edits (`/memory`, …) and other agents do not.
+- [ ] The bar's dropdowns are narrow (model about 9em, effort about 6em; a long model name such as Opus Plan is shortened in the closed dropdown and shown in full as a tooltip), and there is a clear gap between the bar and the text area.
 - [ ] Changing the model or effort and pressing Send returns the text to the prompt, runs `/model` / `/effort`, and then submits the text; the prompt text arrives intact. Without a change, Send behaves as before.
 
 ### Restart session
@@ -301,13 +302,17 @@ Use a test vault. For the first-run items, a vault where the plugin was never en
 ### Activity calendar
 
 - [ ] "Open activity calendar" in the command palette, the Session Manager toolbar's calendar button, and the side panel's ⋯ menu all open the same single tab.
-- [ ] The title, the one-line explanation, the week range (Monday to Sunday), "This week", and the filter box are shown; the language follows the plugin's setting (English and Japanese).
-- [ ] Cards per enabled agent show hours, session count, and peak concurrency; the day headers show per-agent counts; the grid has one lane per agent in each of the seven days and a 0:00–24:00 axis.
-- [ ] The grid starts scrolled to about half an hour before the week's first activity.
+- [ ] The title, the one-line explanation, the Session / Week / Day toggle, the period range, "Latest", and the filter box are shown; the language follows the plugin's setting (English and Japanese).
+- [ ] The toggle defaults to Session. With Claude Code enabled and its 7-day reset known, the Session period ends at that reset and starts 7 days earlier (its first and last day are dimmed outside the period); with only Codex's weekly window known it follows that; with neither it is a Sunday-start week. Earlier periods step back by 7 days.
+- [ ] Week runs Sunday to Saturday; Day shows one date with one wide column per agent. The chosen mode is still selected after reloading the plugin.
+- [ ] The next arrow is disabled on the period that holds now (in all three modes), and "Latest" returns to it.
+- [ ] Clicking a date in a day header switches to Day mode on that date; a day that hasn't started is not clickable.
+- [ ] Cards per enabled agent show hours, session count, and peak concurrency; the day headers show per-agent counts; the grid has one lane per agent in each day and a 0:00–24:00 axis.
+- [ ] The grid starts scrolled to about half an hour before the period's first activity.
 - [ ] Blocks are colored by the session's category (as its chip) or by the agent when it has none; overlapping sessions sit side by side; tall enough blocks carry their name.
-- [ ] Hovering a block shows `HH:MM–HH:MM name`; clicking it opens that session's tab.
-- [ ] The previous/next arrows move by a week and "This week" returns; typing in the filter narrows the blocks, counts, and cards.
-- [ ] A block that crosses midnight appears on both days. In a week with a daylight-saving change, all seven columns still start at midnight.
+- [ ] Hovering a block shows `HH:MM–HH:MM name`; clicking it shows that session's details under the grid (with Open session and Close), not its tab; Open session opens the tab.
+- [ ] Typing in the filter narrows the blocks, counts, and cards.
+- [ ] A block that crosses midnight appears on both days. In a period with a daylight-saving change, every column still starts at midnight.
 - [ ] Light and dark themes are both legible; narrowing the pane scrolls the grid sideways instead of squeezing it.
 
 ### A real Claude Code conversation

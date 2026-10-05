@@ -3,29 +3,33 @@
 // fetches and draws, and everything it computes lives in `activity-model.ts`.
 
 import { ItemView, Notice, setIcon, setTooltip, type WorkspaceLeaf } from "obsidian";
-import { activity } from "../backend/backend";
+import { activity, stats, usage } from "../backend/backend";
 import { getLang, t } from "../i18n";
-import { formatDateRange, formatTimeShort, formatWeekdayShort } from "../i18n/datetime";
+import { formatDateRange, formatDateTimeShort, formatTimeShort, formatWeekdayShort } from "../i18n/datetime";
 import type AgentSessionsPlugin from "../main";
 import { paletteHueDeg } from "../sessions/category";
-import { AGENT_IDS } from "../settings";
-import type { ActivityResult, ActivitySession } from "../types";
+import { ACTIVITY_MODES, AGENT_IDS, type ActivityMode } from "../settings";
+import type { ActivityResult, ActivitySession, StatsResult } from "../types";
 import {
-	addDays,
+	canGoNext,
 	clockLabel,
 	dayCounts,
 	filterSessions,
 	firstActiveSeconds,
 	fitsLabel,
 	layoutOverlaps,
+	periodContaining,
+	periodDays,
+	pickResetAnchor,
 	SECONDS_PER_DAY,
+	shiftPeriod,
 	splitSpansByDay,
 	summarizeByAgent,
-	weekDays,
-	weekRange,
-	weekStartOf,
 	type DayPiece,
+	type Period,
 } from "./activity-model";
+import { renderDetail } from "./detail-render";
+import type { DetailContext } from "./detail";
 import { AGENT_NAME_KEY } from "./rows";
 
 export const VIEW_TYPE_ACTIVITY = "agent-sessions-activity";
@@ -37,20 +41,30 @@ const MIN_BLOCK_PX = 2;
 
 export class ActivityView extends ItemView {
 	private readonly plugin: AgentSessionsPlugin;
-	private weekStart = weekStartOf(new Date());
+	private mode: ActivityMode;
+	/** A reset of the usage limit's 7-day window (epoch seconds), when known: what "session" periods align to. */
+	private resetAnchor: number | null = null;
+	private period: Period;
 	private result: ActivityResult | null = null;
 	private filterText = "";
-	private loading = false;
 	private error: string | null = null;
-	/** Bumped per fetch so a slow earlier response can't overwrite a newer week's. */
+	/** Bumped per fetch so a slow earlier response can't overwrite a newer period's. */
 	private fetchToken = 0;
+	private selectedId: string | null = null;
+	/** Whether the user has picked a period (so the reset arriving late doesn't override it). */
+	private navigated = false;
 	private rangeEl!: HTMLElement;
+	private nextBtn!: HTMLElement;
+	private modeBtns = new Map<ActivityMode, HTMLElement>();
 	private bodyEl!: HTMLElement;
+	private detailEl!: HTMLElement;
 	private filterEl!: HTMLInputElement;
 
 	constructor(leaf: WorkspaceLeaf, plugin: AgentSessionsPlugin) {
 		super(leaf);
 		this.plugin = plugin;
+		this.mode = plugin.settings.activityMode;
+		this.period = periodContaining(this.mode, new Date(), null);
 	}
 
 	getViewType(): string {
@@ -69,7 +83,25 @@ export class ActivityView extends ItemView {
 		this.contentEl.addClass("agent-sessions-activity");
 		this.buildSkeleton();
 		this.registerEvent(this.plugin.events.on("settings-changed", () => this.refreshLanguage()));
-		void this.fetchWeek(true);
+		await this.loadAnchor();
+		// Realign to the reset once known, unless the user already moved somewhere.
+		if (!this.navigated) {
+			this.period = periodContaining(this.mode, new Date(), this.resetAnchor);
+			this.updateNav();
+			void this.fetchPeriod(true);
+		}
+	}
+
+	/** The reset to align "session" periods to, from `json stats` (Claude's 7-day window, else Codex's). */
+	private async loadAnchor(): Promise<void> {
+		let result: StatsResult | null = null;
+		try {
+			result = await stats(this.plugin.agentSessionsPath(), this.plugin.vaultPath());
+		} catch {
+			result = null;
+		}
+		const enabled = AGENT_IDS.filter((id) => this.plugin.settings.agents[id].enabled);
+		this.resetAnchor = pickResetAnchor(result, enabled);
 	}
 
 	private refreshLanguage(): void {
@@ -78,6 +110,7 @@ export class ActivityView extends ItemView {
 		this.contentEl.empty();
 		this.buildSkeleton();
 		this.renderBody();
+		void this.showDetail(this.selectedId);
 	}
 
 	private buildSkeleton(): void {
@@ -86,12 +119,24 @@ export class ActivityView extends ItemView {
 		head.createEl("p", { cls: "agent-sessions-activity-subtitle", text: t("activity.subtitle") });
 
 		const nav = head.createDiv({ cls: "agent-sessions-activity-nav" });
-		this.navButton(nav, "chevron-left", t("activity.prevWeek"), () => this.go(addDays(this.weekStart, -7)));
+		const modes = nav.createDiv({ cls: "agent-sessions-activity-modes" });
+		this.modeBtns.clear();
+		for (const mode of ACTIVITY_MODES) {
+			const btn = modes.createEl("button", { text: t(`activity.mode.${mode}`), cls: "agent-sessions-activity-mode" });
+			setTooltip(btn, t(`activity.mode.${mode}.hint`));
+			this.registerDomEvent(btn, "click", () => this.setMode(mode, this.period.from));
+			this.modeBtns.set(mode, btn);
+		}
+		this.navButton(nav, "chevron-left", t("activity.prev"), () => this.go(shiftPeriod(this.period, -1)));
 		this.rangeEl = nav.createSpan({ cls: "agent-sessions-activity-range" });
-		this.navButton(nav, "chevron-right", t("activity.nextWeek"), () => this.go(addDays(this.weekStart, 7)));
-		const today = nav.createEl("button", { text: t("activity.thisWeek"), cls: "agent-sessions-activity-today" });
-		this.registerDomEvent(today, "click", () => this.go(weekStartOf(new Date())));
-		this.navButton(nav, "rotate-cw", t("activity.refresh"), () => void this.fetchWeek(false));
+		this.nextBtn = this.navButton(nav, "chevron-right", t("activity.next"), () => {
+			if (canGoNext(this.period, new Date())) {
+				this.go(shiftPeriod(this.period, 1));
+			}
+		});
+		const latest = nav.createEl("button", { text: t("activity.latest"), cls: "agent-sessions-activity-today" });
+		this.registerDomEvent(latest, "click", () => this.go(periodContaining(this.mode, new Date(), this.resetAnchor)));
+		this.navButton(nav, "rotate-cw", t("activity.refresh"), () => void this.fetchPeriod(false));
 		this.filterEl = nav.createEl("input", {
 			type: "text",
 			placeholder: t("activity.filterPlaceholder"),
@@ -104,7 +149,9 @@ export class ActivityView extends ItemView {
 		});
 
 		this.bodyEl = this.contentEl.createDiv({ cls: "agent-sessions-activity-body" });
-		this.renderRange();
+		this.detailEl = this.contentEl.createDiv({ cls: "agent-sessions-activity-detail" });
+		this.detailEl.hide();
+		this.updateNav();
 	}
 
 	private navButton(container: HTMLElement, icon: string, tooltip: string, onClick: () => void): HTMLElement {
@@ -115,26 +162,47 @@ export class ActivityView extends ItemView {
 		return btn;
 	}
 
-	private go(weekStart: Date): void {
-		this.weekStart = weekStart;
-		this.renderRange();
-		void this.fetchWeek(true);
+	/** The range text, the active mode button, and whether "next" is allowed. */
+	private updateNav(): void {
+		const { from, to } = this.period;
+		const lang = getLang();
+		if (this.period.mode === "session") {
+			this.rangeEl.setText(`${formatDateTimeShort(from.getTime() / 1000, lang)} – ${formatDateTimeShort(to.getTime() / 1000, lang)}`);
+		} else if (this.period.mode === "day") {
+			this.rangeEl.setText(`${formatDateRange(from, from, lang)} ${formatWeekdayShort(from, lang)}`);
+		} else {
+			this.rangeEl.setText(formatDateRange(from, new Date(to.getTime() - 1), lang));
+		}
+		for (const [mode, btn] of this.modeBtns) {
+			btn.toggleClass("is-active", mode === this.mode);
+		}
+		this.nextBtn.toggleClass("is-disabled", !canGoNext(this.period, new Date()));
 	}
 
-	private renderRange(): void {
-		const { from, to } = weekRange(this.weekStart);
-		this.rangeEl.setText(formatDateRange(from, addDays(to, -1), getLang()));
+	private go(period: Period): void {
+		this.navigated = true;
+		this.period = period;
+		this.updateNav();
+		void this.fetchPeriod(true);
 	}
 
-	private async fetchWeek(clear: boolean): Promise<void> {
+	/** Switches the mode to the period of that mode containing `at` (never later than now), and remembers it. */
+	private setMode(mode: ActivityMode, at: Date): void {
+		this.mode = mode;
+		this.plugin.settings.activityMode = mode;
+		void this.plugin.saveSettings();
+		const now = new Date();
+		this.go(periodContaining(mode, at.getTime() > now.getTime() ? now : at, this.resetAnchor));
+	}
+
+	private async fetchPeriod(clear: boolean): Promise<void> {
 		const token = ++this.fetchToken;
-		this.loading = true;
 		this.error = null;
 		if (clear) {
 			this.result = null;
 		}
 		this.renderBody();
-		const { from, to } = weekRange(this.weekStart);
+		const { from, to } = this.period;
 		try {
 			const result = await activity(this.plugin.agentSessionsPath(), this.plugin.vaultPath(), from, to);
 			if (token !== this.fetchToken) {
@@ -149,7 +217,6 @@ export class ActivityView extends ItemView {
 			this.error = err instanceof Error ? err.message : String(err);
 			new Notice(t("activity.loadFailed", { message: this.error }));
 		}
-		this.loading = false;
 		this.renderBody(true);
 	}
 
@@ -179,7 +246,7 @@ export class ActivityView extends ItemView {
 		}
 		const sessions = filterSessions(this.result.sessions, this.filterText);
 		const agents = this.laneAgents(this.result.sessions);
-		const days = weekDays(this.weekStart);
+		const days = periodDays(this.period);
 
 		this.renderCards(this.bodyEl, sessions, agents);
 		if (this.result.sessions.length === 0) {
@@ -191,13 +258,15 @@ export class ActivityView extends ItemView {
 		const counts = dayCounts(sessions, days);
 		const scroll = this.bodyEl.createDiv({ cls: "agent-sessions-activity-scroll" });
 		scroll.style.setProperty("--as-cal-hour", `${HOUR_PX}px`);
-		scroll.style.setProperty("--as-cal-lanes", String(agents.length));
+		scroll.style.setProperty("--as-cal-days", String(days.length));
 		const grid = scroll.createDiv({ cls: "agent-sessions-activity-grid" });
+		grid.toggleClass("is-single-day", days.length === 1);
 
 		// Header row: a corner cell, then one cell per day with its per-agent counts and lane names.
 		const header = grid.createDiv({ cls: "agent-sessions-activity-row agent-sessions-activity-header" });
 		header.createDiv({ cls: "agent-sessions-activity-axis-cell" });
-		const todayIdx = days.findIndex((d) => Date.now() / 1000 >= d.start && Date.now() / 1000 < d.end);
+		const nowSec = Date.now() / 1000;
+		const todayIdx = days.findIndex((d) => nowSec >= d.start && nowSec < d.end);
 		days.forEach((d, i) => {
 			const cell = header.createDiv({ cls: "agent-sessions-activity-day-head" });
 			if (i === todayIdx) {
@@ -210,6 +279,12 @@ export class ActivityView extends ItemView {
 				cls: wd === 0 ? "is-sunday" : wd === 6 ? "is-saturday" : "",
 				text: formatWeekdayShort(d.date, getLang()),
 			});
+			// Clicking the date opens that day on its own (not for a day that hasn't started).
+			if (this.period.mode !== "day" && d.start <= nowSec) {
+				title.addClass("is-link");
+				setTooltip(title, t("activity.showDay"));
+				this.registerDomEvent(title, "click", () => this.setMode("day", d.date));
+			}
 			const lanes = cell.createDiv({ cls: "agent-sessions-activity-lane-names" });
 			for (const agent of agents) {
 				const name = lanes.createDiv({ cls: `agent-sessions-activity-lane-name is-agent-${agent}` });
@@ -230,6 +305,14 @@ export class ActivityView extends ItemView {
 			if (i === todayIdx) {
 				col.addClass("is-today");
 			}
+			// The part of a day outside the period (a "session" period starts and ends mid-day) is dimmed.
+			const dayLength = d.end - d.start;
+			if (d.activeFrom > 0) {
+				this.renderOutside(col, 0, d.activeFrom / SECONDS_PER_DAY);
+			}
+			if (d.activeTo < dayLength) {
+				this.renderOutside(col, d.activeTo / SECONDS_PER_DAY, 1);
+			}
 			for (const agent of agents) {
 				const lane = col.createDiv({ cls: `agent-sessions-activity-lane is-agent-${agent}` });
 				const mine = pieces.filter((p) => p.day === i && p.session.agent === agent);
@@ -239,11 +322,15 @@ export class ActivityView extends ItemView {
 			}
 		});
 
-		// Scrolling: to the first active hour of the (filtered) week when the data just changed,
+		// Scrolling: to the first active hour of the (filtered) period when the data just changed,
 		// otherwise where the user left it.
-		scroll.scrollTop = scrollToFirst || !scrollEl
-			? (firstActiveSeconds(pieces) / 3600) * HOUR_PX
-			: keepTop;
+		scroll.scrollTop = scrollToFirst || !scrollEl ? (firstActiveSeconds(pieces) / 3600) * HOUR_PX : keepTop;
+	}
+
+	private renderOutside(col: HTMLElement, from: number, to: number): void {
+		const el = col.createDiv({ cls: "agent-sessions-activity-outside" });
+		el.style.top = `${from * 100}%`;
+		el.style.height = `${(to - from) * 100}%`;
 	}
 
 	private renderCards(container: HTMLElement, sessions: readonly ActivitySession[], agents: readonly string[]): void {
@@ -290,9 +377,61 @@ export class ActivityView extends ItemView {
 				name,
 			})
 		);
+		block.toggleClass("is-selected", session.id === this.selectedId);
+		block.dataset.sessionId = session.id;
 		this.registerDomEvent(block, "click", () => {
-			const row = this.plugin.index.sessions.get(session.id);
-			void this.plugin.openSession(session.id, { agent: session.agent, cwd: row?.cwd });
+			this.selectedId = session.id;
+			this.bodyEl.querySelectorAll(".agent-sessions-activity-block.is-selected").forEach((el) => el.removeClass("is-selected"));
+			this.bodyEl.querySelectorAll<HTMLElement>(".agent-sessions-activity-block").forEach((el) => {
+				el.toggleClass("is-selected", el.dataset.sessionId === session.id);
+			});
+			void this.showDetail(session.id);
 		});
+	}
+
+	/** The detail pane under the grid: the same detail the side panel and the manager show, plus "Open session" and close. */
+	private async showDetail(id: string | null): Promise<void> {
+		this.detailEl.empty();
+		if (!id) {
+			this.detailEl.hide();
+			return;
+		}
+		this.detailEl.show();
+		const bar = this.detailEl.createDiv({ cls: "agent-sessions-activity-detail-bar" });
+		const open = bar.createEl("button", { text: t("activity.openSession") });
+		const close = bar.createEl("button", { text: t("activity.closeDetail") });
+		const content = this.detailEl.createDiv();
+		const row = this.plugin.index.sessions.get(id);
+		const summary = this.result?.sessions.find((s) => s.id === id);
+		this.registerDomEvent(open, "click", () => {
+			void this.plugin.openSession(id, { agent: row?.agent ?? summary?.agent, cwd: row?.cwd });
+		});
+		this.registerDomEvent(close, "click", () => {
+			this.selectedId = null;
+			this.bodyEl.querySelectorAll(".agent-sessions-activity-block.is-selected").forEach((el) => el.removeClass("is-selected"));
+			void this.showDetail(null);
+		});
+		if (!row) {
+			renderDetail(content, null);
+			return;
+		}
+		let detail = null;
+		try {
+			detail = await this.plugin.index.getDetail(id);
+		} catch {
+			detail = null;
+		}
+		if (this.selectedId !== id) {
+			return;
+		}
+		const ctx: DetailContext = {
+			row,
+			detail,
+			statusInfo: this.plugin.index.statusline.get(id),
+			rc: this.plugin.index.registry.get(id)?.rc ?? null,
+			fetchUsage: () => usage(this.plugin.agentSessionsPath(), this.plugin.vaultPath(), id),
+			categoryColorIndex: (category) => this.plugin.index.categoryColorIndex(category),
+		};
+		renderDetail(content, ctx);
 	}
 }

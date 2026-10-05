@@ -10,7 +10,7 @@ describe("rowMenuGroups", () => {
 			["rename", "moveToCategory"],
 			["changeModel", "compact", "restartSession"],
 			["usage", "copyId"],
-			["archive", "endSession"],
+			["endSession", "archive"],
 		]);
 	});
 

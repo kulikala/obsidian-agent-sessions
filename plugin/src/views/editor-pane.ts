@@ -24,7 +24,7 @@ import {
 	type CurrentModel,
 	type ModelChoice,
 } from "../terminal/model-switch";
-import { effortLabel, modelAliasLabel } from "../ui/modal-labels";
+import { effortLabel, modelAliasLabel, modelAliasShortLabel } from "../ui/modal-labels";
 
 export type EditResult = "send" | "return" | "cancel";
 
@@ -184,8 +184,8 @@ export class EditorPane {
 		bar.createSpan({ cls: "agent-sessions-editor-file", text: path.basename(this.file) });
 		const current = this.deps.model;
 		if (current) {
-			this.modelSelect = this.addSelect(bar, t("editor.model"), preselectedModel(current), current.display, MODEL_ALIASES, modelAliasLabel);
-			this.effortSelect = this.addSelect(bar, t("editor.effort"), preselectedEffort(current), current.effort, EFFORT_CHOICES, effortLabel);
+			this.modelSelect = this.addSelect(bar, t("editor.model"), preselectedModel(current), current.display, MODEL_ALIASES, modelAliasShortLabel, "is-model", modelAliasLabel);
+			this.effortSelect = this.addSelect(bar, t("editor.effort"), preselectedEffort(current), current.effort, EFFORT_CHOICES, effortLabel, "is-effort");
 		}
 		const send = bar.createEl("button", {
 			text: t("action.send", { key: submitKeyButtonLabel(this.deps.submitKey, this.deps.isMac) }),
@@ -226,18 +226,26 @@ export class EditorPane {
 		selected: string,
 		currentText: string | null,
 		options: readonly string[],
-		labelOf: (value: string) => string
+		labelOf: (value: string) => string,
+		cls: string,
+		/** The full text, shown as each option's (and the closed dropdown's) tooltip. */
+		fullLabelOf: (value: string) => string = labelOf
 	): HTMLSelectElement {
-		const wrap = bar.createEl("label", { cls: "agent-sessions-editor-select" });
+		const wrap = bar.createEl("label", { cls: `agent-sessions-editor-select ${cls}` });
 		wrap.createSpan({ text: label });
 		const select = wrap.createEl("select", { cls: "dropdown" });
 		if (selected === KEEP) {
 			select.createEl("option", { value: KEEP, text: currentText ?? t("editor.keepCurrent") });
 		}
 		for (const value of options) {
-			select.createEl("option", { value, text: labelOf(value) });
+			select.createEl("option", { value, text: labelOf(value), attr: { title: fullLabelOf(value) } });
 		}
 		select.value = selected;
+		const showFull = () => {
+			select.title = select.value === KEEP ? (currentText ?? t("editor.keepCurrent")) : fullLabelOf(select.value);
+		};
+		showFull();
+		select.addEventListener("change", showFull);
 		return select;
 	}
 

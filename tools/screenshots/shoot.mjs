@@ -230,9 +230,9 @@ async function readmeScenes(page, box, look) {
 		await app.commands.executeCommandById('agent-sessions:open-activity');
 	})()`);
 	await page.waitFor(`document.querySelector('.agent-sessions-activity-nav')`, { what: "the calendar" });
-	await page.click(`.agent-sessions-activity [aria-label=${JSON.stringify(msg(look.lang, "activity.prevWeek"))}]`);
+	await page.click(`.agent-sessions-activity [aria-label=${JSON.stringify(msg(look.lang, "activity.prev"))}]`);
 	await sleep(1500);
-	await page.waitFor(`document.querySelector('.agent-sessions-activity-block')`, { what: "last week's blocks" });
+	await page.waitFor(`document.querySelector('.agent-sessions-activity-block')`, { what: "the previous period's blocks" });
 	await capture(page, "calendar");
 	await page.evaluate(`app.workspace.getLeavesOfType('agent-sessions-activity').forEach((l) => l.detach())`);
 

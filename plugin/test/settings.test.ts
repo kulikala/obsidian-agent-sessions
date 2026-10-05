@@ -36,6 +36,7 @@ describe("DEFAULT_SETTINGS", () => {
 			managerAnalysisCollapsed: false,
 			managerAnalysisFolded: { claude: false, codex: false, opencode: false },
 			managerStatusFilter: "all",
+			activityMode: "session",
 			agentSkillsStamp: "",
 			onboardingShownVersion: "",
 			onboardingOnUpdate: true,
@@ -75,6 +76,11 @@ describe("mergeSettings", () => {
 
 	it("keeps a managerStatusFilter value that's a registered filter", () => {
 		expect(mergeSettings({ managerStatusFilter: "running" }).managerStatusFilter).toBe("running");
+	});
+
+	it("keeps a known activityMode and drops an unknown one", () => {
+		expect(mergeSettings({ activityMode: "day" }).activityMode).toBe("day");
+		expect(mergeSettings({ activityMode: "month" }).activityMode).toBe("session");
 	});
 
 	it("drops an unrecognized managerStatusFilter value, falling back to the default (all)", () => {

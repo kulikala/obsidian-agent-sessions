@@ -14,7 +14,7 @@ The features in detail: tabs, panels, the Session Manager, naming and Organize, 
 
 - The **side panel** (right sidebar) lists *open tabs*, *running* sessions (attached to the daemon but without a tab), and *recent* sessions; each row has a state icon, a category chip, and the name. A details pane shows model, effort, connection status, context usage, total tokens and cost, and the last prompt and response. A rate-limit view shows 5-hour and 7-day bars with a countdown to reset for each enabled agent.
 - The **Session Manager** is the default view for a new tab. A session tree grouped by category (plus an "Other" group and an archive) sits above a collapsible, resizable usage-analytics panel: 5-hour and 7-day cards, a weekly-pace projection ("on track" or "will run out at --"), and a per-category cost bar, with one section per enabled agent when more than one is enabled. A sortable table shows last activity, model, effort, 5h/7d cost, and folder. Opening it never starts a session. The toolbar has a status filter (all, needs input, needs review, running, done, archived).
-- The row menu (⋯ or right-click) renames a session and moves it to a category, changes the model, compresses (`/compact`), restarts, opens the session analysis, copies the ID, archives, and ends the session.
+- The row menu (⋯ or right-click) renames a session and moves it to a category, changes the model, compresses (`/compact`), restarts, opens the session analysis, copies the ID, ends the session, and archives it (end first, then archive).
 
 ## Naming, categories, and Organize
 
@@ -33,7 +33,15 @@ Press Ctrl+G inside a session to edit the current prompt (or `/memory`, `/keybin
 
 ## Activity calendar
 
-A week at a glance (Monday to Sunday, local time): per day and per agent, a colored block for each stretch a session was working, read from the transcripts' timestamps (a new block starts after a gap of 30 minutes or more). Overlapping sessions sit side by side. A title filter and per-agent cards show hours, session count, and peak concurrency. Hover a block for its time range and name; click it to open the session. Open it from the Session Manager toolbar, the side panel's ⋯ menu, or the command palette.
+A calendar of when each agent was working, with a toggle for the period:
+
+- **Session** (the default): 7 days aligned to the reset of your usage limit: Claude Code's 7-day window if Claude Code is enabled and its reset is known, else Codex's weekly window, else a Sunday-start week. Earlier periods step back by 7 days.
+- **Week**: Sunday to Saturday, local time.
+- **Day**: one day, 0:00 to 24:00, one wide column per agent.
+
+The arrows move by one period and never go past the one that holds now; "Latest" returns to it. The chosen mode is remembered. Click a date in a day header to open that day.
+
+Per day and per agent, a colored block marks each stretch a session was working, read from the transcripts' timestamps (a new block starts after a gap of 30 minutes or more; a block's end is the last message recorded in the stretch, and a stretch of one message shows as one minute). Overlapping sessions sit side by side. A title filter and per-agent cards show hours, session count, and peak concurrency. Hover a block for its time range and name; click it to see that session's details under the grid (with "Open session" to jump to its tab). Open the calendar from the Session Manager toolbar, the side panel's ⋯ menu, or the command palette.
 
 ## Usage and limits
 

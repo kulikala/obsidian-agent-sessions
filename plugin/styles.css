@@ -1399,7 +1399,7 @@
 	align-items: center;
 	gap: var(--size-4-2);
 	flex: 0 0 auto;
-	margin-bottom: var(--size-4-1);
+	margin-bottom: var(--size-4-3);
 	font-size: var(--font-ui-small);
 	color: var(--text-muted);
 }
@@ -2912,7 +2912,24 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	display: flex;
 	align-items: center;
 	gap: var(--size-4-1);
-	flex: 0 0 auto;
+	flex: 0 1 auto;
+	min-width: 0;
+}
+
+/* The dropdowns size to their content, up to a cap; long entries are cut in the closed state
+   (the option's title carries the full text). */
+.agent-sessions-editor-select select {
+	width: auto;
+	min-width: 0;
+	text-overflow: ellipsis;
+}
+
+.agent-sessions-editor-select.is-model select {
+	max-width: 9em;
+}
+
+.agent-sessions-editor-select.is-effort select {
+	max-width: 6em;
 }
 
 .agent-sessions-model-other {
@@ -3042,7 +3059,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 
 .agent-sessions-activity-row {
 	display: grid;
-	grid-template-columns: 3.4em repeat(7, minmax(0, 1fr));
+	grid-template-columns: 3.4em repeat(var(--as-cal-days, 7), minmax(0, 1fr));
 }
 
 .agent-sessions-activity-header {
@@ -3189,4 +3206,86 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
+}
+
+/* Period mode toggle: three joined buttons, the active one filled. */
+.agent-sessions-activity-modes {
+	display: inline-flex;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	overflow: hidden;
+}
+
+.agent-sessions-activity-mode {
+	border: 0;
+	border-radius: 0;
+	box-shadow: none;
+	background: transparent;
+	color: var(--text-muted);
+}
+
+.agent-sessions-activity-mode + .agent-sessions-activity-mode {
+	border-left: 1px solid var(--background-modifier-border);
+}
+
+.agent-sessions-activity-mode.is-active {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.agent-sessions-activity-nav .agent-sessions-nav-btn.is-disabled {
+	opacity: 0.35;
+	pointer-events: none;
+}
+
+.agent-sessions-activity-day-title.is-link {
+	cursor: pointer;
+}
+
+.agent-sessions-activity-day-title.is-link:hover {
+	color: var(--text-accent);
+	text-decoration: underline;
+}
+
+/* A single day is wide: no minimum width forcing a sideways scroll. */
+.agent-sessions-activity-grid.is-single-day {
+	min-width: 0;
+}
+
+/* The part of a day outside a "session" period. */
+.agent-sessions-activity-day {
+	position: relative;
+}
+
+.agent-sessions-activity-outside {
+	position: absolute;
+	left: 0;
+	right: 0;
+	z-index: 1;
+	background-color: var(--background-primary);
+	opacity: 0.7;
+	pointer-events: none;
+}
+
+.agent-sessions-activity-block.is-selected {
+	box-shadow: 0 0 0 2px var(--text-normal);
+	z-index: 1;
+}
+
+/* The detail pane under the grid. */
+.agent-sessions-activity-detail {
+	flex: 0 0 auto;
+	max-height: 40%;
+	margin-top: var(--size-4-3);
+	padding: var(--size-4-2) var(--size-4-3);
+	overflow: auto;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+}
+
+.agent-sessions-activity-detail-bar {
+	display: flex;
+	justify-content: flex-end;
+	gap: var(--size-4-2);
+	margin-bottom: var(--size-4-2);
 }
