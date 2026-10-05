@@ -27,6 +27,7 @@ import {
 	periodContaining,
 	periodDays,
 	pickResetAnchor,
+	rematchSpan,
 	SECONDS_PER_DAY,
 	shiftPeriod,
 	splitDuration,
@@ -49,6 +50,10 @@ export const VIEW_TYPE_ACTIVITY = "agent-sessions-activity";
 const HOUR_PX = 40;
 /** Every block is drawn at least this tall (and at least 10 minutes, see `minBlockSeconds`). */
 const MIN_BLOCK_PX = 6;
+/** How often the visible calendar reloads while its period contains now. */
+const AUTO_REFRESH_MS = 60_000;
+/** A session going idle reloads the calendar after this (so several idles become one reload). */
+const IDLE_REFRESH_DELAY_MS = 3000;
 /** The details panel's width limits, as a % of the view. */
 const MIN_DETAIL_PERCENT = 20;
 const MAX_DETAIL_PERCENT = 70;
@@ -75,6 +80,11 @@ export class ActivityView extends ItemView {
 	private fetchToken = 0;
 	private selected: SelectedBlock | null = null;
 	private lastLang = getLang();
+	/** Turns whose response is unfolded in the open details panel (by turn start), kept across reloads. */
+	private openReplies = new Set<number>();
+	private refreshTimer: number | null = null;
+	/** A reload was due while the view was hidden. */
+	private stale = false;
 	/** Whether the user has picked a period (so the reset arriving late doesn't override it). */
 	private navigated = false;
 	private rangeEl!: HTMLElement;
@@ -111,6 +121,30 @@ export class ActivityView extends ItemView {
 		this.contentEl.addClass("agent-sessions-activity");
 		this.buildSkeleton();
 		this.registerEvent(this.plugin.events.on("settings-changed", () => this.onSettingsChanged()));
+		// Keep what is shown current: reload (without losing the selection or scroll) when the view
+		// comes back, when a session goes idle, and once a minute while the period holds now.
+		// Nothing reloads while the view is hidden.
+		this.registerEvent(
+			this.app.workspace.on("active-leaf-change", (leaf) => {
+				if (leaf === this.leaf) {
+					this.stale = false;
+					this.reload();
+				}
+			})
+		);
+		this.register(this.plugin.index.registry.onIdle(() => this.scheduleReload(IDLE_REFRESH_DELAY_MS)));
+		const timer = window.setInterval(() => {
+			if (canGoNext(this.period, new Date())) {
+				return; // a past period doesn't change
+			}
+			this.scheduleReload(0);
+		}, AUTO_REFRESH_MS);
+		this.register(() => {
+			window.clearInterval(timer);
+			if (this.refreshTimer !== null) {
+				window.clearTimeout(this.refreshTimer);
+			}
+		});
 		await this.loadAnchor();
 		// Realign to the reset once known, unless the user already moved somewhere.
 		if (!this.navigated) {
@@ -118,6 +152,34 @@ export class ActivityView extends ItemView {
 			this.updateNav();
 			void this.fetchPeriod(true);
 		}
+	}
+
+	private isVisible(): boolean {
+		return this.containerEl.isShown();
+	}
+
+	/** Reloads after `delay` ms if the view is visible; a hidden view only remembers it is stale. */
+	private scheduleReload(delay: number): void {
+		if (!this.isVisible()) {
+			this.stale = true;
+			return;
+		}
+		if (this.refreshTimer !== null) {
+			window.clearTimeout(this.refreshTimer);
+		}
+		this.refreshTimer = window.setTimeout(() => {
+			this.refreshTimer = null;
+			if (this.isVisible()) {
+				this.reload();
+			} else {
+				this.stale = true;
+			}
+		}, delay);
+	}
+
+	/** Fetches the current period again in place: the scroll position and the open details stay. */
+	private reload(): void {
+		void this.fetchPeriod(false, true);
 	}
 
 	/** The reset to align "session" periods to, from `json stats` (Claude's 7-day window, else Codex's). */
@@ -260,13 +322,15 @@ export class ActivityView extends ItemView {
 		this.go(periodContaining(mode, at.getTime() > now.getTime() ? now : at, this.resetAnchor));
 	}
 
-	private async fetchPeriod(clear: boolean): Promise<void> {
+	private async fetchPeriod(clear: boolean, keepView = false): Promise<void> {
 		const token = ++this.fetchToken;
 		this.error = null;
 		if (clear) {
 			this.result = null;
 		}
-		this.renderBody();
+		if (!keepView) {
+			this.renderBody();
+		}
 		const { from, to } = this.period;
 		try {
 			const result = await activity(this.plugin.agentSessionsPath(), this.plugin.vaultPath(), from, to);
@@ -278,11 +342,43 @@ export class ActivityView extends ItemView {
 			if (token !== this.fetchToken) {
 				return;
 			}
+			if (keepView) {
+				return; // a failed background reload leaves what is shown as it is
+			}
 			this.result = null;
 			this.error = err instanceof Error ? err.message : String(err);
 			new Notice(t("activity.loadFailed", { message: this.error }));
 		}
-		this.renderBody(true);
+		this.renderBody(!keepView);
+		if (keepView) {
+			this.refreshBlockDetail();
+		}
+	}
+
+	/** After a reload: point the open block at its reloaded self and redraw just its panel. */
+	private refreshBlockDetail(): void {
+		if (!this.selected || !this.result) {
+			return;
+		}
+		const span = rematchSpan(this.selected, this.result.sessions);
+		if (!span) {
+			return;
+		}
+		this.selected = { sessionId: this.selected.sessionId, span };
+		if (!this.blockDetailEl?.isConnected) {
+			return;
+		}
+		const keep = this.blockDetailEl.scrollTop;
+		this.blockDetailEl.empty();
+		this.renderBlockDetail(
+			this.blockDetailEl,
+			this.result.sessions.find((x) => x.id === this.selected?.sessionId),
+			span
+		);
+		this.blockDetailEl.scrollTop = keep;
+		this.bodyEl.querySelectorAll<HTMLElement>(".agent-sessions-activity-block").forEach((el) => {
+			el.toggleClass("is-selected", el.dataset.sessionId === this.selected?.sessionId && el.dataset.spanStart === String(span.start));
+		});
 	}
 
 	/** The agents that get a lane: every enabled one, plus any other that has activity in the data. */
@@ -552,6 +648,9 @@ export class ActivityView extends ItemView {
 		block.dataset.sessionId = session.id;
 		block.dataset.spanStart = String(piece.span.start);
 		this.registerDomEvent(block, "click", () => {
+			if (!this.isSelected(session, piece.span)) {
+				this.openReplies.clear();
+			}
 			this.selected = { sessionId: session.id, span: piece.span };
 			this.bodyEl.querySelectorAll<HTMLElement>(".agent-sessions-activity-block").forEach((el) => {
 				el.toggleClass("is-selected", el.dataset.sessionId === session.id && el.dataset.spanStart === String(piece.span.start));
@@ -596,6 +695,7 @@ export class ActivityView extends ItemView {
 		});
 		this.registerDomEvent(close, "click", () => {
 			this.selected = null;
+			this.openReplies.clear();
 			this.bodyEl.querySelectorAll(".agent-sessions-activity-block.is-selected").forEach((el) => el.removeClass("is-selected"));
 			void this.showDetail();
 		});
@@ -667,6 +767,14 @@ export class ActivityView extends ItemView {
 		// The turn's final response, folded away (every row opens collapsed).
 		if (turn.reply) {
 			const more = item.createEl("details", { cls: "agent-sessions-activity-turn-reply" });
+			more.open = this.openReplies.has(turn.start);
+			more.addEventListener("toggle", () => {
+				if (more.open) {
+					this.openReplies.add(turn.start);
+				} else {
+					this.openReplies.delete(turn.start);
+				}
+			});
 			more.createEl("summary", { text: t("activity.response") });
 			more.createDiv({ cls: "agent-sessions-activity-reply-text", text: turn.reply });
 		}

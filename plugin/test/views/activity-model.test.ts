@@ -6,6 +6,7 @@ import {
 	periodContaining,
 	periodDays,
 	pickResetAnchor,
+	rematchSpan,
 	shiftPeriod,
 	clockLabel,
 	dayColumns,
@@ -366,5 +367,32 @@ describe("splitDuration", () => {
 		expect(splitDuration(20)).toEqual({ h: 0, m: 0 });
 		expect(splitDuration(90)).toEqual({ h: 0, m: 2 });
 		expect(splitDuration(3600 + 5 * 60)).toEqual({ h: 1, m: 5 });
+	});
+});
+
+describe("rematchSpan", () => {
+	const mk = (id: string, spans: [number, number][]) => ({ id, spans: spans.map(([start, end]) => ({ start, end })) });
+
+	it("follows a running block as it grows", () => {
+		const prev = { sessionId: "a", span: { start: 100, end: 400 } };
+		expect(rematchSpan(prev, [mk("a", [[100, 900]])])).toEqual({ start: 100, end: 900 });
+	});
+
+	it("picks the span overlapping the most, then the one starting closest", () => {
+		const prev = { sessionId: "a", span: { start: 100, end: 500 } };
+		// the block got split by a shorter join gap: the larger part wins
+		expect(rematchSpan(prev, [mk("a", [[100, 200], [300, 500]])])).toEqual({ start: 300, end: 500 });
+		// equal overlaps: the closer start wins
+		expect(rematchSpan({ sessionId: "a", span: { start: 100, end: 300 } }, [mk("a", [[0, 200], [200, 300]])])).toEqual({
+			start: 0,
+			end: 200,
+		});
+	});
+
+	it("ignores other sessions and returns null when nothing overlaps or the session is gone", () => {
+		const prev = { sessionId: "a", span: { start: 100, end: 200 } };
+		expect(rematchSpan(prev, [mk("b", [[100, 200]])])).toBeNull();
+		expect(rematchSpan(prev, [mk("a", [[300, 400]])])).toBeNull();
+		expect(rematchSpan(prev, [])).toBeNull();
 	});
 });

@@ -384,3 +384,36 @@ export function splitDuration(seconds: number): { h: number; m: number } {
 	const total = Math.round(Math.max(0, seconds) / 60);
 	return { h: Math.floor(total / 60), m: total % 60 };
 }
+
+/**
+ * After a reload: the block of `sessions` that `prev` (a block shown before the reload) became.
+ * The session's span overlapping `prev` the most wins (a running block grows, a split one keeps
+ * its larger part); ties go to the one starting closest. `null` when the session or any
+ * overlapping span is gone.
+ */
+export function rematchSpan<T extends Interval>(
+	prev: { sessionId: string; span: Interval },
+	sessions: readonly { id: string; spans: readonly T[] }[]
+): T | null {
+	const session = sessions.find((s) => s.id === prev.sessionId);
+	if (!session) {
+		return null;
+	}
+	let best: T | null = null;
+	let bestOverlap = 0;
+	for (const span of session.spans) {
+		const overlap = Math.min(span.end, prev.span.end) - Math.max(span.start, prev.span.start);
+		if (overlap <= 0) {
+			continue;
+		}
+		if (
+			best === null ||
+			overlap > bestOverlap ||
+			(overlap === bestOverlap && Math.abs(span.start - prev.span.start) < Math.abs(best.start - prev.span.start))
+		) {
+			best = span;
+			bestOverlap = overlap;
+		}
+	}
+	return best;
+}
