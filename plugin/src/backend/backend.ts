@@ -70,16 +70,18 @@ export function setAgentEnv(vars: Record<string, string>): void {
 	extraJsonEnv = vars;
 }
 
-/** The variables OpenCode locates its database and plugin folder by; the Python side reads them
- * from its own env (`agentsessions/agents/opencode/db.py`, `setup.py`), so they must match what
- * OpenCode itself runs with. */
-const OPENCODE_XDG_VARS = ["XDG_DATA_HOME", "XDG_CONFIG_HOME"] as const;
+/** The variables OpenCode locates its database and plugin folder by (its folders, and `OPENCODE_DB` /
+ * `OPENCODE_DISABLE_CHANNEL_DB` for the database file); the Python side reads them from its own env
+ * (`agentsessions/agents/opencode/db.py`, `setup.py`), so they must match what OpenCode itself runs
+ * with. */
+const OPENCODE_LOCATION_VARS = ["XDG_DATA_HOME", "XDG_CONFIG_HOME", "OPENCODE_DB", "OPENCODE_DISABLE_CHANNEL_DB"] as const;
 
 /** The env `setAgentEnv` expects, computed from the current agent settings: `AGENT_SESSIONS_AGENTS`
  * (every enabled agent, comma-separated) plus Codex's `CODEX_HOME` if its "environment
  * variables" setting has one (Python reads `CODEX_HOME` straight from its own env on every
  * call — see `agentsessions/agents/codex/rollout.py`'s `codex_home()`), and OpenCode's
- * `XDG_DATA_HOME` / `XDG_CONFIG_HOME`: from its own "environment variables" setting, else from
+ * `XDG_DATA_HOME` / `XDG_CONFIG_HOME` / `OPENCODE_DB` / `OPENCODE_DISABLE_CHANNEL_DB`: from its own
+ * "environment variables" setting, else from
  * `login` (the login shell's env, which is what a session launches with; Obsidian's own env
  * usually lacks what a shell rc exports). Pure — no I/O. */
 export function agentEnvFor(
@@ -93,7 +95,7 @@ export function agentEnvFor(
 		vars.CODEX_HOME = codexHome;
 	}
 	const opencodeEnv = parseEnvLines(settings.agents.opencode.env);
-	for (const name of OPENCODE_XDG_VARS) {
+	for (const name of OPENCODE_LOCATION_VARS) {
 		const value = opencodeEnv[name] || login[name];
 		if (value) {
 			vars[name] = value;

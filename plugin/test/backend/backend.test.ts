@@ -101,6 +101,18 @@ describe("agentEnvFor", () => {
 		expect(env).not.toHaveProperty("OTHER");
 	});
 
+	it("forwards OpenCode's database choice (OPENCODE_DB, OPENCODE_DISABLE_CHANNEL_DB)", () => {
+		const settings = {
+			agents: {
+				...DEFAULT_SETTINGS.agents,
+				opencode: { enabled: true, path: "", env: "OPENCODE_DB=mine.db" },
+			},
+		};
+		const env = agentEnvFor(settings, { OPENCODE_DISABLE_CHANNEL_DB: "1" });
+		expect(env.OPENCODE_DB).toBe("mine.db");
+		expect(env.OPENCODE_DISABLE_CHANNEL_DB).toBe("1");
+	});
+
 	it("falls back to the login shell's XDG variables, and forwards nothing when neither has them", () => {
 		const settings = { agents: DEFAULT_SETTINGS.agents };
 		expect(agentEnvFor(settings, { XDG_DATA_HOME: "/login-d", PATH: "/bin" })).toEqual({

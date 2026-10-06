@@ -1,5 +1,6 @@
 """Read-only access to OpenCode's own SQLite database
-(`$XDG_DATA_HOME/opencode/opencode.db`, default `~/.local/share/opencode/`).
+(`$XDG_DATA_HOME/opencode/opencode.db`, default `~/.local/share/opencode/`; see `db_path` for
+`OPENCODE_DB` and the per-channel `opencode-<channel>.db`).
 
 OpenCode keeps no per-session transcript file: sessions, messages and message
 parts are rows in one database (`session`, `message`, `part`; `data` columns are
@@ -20,7 +21,7 @@ import os
 import shutil
 import sqlite3
 import tempfile
-from typing import Any, Iterable, List, Optional, Tuple
+from typing import Any, Iterable, List, Mapping, Optional, Tuple
 
 from ... import paths
 
@@ -34,8 +35,41 @@ def data_dir() -> str:
     return os.path.join(base, 'opencode')
 
 
-def db_path() -> str:
-    return os.path.join(data_dir(), DB_FILENAME)
+def _written_at(path: str) -> float:
+    """When `path` (or its `-wal`, which takes the writes while OpenCode runs) last changed; -1 if absent."""
+    times = []
+    for p in (path, path + '-wal'):
+        try:
+            times.append(os.stat(p).st_mtime)
+        except OSError:
+            pass
+    return max(times) if times else -1.0
+
+
+def db_path(environ: Optional[Mapping[str, str]] = None, data: Optional[str] = None) -> Optional[str]:
+    """The database OpenCode uses, by its own rule (`packages/core/src/database/database.ts`):
+    `OPENCODE_DB` when set (relative to the data folder unless absolute; `:memory:` means none on
+    disk, so `None`); else `opencode.db` for the release channels, or with
+    `OPENCODE_DISABLE_CHANNEL_DB` set to `1`/`true`; else `opencode-<channel>.db`. The channel is
+    built into the binary, so of `opencode.db` and every `opencode-*.db` the one written last is
+    taken (`opencode.db` when none exists yet)."""
+    environ = os.environ if environ is None else environ
+    data = data or data_dir()
+    named = environ.get('OPENCODE_DB')
+    if named:
+        if named == ':memory:':
+            return None
+        return named if os.path.isabs(named) else os.path.join(data, named)
+    default = os.path.join(data, DB_FILENAME)
+    if environ.get('OPENCODE_DISABLE_CHANNEL_DB') in ('1', 'true'):
+        return default
+    try:
+        names = os.listdir(data)
+    except OSError:
+        return default
+    candidates = [os.path.join(data, n) for n in names
+                  if n == DB_FILENAME or (n.startswith('opencode-') and n.endswith('.db'))]
+    return max(candidates, key=_written_at) if candidates else default
 
 
 def pseudo_path(session_id: str) -> str:
@@ -128,6 +162,8 @@ class Db:
 def open_db(path: Optional[str] = None) -> Optional[Db]:
     """A read-only `Db`, or `None` if OpenCode has no readable database."""
     path = path or db_path()
+    if not path:
+        return None
     if not os.path.isfile(path):
         return None
     conn = _probe(paths.sqlite_uri(path, 'mode=ro'), uri=True, timeout=1.0)
