@@ -14,6 +14,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from unittest import mock
 
 from agentsessions import config
+from agentsessions.agents import launch
 from agentsessions.cli import json_output
 from agentsessions.cli import new as cmd_new
 from agentsessions.daemon import server as daemon
@@ -84,6 +85,8 @@ class NewTestCase(unittest.TestCase):
             mock.patch.object(config, 'RUNTIME_DIR', self.runtime),
             mock.patch.object(cmd_new, 'POLL_SECONDS', 0.05),
             mock.patch.object(cmd_new, 'SETTLE_SECONDS', 0.1),
+            # The fake agent records its arguments; a `--help` probe would be recorded as a launch.
+            mock.patch.object(launch, 'codex_no_daemon', return_value=False),
         ]
         for p in patches:
             p.start()
