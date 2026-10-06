@@ -184,6 +184,15 @@
 	color: var(--color-orange, darkorange);
 }
 
+/* A used-up window: the line saying when it ran out, and a red bar. */
+.agent-sessions-manager-stats-pace.is-exhausted {
+	color: var(--color-red);
+}
+
+.agent-sessions-manager-stats-bar.is-exhausted .agent-sessions-manager-stats-bar-fill {
+	background-color: var(--color-red);
+}
+
 .agent-sessions-manager-stats-pace.is-muted {
 	color: var(--text-faint);
 	font-weight: var(--font-normal);
@@ -1326,6 +1335,10 @@
 .agent-sessions-limits-bar-fill {
 	height: 100%;
 	background-color: var(--text-accent);
+}
+
+.agent-sessions-limits-bar.is-exhausted .agent-sessions-limits-bar-fill {
+	background-color: var(--color-red);
 }
 
 .agent-sessions-limits-pct {

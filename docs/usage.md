@@ -216,6 +216,7 @@ Shows when each agent was working. Open it from the Session manager toolbar, the
 ## Usage and limits
 
 - Each agent's account-wide 5-hour and 7-day windows, with the countdown to reset and a weekly-pace forecast, in the side panel and the Session manager.
+- A window whose limit has been reached reads 100% in red, and says when it ran out and how long before its reset ("Used up 3:26 PM (2h 12m before reset)").
 - **Session analytics** (session menu): cost, tokens, turns and duration; input, output and tool-use bars; and a turn-by-turn table. Select rows to choose a range, and copy it as Markdown.
 - Both come from each agent's own local files.
 

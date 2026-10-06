@@ -10,6 +10,17 @@ Windows are read from whichever file under `~/.agents/sessions/status/*.json`
 comes from `resets_at` (or now, if missing), `start` is `end - 5h/7d`, and
 `used_percentage` is `None` if missing.
 
+A window is *exhausted* (`exhausted: true`, `used_percentage` reported as 100)
+when Claude Code rejected a request for that window's limit inside it, or when
+`used_percentage` itself reads 100 or more. Claude Code's `rate_limits` is a
+snapshot of the last *accepted* response (`round(utilization * 1000) / 10`), so
+once the limit is hit it keeps the last value below it (typically 99) instead of
+reaching 100; the rejection is visible only in the transcript, as a synthetic
+assistant line (`isApiErrorMessage: true`, `error: "rate_limit"`) reading
+"You've hit your session limit · resets ..." (the 5-hour window) or "... your
+weekly limit ..." (the 7-day window). The earliest such line inside the window
+is `exhausted_at`; it is `None` when only the percentage says so.
+
 For each file, the read position (`offset`), 10-minute buckets, and the most recent
 `message.id`s (up to 200, for de-duplication) are carried over in
 `~/.agents/sessions/stats-cache.json`. Transcripts are append-only, so if a file has
@@ -34,6 +45,7 @@ from ..sessions.scan import UUID_RE
 
 BUCKET_SECONDS = 600          # 10 minutes
 RECENT_IDS_LIMIT = 200
+LIMIT_HITS_LIMIT = 50
 FIVE_HOUR_SECONDS = 5 * 3600
 SEVEN_DAY_SECONDS = 7 * 24 * 3600
 
@@ -48,7 +60,7 @@ SEVEN_DAY_SECONDS = 7 * 24 * 3600
 # mechanism as sessions.scan.SCAN_SCHEMA_VERSION / agents.codex.scan.SCAN_SCHEMA_VERSION,
 # versioned independently since this cache's shape (incremental, offset-based)
 # is unrelated to theirs (whole-head, mtime/size-based).
-STATS_SCHEMA_VERSION = 1
+STATS_SCHEMA_VERSION = 2
 
 TOTAL_KEYS = ('calls', 'input', 'output', 'cache_read', 'cache_create')
 
@@ -153,6 +165,55 @@ def windows_from_status(status_dir: str, now: float) -> Dict[str, dict]:
         else:
             result[key] = {'end': now, 'used_percentage': None}
     return result
+
+
+# ---- Exhausted windows -------------------------------------------------------
+
+# The wording of Claude Code's rejected-request line, per window. Matched only on
+# a line already marked as a rate-limit API error, so the same words in
+# conversation text never count. "Server is temporarily limiting requests (not
+# your usage limit)" and a bare "monthly spend limit" carry neither phrase.
+_LIMIT_PHRASES = (('session limit', 'five_hour'), ('weekly limit', 'seven_day'))
+
+
+def limit_hit_keys(rec: dict) -> List[str]:
+    """The window keys (`five_hour`/`seven_day`) a transcript line reports as
+    used up, or `[]` for any other line."""
+    if rec.get('type') != 'assistant' or rec.get('isApiErrorMessage') is not True:
+        return []
+    if rec.get('error') != 'rate_limit':
+        return []
+    message = rec.get('message')
+    content = message.get('content') if isinstance(message, dict) else None
+    text = ''.join(b.get('text') or '' for b in content
+                   if isinstance(b, dict) and b.get('type') == 'text') if isinstance(content, list) else ''
+    if 'not your usage limit' in text:
+        return []
+    return [key for phrase, key in _LIMIT_PHRASES if phrase in text]
+
+
+def exhaustion(used_percentage: Optional[float], hit_times: List[float],
+               start: float, end: float) -> Tuple[bool, Optional[float]]:
+    """`(exhausted, exhausted_at)` for one window. Exhausted when a limit hit
+    falls inside `[start, end)` or `used_percentage` is 100 or more;
+    `exhausted_at` is the earliest hit inside the window, or `None` when only
+    the percentage says so."""
+    inside = [t for t in hit_times if start <= t < end]
+    if inside:
+        return True, min(inside)
+    if used_percentage is not None and used_percentage >= 100:
+        return True, None
+    return False, None
+
+
+def with_exhaustion(window: dict, hit_times: List[float]) -> dict:
+    """`window` (`start`, `end`, `used_percentage`) plus `exhausted` and
+    `exhausted_at`; `used_percentage` reads at least 100 once exhausted."""
+    used = window['used_percentage']
+    exhausted, at = exhaustion(used, hit_times, window['start'], window['end'])
+    if exhausted and (used is None or used < 100):
+        used = 100.0
+    return dict(window, used_percentage=used, exhausted=exhausted, exhausted_at=at)
 
 
 # ---- Enumerating transcripts (rolling up sub-agents) -----------------------
@@ -273,13 +334,20 @@ def _load_entry(raw_entry) -> Optional[dict]:
     except (TypeError, ValueError):
         return None
     recent_ids = [i for i in recent_raw if isinstance(i, str)]
+    hits_raw = raw_entry.get('limit_hits')
+    if not isinstance(hits_raw, list):
+        return None
+    limit_hits = [[float(h[0]), h[1]] for h in hits_raw
+                  if isinstance(h, list) and len(h) == 2 and isinstance(h[0], (int, float))
+                  and not isinstance(h[0], bool) and isinstance(h[1], str)]
     return {'mtime': float(mtime), 'size': size, 'offset': offset,
-            'recent_ids': recent_ids, 'buckets': buckets}
+            'recent_ids': recent_ids, 'buckets': buckets, 'limit_hits': limit_hits}
 
 
 def _update_file_buckets(path: str, raw_entry) -> dict:
     """Read `path` and, based on `raw_entry` (the previous cache entry; ignored if
-    corrupted), return updated buckets, offset, and recent `message.id`s. The file
+    corrupted), return updated buckets, offset, recent `message.id`s, and limit
+    hits (`[[timestamp, window key], ...]`, see `limit_hit_keys`). The file
     is assumed to be append-only: if the size has shrunk, it's re-read from scratch;
     if it has grown, only the part after `offset` is read.
     """
@@ -287,7 +355,7 @@ def _update_file_buckets(path: str, raw_entry) -> dict:
         st = os.stat(path)
     except OSError:
         return {'mtime': 0.0, 'size': 0, 'offset': 0, 'recent_ids': [], 'buckets': {},
-                'schema_version': STATS_SCHEMA_VERSION}
+                'limit_hits': [], 'schema_version': STATS_SCHEMA_VERSION}
     mtime, size = st.st_mtime, st.st_size
 
     loaded = _load_entry(raw_entry)
@@ -295,15 +363,17 @@ def _update_file_buckets(path: str, raw_entry) -> dict:
         offset = 0
         buckets: Dict[int, dict] = {}
         recent_ids: List[str] = []
+        limit_hits: List[list] = []
     elif loaded['size'] == size and loaded['mtime'] == mtime:
         # unchanged: skip opening the file
         return {'mtime': mtime, 'size': size, 'offset': loaded['offset'],
                 'recent_ids': loaded['recent_ids'], 'buckets': loaded['buckets'],
-                'schema_version': STATS_SCHEMA_VERSION}
+                'limit_hits': loaded['limit_hits'], 'schema_version': STATS_SCHEMA_VERSION}
     else:
         offset = loaded['offset']
         buckets = loaded['buckets']
         recent_ids = loaded['recent_ids']
+        limit_hits = loaded['limit_hits']
 
     seen = set(recent_ids)
     new_offset = offset
@@ -326,6 +396,9 @@ def _update_file_buckets(path: str, raw_entry) -> dict:
                 message = rec.get('message')
                 message = message if isinstance(message, dict) else {}
                 if message.get('model') == '<synthetic>':
+                    hit_ts = _parse_ts(rec.get('timestamp'))
+                    if hit_ts is not None:
+                        limit_hits.extend([hit_ts, key] for key in limit_hit_keys(rec))
                     continue
                 usage = message.get('usage')
                 if not isinstance(usage, dict):
@@ -351,9 +424,11 @@ def _update_file_buckets(path: str, raw_entry) -> dict:
 
     if len(recent_ids) > RECENT_IDS_LIMIT:
         recent_ids = recent_ids[len(recent_ids) - RECENT_IDS_LIMIT:]
+    if len(limit_hits) > LIMIT_HITS_LIMIT:
+        limit_hits = limit_hits[len(limit_hits) - LIMIT_HITS_LIMIT:]
 
     return {'mtime': mtime, 'size': size, 'offset': new_offset,
-            'recent_ids': recent_ids, 'buckets': buckets,
+            'recent_ids': recent_ids, 'buckets': buckets, 'limit_hits': limit_hits,
             'schema_version': STATS_SCHEMA_VERSION}
 
 
@@ -393,11 +468,15 @@ def compute(now: float, projects_dir: str, status_dir: str, cache_path: str) -> 
 
     used_paths = set()
     per_file: List[Tuple[str, str, Dict[int, dict]]] = []
+    hit_times: Dict[str, List[float]] = {'five_hour': [], 'seven_day': []}
     for path, sid, _mtime in transcripts:
         used_paths.add(path)
         entry = _update_file_buckets(path, cache.get(path))
         cache[path] = entry
         per_file.append((path, sid, entry['buckets']))
+        for ts, key in entry['limit_hits']:
+            if key in hit_times:
+                hit_times[key].append(ts)
 
     for p in list(cache):
         if p not in used_paths:
@@ -408,7 +487,7 @@ def compute(now: float, projects_dir: str, status_dir: str, cache_path: str) -> 
     for key, minutes, start, end in (('five_hour', FIVE_HOUR_SECONDS / 60, five_start, five_end),
                                       ('seven_day', SEVEN_DAY_SECONDS / 60, seven_start, seven_end)):
         total, sessions = _window_totals(per_file, start, end)
-        windows[key] = {
+        windows[key] = with_exhaustion({
             'key': key,
             # agents.<name>.windows: every window, any agent, carries its
             # own length in minutes, so a pace-calculation formula that only cares
@@ -422,5 +501,5 @@ def compute(now: float, projects_dir: str, status_dir: str, cache_path: str) -> 
             'used_percentage': win[key]['used_percentage'],
             'total': total,
             'sessions': sessions,
-        }
+        }, hit_times[key])
     return {'windows': windows}

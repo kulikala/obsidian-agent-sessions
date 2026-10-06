@@ -407,5 +407,95 @@ class IncrementalCacheTest(StatsTestBase):
         self.assertEqual(cache2[self.path]['buckets'][str(bucket_key_1)]['calls'], 1)
 
 
+def _limit_error(ts, text) -> dict:
+    """Claude Code's synthetic line for a request rejected by a usage limit."""
+    return {'type': 'assistant', 'timestamp': _iso(ts), 'error': 'rate_limit',
+            'isApiErrorMessage': True, 'apiErrorStatus': 429,
+            'message': {'id': 'synthetic-%s' % ts, 'model': '<synthetic>', 'role': 'assistant',
+                        'usage': {'input_tokens': 0, 'output_tokens': 0},
+                        'content': [{'type': 'text', 'text': text}]}}
+
+
+class LimitHitKeysTest(unittest.TestCase):
+    def test_session_and_weekly_wording(self):
+        self.assertEqual(stats.limit_hit_keys(_limit_error(1.0, "You've hit your session limit · resets 2:50pm (Asia/Tokyo)")),
+                         ['five_hour'])
+        self.assertEqual(stats.limit_hit_keys(_limit_error(1.0, "You've hit your weekly limit · resets Sep 3 at 1am (Asia/Tokyo)")),
+                         ['seven_day'])
+        self.assertEqual(stats.limit_hit_keys(_limit_error(1.0, "You've hit your monthly spend limit · raise it at "
+                                                                 "claude.ai/settings/usage · your weekly limit resets Sep 3 at 1am")),
+                         ['seven_day'])
+
+    def test_other_lines_are_not_hits(self):
+        self.assertEqual(stats.limit_hit_keys(_limit_error(1.0, "You've hit your monthly spend limit · raise it at claude.ai")), [])
+        self.assertEqual(stats.limit_hit_keys(_limit_error(
+            1.0, 'API Error: Server is temporarily limiting requests (not your usage limit) · Rate limited')), [])
+        not_error = _limit_error(1.0, "You've hit your session limit · resets 2pm")
+        del not_error['isApiErrorMessage']
+        self.assertEqual(stats.limit_hit_keys(not_error), [])
+        self.assertEqual(stats.limit_hit_keys(_user(1.0, "You've hit your session limit")), [])
+
+
+class ExhaustionTest(unittest.TestCase):
+    def test_earliest_hit_inside_the_window(self):
+        self.assertEqual(stats.exhaustion(99, [50.0, 30.0, 5.0, 100.0], 10.0, 100.0), (True, 30.0))
+
+    def test_hits_outside_the_window_do_not_count(self):
+        self.assertEqual(stats.exhaustion(99, [5.0, 100.0], 10.0, 100.0), (False, None))
+
+    def test_percentage_alone_is_exhausted_without_a_time(self):
+        self.assertEqual(stats.exhaustion(100, [], 10.0, 100.0), (True, None))
+        self.assertEqual(stats.exhaustion(99.9, [], 10.0, 100.0), (False, None))
+        self.assertEqual(stats.exhaustion(None, [], 10.0, 100.0), (False, None))
+
+    def test_with_exhaustion_reports_100_percent(self):
+        w = stats.with_exhaustion({'start': 10.0, 'end': 100.0, 'used_percentage': 99}, [40.0])
+        self.assertEqual((w['used_percentage'], w['exhausted'], w['exhausted_at']), (100.0, True, 40.0))
+        w = stats.with_exhaustion({'start': 10.0, 'end': 100.0, 'used_percentage': 42}, [])
+        self.assertEqual((w['used_percentage'], w['exhausted'], w['exhausted_at']), (42, False, None))
+
+
+class ExhaustedComputeTest(StatsTestBase):
+    def test_session_limit_line_exhausts_only_the_five_hour_window(self):
+        now = 1_700_020_000.0
+        five_end = now + 3600
+        self._status('s.json', {
+            'five_hour': {'resets_at': five_end, 'used_percentage': 99},
+            'seven_day': {'resets_at': now + 86400, 'used_percentage': 40},
+        })
+        hit = now - 600
+        _write(os.path.join(self.proj, ID1 + '.jsonl'), [
+            _assistant(hit - 60, 'm1', 'claude-sonnet-5', {'input': 10, 'output': 10}),
+            _limit_error(hit, "You've hit your session limit · resets 3pm (Asia/Tokyo)"),
+            _limit_error(hit + 120, "You've hit your session limit · resets 3pm (Asia/Tokyo)"),
+        ])
+        out = self.compute(now=now)
+        five, seven = out['windows']['five_hour'], out['windows']['seven_day']
+        self.assertEqual((five['used_percentage'], five['exhausted'], five['exhausted_at']), (100.0, True, hit))
+        self.assertEqual((seven['used_percentage'], seven['exhausted'], seven['exhausted_at']), (40, False, None))
+        # The rejected lines aren't calls.
+        self.assertEqual(five['total']['calls'], 1)
+
+    def test_hit_before_the_current_window_does_not_count(self):
+        now = 1_700_020_000.0
+        five_end = now + 3600
+        self._status('s.json', {'five_hour': {'resets_at': five_end, 'used_percentage': 3}})
+        _write(os.path.join(self.proj, ID1 + '.jsonl'), [
+            _limit_error(five_end - stats.FIVE_HOUR_SECONDS - 60, "You've hit your session limit · resets 3pm"),
+        ])
+        five = self.compute(now=now)['windows']['five_hour']
+        self.assertEqual((five['used_percentage'], five['exhausted']), (3, False))
+
+    def test_hits_survive_the_incremental_cache(self):
+        now = 1_700_020_000.0
+        self._status('s.json', {'seven_day': {'resets_at': now + 86400, 'used_percentage': 98}})
+        path = os.path.join(self.proj, ID1 + '.jsonl')
+        _write(path, [_limit_error(now - 300, "You've hit your weekly limit · resets Sep 3 at 1am")])
+        self.compute(now=now)
+        _append(path, [_user(now - 100)])
+        seven = self.compute(now=now)['windows']['seven_day']
+        self.assertEqual((seven['exhausted'], seven['exhausted_at']), (True, now - 300))
+
+
 if __name__ == '__main__':
     unittest.main()

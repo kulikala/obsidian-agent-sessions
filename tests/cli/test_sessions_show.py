@@ -4,6 +4,7 @@ import json
 import os
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from datetime import datetime
 from unittest import mock
 
 from agentsessions import config
@@ -267,6 +268,15 @@ class TestStatsCommand(unittest.TestCase):
     def test_a_window_that_has_reset(self):
         text = cmd_stats.render({'agents': {'codex': {'windows': {'five_hour': dict(WINDOW, end=NOW - 5)}}}}, NOW)
         self.assertIn(', reset (', text)
+
+    def test_an_exhausted_window(self):
+        at = NOW - 3600
+        text = cmd_stats.render({'agents': {'claude': {'windows': {
+            'five_hour': dict(WINDOW, used_percentage=100.0, exhausted=True, exhausted_at=at),
+            'seven_day': dict(WINDOW, used_percentage=100.0, exhausted=True, exhausted_at=None)}}}}, NOW)
+        hm = datetime.fromtimestamp(at).astimezone().strftime('%a %H:%M')
+        self.assertIn('5-hour window: 100%% used (used up at %s), resets in' % hm, text)
+        self.assertIn('7-day window: 100% used (used up), resets in', text)
 
     def test_nothing_to_show(self):
         self.assertIn('no usage windows', cmd_stats.render({}, NOW))

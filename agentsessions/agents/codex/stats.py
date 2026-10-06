@@ -41,13 +41,21 @@ window kind independently across different files/times: `primary` and
 `secondary` are only ever reported together, so mixing one slot's *current*
 reading with another slot's reading from an older, possibly stale snapshot
 would show two windows that don't actually describe the same moment.
+
+A window is *exhausted* (same `exhausted`/`exhausted_at` fields and rule as
+`usage.stats.exhaustion`) from two kinds of rollout event inside it: a
+`token_count` whose slot for that window reads `used_percent` 100 or more, and a
+rejected turn (`codex_error_info: "usage_limit_exceeded"`, carried on a
+`task_complete`'s `error` or on an `error` event). The rejection doesn't name its
+window, so it counts for the window that is fullest in the latest snapshot
+(the shorter one on a tie) -- the one that can have run out.
 """
 import os
 from typing import Dict, List, Optional, Tuple
 
 from ...usage import pricing
 from ...usage.stats import (
-    FIVE_HOUR_SECONDS, SEVEN_DAY_SECONDS, _bucket_key, _empty_totals, _roll_forward,
+    FIVE_HOUR_SECONDS, SEVEN_DAY_SECONDS, _bucket_key, _empty_totals, _roll_forward, with_exhaustion,
 )
 from . import rollout
 
@@ -167,15 +175,39 @@ def _window_defs(paths: List[str], now: float) -> List[dict]:
 
 # ---- Token/cost aggregation --------------------------------------------------
 
-def _bucket_rollout(path: str) -> Dict[int, dict]:
+def _slot_key(w) -> Optional[str]:
+    """The window key a `primary`/`secondary` slot reports on (`_window_defs`'s
+    keys), or `None` for a slot without a usable `window_minutes`."""
+    if not isinstance(w, dict):
+        return None
+    wm = w.get('window_minutes')
+    if not isinstance(wm, (int, float)) or isinstance(wm, bool):
+        return None
+    return _classify(wm) or ('window_%dm' % int(round(wm)))
+
+
+def _is_usage_limit_error(payload: dict) -> bool:
+    for holder in (payload, payload.get('error')):
+        if isinstance(holder, dict) and holder.get('codex_error_info') == 'usage_limit_exceeded':
+            return True
+    return False
+
+
+def _bucket_rollout(path: str) -> Tuple[Dict[int, dict], List[Tuple[float, Optional[str]]]]:
     """`{bucket_start: {calls, input, output, cache_read, cache_create, cost,
     unknown_cost}}` for one rollout, from scratch (no incremental cache -- see
     module docstring). Mirrors `agents.codex.usage.collect`'s delta-from-running-total
     logic, but bucketed by each `token_count` event's own timestamp rather than
     grouped into turns -- `json stats` needs to place usage precisely against
     each window's boundaries, which a turn (spanning from one `task_started`
-    to the next) can straddle."""
+    to the next) can straddle.
+
+    Also returns the rollout's limit hits, `[(timestamp, window key)]`: a
+    `token_count` slot reading 100% or more gives its own key, a
+    `usage_limit_exceeded` rejection gives `None` (its window is decided in
+    `compute`)."""
     buckets: Dict[int, dict] = {}
+    hits: List[Tuple[float, Optional[str]]] = []
     current_model: Optional[str] = None
     prev_total = {'input_tokens': 0, 'cached_input_tokens': 0,
                   'cache_write_input_tokens': 0, 'output_tokens': 0}
@@ -193,8 +225,23 @@ def _bucket_rollout(path: str) -> Dict[int, dict]:
         if t != 'event_msg':
             continue
         payload = rec.get('payload') or {}
+        if _is_usage_limit_error(payload):
+            ts = rollout.parse_ts(rec.get('timestamp'))
+            if ts is not None:
+                hits.append((ts, None))
+            continue
         if payload.get('type') != 'token_count':
             continue
+        rl = payload.get('rate_limits')
+        if isinstance(rl, dict):
+            for slot_name in ('primary', 'secondary'):
+                w = rl.get(slot_name)
+                used = w.get('used_percent') if isinstance(w, dict) else None
+                key = _slot_key(w)
+                if key and isinstance(used, (int, float)) and not isinstance(used, bool) and used >= 100:
+                    ts = rollout.parse_ts(rec.get('timestamp'))
+                    if ts is not None:
+                        hits.append((ts, key))
         info = payload.get('info') or {}
         total = info.get('total_token_usage')
         if not isinstance(total, dict):
@@ -223,7 +270,16 @@ def _bucket_rollout(path: str) -> Dict[int, dict]:
             bucket['unknown_cost'] = True
         elif not bucket['unknown_cost']:
             bucket['cost'] += cost
-    return buckets
+    return buckets, hits
+
+
+def _rejection_key(defs: List[dict]) -> Optional[str]:
+    """The window a `usage_limit_exceeded` rejection counts for: the fullest
+    tracked one, the shorter on a tie. `None` when no window is tracked."""
+    tracked = [d for d in defs if d['used_percentage'] is not None]
+    if not tracked:
+        return None
+    return min(tracked, key=lambda d: (-d['used_percentage'], d['minutes']))['key']
 
 
 def _window_totals(per_file: List[Tuple[str, Dict[int, dict]]], start: float, end: float) -> Tuple[dict, Dict[str, dict]]:
@@ -258,18 +314,23 @@ def compute(now: float, home: Optional[str] = None) -> dict:
     min_start = min(d['start'] for d in defs)
 
     per_file: List[Tuple[str, Dict[int, dict]]] = []
+    hits: List[Tuple[float, Optional[str]]] = []
     for p in paths:
         if _mtime(p) < min_start:
             continue   # untouched within any window -- can't contribute a bucket in range
         sid = rollout.session_id_of(p)
         if not sid:
             continue
-        per_file.append((sid, _bucket_rollout(p)))
+        buckets, file_hits = _bucket_rollout(p)
+        per_file.append((sid, buckets))
+        hits.extend(file_hits)
 
+    rejection_key = _rejection_key(defs)
     windows = {}
     for d in defs:
         total, sessions = _window_totals(per_file, d['start'], d['end'])
-        windows[d['key']] = {
+        hit_times = [ts for ts, key in hits if (key if key is not None else rejection_key) == d['key']]
+        windows[d['key']] = with_exhaustion({
             'key': d['key'],
             'minutes': d['minutes'],
             'label_key': d['label_key'],
@@ -278,5 +339,5 @@ def compute(now: float, home: Optional[str] = None) -> dict:
             'used_percentage': d['used_percentage'],
             'total': total,
             'sessions': sessions,
-        }
+        }, hit_times)
     return {'windows': windows}

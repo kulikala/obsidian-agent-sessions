@@ -17,18 +17,53 @@
 // can be the usual 5h/7d pair, a single non-standard window (e.g. a 30-day-only plan — a
 // confirmed real case), more than two, or occasionally none at all (nothing shown for that agent
 // in that case, rather than a permanently dashed-out placeholder row).
+// A used-up window (`json stats`'s `exhausted`) reads 100%: Claude's `rate_limits` snapshot stays
+// just below it (typically 99%) once the limit is hit, so while either Claude reading is at
+// `CLAUDE_NEAR_LIMIT_PCT` or more, Claude joins the `json stats` poll too and `withExhaustion`
+// lifts a used-up window to 100%.
 // Either way: updates the bars, usage percentage, and countdown to reset (shown as "—" when
 // `resetsAt` is absent) once per second, and re-reads/re-fetches immediately on click.
 
 import { t } from "../i18n";
 import type { StatsWindow, StatsWindows } from "../types";
-import { orderedWindows } from "./manager-model";
+import { displayedUsedPct, orderedWindows } from "./manager-model";
 
 export interface RateLimitWindow {
 	/** `null` means "just past reset, with no fresh `rate_limits` yet" (right after
 	 * `rollForwardWindow` has rolled it forward). */
 	usedPercentage: number | null;
 	resetsAt: number | null;
+	/** The window's limit has been reached (`json stats`'s `exhausted`); `usedPercentage` then reads
+	 * at least 100. */
+	exhausted?: boolean;
+	/** When it was reached (epoch seconds), `null` if unknown. */
+	exhaustedAt?: number | null;
+}
+
+/** A Claude reading at or above this makes the side panel also fetch `json stats` for Claude, to
+ * learn whether a window is used up (see `withExhaustion`). Below it, the live file alone is read. */
+export const CLAUDE_NEAR_LIMIT_PCT = 90;
+
+/** Whether either of Claude's live readings is close enough to its limit to check for exhaustion. */
+export function claudeNearLimit(info: LimitsInfo | null): boolean {
+	return [info?.fiveHour, info?.sevenDay].some((w) => w?.usedPercentage != null && w.usedPercentage >= CLAUDE_NEAR_LIMIT_PCT);
+}
+
+/**
+ * `live` (a Claude window from the status file, already rolled forward) marked used up when the
+ * matching `json stats` window says so: same window (its `end` within a minute of `live.resetsAt`)
+ * and `exhausted`. `usedPercentage` then reads at least 100. Anything else returns `live` as-is.
+ */
+export function withExhaustion(live: RateLimitWindow | null, stats: StatsWindow | undefined): RateLimitWindow | null {
+	if (!live || live.resetsAt == null || !stats?.exhausted || Math.abs(stats.end - live.resetsAt) > 60) {
+		return live;
+	}
+	return {
+		...live,
+		usedPercentage: Math.max(100, live.usedPercentage ?? 0),
+		exhausted: true,
+		exhaustedAt: stats.exhausted_at ?? null,
+	};
 }
 
 /** Lengths of the 5-hour and 7-day windows, in seconds. Matches `agentsessions/stats.py`'s
@@ -128,7 +163,12 @@ export function fromStatsWindow(w: StatsWindow | null): RateLimitWindow | null {
 	if (!w) {
 		return null;
 	}
-	return { usedPercentage: w.used_percentage, resetsAt: w.end };
+	return {
+		usedPercentage: displayedUsedPct(w),
+		resetsAt: w.end,
+		exhausted: !!w.exhausted,
+		exhaustedAt: w.exhausted_at ?? null,
+	};
 }
 
 /** `h:mm:ss` (clamped to 0 if negative). 24 hours or more drops the seconds and switches to "Nd h:mm". */

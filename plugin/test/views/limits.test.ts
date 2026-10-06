@@ -1,14 +1,17 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { setLang } from "../../src/i18n";
 import {
+	CLAUDE_NEAR_LIMIT_PCT,
 	FIVE_HOUR_SECONDS,
 	SEVEN_DAY_SECONDS,
+	claudeNearLimit,
 	formatCountdown,
 	fromStatsWindow,
 	isGroupStartRow,
 	pickLatestLimits,
 	realWindows,
 	rollForwardWindow,
+	withExhaustion,
 	type RawLimitsFile,
 } from "../../src/views/limits";
 import type { StatsWindow } from "../../src/types";
@@ -118,12 +121,45 @@ describe("fromStatsWindow (a json stats StatsWindow, e.g. agents.codex.windows, 
 
 	it("maps used_percentage as-is and end to resetsAt", () => {
 		const w = statsWindow({ end: 12345, used_percentage: 42 });
-		expect(fromStatsWindow(w)).toEqual({ usedPercentage: 42, resetsAt: 12345 });
+		expect(fromStatsWindow(w)).toEqual({ usedPercentage: 42, resetsAt: 12345, exhausted: false, exhaustedAt: null });
 	});
 
 	it("carries a null used_percentage through as-is (a real case: some Codex accounts track no 5h/7d quota at all) rather than dropping the whole window", () => {
 		const w = statsWindow({ end: 12345, used_percentage: null });
-		expect(fromStatsWindow(w)).toEqual({ usedPercentage: null, resetsAt: 12345 });
+		expect(fromStatsWindow(w)).toEqual({ usedPercentage: null, resetsAt: 12345, exhausted: false, exhaustedAt: null });
+	});
+
+	it("reads 100% and carries the time for a used-up window", () => {
+		const w = statsWindow({ end: 12345, used_percentage: 99, exhausted: true, exhausted_at: 12000 });
+		expect(fromStatsWindow(w)).toEqual({ usedPercentage: 100, resetsAt: 12345, exhausted: true, exhaustedAt: 12000 });
+	});
+});
+
+describe("withExhaustion (Claude's live 99% lifted to 100% when json stats says the window is used up)", () => {
+	const live = { usedPercentage: 99, resetsAt: 20000 };
+
+	it("marks the live window used up when the stats window is the same one and exhausted", () => {
+		const s = statsWindow({ end: 20030, exhausted: true, exhausted_at: 15000 });
+		expect(withExhaustion(live, s)).toEqual({ usedPercentage: 100, resetsAt: 20000, exhausted: true, exhaustedAt: 15000 });
+	});
+
+	it("leaves it as-is for a different window, a window that isn't used up, or no stats", () => {
+		expect(withExhaustion(live, statsWindow({ end: 20000 + FIVE_HOUR_SECONDS, exhausted: true }))).toBe(live);
+		expect(withExhaustion(live, statsWindow({ end: 20000, exhausted: false }))).toBe(live);
+		expect(withExhaustion(live, undefined)).toBe(live);
+		expect(withExhaustion(null, statsWindow({ end: 20000, exhausted: true }))).toBeNull();
+	});
+});
+
+describe("claudeNearLimit", () => {
+	it("is true once either live reading reaches the threshold", () => {
+		expect(claudeNearLimit({ fiveHour: { usedPercentage: CLAUDE_NEAR_LIMIT_PCT, resetsAt: 1 }, sevenDay: null })).toBe(true);
+		expect(claudeNearLimit({ fiveHour: { usedPercentage: 10, resetsAt: 1 }, sevenDay: { usedPercentage: 99, resetsAt: 1 } })).toBe(true);
+	});
+
+	it("is false below it, or with nothing read", () => {
+		expect(claudeNearLimit({ fiveHour: { usedPercentage: CLAUDE_NEAR_LIMIT_PCT - 1, resetsAt: 1 }, sevenDay: { usedPercentage: null, resetsAt: 1 } })).toBe(false);
+		expect(claudeNearLimit(null)).toBe(false);
 	});
 });
 

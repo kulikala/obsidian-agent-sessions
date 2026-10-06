@@ -4,7 +4,7 @@ import unittest
 from agentsessions.agents.codex import stats
 from agentsessions.usage.stats import FIVE_HOUR_SECONDS, SEVEN_DAY_SECONDS
 from tests.agents.codex_helpers import (
-    rollout_path, session_meta, token_count, turn_context, write_rollout,
+    event, rollout_path, session_meta, token_count, turn_context, write_rollout,
 )
 
 ID1 = '06000000-0000-0000-0000-000000000001'
@@ -279,6 +279,56 @@ class TestTokenAggregation(unittest.TestCase):
         # five_hour/seven_day still both present, just unavailable
         self.assertIsNone(out['windows']['five_hour']['used_percentage'])
         self.assertIsNone(out['windows']['seven_day']['used_percentage'])
+
+
+class TestExhausted(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = self.tmp.name
+
+    def _tc(self, ts, five, seven, now):
+        return token_count({'input_tokens': 1000, 'cached_input_tokens': 0, 'cache_write_input_tokens': 0,
+                            'output_tokens': 100}, _iso(ts),
+                           rate_limits={'primary': {'used_percent': five, 'window_minutes': 300,
+                                                    'resets_at': now + 3600},
+                                        'secondary': {'used_percent': seven, 'window_minutes': 10080,
+                                                      'resets_at': now + 86400}})
+
+    def test_slot_at_100_exhausts_from_its_first_reading(self):
+        now = 1_700_100_000.0
+        write_rollout(rollout_path(self.home, ID1, ts='2026-09-24T01-30-30'), [
+            session_meta(ID1, '/work/one'),
+            turn_context(model='gpt-5.6-terra'),
+            self._tc(now - 900, 96.0, 30.0, now),
+            self._tc(now - 600, 100.0, 31.0, now),
+            self._tc(now - 300, 100.0, 31.0, now),
+        ])
+        out = stats.compute(now=now, home=self.home)
+        five, seven = out['windows']['five_hour'], out['windows']['seven_day']
+        self.assertEqual((five['used_percentage'], five['exhausted'], five['exhausted_at']), (100.0, True, now - 600))
+        self.assertEqual((seven['exhausted'], seven['exhausted_at']), (False, None))
+
+    def test_usage_limit_rejection_counts_for_the_fullest_window(self):
+        now = 1_700_100_000.0
+        write_rollout(rollout_path(self.home, ID1, ts='2026-09-24T01-30-30'), [
+            session_meta(ID1, '/work/one'),
+            turn_context(model='gpt-5.6-terra'),
+            self._tc(now - 900, 40.0, 99.0, now),
+            event('task_complete', _iso(now - 800), last_agent_message=None,
+                  error={'message': "You've hit your usage limit.", 'codex_error_info': 'usage_limit_exceeded'}),
+        ])
+        out = stats.compute(now=now, home=self.home)
+        five, seven = out['windows']['five_hour'], out['windows']['seven_day']
+        self.assertEqual((five['used_percentage'], five['exhausted']), (40.0, False))
+        self.assertEqual((seven['used_percentage'], seven['exhausted'], seven['exhausted_at']), (100.0, True, now - 800))
+
+    def test_rejection_window_ties_go_to_the_shorter_window(self):
+        defs = [{'key': 'five_hour', 'minutes': 300, 'used_percentage': 99.0},
+                {'key': 'seven_day', 'minutes': 10080, 'used_percentage': 99.0},
+                {'key': 'window_43200m', 'minutes': 43200, 'used_percentage': None}]
+        self.assertEqual(stats._rejection_key(defs), 'five_hour')
+        self.assertIsNone(stats._rejection_key([{'key': 'five_hour', 'minutes': 300, 'used_percentage': None}]))
 
 
 if __name__ == '__main__':

@@ -34,6 +34,8 @@ import {
 	categoryKeyOf,
 	categoryTotals,
 	categoryTotalsForWindow,
+	displayedUsedPct,
+	exhaustedText,
 	flattenTree,
 	formatBeforeReset,
 	formatExhaustTime,
@@ -503,8 +505,8 @@ export class ManagerView extends ItemView {
 		if (!el) {
 			return;
 		}
-		const primary = realWindows(windowsForAgent(this.statsResult, agent))[0];
-		el.setText(primary?.used_percentage != null ? `${Math.round(primary.used_percentage)}%` : "");
+		const used = displayedUsedPct(realWindows(windowsForAgent(this.statsResult, agent))[0] ?? null);
+		el.setText(used != null ? `${Math.round(used)}%` : "");
 	}
 
 	/** The usage bar (5-hour and 7-day windows) for every agent panel: usage bar, countdown, cost, tokens, call count, session count. */
@@ -562,11 +564,13 @@ export class ManagerView extends ItemView {
 			text: countdown != null ? t("stats.resetsIn", { countdown }) : "—",
 		});
 
+		const used = displayedUsedPct(w);
 		const barWrap = card.createDiv({ cls: "agent-sessions-manager-stats-bar" });
-		const pct = w?.used_percentage != null ? Math.min(100, Math.max(0, w.used_percentage)) : 0;
+		barWrap.toggleClass("is-exhausted", !!w?.exhausted);
+		const pct = used != null ? Math.min(100, Math.max(0, used)) : 0;
 		barWrap.createDiv({ cls: "agent-sessions-manager-stats-bar-fill" }).style.width = `${pct}%`;
 
-		const pctText = w?.used_percentage != null ? `${Math.round(w.used_percentage)}%` : "—";
+		const pctText = used != null ? `${Math.round(used)}%` : "—";
 		card.createDiv({ cls: "agent-sessions-manager-stats-pct", text: pctText });
 
 		this.renderPaceLine(card, w);
@@ -594,7 +598,8 @@ export class ManagerView extends ItemView {
 	 * (`weeklyPace` — every window gets this line now, not just a fixed 7-day
 	 * one). Green if on track, orange with a daily-cap estimate (second line) if it'll run out,
 	 * or muted gray with the reason if it can't be judged yet. The tooltip explains the judgment
-	 * (elapsed % and used %).
+	 * (elapsed % and used %). A used-up window shows when it ran out instead (`exhaustedText`,
+	 * red) — there's no pace left to project.
 	 */
 	private renderPaceLine(card: HTMLElement, w: StatsWindow | null): void {
 		const lineEl = card.createDiv({ cls: "agent-sessions-manager-stats-pace" });
@@ -604,6 +609,12 @@ export class ManagerView extends ItemView {
 			return;
 		}
 		const now = Date.now() / 1000;
+		const exhausted = exhaustedText(w, now);
+		if (exhausted != null) {
+			lineEl.addClass("is-exhausted");
+			lineEl.setText(exhausted);
+			return;
+		}
 		const pace = weeklyPace(w.used_percentage, w.start, w.end, now, w.total.cost);
 		const tooltipText = (elapsedPct: number, usedPct: number) =>
 			t("stats.pace.tooltip", { elapsedPct: String(Math.round(elapsedPct)), usedPct: String(Math.round(usedPct)) });

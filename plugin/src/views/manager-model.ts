@@ -464,6 +464,57 @@ export function formatBeforeReset(secondsBeforeReset: number): string {
 	return h > 0 ? t("stats.pace.beforeReset.daysHours", { d, h }) : t("stats.pace.beforeReset.days", { d });
 }
 
+/**
+ * The past counterpart of `formatExhaustTime`, for when a window was used up: just the time on
+ * `now`'s own calendar day, "yesterday <time>" (ja "昨日 3:46", en "yesterday 3:46 AM") on the day
+ * before, and "<weekday> <time>" further back (a 7-day window can have run out days ago).
+ */
+export function formatPastTime(epochSeconds: number, now: number): string {
+	const lang = getLang();
+	const dayDiff = Math.round((localMidnight(now) - localMidnight(epochSeconds)) / 86400000);
+	if (dayDiff <= 0) {
+		return formatTimeShort(epochSeconds, lang);
+	}
+	if (dayDiff === 1) {
+		return t("stats.exhausted.yesterday", { time: formatTimeShort(epochSeconds, lang) });
+	}
+	return formatWeekdayTimeShort(epochSeconds, lang);
+}
+
+/**
+ * The usage percentage to show for a window: `used_percentage`, but at least 100 once the window
+ * is used up (`exhausted`, from `json stats`). The vendor's own reading is a snapshot of the last
+ * accepted request, so it stays just below 100 (typically 99) after the limit is hit.
+ */
+export function displayedUsedPct(w: Pick<StatsWindow, "used_percentage" | "exhausted"> | null): number | null {
+	if (!w) {
+		return null;
+	}
+	if (w.exhausted) {
+		return Math.max(100, w.used_percentage ?? 0);
+	}
+	return w.used_percentage;
+}
+
+/**
+ * The line shown for a used-up window in place of the pace judgment: "Used up <when> (<N> before
+ * reset)" (ja 「<when> に枠を使い切りました（リセットの N 前）」), the time formatted by
+ * `formatPastTime` and the distance to `end` by `formatBeforeReset`. Just "Used up" when the time
+ * isn't known (the percentage alone said so). `null` for a window that isn't used up.
+ */
+export function exhaustedText(w: Pick<StatsWindow, "end" | "exhausted" | "exhausted_at"> | null, now: number): string | null {
+	if (!w?.exhausted) {
+		return null;
+	}
+	if (w.exhausted_at == null) {
+		return t("stats.exhausted");
+	}
+	return t("stats.exhausted.at", {
+		when: formatPastTime(w.exhausted_at, now),
+		beforeReset: formatBeforeReset(w.end - w.exhausted_at),
+	});
+}
+
 // ---- Model and effort columns ----------------------------------------------------------
 
 /**

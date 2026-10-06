@@ -12,8 +12,9 @@ import { agentsWithLimits, type AgentId } from "../settings";
 import type { StatsWindows } from "../types";
 import type AgentSessionsPlugin from "../main";
 import { AGENT_ICON_ID } from "../ui/icons";
-import { windowLabel, windowShortLabel } from "./manager-model";
+import { exhaustedText, windowLabel, windowShortLabel } from "./manager-model";
 import {
+	claudeNearLimit,
 	FIVE_HOUR_SECONDS,
 	formatCountdown,
 	fromStatsWindow,
@@ -22,6 +23,7 @@ import {
 	realWindows,
 	rollForwardWindow,
 	SEVEN_DAY_SECONDS,
+	withExhaustion,
 	type LimitsInfo,
 	type RateLimitWindow,
 	type RawLimitsFile,
@@ -29,7 +31,7 @@ import {
 
 /** How long the "is-refreshing" visual state stays on after a click (the read itself is near-instant). */
 const REFRESH_FLASH_MS = 200;
-/** How often Codex's `json stats`-sourced windows are re-fetched (matches the manager's own interval). */
+/** How often the `json stats`-sourced windows are re-fetched (matches the manager's own interval). */
 const STATS_FETCH_INTERVAL_MS = 60000;
 
 /** Narrows a `JSON.parse` result (`unknown`) to `RawLimitsFile["rate_limits"]`, without trusting
@@ -83,7 +85,8 @@ export class LimitsView {
 	 * `["claude"]` alone if somehow none is, so there's always at least one agent's rows. */
 	private agents: AgentId[] = [];
 	private claudeInfo: LimitsInfo | null = null;
-	/** Every non-Claude enabled agent's windows, fetched via `json stats`. */
+	/** Every non-Claude enabled agent's windows, fetched via `json stats` — plus Claude's, only while
+	 * one of its live readings is near the limit (`claudeNearLimit`), to tell whether it's used up. */
 	private statsWindows: Partial<Record<AgentId, StatsWindows>> = {};
 	private tickTimer: number | null = null;
 	private statsFetchTimer: number | null = null;
@@ -137,9 +140,14 @@ export class LimitsView {
 	}
 
 	/** Fetches `json stats` once and updates every non-Claude enabled agent's windows from it —
-	 * one call covers all of them, rather than a separate `json stats` per agent. */
+	 * one call covers all of them, rather than a separate `json stats` per agent. Claude is
+	 * included only while `claudeNearLimit`; otherwise its stale windows are dropped. */
 	private async reloadStatsAgents(): Promise<void> {
-		const statsAgents = this.agents.filter((id) => id !== "claude");
+		const claudeNear = this.agents.includes("claude") && claudeNearLimit(this.claudeInfo);
+		if (!claudeNear) {
+			delete this.statsWindows.claude;
+		}
+		const statsAgents = this.agents.filter((id) => id !== "claude" || claudeNear);
 		if (statsAgents.length === 0) {
 			return;
 		}
@@ -213,8 +221,17 @@ export class LimitsView {
 				rowIndexWithinAgent++;
 			};
 			if (agent === "claude") {
-				renderRow(t("stats.fiveHour"), t("stats.fiveHour.short"), rollForwardWindow(this.claudeInfo?.fiveHour ?? null, FIVE_HOUR_SECONDS, now));
-				renderRow(t("stats.sevenDay"), t("stats.sevenDay.short"), rollForwardWindow(this.claudeInfo?.sevenDay ?? null, SEVEN_DAY_SECONDS, now));
+				const claudeStats = this.statsWindows.claude;
+				renderRow(
+					t("stats.fiveHour"),
+					t("stats.fiveHour.short"),
+					withExhaustion(rollForwardWindow(this.claudeInfo?.fiveHour ?? null, FIVE_HOUR_SECONDS, now), claudeStats?.five_hour)
+				);
+				renderRow(
+					t("stats.sevenDay"),
+					t("stats.sevenDay.short"),
+					withExhaustion(rollForwardWindow(this.claudeInfo?.sevenDay ?? null, SEVEN_DAY_SECONDS, now), claudeStats?.seven_day)
+				);
 				return;
 			}
 			// Only windows this agent actually has a tracked percentage for —
@@ -252,10 +269,16 @@ export class LimitsView {
 		const labelEl = el.createSpan({ cls: "agent-sessions-limits-label", text: shortLabel });
 		setTooltip(labelEl, label);
 		const barWrap = el.createDiv({ cls: "agent-sessions-limits-bar" });
+		barWrap.toggleClass("is-exhausted", !!w?.exhausted);
 		const pct = w?.usedPercentage != null ? Math.min(100, Math.max(0, w.usedPercentage)) : 0;
 		const bar = barWrap.createDiv({ cls: "agent-sessions-limits-bar-fill" });
 		bar.style.width = `${pct}%`;
-		el.createSpan({ cls: "agent-sessions-limits-pct", text: w?.usedPercentage != null ? `${Math.round(w.usedPercentage)}%` : "—" });
+		const pctEl = el.createSpan({ cls: "agent-sessions-limits-pct", text: w?.usedPercentage != null ? `${Math.round(w.usedPercentage)}%` : "—" });
+		// a used-up window says when it ran out, in the tooltip (the row has no room for it)
+		const exhausted = w?.resetsAt != null ? exhaustedText({ end: w.resetsAt, exhausted: w.exhausted, exhausted_at: w.exhaustedAt }, Date.now() / 1000) : null;
+		if (exhausted != null) {
+			setTooltip(pctEl, exhausted);
+		}
 		const countdown = w?.resetsAt != null ? formatCountdown(w.resetsAt - Date.now() / 1000) : null;
 		el.createSpan({ cls: "agent-sessions-limits-countdown", text: countdown ?? "—" });
 	}

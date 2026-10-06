@@ -9,9 +9,12 @@ import {
 	categoryTotals,
 	categoryTotalsForWindow,
 	codexShortModelName,
+	displayedUsedPct,
+	exhaustedText,
 	flattenTree,
 	formatBeforeReset,
 	formatExhaustTime,
+	formatPastTime,
 	formatWeekdayTime,
 	isRealCategoryKey,
 	matchesStatusFilter,
@@ -585,6 +588,73 @@ describe("formatExhaustTime", () => {
 		expect(formatExhaustTime(exhaustAt, now)).toBe("Sun 2:00 PM");
 		setLang("ja");
 		expect(formatExhaustTime(exhaustAt, now)).toBe("日 14:00");
+	});
+});
+
+describe("formatPastTime", () => {
+	afterEach(() => setLang("en"));
+
+	it("shows just the time on the same calendar day as `now`", () => {
+		const now = new Date(2026, 8, 25, 22, 0, 0).getTime() / 1000;
+		const at = new Date(2026, 8, 25, 15, 20, 0).getTime() / 1000;
+		expect(formatPastTime(at, now)).toBe("3:20 PM");
+		setLang("ja");
+		expect(formatPastTime(at, now)).toBe("15:20");
+	});
+
+	it("shows 'yesterday <time>' on the calendar day before", () => {
+		const now = new Date(2026, 8, 26, 1, 0, 0).getTime() / 1000;
+		const at = new Date(2026, 8, 25, 23, 5, 0).getTime() / 1000;
+		expect(formatPastTime(at, now)).toBe("yesterday 11:05 PM");
+		setLang("ja");
+		expect(formatPastTime(at, now)).toBe("昨日 23:05");
+	});
+
+	it("shows '<weekday> <time>' two or more calendar days back", () => {
+		const now = new Date(2026, 8, 25, 8, 0, 0).getTime() / 1000; // Friday
+		const at = new Date(2026, 8, 22, 9, 30, 0).getTime() / 1000; // Tuesday
+		expect(formatPastTime(at, now)).toBe("Tue 9:30 AM");
+		setLang("ja");
+		expect(formatPastTime(at, now)).toBe("火 9:30");
+	});
+});
+
+describe("displayedUsedPct (a used-up window reads 100%, not the vendor's last 99%)", () => {
+	it("is the window's own percentage while not used up", () => {
+		expect(displayedUsedPct(statsWindow({ used_percentage: 42 }))).toBe(42);
+		expect(displayedUsedPct(statsWindow({ used_percentage: null }))).toBeNull();
+		expect(displayedUsedPct(null)).toBeNull();
+	});
+
+	it("is at least 100 once used up", () => {
+		expect(displayedUsedPct(statsWindow({ used_percentage: 99, exhausted: true }))).toBe(100);
+		expect(displayedUsedPct(statsWindow({ used_percentage: null, exhausted: true }))).toBe(100);
+		expect(displayedUsedPct(statsWindow({ used_percentage: 103, exhausted: true }))).toBe(103);
+	});
+});
+
+describe("exhaustedText", () => {
+	afterEach(() => setLang("en"));
+	const now = new Date(2026, 8, 25, 16, 0, 0).getTime() / 1000;
+	const at = new Date(2026, 8, 25, 15, 20, 0).getTime() / 1000;
+
+	it("is null for a window that isn't used up", () => {
+		expect(exhaustedText(statsWindow({ used_percentage: 99 }), now)).toBeNull();
+		expect(exhaustedText(null, now)).toBeNull();
+	});
+
+	it("says when the window ran out and how long before its reset", () => {
+		const w = statsWindow({ end: at + 2 * 3600 + 10 * 60, exhausted: true, exhausted_at: at });
+		expect(exhaustedText(w, now)).toBe("Used up 3:20 PM (2h 10m before reset)");
+		setLang("ja");
+		expect(exhaustedText(w, now)).toBe("15:20 に枠を使い切りました（リセットの 2 時間 10 分前）");
+	});
+
+	it("drops the time when it isn't known", () => {
+		const w = statsWindow({ end: now + 3600, used_percentage: 100, exhausted: true, exhausted_at: null });
+		expect(exhaustedText(w, now)).toBe("Used up");
+		setLang("ja");
+		expect(exhaustedText(w, now)).toBe("枠を使い切りました");
 	});
 });
 

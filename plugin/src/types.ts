@@ -181,6 +181,13 @@ export interface StatsWindow {
 	sessions: Record<string, StatsUsage>;
 	minutes: number;
 	label_key: string;
+	/** Whether the window's limit has been reached: the agent rejected a request for it inside the
+	 * window, or `used_percentage` reads 100 or more (`used_percentage` then reads at least 100).
+	 * Absent from an older helper's output, read as `false`. */
+	exhausted?: boolean;
+	/** When the limit was first hit inside the window (epoch seconds); `null` when only the
+	 * percentage says so. */
+	exhausted_at?: number | null;
 }
 
 /**
