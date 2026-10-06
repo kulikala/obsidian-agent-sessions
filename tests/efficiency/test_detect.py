@@ -185,6 +185,26 @@ class DetectorTest(unittest.TestCase):
         self.assertEqual({h['remedy_kind'] for h in hits}, {'fix'})
         self.assertEqual(hits[0]['targets'], [os.path.expanduser('~/.claude/settings.json')])
 
+    def test_e04_not_while_waiting_for_others(self):
+        t = self.session()
+        t.prompt('start')
+        t.call(ctx=80_000, fresh=True)
+        t.spawn('helper1')
+        start_sub = t.t
+        t.wait(2 * 3600)
+        t.call(ctx=82_000, fresh=True)                   # the main chain waited for the sub-agent
+        self.save(t)
+        sub = b.Transcript(t.session, start_sub + 60, agent_id='helper1')
+        for _ in range(3):
+            sub.call(after=1800)
+        sub.write(os.path.join(b.project_dir(self.root), t.session, 'subagents', 'agent-helper1.jsonl'))
+        mate = b.Transcript(t.session, start_sub, agent_id='mate1')
+        mate.raw_user('<teammate-message teammate_id="lead">wait</teammate-message>')
+        mate.call(ctx=50_000, fresh=True)
+        mate.call(ctx=51_000, fresh=True, after=3600)    # a teammate idle for an hour
+        mate.write(os.path.join(b.project_dir(self.root), t.session, 'subagents', 'agent-mate1.jsonl'))
+        self.assertEqual(of(run(self.root), 'E04'), [])
+
     def test_e05_model_change_rewrites_the_cache(self):
         t = self.session()
         t.prompt('start')
@@ -229,6 +249,7 @@ class DetectorTest(unittest.TestCase):
         self.assertEqual(targets, [os.path.join(repo, 'CLAUDE.md'), os.path.join(vault, 'CLAUDE.md')])
         outside = next(h for h in hits if h['targets'][0].startswith(repo))
         self.assertTrue(outside['metrics']['outside_cwd'])
+        self.assertEqual(outside['read_path'], os.path.join(repo, 'docs', 'design.md'))
         self.assertEqual(outside['metrics']['sessions'], 3)
 
     def test_e08_guards(self):

@@ -43,20 +43,27 @@ def choose_range(now: float, windows: Dict[str, dict], calls: List[dict], thresh
             return {'rule': key, 'start': win['start'], 'end': now, 'used_percentage': used,
                     'exhausted': bool(win.get('exhausted'))}
     floor = now - MAX_LOOKBACK_DAYS * DAY
+    day = now - MIN_LOOKBACK_HOURS * 3600
     start = floor
     total = 0.0
+    reached = False
     for c in sorted((c for c in calls if c['ts'] is not None and floor <= c['ts'] <= now),
                     key=lambda c: -c['ts']):
         total += normalize.w_of(c)
         start = c['ts']
         if total >= budget:
+            reached = True
             break
+    # `basis` says what set the start: the budget, the one-day minimum (heavy parallel use
+    # can reach the budget within minutes), or the 7-day maximum (the budget not reached).
+    if not reached:
+        start, basis = floor, 'max_week'
+    elif start > day:
+        start, basis = day, 'min_day'
     else:
-        start = floor
-    # The budget alone can be a few minutes of heavy parallel use: always look back a day.
-    start = max(min(start, now - MIN_LOOKBACK_HOURS * 3600), floor)
+        basis = 'budget'
     return {'rule': 'budget', 'start': start, 'end': now, 'used_percentage': None,
-            'exhausted': False, 'budget': budget}
+            'exhausted': False, 'budget': budget, 'basis': basis}
 
 
 # ---- Reading ----------------------------------------------------------------------
@@ -77,9 +84,18 @@ def read_sessions(projects_dir: str, now: float, oldest: float, max_sessions: in
         main = reader.record(path, session=sid)
         if main is None:
             continue
-        subs = [r for r in (reader.record(p, session=sid) for p in activity.subagent_files(path)) if r]
+        # A sub-agent transcript last written before the window can't hold a call in it.
+        subs = [r for r in (reader.record(p, session=sid) for p in activity.subagent_files(path)
+                            if _file_mtime(p) >= oldest) if r]
         out.append(tasks.assemble(main, subs))
     return out, limits
+
+
+def _file_mtime(path: str) -> float:
+    try:
+        return os.stat(path).st_mtime
+    except OSError:
+        return 0.0
 
 
 # ---- Output -----------------------------------------------------------------------
@@ -116,6 +132,8 @@ def _task_out(t: dict) -> dict:
 def _hit_out(h: dict, mask: excerpt.Masker) -> dict:
     out = detect.public(h)
     out['shown_targets'] = [mask.path(p) for p in h['targets']]
+    if h.get('read_path'):
+        out['metrics'] = dict(out['metrics'], shown_path=mask.path(h['read_path']))
     return out
 
 

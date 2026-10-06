@@ -8,6 +8,7 @@ breakdown. Every signal is structural (sizes, counts, times, tool kinds and targ
 `needs_llm` marks the hits whose meaning only a model reading the excerpts can confirm.
 """
 
+import bisect
 import os
 from typing import Dict, List, Optional, Tuple
 
@@ -213,7 +214,10 @@ def e04_e05(analysed: List[dict], rng: Tuple[float, float]) -> List[dict]:
     for a in analysed:
         s = a['session']
         session_e05 = []
-        for chain, calls in _chain_calls(s).items():
+        chains = _chain_calls(s)
+        chain_kinds = {c['chain']: c['chain_kind'] for c in s['calls']}
+        others = sorted((c['ts'], c['chain']) for calls in chains.values() for c in calls)
+        for chain, calls in chains.items():
             comps = s['compactions'].get(chain, [])
             for prev, call in zip(calls, calls[1:]):
                 if not tasks.in_range(call['ts'], rng) or not _cache_break(prev, call):
@@ -239,7 +243,11 @@ def e04_e05(analysed: List[dict], rng: Tuple[float, float]) -> List[dict]:
                     continue
                 gap = call['ts'] - prev['ts']
                 ttl = E04_TTL_1H if prev['cw1h'] > 0 else E04_TTL_5M
-                if gap <= ttl:
+                if gap <= ttl or chain_kinds.get(chain) == 'teammate':
+                    continue
+                # A pause in which another chain of the session was working is waiting for
+                # sub-agents or teammates, not the person coming back.
+                if _busy_between(others, chain, prev['ts'], call['ts']):
                     continue
                 e04.append(_hit(
                     'E04', s['id'], call['id'], call['ts'],
@@ -252,6 +260,16 @@ def e04_e05(analysed: List[dict], rng: Tuple[float, float]) -> List[dict]:
         for h in short:
             h.update(remedy_kind='fix', change='add', targets=[os.path.expanduser(SETTINGS)])
     return e04 + e05
+
+
+def _busy_between(others: List[Tuple[float, str]], chain: str, a: float, b: float) -> bool:
+    """Whether a chain other than `chain` made a call strictly between `a` and `b`."""
+    i = bisect.bisect_right(others, (a, '\uffff'))
+    while i < len(others) and others[i][0] < b:
+        if others[i][1] != chain:
+            return True
+        i += 1
+    return False
 
 
 def _merge_round_trips(hits: List[dict]) -> List[dict]:
@@ -343,8 +361,11 @@ def e08(analysed: List[dict], rng: Tuple[float, float]) -> List[dict]:
         latest = max(uses, key=lambda u: u['call']['ts'])
         owner = owner_instructions(latest['path'] or cwd)
         remedy = dict(remedy_kind='fix', change='add', targets=[owner]) if owner else {}
+        # The file read again and again (a search: the folder it searched), named in the
+        # finding and the fix request; `report` adds its masked form to `metrics`.
+        read_path = latest['path'] or cwd
         found.append(_hit(
-            'E08', cwd, key, latest['call']['ts'],
+            'E08', cwd, key, latest['call']['ts'], read_path=read_path,
             metrics={'sessions': len(sessions), 'est_tokens': round(mean),
                      'kind': 'search' if key.startswith('search:') else 'read',
                      'outside_cwd': bool(owner) and not owner.startswith(cwd.rstrip(os.sep) + os.sep)},

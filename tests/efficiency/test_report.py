@@ -48,16 +48,19 @@ class RangeRuleTest(unittest.TestCase):
         r = report.choose_range(self.NOW, self.windows(None, None), calls, 80, 3_000_000)
         self.assertEqual(r['rule'], 'budget')
         self.assertEqual(r['start'], self.NOW - 24 * 3600)     # reached in 2 hours: still a whole day
+        self.assertEqual(r['basis'], 'min_day')
         sparse = [_call(self.NOW - i * 10 * 3600, 1_000_000) for i in range(10)]
         r = report.choose_range(self.NOW, self.windows(None, None), sparse, 80, 3_000_000)
         self.assertEqual(r['start'], self.NOW - 24 * 3600)     # budget reached at 20 hours: still a day
         r = report.choose_range(self.NOW, self.windows(None, None), sparse, 80, 5_000_000)
         self.assertEqual(r['start'], self.NOW - 40 * 3600)     # the call that reaches the budget
+        self.assertEqual(r['basis'], 'budget')
 
     def test_budget_stops_at_seven_days(self):
         calls = [_call(self.NOW - i * DAY, 1000) for i in range(10)]
         r = report.choose_range(self.NOW, {}, calls, 80, 1e9)
         self.assertEqual(r['start'], self.NOW - 7 * DAY)
+        self.assertEqual(r['basis'], 'max_week')
         r = report.choose_range(self.NOW, {}, [], 80, 1e9)
         self.assertEqual(r['start'], self.NOW - 7 * DAY)
 
@@ -172,6 +175,20 @@ class OutputTest(unittest.TestCase):
         self.assertTrue(hit_ids(narrow))
         self.assertEqual(hit_ids(wide), hit_ids(narrow))
 
+    def test_sub_agents_are_read_unless_older_than_the_window(self):
+        folder = os.path.join(b.project_dir(self.projects), sc.SCENARIO, 'subagents')
+        fresh = b.Transcript(sc.SCENARIO, sc.NOW - 2 * sc.DAY, agent_id='fresh')
+        fresh.call()
+        fresh.write(os.path.join(folder, 'agent-fresh.jsonl'))
+        old = b.Transcript(sc.SCENARIO, sc.NOW - 30 * sc.DAY, agent_id='old')
+        old.call()
+        old_path = old.write(os.path.join(folder, 'agent-old.jsonl'))
+        self.age()
+        os.utime(old_path, (sc.NOW - 30 * sc.DAY, sc.NOW - 30 * sc.DAY))
+        self.claude()
+        self.assertTrue(os.path.exists(cache.entry_path(os.path.join(folder, 'agent-fresh.jsonl'))))
+        self.assertFalse(os.path.exists(cache.entry_path(old_path)))
+
     def test_max_sessions(self):
         c = self.claude('--max-sessions', '5')
         self.assertEqual(c['limits']['truncated'], True)
@@ -190,6 +207,19 @@ class OutputTest(unittest.TestCase):
                 mock.patch('time.time', return_value=sc.NOW):
             out = json_output.efficiency_output(['codex'])
         self.assertEqual(out, {'version': 1, 'agents': {}})
+
+
+
+class HitOutTest(unittest.TestCase):
+    def test_e08_carries_the_masked_path_it_reads(self):
+        from agentsessions.efficiency import excerpt
+        hit = {'id': 'h-1', 'detector': 'E08', 'metrics': {'sessions': 3}, 'targets': ['/home/pat/vault/CLAUDE.md'],
+               'read_path': '/home/pat/vault/docs/ref.md', '_contrib': {}}
+        out = report._hit_out(hit, excerpt.Masker('/home/pat', '/home/pat/vault'))
+        self.assertEqual(out['metrics']['shown_path'], 'docs/ref.md')
+        self.assertEqual(out['shown_targets'], ['CLAUDE.md'])
+        self.assertEqual(out['read_path'], '/home/pat/vault/docs/ref.md')
+        self.assertNotIn('_contrib', out)
 
 
 if __name__ == '__main__':
