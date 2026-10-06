@@ -31,6 +31,25 @@ export const SESSIONS = [
 			last_assistant: "The total came from a memo that ignored the coupon. I fixed the dependency list and added a test; running the full checkout suite now.",
 		},
 		usage: { input: 182_000, output: 96_000, cache_read: 7_400_000, cache_create: 610_000, cost: 6.42 },
+		// The turns "Session analytics" lists: minutes after the first prompt, how long the turn ran,
+		// its share of the session's tokens and cost, and its tool calls. The last prompt is the
+		// session's latest one.
+		turns: [
+			{ at: 0, minutes: 5, share: 0.03, tools: { Read: 11, Grep: 5, Glob: 3 }, prompt: "Read src/checkout and explain how the order total is computed." },
+			{ at: 9, minutes: 6, share: 0.04, tools: { Bash: 4, Read: 2 }, prompt: "Run the checkout tests and list the ones that fail." },
+			{ at: 18, minutes: 4, share: 0.02, tools: { Read: 3 }, prompt: "Why does the cart test time out only in CI?" },
+			{ at: 25, minutes: 9, share: 0.05, tools: { Edit: 3, Bash: 3, Read: 2 }, prompt: "Give that test a fake clock instead of a real timer." },
+			{ at: 38, minutes: 24, share: 0.15, tools: { Read: 8, Edit: 14, Write: 2, Bash: 3, TodoWrite: 2 }, prompt: "Move the coupon rules into their own module, keeping the same behavior." },
+			{ at: 65, minutes: 3, share: 0.01, tools: {}, prompt: "Keep the old export as an alias for now." },
+			{ at: 70, minutes: 11, share: 0.07, tools: { Bash: 3, Edit: 5, Read: 3 }, prompt: "Update the snapshot tests for the new module layout." },
+			{ at: 84, minutes: 2, share: 0.01, tools: {}, prompt: "/compact" },
+			{ at: 88, minutes: 7, share: 0.04, tools: { Grep: 4, Read: 5 }, prompt: "Where else is the order total formatted?" },
+			{ at: 97, minutes: 8, share: 0.05, tools: { Edit: 4, Bash: 2 }, prompt: "Use one formatter for every currency amount on the page." },
+			{ at: 109, minutes: 5, share: 0.03, tools: { Read: 4, Bash: 1 }, prompt: "Check the order summary in the confirmation email too." },
+			{ at: 118, minutes: 13, share: 0.08, tools: { Read: 4, Edit: 6, Bash: 3 }, prompt: "Add a loading state to the total while the coupon is checked." },
+			{ at: 134, minutes: 6, share: 0.03, tools: { Bash: 4 }, prompt: "Run the full checkout suite and the type check." },
+			{ at: 143, minutes: 35, share: 0.39, tools: { Read: 6, Edit: 4, Grep: 2, Bash: 5, Write: 1, TodoWrite: 1 }, prompt: "The checkout page flashes the old total after a coupon is applied. Fix it and add a regression test." },
+		],
 		cost5h: 4.1,
 		cost7d: 6.42,
 	},
@@ -317,7 +336,12 @@ export async function scenarioFor(lang) {
 	return {
 		sessions: SESSIONS.map((s) => {
 			const text = ja.SESSION_TEXT_JA[s.id];
-			return { ...s, name: text.name, detail: { ...s.detail, last_user: text.last_user, last_assistant: text.last_assistant } };
+			return {
+				...s,
+				name: text.name,
+				detail: { ...s.detail, last_user: text.last_user, last_assistant: text.last_assistant },
+				...(s.turns ? { turns: s.turns.map((turn, i) => ({ ...turn, prompt: text.prompts[i] })) } : {}),
+			};
 		}),
 		notes: ja.NOTES_JA,
 		suggestions: ja.ORGANIZE_SUGGESTIONS_JA,

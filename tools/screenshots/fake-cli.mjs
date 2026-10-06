@@ -88,44 +88,56 @@ function windowsFor(agent) {
 	};
 }
 
+/** `json usage`: the scenario's `turns` when the session has them (shares of its usage), else one turn. */
 function usageOf(s) {
 	const u = s.usage;
 	const last = lastActivity(s);
-	const first = last - 50 * 60;
-	const prompts = [s.detail.last_user];
-	const turns = prompts.map((prompt, index) => ({
-		index,
-		ts: first,
-		prompt,
-		calls: Math.max(1, Math.round(u.input / 9000)),
-		input: u.input,
-		cache_create: u.cache_create,
-		cache_read: u.cache_read,
-		output: u.output,
-		thinking: 0,
-		cost: u.cost,
-		tools: { Read: 6, Edit: 3, Bash: 4 },
-		estimated: false,
-		last_ts: last,
-		context_last: Math.round(((s.ctx ?? 30) / 100) * 200_000),
-		models: { [s.model]: Math.max(1, Math.round(u.input / 9000)) },
-	}));
+	const plan = s.turns ?? [{ at: 0, minutes: 50, share: 1, tools: { Read: 6, Edit: 3, Bash: 4 }, prompt: s.detail.last_user }];
+	const span = Math.max(...plan.map((p) => p.at + p.minutes));
+	const first = last - span * 60;
+	const part = (n, share) => Math.round(n * share);
+	const turns = plan.map((p, index) => {
+		const output = part(u.output, p.share);
+		return {
+			index,
+			ts: first + p.at * 60,
+			prompt: p.prompt,
+			calls: Math.max(1, part(u.input / 9000, p.share)),
+			input: part(u.input, p.share),
+			cache_create: part(u.cache_create, p.share),
+			cache_read: part(u.cache_read, p.share),
+			output,
+			thinking: Math.round(output * 0.35),
+			cost: Math.round(u.cost * p.share * 100) / 100,
+			tools: p.tools,
+			estimated: false,
+			last_ts: first + (p.at + p.minutes) * 60,
+			context_last: Math.round(((s.ctx ?? 30) / 100) * 200_000),
+			models: { [s.model]: Math.max(1, part(u.input / 9000, p.share)) },
+		};
+	});
+	// The last turn takes the rounding remainder, so the turns add up to the session's cost.
+	const others = turns.slice(0, -1).reduce((sum, t) => sum + t.cost, 0);
+	turns[turns.length - 1].cost = Math.round((u.cost - others) * 100) / 100;
+	const total = { calls: 0, input: 0, cache_create: 0, cache_read: 0, output: 0, thinking: 0, cost: 0, tools: {} };
+	for (const t of turns) {
+		for (const k of ["calls", "input", "cache_create", "cache_read", "output", "thinking", "cost"]) {
+			total[k] += t[k];
+		}
+		for (const [name, count] of Object.entries(t.tools)) {
+			total.tools[name] = (total.tools[name] ?? 0) + count;
+		}
+	}
+	total.cost = Math.round(total.cost * 100) / 100;
 	return {
 		turns,
 		total: {
-			calls: turns[0].calls,
-			input: u.input,
-			cache_create: u.cache_create,
-			cache_read: u.cache_read,
-			output: u.output,
-			thinking: 0,
-			cost: u.cost,
-			tools: turns[0].tools,
+			...total,
 			estimated: false,
 			duration: last - first,
 			first_ts: first,
 			last_ts: last,
-			context_last: turns[0].context_last,
+			context_last: turns[turns.length - 1].context_last,
 		},
 		from: null,
 		to: null,

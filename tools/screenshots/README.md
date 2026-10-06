@@ -1,7 +1,7 @@
 # Screenshots
 
 Two sets come from the same sandbox: the README images (`docs/images/`, dark; a Japanese run with
-`--lang ja` writes `docs/images/ja/`, of which README.ja.md uses `calendar.png` and `codex.png`) and the
+`--lang ja` writes `docs/images/ja/`, of which README.ja.md uses `analytics.png`, `calendar.png` and `codex.png`) and the
 welcome guide's scenes (`docs/onboarding/<lang>/<scene>.png`, Obsidian's light theme, English and Japanese).
 
 ## Re-shooting the welcome guide's scenes
@@ -30,7 +30,7 @@ UI labels are read from the plugin's own locale files.
 
 The README's `welcome.png` shows the guide's second step with its picture, read from `docs/onboarding/` through a small local server. That needs a development build (the picture-folder override is not in the production bundle): build with `node esbuild.config.mjs dev`, which builds once and exits (the plain `node esbuild.config.mjs` watches and never exits).
 
-`shoot.mjs` produces `docs/images/overview.png`, `manager.png`, `codex.png`, `calendar.png` (the activity calendar, last week), `welcome.png` (the
+`shoot.mjs` produces `docs/images/overview.png`, `manager.png`, `analytics.png` (Session analytics for one session), `codex.png`, `calendar.png` (the activity calendar, last week), `welcome.png` (the
 welcome guide, first page), and `organize.png` (the "Organize names and categories" result view)
 from a build of the plugin, rendered by a real Obsidian. Build into a scratch directory, never
 into `plugin/main.js` (a development vault may link it), and point the script at that file:
@@ -77,7 +77,7 @@ switch off, Suggest, then one row unticked and given a comment.
 
 ## Changing what the images show
 
-- `scenario.mjs` — the sessions (names, agents, states, models, costs), the rate-limit numbers,
+- `scenario.mjs` — the sessions (names, agents, states, models, costs, and the turns Session analytics lists), the rate-limit numbers,
   the vault's notes, and the organize suggestions and comment. Times are relative to the moment of the run.
 - `transcripts.mjs` — the terminal contents, in the style of each agent's TUI.
 - `shoot.mjs` — window size, sidebar width, and the scenes themselves (which tab is in front, what

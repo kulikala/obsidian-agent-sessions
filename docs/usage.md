@@ -2,24 +2,45 @@
 
 How to do things with Agent Sessions, what each screen shows, and what to do when something goes wrong. The [README](../README.md) has the overview, install and disclosures.
 
+- [Welcome guide](#welcome-guide)
 - [Start a session](#start-a-session)
 - [Work in a session tab](#work-in-a-session-tab)
+- [Switch between sessions](#switch-between-sessions)
 - [Side panel](#side-panel)
 - [Session states](#session-states)
-- [Session manager](#session-manager)
+- [Built-in editor](#built-in-editor)
 - [Session menu](#session-menu)
 - [Name and group sessions](#name-and-group-sessions)
 - [Organize names and categories](#organize-names-and-categories)
-- [Restart, model and effort](#restart-model-and-effort)
-- [Built-in editor](#built-in-editor)
+- [Compact, restart and change model](#compact-restart-and-change-model)
+- [Session analytics](#session-analytics)
+- [Session manager](#session-manager)
 - [Activity calendar](#activity-calendar)
 - [Usage and limits](#usage-and-limits)
 - [Agent skills](#agent-skills)
 - [Remote Control](#remote-control)
-- [Welcome guide](#welcome-guide)
 - [Settings](#settings)
 - [CLI](#cli)
 - [More troubleshooting](#more-troubleshooting)
+
+## Welcome guide
+
+It opens on first install, and after an update only when the new version has something to show.
+
+1. Choose the language.
+2. Read what Agent Sessions is.
+3. Set up the program and the agents. A missing agent shows its official install command to copy, a link to its documentation, and **Detect again** (on Windows, Codex and OpenCode come from npm; Claude Code has an **Install Claude Code with WinGet** button).
+
+   ![The Install agent-sessions dialog listing the install folder, Python, the hooks added to Claude Code's settings, and the two agent skills added to the vault](onboarding/en/install.png)
+
+4. Start a real session, switch tabs, rename it, and send a prompt from the built-in editor. Each step is ticked as you do it; **Skip** passes one over. With Codex or OpenCode, only the tab switch is offered.
+5. Read about restart, organize and the Session manager.
+
+After an update, the guide shows only setup (when the program is missing) and what's new.
+
+- Closing the guide keeps your place: **Continue the welcome guide** (command palette or settings) resumes it, and **Start the welcome guide from the beginning** runs it again.
+- Its pictures load from GitHub while it is open; **Load the guide's pictures from GitHub** turns that off (see [Disclosures](../README.md#disclosures)).
+- **Show the welcome guide after updates** stops it reopening after updates.
 
 ## Start a session
 
@@ -63,6 +84,13 @@ Keys inside a session tab:
 
 On Windows and Linux, other `Ctrl+<key>` combinations go to the agent, except `Ctrl+Tab` and `Ctrl+,`, which go to Obsidian. On Windows, `Ctrl+C` without a selection interrupts the agent as usual.
 
+## Switch between sessions
+
+- **Side panel:** click a session. Its tab comes to the front, or it opens in a new tab: a running session shows its current screen, and an ended one resumes its conversation.
+- **Tabs:** session tabs are ordinary Obsidian tabs. Click one, or use Obsidian's keys for moving between tabs.
+- **Session manager:** click a row to see its details, and double-click it or press Enter to open it. The arrow keys move the selection, and `/` jumps to **Filter**.
+- **Activity calendar:** click a block, then **Open session**.
+
 ## Side panel
 
 The side panel (right sidebar) lists sessions in three groups:
@@ -101,15 +129,17 @@ The tab, the side panel and the Session manager show the same icon, color and mo
 - A small icon next to the state shows the agent (Claude Code, Codex or OpenCode), in one color like the rest of the UI.
 - States are grouped into **Needs input**, **Needs review**, **Running**, **Done**, plus **Archived**. The side panel shows the Needs input and Needs review counts, and the Session manager filters by these groups.
 
-## Session manager
+## Built-in editor
 
-The Session manager is what a new empty tab shows. It also opens from **Session manager** in the side panel and the command palette. Opening it never starts a session.
+1. In a session, press **Ctrl+G** (the **Editor key** setting: Ctrl+G, Ctrl+Q or Option/Alt+G).
+2. Write in the pane under the terminal. It has `@` file completion, autosave, and normal paste, IME and undo. The output stays visible.
+3. Press **Send** to submit, or **Back to prompt (Esc)** to return without sending.
 
-![The Session manager: sessions grouped by category with model, effort and cost, and below, the 5-hour and 7-day windows and cost per category](images/manager.png)
+![The built-in editor under a Claude Code session: a multi-line prompt, with Model and Effort dropdowns and the Send and Back to prompt buttons above it](onboarding/en/editor.png)
 
-- **Session list.** Sessions grouped by category, plus an "Other" group and the archive. The table sorts by **Last updated**, model, effort, 5h and 7d cost, and folder.
-- **Status filter** (toolbar): All, Needs input, Needs review, Running, Done, Archived.
-- **Analysis** (below, collapsible and resizable): 5-hour and 7-day cards with the time to reset, a weekly-pace forecast ("on track", or when it will run out), and cost by category. With more than one agent enabled, there is one section per agent.
+- It also opens for anything the agent hands to an editor, such as `/memory` or `/keybindings`.
+- For a Claude Code prompt, the bar has **Model** and **Effort** dropdowns set to the current values. If you change one, **Send** applies it with `/model` and `/effort` before the prompt.
+- Each agent is configured to open its editor on the editor key.
 
 ## Session menu
 
@@ -156,7 +186,11 @@ An agent proposes a `Category: Name` for recent sessions from their folder, firs
 - **Apply selected** renames the same way as **Rename**.
 - It sends session excerpts to that agent: see [What Organize sends](../README.md#what-organize-sends).
 
-## Restart, model and effort
+## Compact, restart and change model
+
+All three are in the session's ⋯ menu (see [Session menu](#session-menu)).
+
+**Compact session** sends `/compact`, the agent's own command that shortens the conversation to free up context. It is greyed out right after a compaction, while the state reads **Compacted (context was reset)**. A session that is not running is started in the background for it, the same way as for **Rename**.
 
 **Restart session** ends the agent and resumes the same conversation in the same tab. Use it after changing settings, hooks, skills or environment.
 
@@ -167,17 +201,46 @@ An agent proposes a `Category: Name` for recent sessions from their folder, firs
 
 **Change model…** (running Claude Code sessions) picks a model (an alias such as Opus, Sonnet or Haiku, or a full model ID) and an effort level, and sends `/model` and `/effort` for what changed. `/model` also becomes Claude Code's default for new sessions.
 
-## Built-in editor
+## Session analytics
 
-1. In a session, press **Ctrl+G** (the **Editor key** setting: Ctrl+G, Ctrl+Q or Option/Alt+G).
-2. Write in the pane under the terminal. It has `@` file completion, autosave, and normal paste, IME and undo. The output stays visible.
-3. Press **Send** to submit, or **Back to prompt (Esc)** to return without sending.
+Shows what one session used: cost, tokens, tools and time, for the whole session and for each prompt. Open it with **Session analytics** in the session's ⋯ menu, or **Show session analytics** in the session tab's ⋯ menu.
 
-![The built-in editor under a Claude Code session: a multi-line prompt, with Model and Effort dropdowns and the Send and Back to prompt buttons above it](onboarding/en/editor.png)
+![Session analytics for Storefront: Checkout total flicker: cards for cost, tokens, turns and duration; input, output and tool-use bars; and one row per prompt with its time, input, output and cost](images/analytics.png)
 
-- It also opens for anything the agent hands to an editor, such as `/memory` or `/keybindings`.
-- For a Claude Code prompt, the bar has **Model** and **Effort** dropdowns set to the current values. If you change one, **Send** applies it with `/model` and `/effort` before the prompt.
-- Each agent is configured to open its editor on the editor key.
+| Part | Shows |
+|---|---|
+| **Cost** | estimated cost in dollars |
+| **Tokens** | input tokens, with output below |
+| **Turns** | number of turns |
+| **Duration** | first prompt to last reply |
+| **Input** | uncached, cache read, cache create |
+| **Output** | output, and the part spent thinking |
+| **Tool use** | calls per tool, top 12 |
+
+- A turn is one prompt you sent and everything the agent did until the next one. The table lists each turn's time, prompt (hover for the full text), input, output and cost. Usage before the first prompt is a row of its own, **(Before first prompt)**.
+- Input counts every token the model read: new (uncached) tokens, tokens read from the prompt cache, and tokens written to it. The cache read is usually most of it.
+- `k` is thousands and `M` millions.
+- Claude Code and Codex costs are calculated from the token counts and each model's price; OpenCode's are the cost OpenCode records. **estimated** under the cost means a Claude model in the range has no price in the plugin's list, so it was priced like Claude Opus 5.
+- The numbers come from the agent's own files, read once when the dialog opens. Open it again to update them.
+
+To look at part of a session:
+
+1. Click the first turn of the part. The line above the cards reads "#3– (click the end row)".
+2. Click the last turn. The cards and bars now count only those turns, and the line reads "#3–#7".
+3. Press **Whole** to go back to the whole session. Clicking the first turn again before choosing the last does the same.
+
+**Copy** puts the cards and the table rows of what is shown on the clipboard as Markdown.
+
+## Session manager
+
+The Session manager is what a new empty tab shows. It also opens from **Session manager** in the side panel and the command palette. Opening it never starts a session.
+
+![The Session manager: sessions grouped by category with model, effort and cost, and below, the 5-hour and 7-day windows and cost per category](images/manager.png)
+
+- **Session list.** Sessions grouped by category, plus an "Other" group and the archive. The table sorts by **Last updated**, model, effort, 5h and 7d cost, and folder.
+- **Status filter** (toolbar): All, Needs input, Needs review, Running, Done, Archived.
+- **Opening a session.** Double-click a row or press Enter (see [Switch between sessions](#switch-between-sessions)).
+- **Analysis** (below, collapsible and resizable): 5-hour and 7-day cards with the time to reset, a weekly-pace forecast ("on track", or when it will run out), and cost by category. With more than one agent enabled, there is one section per agent.
 
 ## Activity calendar
 
@@ -218,8 +281,8 @@ Shows when each agent was working. Open it from the Session manager toolbar, the
 
 - Each agent's account-wide 5-hour and 7-day windows, with the countdown to reset and a weekly-pace forecast, in the side panel and the Session manager.
 - A window whose limit has been reached reads 100% in red, and says when it ran out and how long before its reset ("Used up 3:26 PM (2h 12m before reset)").
-- **Session analytics** (session menu): cost, tokens, turns and duration; input, output and tool-use bars; and a turn-by-turn table. Select rows to choose a range, and copy it as Markdown.
-- Both come from each agent's own local files.
+- One session's cost, tokens and tools, turn by turn: [Session analytics](#session-analytics).
+- They come from each agent's own local files.
 
 ## Agent skills
 
@@ -240,25 +303,6 @@ A Claude Code session with Remote Control (started with it, or with "Enable Remo
 - A session named when you create it starts with that name, so its Remote Control session is created under it.
 - Renaming a session sends `/rename`, which renames its Remote Control session too. For a session that is not running, Agent Sessions starts it in the background, waits for Remote Control to connect, renames it and ends it again.
 - When a named session is resumed (opened again after it ended, or restarted) and Remote Control connects, Agent Sessions sends `/rename` with its current name once. Claude Code reconnects to the earlier Remote Control session without passing on a name changed while it was not connected, so this brings the two back together. The session shows one "Session renamed" line each time.
-
-## Welcome guide
-
-It opens on first install, and after an update only when the new version has something to show.
-
-1. Choose the language.
-2. Read what Agent Sessions is.
-3. Set up the program and the agents. A missing agent shows its official install command to copy, a link to its documentation, and **Detect again** (on Windows, Codex and OpenCode come from npm; Claude Code has an **Install Claude Code with WinGet** button).
-
-   ![The Install agent-sessions dialog listing the install folder, Python, the hooks added to Claude Code's settings, and the two agent skills added to the vault](onboarding/en/install.png)
-
-4. Start a real session, switch tabs, rename it, and send a prompt from the built-in editor. Each step is ticked as you do it; **Skip** passes one over. With Codex or OpenCode, only the tab switch is offered.
-5. Read about restart, organize and the Session manager.
-
-After an update, the guide shows only setup (when the program is missing) and what's new.
-
-- Closing the guide keeps your place: **Continue the welcome guide** (command palette or settings) resumes it, and **Start the welcome guide from the beginning** runs it again.
-- Its pictures load from GitHub while it is open; **Load the guide's pictures from GitHub** turns that off (see [Disclosures](../README.md#disclosures)).
-- **Show the welcome guide after updates** stops it reopening after updates.
 
 ## Settings
 

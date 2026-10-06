@@ -10,35 +10,11 @@ Desktop only: macOS, Linux, and Windows.
 
 ## Features
 
-### The agent's own CLI in a tab
-
-Each session is the agent's command-line program in an Obsidian tab, with your settings, login, slash commands, hooks, skills and MCP servers. Vault paths in the output open as links. [More](docs/usage.md#work-in-a-session-tab)
-
-![A Codex session in a terminal tab, asking whether to run a test command](docs/images/codex.png)
-
-### Start a session with any agent
-
-**New session** asks for a name, and which agent when more than one is on. Claude Code, Codex and OpenCode sessions share the same lists. [More](docs/usage.md#start-a-session)
-
-![The New session dialog with Claude Code and Codex to choose from, and the name Docs: Release notes](docs/onboarding/en/new-session.png)
-
-### Every session and its state in the side panel
-
-Open tabs, running sessions without a tab, and recent ones, each with an icon for its state. Sessions keep running when you close the tab or quit Obsidian; reopen one to see its last screen. [More](docs/usage.md#side-panel)
-
-![The side panel: open tabs, running and recent sessions with state icons and categories, and the Needs input and Needs review counts at the top](docs/onboarding/en/side-panel.png)
-
 ### Sessions by category, with usage and cost
 
 The **Session manager** groups sessions named `Category: Name` and shows their cost per 5-hour and 7-day window. Below, each agent's usage windows show the time to reset and whether you will reach the limit at your current pace. Costs are estimates, calculated on your machine from the agents' local files. [More](docs/usage.md#session-manager)
 
 ![The Session manager: sessions grouped by category with model, effort and cost, and below, the 5-hour and 7-day windows and cost per category](docs/images/manager.png)
-
-### Names and categories suggested by an agent
-
-**Organize names and categories** has one of your agents suggest a name and category for recent sessions. Nothing is renamed until you press **Apply selected**. It sends session excerpts to that agent; see [What Organize sends](#what-organize-sends). [More](docs/usage.md#organize-names-and-categories)
-
-![The Organize names and categories dialog: current and suggested names side by side, with one suggestion unchecked and a comment for the next try](docs/images/organize.png)
 
 ### When each agent was working
 
@@ -46,17 +22,53 @@ The **Activity calendar** shows working time as blocks, by 7-day window, week or
 
 ![The activity calendar: a week of sessions as colored blocks, one lane per agent in each day, with hours and concurrency per agent](docs/images/calendar.png)
 
+### Start a session with any agent
+
+**New session** asks for a name, and which agent when more than one is on. Claude Code, Codex and OpenCode sessions share the same lists. [More](docs/usage.md#start-a-session)
+
+![The New session dialog with Claude Code and Codex to choose from, and the name Docs: Release notes](docs/onboarding/en/new-session.png)
+
+### The agent's own CLI in a tab
+
+Each session is the agent's command-line program in an Obsidian tab, with your settings, login, slash commands, hooks, skills and MCP servers. Vault paths in the output open as links. [More](docs/usage.md#work-in-a-session-tab)
+
+![A Codex session in a terminal tab, asking whether to run a test command](docs/images/codex.png)
+
+### Switch between sessions in the side panel
+
+Open tabs, running sessions without a tab, and recent ones, each with an icon for its state. Click one to bring its tab to the front or open it again; an ended session resumes its conversation. Sessions keep running when you close the tab or quit Obsidian. [More](docs/usage.md#switch-between-sessions)
+
+![The side panel: open tabs, running and recent sessions with state icons and categories, and the Needs input and Needs review counts at the top](docs/onboarding/en/side-panel.png)
+
 ### A built-in editor for prompts
 
 Press Ctrl+G to write the prompt in a pane under the terminal, with `@` file completion, normal paste, undo and IME, while the output stays visible. For Claude Code, the bar also sets model and effort. [More](docs/usage.md#built-in-editor)
 
 ![The built-in editor under a Claude Code session: a multi-line prompt, with Model and Effort dropdowns and the Send and Back to prompt buttons above it](docs/onboarding/en/editor.png)
 
-### Rename, restart or analyze from the session menu
+### Rename and sort into categories
 
-Each session's ⋯ menu renames it, moves it to a category, asks an agent for a name, compacts, restarts, ends or archives it, opens **Session analytics**, and copies its ID. **Restart session** picks up changed settings or skills and keeps the conversation. For Claude Code, **Change model…** switches model and effort. [More](docs/usage.md#session-menu)
+**Rename** gives a session a name. A name like `Docs: Release notes` puts it in the Docs category, which has its own color and group. **Move to category…** changes only the category. [More](docs/usage.md#name-and-group-sessions)
+
+![The Move to category dialog for Storefront: Checkout total flicker, with the list of existing categories](docs/onboarding/en/move-category.png)
+
+### Names and categories suggested by an agent
+
+**Organize names and categories** has one of your agents suggest a name and category for recent sessions. Nothing is renamed until you press **Apply selected**. It sends session excerpts to that agent; see [What Organize sends](#what-organize-sends). [More](docs/usage.md#organize-names-and-categories)
+
+![The Organize names and categories dialog: current and suggested names side by side, with one suggestion unchecked and a comment for the next try](docs/images/organize.png)
+
+### Compact, restart or change model from the session menu
+
+Each session's ⋯ menu, also opened by right-clicking the session, holds what you do to it: rename, compact, restart, change model, end and archive. **Compact session** sends `/compact`. **Restart session** picks up changed settings or skills and keeps the conversation. For Claude Code, **Change model…** switches model and effort. [More](docs/usage.md#compact-restart-and-change-model)
 
 ![A session's menu in four groups: Rename, Move to category…, Suggest name and category…; Change model…, Compact session, Restart session; Session analytics, Copy ID; End session, Archive](docs/onboarding/en/row-menu.png)
+
+### What a session cost, turn by turn
+
+**Session analytics** shows one session's cost, tokens, turns and duration, the tools it called, and each prompt with its own input, output and cost. Click the first and last row of a stretch of turns to count only those, and copy the result as Markdown. [More](docs/usage.md#session-analytics)
+
+![Session analytics for one session: cost, tokens, turns and duration at the top, input, output and tool-use bars below, and a table with one row per prompt](docs/images/analytics.png)
 
 ### Setup with the welcome guide
 

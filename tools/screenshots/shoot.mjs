@@ -205,11 +205,12 @@ async function clearNotices(page) {
 	await page.evaluate(`document.querySelectorAll('.notice').forEach((n) => n.remove())`);
 }
 
-async function capture(page, name) {
+/** `clip`, when given, is the part of the window to keep (CSS pixels); else the whole window. */
+async function capture(page, name, clip) {
 	await sleep(1200);
 	mkdirSync(readmeOutDir, { recursive: true });
 	const file = join(readmeOutDir, `${name}.png`);
-	writeFileSync(file, await page.screenshot());
+	writeFileSync(file, await page.screenshot(clip));
 	console.log(`  wrote ${file}`);
 }
 
@@ -225,6 +226,22 @@ async function readmeScenes(page, box, look) {
 		await app.commands.executeCommandById('agent-sessions:open-manager');
 	})()`);
 	await capture(page, "manager");
+
+	// Session analytics for the checkout session, over the manager: the whole session, framed
+	// to the dialog with a little of the dimmed window around it.
+	const checkout = box.sessions.find((s) => s.transcript === "claude-checkout");
+	await page.evaluate(`${PLUGIN}.showUsage(${JSON.stringify(checkout.id)})`);
+	await page.waitFor(`document.querySelector('.agent-sessions-usage-table tbody tr')`, { what: "the session analytics" });
+	const dialog = await unionOf(page, [".agent-sessions-usage-modal"]);
+	const margin = 24;
+	await capture(page, "analytics", {
+		x: Math.max(0, dialog.x - margin),
+		y: Math.max(0, dialog.y - margin),
+		width: Math.min(look.window.width, dialog.width + 2 * margin),
+		height: Math.min(look.window.height, dialog.height + 2 * margin),
+	});
+	await pressEscape(page);
+	await page.waitFor(`!document.querySelector('.modal')`, { what: "the session analytics to close" });
 
 	// The activity calendar, on the last full week (the current one may be nearly empty).
 	await page.evaluate(`(async () => {

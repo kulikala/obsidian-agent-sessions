@@ -1,5 +1,6 @@
 // The Japanese version of the scenario's words, for the onboarding screenshots: session names,
-// the last exchange shown in the detail pane, the vault's notes, and the organize suggestions.
+// the last exchange shown in the detail pane, the prompts in Session analytics, the vault's notes,
+// and the organize suggestions.
 // Keyed by the session ids in scenario.mjs; everything else (models, costs, times) is shared.
 
 export const SESSION_TEXT_JA = {
@@ -7,6 +8,22 @@ export const SESSION_TEXT_JA = {
 		name: "ストアフロント: チェックアウト合計のちらつき",
 		last_user: "クーポンを適用すると、チェックアウト画面で一瞬だけ古い合計が表示されます。直して、回帰テストも足してください。",
 		last_assistant: "合計の計算がクーポンを見ていないメモ化に頼っていました。依存配列を直してテストを足し、いまチェックアウト全体のテストを流しています。",
+		prompts: [
+			"src/checkout を読んで、注文の合計がどう計算されるか説明してください。",
+			"チェックアウトのテストを実行して、失敗するものを挙げてください。",
+			"カートのテストが CI でだけタイムアウトするのはなぜですか?",
+			"そのテストでは、本物のタイマーの代わりに偽の時計を使ってください。",
+			"クーポンのルールを別のモジュールに移してください。動きは変えないで。",
+			"古い export は、しばらく別名として残してください。",
+			"新しいモジュール構成に合わせて、スナップショットテストを更新してください。",
+			"/compact",
+			"注文の合計は、ほかにどこで整形していますか?",
+			"ページ内の金額は、すべて1つの整形関数で表示してください。",
+			"確認メールの注文概要も確かめてください。",
+			"クーポンを確かめているあいだ、合計に読み込み中の表示を出してください。",
+			"チェックアウトのテスト一式と型チェックを実行してください。",
+			"クーポンを適用すると、チェックアウト画面で一瞬だけ古い合計が表示されます。直して、回帰テストも足してください。",
+		],
 	},
 	"0199a3c2-7e41-7b52-a3f0-5c9d2e81b604": {
 		name: "API: レート制限のテスト",

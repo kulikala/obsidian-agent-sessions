@@ -24,6 +24,7 @@ Each point names the reader it serves.
 
 - **The value comes first.** The first lines say what the plugin is and what it does for you, with a screenshot. (Browser)
 - **Each feature is shown next to its picture.** A reader understands a feature faster by seeing it than by reading about it. Each feature gets a short heading, one or two sentences on what the reader gets, and the picture that shows it. The alt text says what the picture actually shows. A feature without a fitting picture keeps its heading and sentence; no picture is forced. `README.ja.md` uses the Japanese screenshots where they exist. (Browser)
+- **Features go from the reasons to try it to the order of use.** First, briefly, the pieces a browsing reader decides on: the Session manager and the Activity calendar. Then the everyday flow in the order a user meets it: start a session, work in its tab, switch between sessions, write a prompt, name and categorize, let an agent suggest names, compact, restart or change model, look back at what a session cost. Setup comes last, next to Requirements and Install. The browser sees the payoff in the first screens; a reader who keeps going learns the plugin in the order they will use it. (Browser, Installer)
 - **Features are what the reader can do.** Not how they were built or tested. The full list lives in `docs/usage.md`. (Browser)
 - **Limits that would stop an install are on the first screen.** Platform and agent support, so someone who cannot use it finds out before installing. (Browser)
 - **Requirements, then supported setups, then install steps.** In that order, so nobody starts an install that cannot work. Details beyond the steps live in `docs/installation.md`. (Installer)
@@ -45,6 +46,8 @@ The README links here for every feature, so it is read by someone already using 
 - **find how to do something**: a task-named heading, then numbered steps;
 - **understand what a screen shows**: what each part means, in the words the screen uses;
 - **fix a problem**: the symptom as seen, then the fix.
+
+Sections follow a new user's tasks: set up, start a session, switch, write a prompt, name and categorize, the session menu's operations, then the screens that look across sessions (Session manager, Session analytics, Activity calendar), and settings, the CLI and troubleshooting last. A new user can read it top to bottom, and someone looking something up scans the contents list, which matches the headings. Each README feature links to its section.
 
 What follows: headings name tasks or screens, not components. Procedures are numbered steps. UI names match `plugin/src/i18n/locales/en.ts`. Short tables only for comparable values (menu item → what it does). Pictures where they show a screen. Every fact the plugin's behavior depends on stays; how it was built goes to `design.md`.
 
