@@ -47,7 +47,7 @@ The README links here for every feature, so it is read by someone already using 
 - **understand what a screen shows**: what each part means, in the words the screen uses;
 - **fix a problem**: the symptom as seen, then the fix.
 
-Sections follow a new user's tasks: set up, start a session, switch, write a prompt, name and categorize, the session menu's operations, then the screens that look across sessions (Session manager, Session analytics, Activity calendar), and settings, the CLI and troubleshooting last. A new user can read it top to bottom, and someone looking something up scans the contents list, which matches the headings. Each README feature links to its section.
+Sections follow a new user's tasks: set up, start a session, switch, write a prompt, name and categorize, the session menu's operations and Session analytics, then the screens that look across sessions (Session manager, Activity calendar), and settings, the CLI and troubleshooting last. A new user can read it top to bottom, and someone looking something up scans the contents list, which matches the headings. Each README feature links to its section.
 
 What follows: headings name tasks or screens, not components. Procedures are numbered steps. UI names match `plugin/src/i18n/locales/en.ts`. Short tables only for comparable values (menu item → what it does). Pictures where they show a screen. Every fact the plugin's behavior depends on stays; how it was built goes to `design.md`.
 

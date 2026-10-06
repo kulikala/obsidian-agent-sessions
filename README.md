@@ -20,7 +20,7 @@ The **Session manager** groups sessions named `Category: Name` and shows their c
 
 The **Activity calendar** shows working time as blocks, by 7-day window, week or day. Click a block to see its prompts and open the session. [More](docs/usage.md#activity-calendar)
 
-![The activity calendar: a week of sessions as colored blocks, one lane per agent in each day, with hours and concurrency per agent](docs/images/calendar.png)
+![The activity calendar: a week of sessions as colored blocks, one lane per agent in each day, with hours and concurrency per agent, and the details panel for one block with its prompts and Open session](docs/images/calendar.png)
 
 ### Start a session with any agent
 
@@ -48,7 +48,7 @@ Press Ctrl+G to write the prompt in a pane under the terminal, with `@` file com
 
 ### Rename and sort into categories
 
-**Rename** gives a session a name. A name like `Docs: Release notes` puts it in the Docs category, which has its own color and group. **Move to category…** changes only the category. [More](docs/usage.md#name-and-group-sessions)
+Each session has a ⋯ menu, which a right-click also opens. Its **Rename** gives the session a name; a name like `Docs: Release notes` puts it in the Docs category, with its own color and group. **Move to category…** changes only the category. [More](docs/usage.md#name-and-group-sessions)
 
 ![The Move to category dialog for Storefront: Checkout total flicker, with the list of existing categories](docs/onboarding/en/move-category.png)
 
@@ -60,7 +60,7 @@ Press Ctrl+G to write the prompt in a pane under the terminal, with `@` file com
 
 ### Compact, restart or change model from the session menu
 
-Each session's ⋯ menu, also opened by right-clicking the session, holds what you do to it: rename, compact, restart, change model, end and archive. **Compact session** sends `/compact`. **Restart session** picks up changed settings or skills and keeps the conversation. For Claude Code, **Change model…** switches model and effort. [More](docs/usage.md#compact-restart-and-change-model)
+In the same menu, **Compact session** sends `/compact`, and **Restart session** picks up changed settings or skills and keeps the conversation. For Claude Code, **Change model…** switches model and effort. [More](docs/usage.md#compact-restart-and-change-model)
 
 ![A session's menu in four groups: Rename, Move to category…, Suggest name and category…; Change model…, Compact session, Restart session; Session analytics, Copy ID; End session, Archive](docs/onboarding/en/row-menu.png)
 

@@ -217,10 +217,9 @@ Shows what one session used: cost, tokens, tools and time, for the whole session
 | **Output** | output, and the part spent thinking |
 | **Tool use** | calls per tool, top 12 |
 
-- A turn is one prompt you sent and everything the agent did until the next one. The table lists each turn's time, prompt (hover for the full text), input, output and cost. Usage before the first prompt is a row of its own, **(Before first prompt)**.
+- A turn is one prompt you sent and everything the agent did until the next one. The table lists each turn's time, prompt (its first 60 characters), input, output and cost. Usage before the first prompt is a row of its own, **(Before first prompt)**, and counts as a turn.
 - Input counts every token the model read: new (uncached) tokens, tokens read from the prompt cache, and tokens written to it. The cache read is usually most of it.
-- `k` is thousands and `M` millions.
-- Claude Code and Codex costs are calculated from the token counts and each model's price; OpenCode's are the cost OpenCode records. **estimated** under the cost means a Claude model in the range has no price in the plugin's list, so it was priced like Claude Opus 5.
+- Claude Code and Codex costs are calculated from the token counts and each model's price; OpenCode's are the cost OpenCode records. **estimated** under the cost means a Claude model in the range has no price in the plugin's list, so it was priced like Claude Opus 5. A Codex model not in that list, or an OpenCode reply without a recorded cost, counts as $0.00 and is not marked.
 - The numbers come from the agent's own files, read once when the dialog opens. Open it again to update them.
 
 To look at part of a session:
@@ -229,7 +228,7 @@ To look at part of a session:
 2. Click the last turn. The cards and bars now count only those turns, and the line reads "#3–#7".
 3. Press **Whole** to go back to the whole session. Clicking the first turn again before choosing the last does the same.
 
-**Copy** puts the cards and the table rows of what is shown on the clipboard as Markdown.
+**Copy** copies the cards and the rows in the current range as Markdown.
 
 ## Session manager
 
@@ -246,7 +245,7 @@ The Session manager is what a new empty tab shows. It also opens from **Session 
 
 Shows when each agent was working. Open it from the Session manager toolbar, the side panel's ⋯ menu, or the command palette (**Open activity calendar**).
 
-![The activity calendar: a week of sessions as colored blocks, one lane per agent in each day, with hours and concurrency per agent](images/calendar.png)
+![The activity calendar: a week of sessions as colored blocks, one lane per agent in each day, with hours and concurrency per agent, and the details panel for one block with its prompts and Open session](images/calendar.png)
 
 | Mode | Shows |
 |---|---|

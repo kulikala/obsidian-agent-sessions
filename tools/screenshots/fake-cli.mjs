@@ -101,7 +101,8 @@ function usageOf(s) {
 		return {
 			index,
 			ts: first + p.at * 60,
-			prompt: p.prompt,
+			// The real helper keeps a prompt's first 60 characters.
+			prompt: p.prompt.slice(0, 60),
 			calls: Math.max(1, part(u.input / 9000, p.share)),
 			input: part(u.input, p.share),
 			cache_create: part(u.cache_create, p.share),
