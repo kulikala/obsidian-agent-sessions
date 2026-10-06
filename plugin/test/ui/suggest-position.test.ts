@@ -5,7 +5,7 @@ function rect(overrides: Partial<SuggestAnchorRect> = {}): SuggestAnchorRect {
 	return { left: 10, width: 300, top: 100, bottom: 130, ...overrides };
 }
 
-describe("computeSuggestPosition (T-104(e): the category-suggestion dropdown, portaled to <body>)", () => {
+describe("computeSuggestPosition (the category-suggestion dropdown, portaled to <body>)", () => {
 	it("carries the anchor's left/width through unchanged", () => {
 		const pos = computeSuggestPosition(rect({ left: 42, width: 250 }), 1000, 224);
 		expect(pos.left).toBe(42);

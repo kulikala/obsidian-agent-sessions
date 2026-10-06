@@ -117,7 +117,7 @@ describe("mergeSettings", () => {
 });
 
 describe("mergeSettings (agents)", () => {
-	it("migrates a pre-T-96 top-level claudePath into agents.claude.path, once", () => {
+	it("migrates an old top-level claudePath into agents.claude.path, once", () => {
 		const merged = mergeSettings({ claudePath: "/usr/local/bin/claude" });
 		expect(merged.agents.claude.path).toBe("/usr/local/bin/claude");
 		expect(merged.agents.claude.enabled).toBe(true);
@@ -184,7 +184,7 @@ describe("mergeSettings (agents)", () => {
 	});
 });
 
-describe("mergeSettings (managerAnalysisFolded, T-104 additional feature)", () => {
+describe("mergeSettings (managerAnalysisFolded)", () => {
 	it("keeps a saved value as-is when every agent's entry is a valid boolean", () => {
 		expect(mergeSettings({ managerAnalysisFolded: { claude: true, codex: false } }).managerAnalysisFolded).toEqual({
 			claude: true,

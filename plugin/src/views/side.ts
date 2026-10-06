@@ -35,7 +35,7 @@ export const VIEW_TYPE_SIDE = "agent-sessions-side";
 const MIN_DETAIL_HEIGHT = 80;
 /** `terminal-status` fires on every busy/idle change, so redraws are batched at this interval. */
 const TERMINAL_STATUS_DEBOUNCE_MS = 200;
-/** T-110: how long a revert-to-default (after the pointer leaves the whole list) waits before
+/** how long a revert-to-default (after the pointer leaves the whole list) waits before
  * actually happening — long enough to absorb a leave/enter landing right on the boundary between
  * the list and a row just inside it, short enough that a genuine leave still reverts promptly. */
 const HOVER_HIDE_DELAY_MS = 200;
@@ -55,7 +55,7 @@ export class SideView extends ItemView {
 	private detailHeight = 220;
 	/** True while a hover has temporarily swapped in a different detail view (reverts to default when it ends). */
 	private hovering = false;
-	/** T-110: the pending, delayed revert-to-default trigger — `schedule()`d only when the pointer
+	/** the pending, delayed revert-to-default trigger — `schedule()`d only when the pointer
 	 * leaves the *whole list* (`listEl`'s own `pointerleave`, wired once in `buildSkeleton`, not
 	 * any individual row's), and `cancel()`ed the moment any row is entered
 	 * (`cancelPendingHoverHide`, called from `RowActions.cancelHideDetail`). Held on `this` rather
@@ -117,7 +117,7 @@ export class SideView extends ItemView {
 
 		this.onLayoutChange();
 		this.onActiveLeafChange();
-		// T-112 follow-up: right after a reload, the workspace layout may not have fully settled
+		// right after a reload, the workspace layout may not have fully settled
 		// yet by the time onOpen() itself runs (`getMostRecentLeaf` too can still return something
 		// stale/wrong at that point) — re-derives frontId (and redraws) once more once it has.
 		this.app.workspace.onLayoutReady(() => {
@@ -146,7 +146,7 @@ export class SideView extends ItemView {
 		this.listEl = listWrap.createDiv({ cls: "agent-sessions-list" });
 		this.handleEl = listWrap.createDiv({ cls: "agent-sessions-drag-handle" });
 		this.bindHandle();
-		// T-110: `pointerleave` on the list container itself only fires when the pointer actually
+		// `pointerleave` on the list container itself only fires when the pointer actually
 		// leaves the whole list's bounds, never when moving between its children (rows, group
 		// headers, the gap between sections) — unlike a per-row `pointerleave`, which fires on
 		// every row-to-row transition. Registered once (this element is never replaced, only its
@@ -173,7 +173,7 @@ export class SideView extends ItemView {
 	}
 
 	/** When the language or agent settings change: redraws the nav's tooltips, the list, the
-	 * detail pane, and (T-104) rebuilds the rate-limit rows if the enabled-agent set changed. */
+	 * detail pane, and rebuilds the rate-limit rows if the enabled-agent set changed. */
 	private refreshLanguage(): void {
 		if (this.navButtons.newSession) {
 			setTooltip(this.navButtons.newSession, t("action.newSession"));
@@ -291,7 +291,7 @@ export class SideView extends ItemView {
 
 	/**
 	 * Re-derives `frontId` from the current live `TerminalView.sessionId` getter of the most
-	 * recently active leaf in the root split (T-112 follow-up) — not a cached snapshot from a
+	 * recently active leaf in the root split — not a cached snapshot from a
 	 * leaf's `getViewState().state.id`, which goes stale the moment `relinkId` swaps a Codex tab's
 	 * id (its daemon-tracked placeholder to the real, resolved thread id) while that tab stays in
 	 * front the whole time: no new `active-leaf-change` event fires to catch it, so a snapshot
@@ -331,7 +331,7 @@ export class SideView extends ItemView {
 		this.listEl.empty();
 		this.selection.clear();
 		this.timeTicker.reset();
-		// Stored on `this` (T-110), not just a local, so `listEl`'s single, long-lived
+		// Stored on `this`, not just a local, so `listEl`'s single, long-lived
 		// `pointerleave` listener (`buildSkeleton`) always calls into whichever `actions` this
 		// most recent `render()` produced, rather than a stale one from before a re-render.
 		const actions = createRowActions(
@@ -369,7 +369,7 @@ export class SideView extends ItemView {
 
 	/**
 	 * Shown instead of the (otherwise blank) list when there are no sessions at all yet
-	 * (T-104): a wordmark, a short description, and a "New session" button — the same action
+	 *: a wordmark, a short description, and a "New session" button — the same action
 	 * as the nav's `+`. If no agent is enabled, that's swapped for a button that opens settings
 	 * instead, since there'd be nothing to launch. If at least one is enabled, the button shows
 	 * first (optimistically) while a background check (`resolveAgentBinary`) confirms at least
@@ -508,7 +508,7 @@ export class SideView extends ItemView {
 	}
 
 	/**
-	 * The pointer left the list *entirely* (T-110 — wired to `listEl`'s own `pointerleave` in
+	 * The pointer left the list *entirely* (wired to `listEl`'s own `pointerleave` in
 	 * `buildSkeleton`, not to any individual row's, so moving directly from one row to another
 	 * never reaches this at all): reverts to the default (the frontmost tab, or the top of the
 	 * list) after `HOVER_HIDE_DELAY_MS`, canceled by `cancelPendingHoverHide` if a row is entered

@@ -6,9 +6,9 @@
 // Claude: `~/.agents/sessions/status/*.json` files each carry the account-wide `rate_limits`,
 // written in real time by Claude Code's own statusLine hook. Since each file's last-written time
 // (mtime) differs, this uses whichever file with `rate_limits` was written most recently (assumes
-// the account isn't being used from multiple places at once). Always exactly two rows (5h/7d),
-// unchanged since before T-104 — Claude's account always has both.
-// Codex (T-104, T-104 addendum): no statusLine-equivalent mechanism exists, so there's no live
+// the account isn't being used from multiple places at once). Always exactly two rows (5h/7d) —
+// Claude's account always has both.
+// Codex: no statusLine-equivalent mechanism exists, so there's no live
 // file to read — instead this polls `json stats`'s `agents.codex.windows` (the same shape the
 // manager's per-agent analysis uses) every `STATS_FETCH_INTERVAL_MS`, converting each
 // `StatsWindow` into the same `RateLimitWindow` shape via `fromStatsWindow` so every agent renders
@@ -37,7 +37,7 @@ export const FIVE_HOUR_SECONDS = 5 * 60 * 60;
 export const SEVEN_DAY_SECONDS = 7 * 24 * 60 * 60;
 
 /**
- * A non-Claude agent's side-panel rows (T-104 addendum): every window it actually has a tracked
+ * A non-Claude agent's side-panel rows: every window it actually has a tracked
  * percentage for, in length order — never the ones it doesn't track right now (`used_percentage
  * === null`, e.g. a free-plan Codex account with no 5-hour/7-day quota at all, only a 30-day
  * one — the always-present `five_hour`/`seven_day` placeholders are dropped here, leaving just
@@ -49,7 +49,7 @@ export function realWindows(windows: StatsWindows | null): StatsWindow[] {
 
 /**
  * Whether a row needs the small top margin that visually separates one agent's group of rows
- * from the previous agent's (T-111) — true only for the very first row of every agent *after*
+ * from the previous agent's — true only for the very first row of every agent *after*
  * the first shown, since that first agent's own first row needs no separation from anything
  * above it. `agentIndex`/`rowIndexWithinAgent` are both 0-based.
  */
@@ -115,7 +115,7 @@ export function rollForwardWindow(w: RateLimitWindow | null, durationSeconds: nu
 }
 
 /**
- * Converts a `json stats` `StatsWindow` (T-103/T-104 — `agents.<agent>.windows`) into the same
+ * Converts a `json stats` `StatsWindow` (`agents.<agent>.windows`) into the same
  * `RateLimitWindow` shape the file-based (Claude) path produces, so both render through the
  * identical `renderWindow`. `w.end` stands in for `resetsAt` (the window's own boundary — Codex's
  * own more precise `rate_limits.resets_in_seconds` isn't part of this shape). `usedPercentage`

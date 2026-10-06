@@ -30,7 +30,7 @@ export function totalTokens(total: Pick<UsageTotal, "input" | "output" | "cache_
 	return total.input + total.output + total.cache_read + total.cache_create;
 }
 
-/** `usage.ts`'s own `formatCost` (T-113: comma-grouped, `<$0.01` for a near-zero cost) — this
+/** `usage.ts`'s own `formatCost` (comma-grouped, `<$0.01` for a near-zero cost) — this
  * module used to have its own separate, slightly different implementation (no comma grouping, no
  * `<$0.01` case); re-exported from here instead of duplicated, since `manager.ts` and this
  * module's own tests already import it from here. */

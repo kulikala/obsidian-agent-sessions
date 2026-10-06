@@ -125,9 +125,9 @@ def main(args: List[str]) -> int:
         elif remove:
             # Removes only our own hooks/statusLine from settings.json, only our
             # own two submit-key entries from keybindings.json, and only our own
-            # marked lines from Codex's config.toml (T-109) -- leaving other
+            # marked lines from Codex's config.toml -- leaving other
             # tools'/the user's own entries alone in every case. Nothing writes
-            # to config.toml on the non-remove side; the plugin (T-108) does
+            # to config.toml on the non-remove side; the plugin does
             # that, since the Python side doesn't manage a Codex installation
             # the way it manages a Claude Code one.
             changes, _ = claude_setup.run_remove(settings_path, dry_run=dry_run)

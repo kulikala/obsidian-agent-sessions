@@ -35,7 +35,7 @@ class Detail:
     recent_user: List[str] = None   # the last few human prompts, oldest first (Claude Code only; used to name sessions)
     # Claude Code carries model/effort via statusLine's StatusInfo instead (§14), so
     # these stay None here; Codex has no statusLine, so agents.codex.detail populates
-    # them from the most recent turn_context (see plan/段9-Codex対応.md).
+    # them from the most recent turn_context.
     model: Optional[str] = None
     effort: Optional[str] = None
 

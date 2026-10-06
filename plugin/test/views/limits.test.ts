@@ -111,7 +111,7 @@ describe("rollForwardWindow", () => {
 	});
 });
 
-describe("fromStatsWindow (T-103/T-104: a json stats StatsWindow, e.g. agents.codex.windows, converted to the same shape as the file-based path)", () => {
+describe("fromStatsWindow (a json stats StatsWindow, e.g. agents.codex.windows, converted to the same shape as the file-based path)", () => {
 	it("is null when the window itself is", () => {
 		expect(fromStatsWindow(null)).toBeNull();
 	});
@@ -127,7 +127,7 @@ describe("fromStatsWindow (T-103/T-104: a json stats StatsWindow, e.g. agents.co
 	});
 });
 
-describe("realWindows (T-104 addendum, re-verified against the exact reported fixture)", () => {
+describe("realWindows (re-verified against the exact reported fixture)", () => {
 	it("keeps only the real 30-day window when a free-plan Codex account tracks no 5h/7d quota at all", () => {
 		// The exact scenario from the crossed-message re-check: an account with `five_hour` and
 		// `seven_day` both present-but-unavailable (used_percentage: null), plus a real
@@ -163,7 +163,7 @@ describe("realWindows (T-104 addendum, re-verified against the exact reported fi
 	});
 });
 
-describe("isGroupStartRow (T-111: which row gets the inter-agent-group spacing)", () => {
+describe("isGroupStartRow (which row gets the inter-agent-group spacing)", () => {
 	it("is false for the first agent's rows, however many there are", () => {
 		expect(isGroupStartRow(0, 0)).toBe(false);
 		expect(isGroupStartRow(0, 1)).toBe(false);

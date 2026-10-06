@@ -560,8 +560,7 @@ export async function agentVersion(bin: string): Promise<string | null> {
 /**
  * The argv for starting/resuming `agent`'s CLI in a PTY. `fresh` picks new-session vs
  * resume-by-id. Codex has no equivalent of Claude's `--session-id` — there's no way for the
- * caller to assign a new session's id; Codex decides its own new thread's id once it starts (see
- * plan/段9-Codex対応.md) — so a fresh Codex launch takes no id-related flag at all, just the bin. OpenCode is the same
+ * caller to assign a new session's id; Codex decides its own new thread's id once it starts — so a fresh Codex launch takes no id-related flag at all, just the bin. OpenCode is the same
  * (`opencode` / `opencode --session <id>`); with `opencodeLaunch` it goes through
  * `ollama launch opencode --model <M> -y -- …` instead.
  *
@@ -660,7 +659,7 @@ export function parseOllamaList(output: string): string[] {
 /**
  * Auto-detects a single agent's binary via `locateBinary`'s full search (login shell →
  * interactive shell → common locations). `null` if not found. Backs both `detectAgents` (every
- * agent, first run) and the settings tab's per-agent "Find again" button (T-117 — refinds just
+ * agent, first run) and the settings tab's per-agent "Find again" button (refinds just
  * the one agent the button is on, rather than re-probing every agent's binary for an unrelated
  * button click).
  */

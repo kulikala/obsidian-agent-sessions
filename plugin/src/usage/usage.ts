@@ -62,7 +62,7 @@ export function sumRange(turns: UsageTurn[], from: number, to: number): UsageTot
 	return total;
 }
 
-/** Comma-separated thousands (T-113), in the plugin's own display language (`getLang()`) rather
+/** Comma-separated thousands, in the plugin's own display language (`getLang()`) rather
  * than a fixed locale — every raw (non-`formatK`-abbreviated) count of 1,000 or more goes through
  * this, so a number is never shown as a single run of digits with nothing marking the thousands. */
 export function formatNumber(n: number): string {
@@ -95,7 +95,7 @@ export function formatK(n: number): string {
 	return `${(n / 1_000_000_000).toFixed(1)}B`;
 }
 
-/** Below `$0.005` shows `<$0.01`; otherwise two decimal places, comma-grouped (T-113) in the
+/** Below `$0.005` shows `<$0.01`; otherwise two decimal places, comma-grouped in the
  * plugin's own display language. */
 export function formatCost(n: number): string {
 	if (n > 0 && n < 0.005) {
@@ -115,7 +115,7 @@ export function formatDuration(seconds: number | null): string {
 	return `${h}h ${m}m`;
 }
 
-/** Locale-short date + time (T-115) — ja "2026/09/25 14:05", en "9/25/26, 2:05 PM" (year omitted
+/** Locale-short date + time — ja "2026/09/25 14:05", en "9/25/26, 2:05 PM" (year omitted
  * when it's the current year). `null` shows as "—" (turns with no `ts`, e.g. one recorded before
  * the session started). `now` defaults to the current time; pass it explicitly in tests. */
 export function formatEpoch(ts: number | null, now: number = Date.now() / 1000): string {

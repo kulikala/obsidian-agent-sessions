@@ -1,4 +1,4 @@
-"""Codex's contribution to `json stats` (T-103, extended T-103-followup):
+"""Codex's contribution to `json stats` (including windows that aren't 5h or 7d):
 `{"windows": {"five_hour": W, "seven_day": W, ...}}`, the same `W` shape
 Claude Code's `usage.stats.compute` already produces (`{start, end,
 used_percentage, total, sessions}`, now also carrying `key`/`minutes` -- see

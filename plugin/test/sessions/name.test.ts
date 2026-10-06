@@ -11,7 +11,7 @@ import {
 } from "../../src/sessions/name";
 import { splitName } from "../../src/sessions/tree";
 
-describe("applyChipEditResult (T-112: editing a category chip in place never discards the name)", () => {
+describe("applyChipEditResult (editing a category chip in place never discards the name)", () => {
 	it("replaces the category with the confirmed result, trimmed, leaving name untouched", () => {
 		expect(applyChipEditResult({ category: "old", name: "セッション管理" }, "  new  ")).toEqual({
 			category: "new",
@@ -192,7 +192,7 @@ describe("categorizableLabel", () => {
 	});
 });
 
-describe("sessionDisplayName (T-106: name → label → agent-name fallback, never the id)", () => {
+describe("sessionDisplayName (name → label → agent-name fallback, never the id)", () => {
 	afterEach(() => setLang("en"));
 
 	it("returns the name as-is when present", () => {

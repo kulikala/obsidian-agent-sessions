@@ -26,11 +26,11 @@ from .rollout import Head, RACY_WINDOW
 # 2: read_head switched from response_item role=user (which mixes in Codex's
 # own injected context) to event_msg.user_message, and started filtering bare
 # slash commands (see rollout.py's INJECTED_PREFIXES/is_real_user_text).
-# 3 (T-101): read_head also recognizes event_msg.item_completed(UserMessage)
+# 3: read_head also recognizes event_msg.item_completed(UserMessage)
 # (some Codex CLI versions, e.g. 0.156.1, have neither user_message events nor
 # a cleanly-recoverable response_item -- this is the only source they do have),
 # and a filtered response_item is now used as a last resort instead of never.
-# 4 (T-107): the cache entry also carries model/effort now (rollout.read_last_turn_context) --
+# 4: the cache entry also carries model/effort now (rollout.read_last_turn_context) --
 # an old entry has neither key, which the cache-hit branch below would
 # otherwise read back as (None, None) forever, indistinguishable from a
 # rollout that genuinely has no turn_context.
@@ -46,7 +46,7 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
     `threads.title` -> `rollout.read_head`'s own extraction (itself tiered --
     see that function). `threads.title` outranks the rollout extraction because
     it's computed by Codex itself from data this project doesn't always have
-    cheap access to (T-101), not because the rollout extraction is unreliable
+    cheap access to, not because the rollout extraction is unreliable
     -- when sqlite has nothing (unavailable, locked, or a thread not yet
     indexed there), the rollout-derived `first_prompt` is exactly as good as
     before.

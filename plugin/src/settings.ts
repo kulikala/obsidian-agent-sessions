@@ -187,7 +187,7 @@ export interface AgentSessionsSettings {
 	managerAnalysisHeight: number;
 	/** Whether the manager's analytics area is collapsed. */
 	managerAnalysisCollapsed: boolean;
-	/** Whether each agent's own analytics section is folded (T-104 additional feature) —
+	/** Whether each agent's own analytics section is folded —
 	 * independent of `managerAnalysisCollapsed`, which folds the whole area. Only meaningful when
 	 * more than one agent is enabled (a single section has no heading to fold at all). */
 	managerAnalysisFolded: Record<AgentId, boolean>;
@@ -300,7 +300,7 @@ function mergeAnalysisFolded(data: unknown): Record<AgentId, boolean> {
  * Layers saved data over the defaults. Drops keys that aren't in the current type (`newlineKey`)
  * and values that aren't in the current `SubmitKey` (`super+enter`, `meta+enter`, etc.), even if
  * they're left over in saved data — those get re-derived from keybindings.json at startup.
- * Migrates a pre-T-96 top-level `claudePath` into `agents.claude.path` (once — see below) and
+ * Migrates an older top-level `claudePath` into `agents.claude.path` (once — see below) and
  * validates `agents`/`lastNewSessionAgent` the same defensive way.
  *
  * `isMac` (default `true`): on non-macOS, drops a leftover `cmd+enter` in saved data (falling
@@ -360,7 +360,7 @@ export function mergeSettings(data: unknown, isMac = true): AgentSessionsSetting
 	if (!isMac && saved.submitKey === "cmd+enter") {
 		delete saved.submitKey;
 	}
-	// Pre-T-96 saved data has a single top-level `claudePath` instead of `agents`. Migrated once,
+	// Older saved data has a single top-level `claudePath` instead of `agents`. Migrated once,
 	// the first time saved data with no `agents` object of its own is merged.
 	if (saved.agents === undefined && typeof saved.claudePath === "string" && saved.claudePath) {
 		saved.agents = { ...defaultAgentSettings(), claude: { ...defaultAgentSettings().claude, path: saved.claudePath } };

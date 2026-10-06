@@ -34,7 +34,7 @@ def _strip_wal_files(db: str) -> None:
 
 
 class TestConnectFallback(unittest.TestCase):
-    """T-105: a real report -- with no `codex` process running, `-wal`/`-shm`
+    """With no `codex` process running, `-wal`/`-shm`
     can be entirely absent, and opening a WAL-mode database `mode=ro` in that
     state fails outright ("unable to open database file"), silently losing
     every session's name."""

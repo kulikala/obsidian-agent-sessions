@@ -26,7 +26,7 @@ const NEW_SESSION_KEY: Record<ReturnType<typeof asAgentId>, MessageKey> = {
 
 /**
  * The display name shown wherever a session needs one — tab title, side panel row, manager row,
- * detail pane, notifications, row menu, archive entries (T-106): `name` (`/rename`, or Claude
+ * detail pane, notifications, row menu, archive entries: `name` (`/rename`, or Claude
  * Code's/Codex's/OpenCode's own title) if there is one, otherwise `label` (the auto-derived name —
  * usually the first prompt, truncated) if that's real content, otherwise "New Claude Code
  * session"/"New Codex session"/"New OpenCode session" (by agent). The session's own `id` is never shown as its name — a `label`
@@ -113,7 +113,7 @@ export interface ChipFieldState {
 }
 
 /**
- * The result of editing a category chip in place (T-112, `ui/modals.ts`'s `beginEditChip`),
+ * The result of editing a category chip in place (`ui/modals.ts`'s `beginEditChip`),
  * applied to the field's existing state. `result === null` means the edit was canceled
  * (Escape, or the dialog closing mid-edit) — the state comes back completely unchanged, not even
  * re-trimmed. Otherwise `result` becomes the new category (trimmed; an empty string removes it

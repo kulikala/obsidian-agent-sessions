@@ -181,7 +181,7 @@ export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptio
 
 	let hoverTimer: number | null = null;
 	el.addEventListener("pointerenter", () => {
-		// T-110: cancels a pending, delayed `hideDetail` from the list's own `pointerleave`
+		// cancels a pending, delayed `hideDetail` from the list's own `pointerleave`
 		// *before* scheduling this row's own confirm timer — otherwise moving directly from one
 		// row to another (never actually leaving the list) could still flash back to the default
 		// detail if the previous row's hide-delay happened to fire before this row's 300ms is up.
@@ -190,7 +190,7 @@ export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptio
 	});
 	el.addEventListener("pointerleave", () => {
 		// Only cancels *this row's own* not-yet-confirmed show — does not call `hideDetail` here
-		// (T-110): that's wired to the list container's own `pointerleave` instead, so moving
+		//: that's wired to the list container's own `pointerleave` instead, so moving
 		// between rows (without leaving the list) never reverts to the default detail at all.
 		if (hoverTimer) {
 			window.clearTimeout(hoverTimer);

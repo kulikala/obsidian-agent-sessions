@@ -16,7 +16,7 @@ Each agent's scan/detail/live/usage logic lives in its own subpackage
 `read_detail_for(path)`, `live_sessions()`, `collect_usage(path)`.
 `agentsessions/cli/json_output.py` loops over `enabled_agents()` and merges
 their results; that's the "registered adapters, looped over and merged" dispatch
-point referred to in plan/段9-Codex対応.md.
+point of the CLI.
 """
 import json
 import os

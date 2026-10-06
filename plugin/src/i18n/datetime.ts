@@ -1,5 +1,5 @@
 // Locale-aware date/time formatting shared by every place in the plugin that shows an absolute
-// date or time (T-115) — the side panel/manager row tooltip and the relative-time fallback
+// date or time — the side panel/manager row tooltip and the relative-time fallback
 // (`views/rows.ts`), the turn table (`usage/usage.ts`), and the pace-judgment line
 // (`views/manager-model.ts`). No dependency on `obsidian` (tested in test/i18n/datetime.test.ts).
 //
@@ -7,7 +7,7 @@
 // text rather than routing through here — `Intl.RelativeTimeFormat` doesn't reproduce either
 // exactly (its abbreviated English units differ from this app's own, and `numeric: "auto"`
 // introduces ja-only special-case words like "一昨日" for two days ago that this app doesn't use
-// anywhere else), so switching would visibly change the output. See plan/reports/T-115.md.
+// anywhere else), so switching would visibly change the output.
 
 import type { Lang } from "./index";
 
@@ -97,7 +97,7 @@ export function formatWeekdayTimeShort(epochSeconds: number, lang: Lang): string
 }
 
 /** Time only, locale hour cycle (ja 24h, en 12h + AM/PM) — ja "21:11", en "9:11 PM". Used on its
- * own by `views/manager-model.ts`'s pace-judgment "exhausts today" case (T-116), where showing a
+ * own by `views/manager-model.ts`'s pace-judgment "exhausts today" case, where showing a
  * weekday would be redundant. */
 export function formatTimeShort(epochSeconds: number, lang: Lang): string {
 	return TIME_SHORT[lang].format(new Date(epochSeconds * 1000));

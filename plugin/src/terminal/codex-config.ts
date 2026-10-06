@@ -1,5 +1,5 @@
 // Codex CLI's own config (`~/.codex/config.toml`, respecting `CODEX_HOME`) — the submit-key
-// keymap (T-108) and a default `[tui].status_line` when the user hasn't set one. This is the
+// keymap and a default `[tui].status_line` when the user hasn't set one. This is the
 // plugin's side of the contract agreed with lnx-py's Python-side removal
 // (`agentsessions/codex/config_toml.py`, `agent-sessions setup --remove`): every line this
 // feature writes ends with `MANAGED_MARKER`, so removal is purely marker-driven, and a brand-new
@@ -25,8 +25,7 @@ import type { EditorKey } from "../settings";
 import { agentEditorKeyName, editorKeyIsAgentDefault } from "./keys";
 
 /** Written at the end of every line this feature adds to config.toml — must match
- * `agentsessions/codex/config_toml.py`'s `MANAGED_MARKER` exactly (agreed with lnx-py for
- * T-108/T-109). A line is "ours" if it *ends with* this, after trailing whitespace is stripped —
+ * `agentsessions/codex/config_toml.py`'s `MANAGED_MARKER` exactly (agreed with lnx-py). A line is "ours" if it *ends with* this, after trailing whitespace is stripped —
  * never a substring match elsewhere on the line. */
 export const MANAGED_MARKER = "# managed by Agent Sessions";
 
@@ -137,7 +136,7 @@ export function upsertManagedKey(text: string, tablePath: string, key: string, v
 	}
 
 	// The table doesn't exist at all — append a brand-new section at the end of the file. Its
-	// header is marked too (T-108 follow-up, agreed with lnx-py): a table created *solely* to
+	// header is marked too (agreed with lnx-py): a table created *solely* to
 	// hold our own key(s) should leave nothing behind once removed.
 	const needsLeadingNewline = text.length > 0 && !text.endsWith("\n");
 	const needsBlankLine = text.length > 0 && !text.endsWith("\n\n");
@@ -209,7 +208,7 @@ export interface ApplyCodexConfigResult {
 }
 
 /**
- * Syncs `~/.codex/config.toml` (or wherever `filePath` points) with two independent, T-108
+ * Syncs `~/.codex/config.toml` (or wherever `filePath` points) with two independent
  * features:
  *
  * 1. **Submit key**: when `submitKey !== "enter"`, ensures `composer.submit = "alt-enter"` and

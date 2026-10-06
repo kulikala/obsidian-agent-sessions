@@ -31,7 +31,7 @@ export interface RowActions {
 	/** Called after a 300ms hover. */
 	showDetail(id: string): void;
 	/**
-	 * Called when the pointer leaves the list entirely (T-110) — the caller (`SideView`) wires
+	 * Called when the pointer leaves the list entirely — the caller (`SideView`) wires
 	 * this to its list container's own `pointerleave`, not to any individual row's, so moving the
 	 * pointer directly from one row to another never triggers it. Not called by this file at all;
 	 * kept on `RowActions` (rather than as a separate side-panel-only callback) so it lives next
@@ -39,7 +39,7 @@ export interface RowActions {
 	 */
 	hideDetail?(): void;
 	/**
-	 * Called immediately on entering any row (T-110), before that row's own 300ms hover-confirm
+	 * Called immediately on entering any row, before that row's own 300ms hover-confirm
 	 * timer starts — lets the caller cancel a pending, delayed `hideDetail` (if it debounces one)
 	 * so a leave/enter landing right on the list/row boundary still can't flash to the default
 	 * detail in between.
@@ -66,7 +66,7 @@ export interface RenderRowOptions {
 }
 
 /**
- * A cancelable, delayed callback (T-110) — `schedule()` (re)starts the delay from scratch,
+ * A cancelable, delayed callback — `schedule()` (re)starts the delay from scratch,
  * `cancel()` stops it without calling anything. Used for the side panel's "revert to the default
  * detail" trigger (`SideView.onHoverEnd`/`cancelPendingHoverHide`): the delay absorbs a pointer
  * leave/enter landing right on the boundary between the list and a row just inside it — `cancel()`
@@ -106,7 +106,7 @@ export class DelayedRevert {
 }
 
 /**
- * The side panel's frontmost-tab id, re-derived every time this is called (T-112 follow-up) —
+ * The side panel's frontmost-tab id, re-derived every time this is called —
  * never a cached snapshot. `activeSessionId` is expected to be the active leaf's own live
  * `TerminalView.sessionId` getter (`null` when the active leaf isn't one of this plugin's own
  * terminal tabs) — reading that fresh on every call is what actually matters here: a *cached*
@@ -142,7 +142,7 @@ export class RowSelection {
 }
 
 /** The icon distinguishing which agent a session belongs to — each agent's own mark
- * (`ui/icons.ts`, T-102), registered once via `registerAgentIcons()` (`main.ts`'s `onload`). */
+ * (`ui/icons.ts`), registered once via `registerAgentIcons()` (`main.ts`'s `onload`). */
 export const AGENT_ICON: Record<string, string> = AGENT_ICON_ID;
 
 /** The agent's display-name key (`settings.agents.<id>.name` — the same proper names used in
@@ -158,8 +158,7 @@ export function displayName(row: Row): string {
 }
 
 /**
- * Names a set of agents for a sentence like "Start {agents} with the button below" (T-106
- * addendum's `empty.desc`, and the settings-fallback messages next to it): "Claude Code",
+ * Names a set of agents for a sentence like "Start {agents} with the button below" (`empty.desc`, and the settings-fallback messages next to it): "Claude Code",
  * "Codex", "Claude Code or Codex" (`common.agentsEither`), or "Claude Code, Codex, or OpenCode"
  * (`common.agentsSeparator` between all but the last, `common.agentsEitherLast` before it),
  * depending on how many are given.
@@ -200,7 +199,7 @@ export function rowLabel(row: Row): string {
 
 export { renderCategoryChip };
 
-/** Locale-short date + time (T-115) — ja "2026/09/25 14:05", en "9/25/26, 2:05 PM" (year omitted
+/** Locale-short date + time — ja "2026/09/25 14:05", en "9/25/26, 2:05 PM" (year omitted
  * when it's the current year). The tooltip for both the side panel row's and the manager table's
  * last-updated cell — `formatRelativeTime` is the displayed text in both places. */
 export function formatTime(epochSeconds: number): string {
@@ -213,7 +212,7 @@ export function formatTime(epochSeconds: number): string {
 /**
  * The side panel's row time: "just now" under a minute, "N min ago" under an hour, "N h ago"
  * under a day, "yesterday" under two days, "N d ago" under a week, and a locale-short date (no
- * time of day, T-115) from a week on — a plain duration cascade rather than calendar-day
+ * time of day) from a week on — a plain duration cascade rather than calendar-day
  * boundaries, so it doesn't depend on timezone edge cases. `now` defaults to the current time;
  * pass it explicitly in tests.
  */

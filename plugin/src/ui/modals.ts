@@ -28,7 +28,7 @@ const AGENT_NAME_KEY: Record<AgentId, MessageKey> = {
 };
 
 /** Gives a `Setting`'s control the dialog's full width instead of Obsidian's default
- * shrink-to-fit, right-aligned control column (`agent-sessions-wide-setting`, T-102) — every
+ * shrink-to-fit, right-aligned control column (`agent-sessions-wide-setting`) — every
  * text-input field in these dialogs uses this, not just the small controls (toggles, dropdowns)
  * `Setting` is normally used for. */
 function makeWide(setting: Setting): Setting {
@@ -46,14 +46,14 @@ export interface CategorySuggest {
 	/** Confirms the highlighted item (calls `onConfirm`), if any. Returns whether it did. */
 	confirmHighlighted(): boolean;
 	/** Removes the dropdown element from `<body>` — required because it's portaled there rather
-	 * than living under `anchorEl` (T-104(e)), so it isn't cleaned up automatically when the
+	 * than living under `anchorEl`, so it isn't cleaned up automatically when the
 	 * modal's own `contentEl` is emptied on close. Every caller's `onClose` must call this. */
 	destroy(): void;
 }
 
 /**
- * The category-suggestion dropdown: positioned against `anchorEl`'s on-screen location (T-104(e)
- * — see `styles.css`'s `.agent-sessions-name-suggest` comment for why it's portaled to `<body>`
+ * The category-suggestion dropdown: positioned against `anchorEl`'s on-screen location
+ * (see `styles.css`'s `.agent-sessions-name-suggest` comment for why it's portaled to `<body>`
  * rather than rendered as a normal descendant) as chip + label rows from `filterCategories`,
  * arrow-key/mouse highlighting, and click-or-Enter confirmation via `onConfirm`. Shared by the
  * composed name field (`buildComposedNameField`) and `MoveToCategoryModal` — the two callers
@@ -99,7 +99,7 @@ export function buildCategorySuggest(
 			suggestEl.show();
 			for (const cat of items) {
 				const itemEl = suggestEl.createDiv({ cls: "agent-sessions-name-suggest-item" });
-				// T-112: just the chip (its own text already shows the category name in full) —
+				// just the chip (its own text already shows the category name in full) —
 				// a separate label span used to repeat the same text right next to it, showing
 				// every category name twice per row.
 				renderCategoryChip(itemEl, cat, colorIndexFor(cat));
@@ -146,7 +146,7 @@ export function buildCategorySuggest(
 	};
 }
 
-/** A small "×" appended to a category chip (T-104(e)) — shared by the composed name field's chip
+/** A small "×" appended to a category chip — shared by the composed name field's chip
  * and `MoveToCategoryModal`'s, so both dialogs remove a chip the same way. Its own click handler
  * stops propagation so it doesn't also trigger the chip's own click-to-edit. */
 function appendChipRemove(chip: HTMLElement, onRemove: () => void): void {
@@ -165,7 +165,7 @@ interface ChipEditHandle {
 }
 
 /**
- * Lets a chip be edited in place (T-112): swaps `chipEl` for a small text input, pre-filled with
+ * Lets a chip be edited in place: swaps `chipEl` for a small text input, pre-filled with
  * `currentCategory` and selected (so retyping from scratch is one keystroke away), with the same
  * suggestion dropdown (`buildCategorySuggest`) anchored to it. Confirming — picking a suggestion,
  * Enter/Tab, or losing focus — calls `onDone` with the new category (`""` removes it entirely);
@@ -260,7 +260,7 @@ function beginEditChip(
 interface ComposedNameField {
 	getValue(): { category: string; name: string };
 	focus(): void;
-	/** Removes the (portaled — T-104(e)) suggestion dropdown. The caller's `onClose` must call this. */
+	/** Removes the (portaled) suggestion dropdown. The caller's `onClose` must call this. */
 	destroy(): void;
 }
 
@@ -295,7 +295,7 @@ function buildComposedNameField(
 		if (category) {
 			chipEl = renderCategoryChip(boxEl, category, colorIndexFor(category));
 			boxEl.insertBefore(chipEl, inputEl);
-			// T-112: clicking the chip edits just the category, in place — never touches `name`
+			// clicking the chip edits just the category, in place — never touches `name`
 			// (unlike the older `revertChip`, still used below for Backspace, which is only safe
 			// there because the field's own other content — the name — is already empty by the
 			// time Backspace can reach it).
@@ -331,7 +331,7 @@ function buildComposedNameField(
 		suggest.openFor(restored);
 	}
 
-	/** The chip's "×" (T-104(e)): clears the category outright, leaving the input empty — unlike
+	/** The chip's "×": clears the category outright, leaving the input empty — unlike
 	 * `revertChip`, which puts the category's text back for editing. */
 	function clearCategory(): void {
 		category = "";
@@ -567,7 +567,7 @@ export class RenameSessionModal extends Modal {
 export class MoveToCategoryModal extends Modal {
 	private inputEl!: HTMLInputElement;
 	private suggest!: CategorySuggest;
-	/** The confirmed category, shown as a chip (T-104(e) — same pattern as the composed name
+	/** The confirmed category, shown as a chip (same pattern as the composed name
 	 * field's, including the removable "×"). Starts already chipped from `currentCategory` if
 	 * there is one, since an existing category is itself already "confirmed". While this is set,
 	 * the input holds nothing meaningful (mirrors `buildComposedNameField`'s chip/text split). */
@@ -667,7 +667,7 @@ export class MoveToCategoryModal extends Modal {
 		if (this.category) {
 			const chip = renderCategoryChip(this.boxEl, this.category, this.plugin.index.categoryColorIndex(this.category));
 			this.boxEl.insertBefore(chip, this.inputEl);
-			// T-112: same click-to-edit-in-place as the composed name field's chip, for a
+			// same click-to-edit-in-place as the composed name field's chip, for a
 			// consistent feel across every dialog with a category chip.
 			chip.addEventListener("click", () => {
 				const categories = this.plugin.index.categories();

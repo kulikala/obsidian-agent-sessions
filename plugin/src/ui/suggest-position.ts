@@ -1,5 +1,4 @@
-// Pure positioning math for the category-suggestion dropdown (`modals.ts`'s `buildCategorySuggest`,
-// T-104(e)). Kept separate from `modals.ts` (which imports `obsidian` eagerly and so can't be
+// Pure positioning math for the category-suggestion dropdown (`modals.ts`'s `buildCategorySuggest`). Kept separate from `modals.ts` (which imports `obsidian` eagerly and so can't be
 // unit-tested directly) purely so this part is.
 
 export interface SuggestAnchorRect {

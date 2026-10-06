@@ -88,13 +88,13 @@ function renderBadges(
 	}
 	agentBadge.createSpan({ text: agentNameKey ? t(agentNameKey) : agent });
 	// `statusInfo` (Claude's own live statusLine data) wins when present. Otherwise, for an agent
-	// with no statusLine at all (Codex): `sessionRow.model`/`.effort` (T-107, `json scan`'s
+	// with no statusLine at all (Codex): `sessionRow.model`/`.effort` (`json scan`'s
 	// Codex-only fields — already loaded, no extra fetch) first, then `detail`'s most-recent-turn
 	// model/effort (`json detail`, per-session, may not have resolved yet) as a last resort.
 	const model = statusInfo?.model ?? sessionRow.model ?? detail?.model ?? null;
 	const modelBadge = row.createSpan({ cls: "agent-sessions-badge" });
 	if (statusInfo?.model) {
-		// Claude's own display name, shown as-is (unchanged from before T-107).
+		// Claude's own display name, shown as-is.
 		modelBadge.setText(statusInfo.model);
 	} else if (model) {
 		// Codex's raw model id (e.g. "gpt-5.6-luna") needs an actual short-name transform, not

@@ -2,15 +2,15 @@
 
 Codex, unlike Claude Code, doesn't write a status ledger file
 (`~/.claude/sessions/<pid>.json`'s equivalent) -- so this reads the tail of the
-rollout itself. Status rule (plan/段9-Codex対応.md): the most recent of
+rollout itself. Status rule: the most recent of
 `task_started` / `task_complete` / `turn_aborted` / an approval-request event
 decides the status -- `task_started` with nothing after it = busy, a
 `task_complete`/`turn_aborted` = idle, an approval-request = waiting.
 
 The approval-request event names in `WAITING_EVENTS` are from openai/codex's
-codex-rs source (see plan/他エージェント対応-検討.md's `ExecApprovalRequest` /
-`ApplyPatchApprovalRequest` / `RequestPermissions`); none of the 62 real local
-rollout files (checked 2026-09-25) hit an approval gate, so this branch is
+codex-rs source (`ExecApprovalRequest` /
+`ApplyPatchApprovalRequest` / `RequestPermissions`); none of the real local
+rollout files examined hit an approval gate, so this branch is
 unverified against real data -- worth confirming the actual `event_msg.type`
 string next time an approval-gated Codex session is available, rather than
 trusting the source-derived name blind.

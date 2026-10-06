@@ -4,9 +4,7 @@ to its real Codex thread id.
 Codex has no flag letting the caller choose its own session id, so the plugin
 starts it under a daemon-assigned uuid (like every other agent) and asks here,
 possibly more than once (a rollout file doesn't exist until Codex's first
-write), to learn what thread id it turned out to be. See
-plan/段9-Codex対応.md's "Codex には新規セッションの id を呼び出し側が決めるフラグが
-無い" note.
+write), to learn what thread id it turned out to be.
 
 Two strategies, tried in order:
 1. **Open-fd inspection**: `pid` (the daemon's child -- Codex's own pid) or one

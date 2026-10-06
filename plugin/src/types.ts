@@ -13,7 +13,7 @@ export interface ScanSession {
 	last_activity: number;
 	child: boolean;
 	transcript: string | null;
-	/** From the most recent `turn_context` (T-107) — Codex only, additive: absent (not `null`)
+	/** From the most recent `turn_context` — Codex only, additive: absent (not `null`)
 	 * from the JSON object entirely for Claude, or for a Codex session with no `turn_context` yet.
 	 * Claude's own model/effort come from statusLine instead (`sessions/statusline.ts`), which
 	 * wins over these when present (`views/detail.ts`'s `renderBadges`, `views/manager.ts`'s model/
@@ -150,7 +150,7 @@ export interface UsageResult {
 	to: number | null;
 }
 
-/** One window/session usage summary from `json stats`. `unknown_cost` (T-103/T-104): true when
+/** One window/session usage summary from `json stats`. `unknown_cost`: true when
  * this total/entry includes a call from a model not in the price table (Codex only for now —
  * Claude's is always false) — `cost` is then a floor, not the true total, the same convention as
  * `json usage`'s per-turn `unknown_cost`. */
@@ -167,10 +167,9 @@ export interface StatsUsage {
 /** One window (5-hour, 7-day, or any other length an agent reports) from `json stats`.
  * `start`/`end` are epoch seconds. `used_percentage` can be `null` — not just while data hasn't
  * arrived yet (Claude's existing "no status/*.json yet" case), but permanently for a window
- * length this agent's account doesn't track a quota for at all (T-103/T-104's confirmed
- * real-world case — e.g. a Codex account on a 30-day-only plan has `used_percentage: null` on
- * both its `five_hour` and `seven_day` entries). `minutes` is the window's own length (T-104
- * addendum) — needed since an agent can report a window of any length, not just 5h/7d.
+ * length this agent's account doesn't track a quota for at all (e.g. a Codex account on a 30-day-only plan has `used_percentage: null` on
+ * both its `five_hour` and `seven_day` entries). `minutes` is the window's own length
+ * — needed since an agent can report a window of any length, not just 5h/7d.
  * `label_key` is Python's best-effort i18n hint for it; the plugin computes its own label from
  * `minutes` instead (`windowLabel` in `manager-model.ts`) rather than depending on this string
  * matching a pre-registered key, so it's not otherwise used here. */
@@ -188,15 +187,14 @@ export interface StatsWindow {
  * One agent's windows (or the Claude-only top-level ones) — always has `five_hour`/`seven_day`
  * (present even when `used_percentage` is `null`, i.e. not tracked for this agent), plus zero or
  * more additional real windows Codex (or a future agent) reports, each keyed `window_<minutes>m`
- * (T-104 addendum — e.g. `window_43200m` for a 30-day quota). A plain string-keyed map rather
+ * (e.g. `window_43200m` for a 30-day quota). A plain string-keyed map rather
  * than a fixed two-field shape, since the extra keys aren't known in advance; `orderedWindows`
  * (`manager-model.ts`) is the usual way to iterate every entry in a stable, length-sorted order.
  */
 export type StatsWindows = Record<string, StatsWindow>;
 
 /** The full output of `json stats`. `windows` is always present (Claude's own, unconditionally —
- * kept for backward compat even once `agents` is read instead, per lnx-py). `agents` (T-103/
- * T-104) has an entry only for a currently-enabled agent, each with the identical `StatsWindows`
+ * kept for backward compat even once `agents` is read instead, per lnx-py). `agents` has an entry only for a currently-enabled agent, each with the identical `StatsWindows`
  * shape as the top-level `windows` — `agents.claude.windows` duplicates the top-level content. */
 export interface StatsResult {
 	windows: StatsWindows;

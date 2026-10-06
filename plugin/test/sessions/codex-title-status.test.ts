@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { classifyCodexTitleStatus } from "../../src/sessions/codex-title-status";
 
-describe("classifyCodexTitleStatus (T-108: Codex's own OSC-0 terminal title, read via onTitleChange)", () => {
+describe("classifyCodexTitleStatus (Codex's own OSC-0 terminal title, read via onTitleChange)", () => {
 	it("is 'asking' when the title carries Codex's action-required marker", () => {
 		expect(classifyCodexTitleStatus("[ ! ] Action Required — my-thread")).toBe("asking");
 		expect(classifyCodexTitleStatus("[ . ] Action Required — my-thread")).toBe("asking");

@@ -320,7 +320,7 @@ describe("withBinDirOnPath (a version-manager-resolved binary needs its own dir 
 	});
 });
 
-describe("mergePath (T-100: the interactive shell's PATH merged onto the login shell's)", () => {
+describe("mergePath (the interactive shell's PATH merged onto the login shell's)", () => {
 	it("keeps every login entry, in order, before any interactive-only entry", () => {
 		expect(mergePath("/usr/bin:/bin", "/opt/homebrew/bin:/usr/bin")).toBe("/usr/bin:/bin:/opt/homebrew/bin");
 	});

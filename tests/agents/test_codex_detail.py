@@ -81,7 +81,7 @@ class TestCodexDetail(unittest.TestCase):
         self.assertEqual(d.last_user, 'the real last thing said')
 
     def test_last_user_reads_item_completed_user_message_newer_cli_versions(self):
-        # T-101: Codex CLI 0.156.1 has no user_message events at all, only
+        # Codex CLI 0.156.1 has no user_message events at all, only
         # item_completed(UserMessage).
         p = rollout_path(self.home, ID1)
         write_rollout(p, [

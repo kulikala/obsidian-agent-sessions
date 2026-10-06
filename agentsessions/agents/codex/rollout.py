@@ -8,7 +8,7 @@ Claude Code transcript but read the same way: forward from the start for the hea
 rather than duplicated.
 
 Line shapes below are from real `~/.codex/sessions` data plus openai/codex's
-codex-rs source (see plan/他エージェント対応-検討.md), checked 2026-09-25:
+codex-rs source:
 - `session_meta`: once, the first line. `payload.session_id` (== the thread id,
   also the file's trailing UUID), `.cwd`, `.source` ('cli' | 'vscode' | 'exec' |
   ...; anything but 'cli' means a child/headless launch from another tool),
@@ -53,10 +53,10 @@ HEAD_LIMIT = 2000   # max number of lines to scan for the head (mirrors sessions
 # message, never in an `event_msg.user_message`/`item_completed`(UserMessage) --
 # both of the latter are preferred over `response_item` for exactly this reason
 # (see `read_head`'s tiered `PROMPT_TIER_*`), but `response_item` -- filtered by
-# this list -- is still read as a last resort (T-101): some Codex CLI versions'
+# this list -- is still read as a last resort: some Codex CLI versions'
 # rollouts have neither of the other two at all. `<user_instructions>`/
 # `<permissions` weren't observed in the checked data but are filtered anyway,
-# per codex-rs's context-injection code cited in plan/他エージェント対応-検討.md.
+# per codex-rs's context-injection code.
 INJECTED_PREFIXES = (
     '# AGENTS.md instructions',
     '<environment_context>',
@@ -188,7 +188,7 @@ class Head:
 
 
 # `prompt`'s source, best first (lower wins) -- see `read_head`. `agents.codex.scan.scan`
-# additionally ranks `state_5.sqlite`'s `threads.title` above all of these (T-101).
+# additionally ranks `state_5.sqlite`'s `threads.title` above all of these.
 PROMPT_TIER_ITEM_COMPLETED = 1   # event_msg.item_completed, item.type == 'UserMessage'
 PROMPT_TIER_USER_MESSAGE = 2     # event_msg.user_message
 PROMPT_TIER_RESPONSE_ITEM = 3    # response_item, role=user, filtered
@@ -203,9 +203,9 @@ def read_head(path: str, limit: int = HEAD_LIMIT) -> Head:
     survives) is still used as a last resort, ranked below `event_msg.user_message`
     and `event_msg.item_completed`(UserMessage), which real data shows carry the
     literal typed text with nothing injected mixed in whenever they're present
-    at all -- some Codex CLI versions' rollouts don't have either (T-101, a real
-    report: 0.156.1 has neither `user_message` events nor the pre-T-101 filtering
-    on `response_item`, so no name was ever recovered for those sessions).
+    at all -- some Codex CLI versions' rollouts don't have either (e.g.
+    0.156.1 has no `user_message` events, so without the `response_item` fallback
+    no name could be recovered for those sessions).
 
     Keeps scanning past a candidate that fails `is_real_user_text` (injected
     text, or a bare slash command) rather than settling for it, and past a
@@ -279,8 +279,7 @@ def read_last_activity(path: str) -> Optional[float]:
 
 
 def read_last_turn_context(path: str) -> Tuple[Optional[str], Optional[str]]:
-    """`(model, effort)` from the rollout's most recent `turn_context` (T-107 --
-    the session manager wants these for Codex rows the same way it already has
+    """`(model, effort)` from the rollout's most recent `turn_context` (the session manager wants these for Codex rows the same way it already has
     them for Claude, via statusLine). `effort` falls back to
     `collaboration_mode.settings.reasoning_effort` when the top-level `effort`
     field is absent -- an older rollout's `turn_context` carries the setting

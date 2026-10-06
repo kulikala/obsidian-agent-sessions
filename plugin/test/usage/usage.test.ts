@@ -178,14 +178,14 @@ describe("formatCost (cost notation)", () => {
 		expect(formatCost(0)).toBe("$0.00");
 	});
 
-	it("groups thousands with a comma (T-113), any digit count", () => {
+	it("groups thousands with a comma, any digit count", () => {
 		expect(formatCost(1256.47)).toBe("$1,256.47");
 		expect(formatCost(1234567.89)).toBe("$1,234,567.89");
 		expect(formatCost(999.99)).toBe("$999.99");
 	});
 });
 
-describe("formatNumber (T-113: comma-grouped thousands for a raw, non-abbreviated count)", () => {
+describe("formatNumber (comma-grouped thousands for a raw, non-abbreviated count)", () => {
 	afterEach(() => setLang("en"));
 
 	it("leaves a number under 1,000 as-is", () => {
@@ -219,7 +219,7 @@ describe("formatDuration (h m notation)", () => {
 	});
 });
 
-describe("formatEpoch (locale short date + time, T-115)", () => {
+describe("formatEpoch (locale short date + time)", () => {
 	afterEach(() => setLang("en"));
 
 	it("omits the year when `ts` is in the same year as `now` (English, 12h)", () => {

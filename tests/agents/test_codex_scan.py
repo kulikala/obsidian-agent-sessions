@@ -28,7 +28,7 @@ class TestCodexScan(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.home = self.tmp.name
-        # T-105's last-known-name fallback persists to a file on disk by
+        # The last-known-name fallback persists to a file on disk by
         # default (config.CODEX_NAMES_CACHE_PATH) -- isolate it per test so
         # one test's sqlite entry can't leak into another's (fixed IDs are
         # reused across tests in this file) or into this machine's real cache.
@@ -65,7 +65,7 @@ class TestCodexScan(unittest.TestCase):
     def test_scan_keeps_untitled_session_with_no_name_and_no_prompt(self):
         # Unlike Claude, a Codex session with nothing left after filtering is
         # still shown (untitled), not dropped -- see agents.codex.scan.scan's
-        # docstring and plan/reports/T-95.md.
+        # docstring.
         p = rollout_path(self.home, ID2)
         write_rollout(p, [session_meta(ID2, '/work/two')])   # no user content at all
         result = scan.scan([p], home=self.home)
@@ -139,13 +139,13 @@ class TestCodexPromptFiltering(unittest.TestCase):
     """The bug this covers: a Codex session's displayed name was showing
     injected context (e.g. "# AGENTS.md instructions for /Users/...") or a bare
     slash command (e.g. "/exit") instead of what the user actually typed --
-    both real, observed cases (see plan/reports/T-95.md)."""
+    both real, observed cases."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.home = self.tmp.name
-        # T-105's last-known-name fallback persists to a file on disk by
+        # The last-known-name fallback persists to a file on disk by
         # default (config.CODEX_NAMES_CACHE_PATH) -- isolate it per test so
         # one test's sqlite entry can't leak into another's (fixed IDs are
         # reused across tests in this file) or into this machine's real cache.
@@ -210,17 +210,18 @@ class TestCodexPromptFiltering(unittest.TestCase):
 
 
 class TestCodexNewerCliVersion(unittest.TestCase):
-    """T-101: a real report -- Codex CLI 0.156.1 (codex-tui, source=cli) writes
+    """Codex CLI 0.156.1 (codex-tui, source=cli) writes
     neither `event_msg.user_message` nor a cleanly-recoverable `response_item`
     alone; the literal typed text only shows up in `event_msg.item_completed`
-    with `item.type == 'UserMessage'`. bc41b97 only recognized `user_message`,
-    so these sessions got no name at all (json scan showed the raw id)."""
+    with `item.type == 'UserMessage'`. Guards against recognizing only
+    `user_message`, which leaves these sessions with no name (json scan would
+    show the raw id)."""
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.home = self.tmp.name
-        # T-105's last-known-name fallback persists to a file on disk by
+        # The last-known-name fallback persists to a file on disk by
         # default (config.CODEX_NAMES_CACHE_PATH) -- isolate it per test so
         # one test's sqlite entry can't leak into another's (fixed IDs are
         # reused across tests in this file) or into this machine's real cache.
@@ -297,7 +298,7 @@ class TestCodexNewerCliVersion(unittest.TestCase):
 
 
 class TestCodexModelEffort(unittest.TestCase):
-    """T-107: the session manager wants model/effort for Codex rows, the same
+    """The session manager wants model/effort for Codex rows, the same
     way it already has them for Claude (via statusLine)."""
 
     def setUp(self):
@@ -378,7 +379,7 @@ class TestCodexModelEffort(unittest.TestCase):
         cache = {p: {'mtime': st.st_mtime, 'size': st.st_size,
                      'schema_version': scan.SCAN_SCHEMA_VERSION - 1,
                      'head': {'cwd': '/work/one', 'prompt': 'hi', 'child': False, 'source': 'cli'},
-                     'last_activity': 12345.0}}   # pre-T-107 entry: no model/effort keys at all
+                     'last_activity': 12345.0}}   # older entry: no model/effort keys at all
         result = scan.scan([p], cache=cache, home=self.home)
         self.assertEqual(result[ID1].model, 'gpt-5.6-sol')
         self.assertEqual(result[ID1].effort, 'high')

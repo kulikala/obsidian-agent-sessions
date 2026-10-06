@@ -304,7 +304,7 @@ describe("reconcileSubmitKey", () => {
 });
 
 /**
- * The full submit-key combination table (T-98's "組み合わせの総点検"), tying together every
+ * The full submit-key combination table, tying together every
  * piece that has to agree for a given `submitKey`: `applySubmitKey`'s effect on
  * `keybindings.json`'s `Chat` block, the PTY bytes `sendSequence` produces for submit/newline
  * (what `main.ts`'s `commandBytes`/`views/terminal.ts`'s `sendSubmit` actually send — both call

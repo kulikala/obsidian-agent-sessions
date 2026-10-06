@@ -14,7 +14,7 @@ import {
 } from "../../src/terminal/codex-config";
 import { sendSequence } from "../../src/terminal/keys";
 
-// A trimmed, anonymized shape of a real ~/.codex/config.toml (T-108's own research fixture) —
+// A trimmed, anonymized shape of a real ~/.codex/config.toml —
 // personality/model/mcp_servers/projects/notice/plugins before [tui], [tui] itself already
 // carrying a user-set status_line, no [tui.keymap.*] tables at all.
 const REAL_CONFIG_FIXTURE = `personality = "pragmatic"
@@ -264,14 +264,13 @@ describe("defaultCodexConfigPath", () => {
 	});
 });
 
-// T-98's combination table (test/terminal/key-role.test.ts) covers sendSequence()'s own
+// The combination table (test/terminal/key-role.test.ts) covers sendSequence()'s own
 // submit/newline byte mapping — that function has no agent concept at all (it never did, even
-// before Codex), so there's nothing per-agent to add a "Codex column" to there. What's new for
-// T-108 is that the *bytes it already sent* now have to agree with what applyCodexConfig() writes
+// before Codex), so there's nothing per-agent to add a "Codex column" to there. What matters here is that the *bytes it already sent* now have to agree with what applyCodexConfig() writes
 // into Codex's own config.toml, exactly the same way they've always had to agree with Claude's
 // keybindings.json (terminal/keybindings.ts's ENTER_KEYS). This cross-checks that agreement
 // directly, against the same fixed values applyCodexConfig() uses.
-describe("sendSequence × applyCodexConfig (T-108: the bytes sent must match what Codex's own config expects)", () => {
+describe("sendSequence × applyCodexConfig (the bytes sent must match what Codex's own config expects)", () => {
 	it("submitKey=enter: submit is plain Enter (\\r) — matches Codex's own built-in default (composer.submit = Enter), which applyCodexConfig writes nothing to override", () => {
 		expect(sendSequence("submit", "enter")).toBe("\r");
 	});

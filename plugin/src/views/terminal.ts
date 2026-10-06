@@ -148,16 +148,16 @@ export class TerminalView extends ItemView {
 	private earlyOutput = "";
 
 	private waiting = false;
-	/** Codex only (T-108) — the most recent classification of Codex's own OSC-0 terminal title
+	/** Codex only — the most recent classification of Codex's own OSC-0 terminal title
 	 * (`classifyCodexTitleStatus`, updated live by `onTitleChange` in `onOpen()`). `null` for
 	 * Claude always, and for Codex whenever the title carries neither of Codex's own markers. */
 	private titleStatus: CodexTitleStatus = null;
 	/** The session's own real name (`Row.name`), never the fallback chain — used as-is for
-	 * pre-filling "Rename" (T-106). `getDisplayText()` runs it (and `label`) through
+	 * pre-filling "Rename". `getDisplayText()` runs it (and `label`) through
 	 * `sessionDisplayName` for the actual tab title. */
 	private displayName = "";
 	/** The session's auto-derived label (`Row.label`, usually the first prompt, truncated) —
-	 * `sessionDisplayName`'s fallback once there's no real name yet (T-106). Kept in sync with
+	 * `sessionDisplayName`'s fallback once there's no real name yet. Kept in sync with
 	 * `displayName` by `refreshName()`. */
 	private label = "";
 
@@ -379,7 +379,7 @@ export class TerminalView extends ItemView {
 				void this.client.resize(cols, rows).catch(() => undefined);
 			}
 		});
-		// Codex only (T-108): Codex writes its own status (busy/blocked-on-input) into the OSC-0
+		// Codex only: Codex writes its own status (busy/blocked-on-input) into the OSC-0
 		// terminal title, live — reading it back here is a far more immediate signal than waiting
 		// for the daemon's next rollout-tail poll. No-op for every other agent.
 		const onTitleChange = this.terminal.onTitleChange((title) => {
@@ -798,7 +798,7 @@ export class TerminalView extends ItemView {
 	 * (`submitSequence`, possibly `\x1b\r` when `settings.submitKey !== "enter"` — for Claude,
 	 * `keybindings.json` maps plain Enter to a newline instead; for Codex, `config.toml`'s
 	 * `composer.submit`/`editor.insert_newline` do the same, always via the fixed `alt-enter`
-	 * byte sequence regardless of *which* non-`enter` choice is configured — T-108,
+	 * byte sequence regardless of *which* non-`enter` choice is configured;
 	 * `terminal/codex-config.ts`). OpenCode's `tui.json` is set to match (`terminal/opencode-tui.ts`): its submit is
 	 * `\r` with Enter and `\n` otherwise (`agentSendSequence`).
 	 */
@@ -1044,7 +1044,7 @@ export class TerminalView extends ItemView {
 				.onClick(() => {
 					// The dialog pre-fills from the session's own real name only (`this.displayName`,
 					// same as `rows.ts`'s row-menu rename) — never `getDisplayText()`'s fallback
-					// chain (T-106), which would otherwise pre-fill something like "New Codex
+					// chain, which would otherwise pre-fill something like "New Codex
 					// session" as if it were the actual stored name.
 					new RenameSessionModal(this.plugin, this.displayName, (name) => void this.plugin.renameSession(id, name)).open();
 				})
@@ -1091,7 +1091,7 @@ export class TerminalView extends ItemView {
 			return true;
 		}
 		// Intercept every Enter combination and send the submit or newline sequence ourselves —
-		// every agent's tabs. For Claude and Codex (T-108) this pairs with a rewrite of the
+		// every agent's tabs. For Claude and Codex this pairs with a rewrite of the
 		// agent's own config (`terminal/keybindings.ts`, `terminal/codex-config.ts`) that makes
 		// Enter mean "newline" instead of "submit": Claude's `keybindings.json` maps plain Enter
 		// straight to `chat:newline`; Codex's `config.toml` always claims the fixed `alt-enter` key

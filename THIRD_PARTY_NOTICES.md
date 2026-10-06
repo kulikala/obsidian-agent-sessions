@@ -24,7 +24,7 @@ Copyright (c) 2018, The xterm.js authors (https://github.com/xtermjs/xterm.js)
 
 `plugin/src/ui/icons.ts` bakes in the single-color (`currentColor`) SVG path data for three icons —
 `claude.svg`, `codex.svg` and `opencode.svg` — taken from [lobehub/lobe-icons](https://github.com/lobehub/lobe-icons)
-(fetched from `packages/static-svg/icons/` on the `master` branch, T-102), used to mark which CLI
+(fetched from `packages/static-svg/icons/` on the `master` branch), used to mark which CLI
 agent a session belongs to. Not an npm dependency (nothing is installed or bundled by esbuild) —
 the path data is copied directly into the source file. Distributed under the MIT License; text
 below is copied from the repository's own `LICENSE` file.

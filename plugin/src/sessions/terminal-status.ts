@@ -38,7 +38,7 @@ export interface TerminalStatusInput {
 	/** After `busy→idle`, this tab still hasn't been brought to front (distinct from claude's own `waiting` above). */
 	waiting: boolean;
 	/**
-	 * Codex only (T-108) — classified from its own OSC-0 terminal title (`classifyCodexTitleStatus`,
+	 * Codex only — classified from its own OSC-0 terminal title (`classifyCodexTitleStatus`,
 	 * read live via xterm's `onTitleChange`), a far more immediate signal than the daemon's own
 	 * rollout-tail-based `registryStatus` for this agent. `null`/`undefined` for Claude always
 	 * (it has no equivalent), and for Codex whenever the title carries neither marker — in which

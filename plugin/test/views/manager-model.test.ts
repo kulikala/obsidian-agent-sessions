@@ -220,7 +220,7 @@ describe("windowOf", () => {
 	});
 });
 
-describe("windowsForAgent (T-103/T-104: per-agent windows, with Claude's legacy top-level fallback)", () => {
+describe("windowsForAgent (per-agent windows, with Claude's legacy top-level fallback)", () => {
 	it("returns null when stats itself is", () => {
 		expect(windowsForAgent(null, "claude")).toBeNull();
 	});
@@ -236,7 +236,7 @@ describe("windowsForAgent (T-103/T-104: per-agent windows, with Claude's legacy 
 		expect(windowsForAgent(stats, "codex")).toBe(codexWindows);
 	});
 
-	it("falls back to the top-level windows for claude when agents is absent (pre-T-103 shape)", () => {
+	it("falls back to the top-level windows for claude when agents is absent (older shape)", () => {
 		const topLevel = statsWindows();
 		const stats: StatsResult = { windows: topLevel };
 		expect(windowsForAgent(stats, "claude")).toBe(topLevel);
@@ -248,7 +248,7 @@ describe("windowsForAgent (T-103/T-104: per-agent windows, with Claude's legacy 
 	});
 });
 
-describe("sessionCostForRow (T-104: a row's cost comes from its own agent's windows)", () => {
+describe("sessionCostForRow (a row's cost comes from its own agent's windows)", () => {
 	it("attributes each row's cost to its own agent, not a shared window", () => {
 		const stats: StatsResult = {
 			windows: statsWindows(),
@@ -391,7 +391,7 @@ describe("categoryTotals", () => {
 		expect(categoryTotals(rows, null, "5h")).toEqual([{ key: "RIM", label: "RIM", cost: 0, count: 1 }]);
 	});
 
-	it("attributes a mixed-agent row list's costs to each row's own agent (T-104)", () => {
+	it("attributes a mixed-agent row list's costs to each row's own agent", () => {
 		const rows: Row[] = [
 			row({ id: "1", agent: "claude", name: "RIM: Claude session" }),
 			row({ id: "1", agent: "codex", name: "RIM: Codex session" }),
@@ -408,7 +408,7 @@ describe("categoryTotals", () => {
 	});
 });
 
-describe("categoryTotalsForWindow (T-104 addendum: against one already-resolved window directly, e.g. from orderedWindows)", () => {
+describe("categoryTotalsForWindow (against one already-resolved window directly, e.g. from orderedWindows)", () => {
 	afterEach(() => setLang("en"));
 
 	it("sums cost per category from the given window, same as categoryTotals but window-first", () => {
@@ -496,7 +496,7 @@ describe("weeklyPace", () => {
 		}
 	});
 
-	it("the too-early threshold scales with the window's own length (T-104 addendum), not a fixed absolute time", () => {
+	it("the too-early threshold scales with the window's own length, not a fixed absolute time", () => {
 		const FIVE_HOURS = 5 * 60 * 60;
 		// ~3.57% of 5 hours is ~10.7 minutes — comfortably past that is "on track", not "too early",
 		// even though it's nowhere near the old fixed 6-hour threshold.
@@ -507,7 +507,7 @@ describe("weeklyPace", () => {
 		expect(early.kind).toBe("too-early");
 	});
 
-	it("guideUnit is 'hour' for a window whose own length is a day or less (T-116 — 'per remaining day' isn't meaningful for a 5-hour window)", () => {
+	it("guideUnit is 'hour' for a window whose own length is a day or less ('per remaining day' isn't meaningful for a 5-hour window)", () => {
 		const FIVE_HOURS = 5 * 60 * 60;
 		// 50% elapsed (2.5h) at 70% used -> 140% projected, same shape as the 7-day case above.
 		const result = weeklyPace(70, 0, FIVE_HOURS, FIVE_HOURS / 2, 14);
@@ -528,7 +528,7 @@ describe("weeklyPace", () => {
 	});
 });
 
-describe("formatBeforeReset (T-116)", () => {
+describe("formatBeforeReset", () => {
 	afterEach(() => setLang("en"));
 
 	it("shows 'just before reset' under a minute", () => {
@@ -560,7 +560,7 @@ describe("formatBeforeReset (T-116)", () => {
 	});
 });
 
-describe("formatExhaustTime (T-116)", () => {
+describe("formatExhaustTime", () => {
 	afterEach(() => setLang("en"));
 
 	it("shows just the time when it falls on the same calendar day as `now`", () => {
@@ -588,7 +588,7 @@ describe("formatExhaustTime (T-116)", () => {
 	});
 });
 
-describe("orderedWindows (T-104 addendum: an agent's windows aren't just a fixed five_hour/seven_day pair)", () => {
+describe("orderedWindows (an agent's windows aren't just a fixed five_hour/seven_day pair)", () => {
 	it("returns every window sorted by minutes ascending, regardless of key name", () => {
 		const fiveHour = statsWindow({ minutes: 300 });
 		const sevenDay = statsWindow({ minutes: 10080 });
@@ -602,7 +602,7 @@ describe("orderedWindows (T-104 addendum: an agent's windows aren't just a fixed
 	});
 });
 
-describe("windowLabel (T-104 addendum: a window's label is derived from its length, not a fixed 5h/7d pair)", () => {
+describe("windowLabel (a window's label is derived from its length, not a fixed 5h/7d pair)", () => {
 	afterEach(() => setLang("en"));
 
 	it("300 minutes and 10080 minutes keep their existing exact wording", () => {
@@ -628,7 +628,7 @@ describe("windowLabel (T-104 addendum: a window's label is derived from its leng
 	});
 });
 
-describe("windowShortLabel (T-111: the compact 5h/7d/30d form for a narrow side panel)", () => {
+describe("windowShortLabel (the compact 5h/7d/30d form for a narrow side panel)", () => {
 	afterEach(() => setLang("en"));
 
 	it("300 minutes and 10080 minutes are '5h'/'7d'", () => {
@@ -654,7 +654,7 @@ describe("windowShortLabel (T-111: the compact 5h/7d/30d form for a narrow side 
 	});
 });
 
-describe("formatWeekdayTime (locale weekday + time, T-115)", () => {
+describe("formatWeekdayTime (locale weekday + time)", () => {
 	it("formats local time as '<weekday> <time>', each locale's own hour cycle (ja 24h, en 12h)", () => {
 		const d = new Date(2026, 0, 5, 14, 30, 0);
 		const epochSeconds = d.getTime() / 1000;
@@ -697,7 +697,7 @@ describe("shortModelName", () => {
 	});
 });
 
-describe("codexShortModelName (T-107: Codex's raw model id has no separate display name)", () => {
+describe("codexShortModelName (Codex's raw model id has no separate display name)", () => {
 	it("uppercases a short (<=3 char) first segment and hyphen-joins a version number", () => {
 		expect(codexShortModelName("gpt-5.6-luna")).toBe("GPT-5.6 Luna");
 	});

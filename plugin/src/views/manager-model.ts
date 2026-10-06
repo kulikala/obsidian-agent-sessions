@@ -122,8 +122,7 @@ const WINDOW_KEY: Record<"5h" | "7d", string> = { "5h": "five_hour", "7d": "seve
 
 /** The `StatsWindow` for `key` ("5h" → `five_hour`, "7d" → `seven_day`) within `windows`, or
  * `null` if `windows` itself is (or that fixed key is somehow missing). Only for the table's own
- * fixed 5h/7d cost columns and sort — `windows` can hold other, arbitrary-length windows too
- * (T-104 addendum), iterated instead via `orderedWindows`. */
+ * fixed 5h/7d cost columns and sort — `windows` can hold other, arbitrary-length windows too, iterated instead via `orderedWindows`. */
 export function windowOf(windows: StatsWindows | null, key: "5h" | "7d"): StatsWindow | null {
 	if (!windows) {
 		return null;
@@ -134,7 +133,7 @@ export function windowOf(windows: StatsWindows | null, key: "5h" | "7d"): StatsW
 /**
  * Every window in `windows`, sorted by length (`minutes`) ascending — so a 5-hour window always
  * comes before a 7-day one, which comes before a 30-day one, regardless of the arbitrary key
- * names (T-104 addendum: an agent's windows aren't just the fixed `five_hour`/`seven_day` pair
+ * names (an agent's windows aren't just the fixed `five_hour`/`seven_day` pair
  * anymore). Empty array if `windows` itself is `null`. Ties keep object insertion order.
  */
 export function orderedWindows(windows: StatsWindows | null): StatsWindow[] {
@@ -168,7 +167,7 @@ export function windowLabel(minutes: number): string {
 }
 
 /**
- * `windowLabel`'s compact form (T-111 — "5h"/"7d"/"30d" rather than "5-hour window"/"7-day
+ * `windowLabel`'s compact form ("5h"/"7d"/"30d" rather than "5-hour window"/"7-day
  * window"/"30-day window"), for the side panel's rate-limit rows at a narrow width, where the
  * full label would otherwise crowd out the bar itself. Same length-based derivation, same two
  * exact-length special cases.
@@ -190,9 +189,9 @@ export function windowShortLabel(minutes: number): string {
 }
 
 /**
- * `stats`'s windows for `agent` (T-103/T-104) — its own `agents.<agent>.windows` if present,
+ * `stats`'s windows for `agent` — its own `agents.<agent>.windows` if present,
  * falling back to the legacy top-level `windows` only for Claude (backward compat with a
- * pre-T-103 Python build, which never has `agents` at all). `null` if there's nothing for that
+ * older Python build, which never has `agents` at all). `null` if there's nothing for that
  * agent yet (`stats` itself not fetched yet, or an agent with no `agents` entry — e.g. it isn't
  * currently enabled, though in practice every row's own agent is always an enabled one, since
  * `json scan`/`live` only ever return sessions for agents in `AGENT_SESSIONS_AGENTS`).
@@ -305,7 +304,7 @@ export function categoryTotals(rows: Row[], stats: StatsResult | null, window: "
 
 /**
  * Same as `categoryTotals`, but against one already-resolved `StatsWindow` directly rather than
- * a fixed "5h"/"7d" key within `stats` (T-104 addendum — an agent's analysis section iterates an
+ * a fixed "5h"/"7d" key within `stats` (an agent's analysis section iterates an
  * arbitrary set of windows, not just those two). The caller is expected to have already scoped
  * `rows` to the one agent `window` belongs to (`sessionCost` doesn't care whose window it is).
  */
@@ -328,7 +327,7 @@ export function topCategoryTotals(totals: CategoryTotal[], n: number): CategoryT
 
 /**
  * Below this elapsed *fraction* of the window's own length, the pace hasn't stabilized enough to
- * judge. A fraction rather than a fixed absolute time (T-104 addendum: pace judgment now applies
+ * judge. A fraction rather than a fixed absolute time (pace judgment now applies
  * to every window an agent reports — 5-hour, 7-day, 30-day, or anything else — not just a fixed
  * 7-day one) — this is the exact ratio the original fixed 6-hour threshold worked out to for a
  * 7-day window, so a 7-day window's behavior is unchanged; a shorter window reaches this fraction
@@ -351,13 +350,13 @@ export type WeeklyPace =
 			/** The projected time (epoch seconds) usage reaches 100% at this pace. */
 			exhaustAt: number;
 			/** Seconds remaining from `exhaustAt` to reset (`end`). Kept as raw seconds rather than
-			 * pre-floored days/hours (T-116) — `formatBeforeReset` needs the full precision to switch
+			 * pre-floored days/hours — `formatBeforeReset` needs the full precision to switch
 			 * granularity (days+hours / hours+minutes / minutes / "just before reset") and omit a zero
 			 * unit at whichever granularity applies. */
 			secondsBeforeReset: number;
 			/** Which unit the remaining-budget guidance below is expressed in — "hour" for a window
 			 * whose own length is a day or less (e.g. the 5-hour window, where "per remaining day" isn't
-			 * a meaningful budget), otherwise "day" (T-116). */
+			 * a meaningful budget), otherwise "day". */
 			guideUnit: "hour" | "day";
 			/** The per-remaining-unit cap (%/guideUnit) needed to avoid running out. */
 			maxPerUnitPct: number;
@@ -368,14 +367,14 @@ export type WeeklyPace =
 	  };
 
 /**
- * Judges whether a window (5-hour, 7-day, 30-day, or any other length — T-104 addendum) will run
+ * Judges whether a window (5-hour, 7-day, 30-day, or any other length) will run
  * out at the current pace. `unknown` if `usedPct` is absent. `too-early` if the elapsed fraction
  * `e = (now - start) / (end - start)` is under `MIN_PACE_ELAPSED_FRACTION`, or the window's
  * length (`end - start`) is 0 or less — the pace hasn't stabilized enough to judge yet.
  * Otherwise, the projection `usedPct / e` being at most 100 means `on-track` (won't run out at
  * this pace); over 100 means `over-pace` (returns the projected exhaustion time and the
  * per-remaining-unit cap needed to avoid running out). `windowCost` (the window's total cost)
- * feeds `over-pace`'s `maxPerUnitCost` (a $ estimate). T-116: the guidance's unit (`guideUnit`)
+ * feeds `over-pace`'s `maxPerUnitCost` (a $ estimate). The guidance's unit (`guideUnit`)
  * switches to "hour" when the window's own length (`duration`) is a day or less — a 5-hour
  * window's "stay under Z% per remaining day" was nonsensical (the window itself never has a full
  * day left in it); "per remaining hour" is the equivalent budget for a window that short.
@@ -407,7 +406,7 @@ export function weeklyPace(usedPct: number | null, start: number, end: number, n
 }
 
 /** "<weekday> <time>" (e.g. ja "土 21:11", en "Sat 9:11 PM") — the pace-judgment display.
- * Delegates to `i18n/datetime` (T-115) so every locale-aware date/time display in the plugin
+ * Delegates to `i18n/datetime` so every locale-aware date/time display in the plugin
  * goes through the same cached `Intl.DateTimeFormat` instances. */
 export function formatWeekdayTime(epochSeconds: number, lang: Lang): string {
 	return formatWeekdayTimeShort(epochSeconds, lang);
@@ -419,7 +418,7 @@ function localMidnight(epochSeconds: number): number {
 }
 
 /**
- * The pace-judgment's exhaustion time (T-116): just the time when `epochSeconds` falls on the
+ * The pace-judgment's exhaustion time: just the time when `epochSeconds` falls on the
  * same calendar day as `now` ("3:46" — a weekday would be redundant, it's today's own), "tomorrow
  * <time>" when it's the next calendar day (ja "明日 3:46", en "tomorrow 3:46 AM"), and
  * "<weekday> <time>" (`formatWeekdayTime`) for anything further out, where naming the day is what
@@ -441,7 +440,7 @@ export function formatExhaustTime(epochSeconds: number, now: number): string {
 }
 
 /**
- * "N日 N時間前" / "Nd Nh before reset" style text (T-116) for the pace-judgment's parenthetical —
+ * "N日 N時間前" / "Nd Nh before reset" style text for the pace-judgment's parenthetical —
  * switches granularity by magnitude (days+hours at a day or more, hours+minutes under a day,
  * minutes alone under an hour, a fixed "just before reset" text under a minute) and omits a zero
  * unit at whichever granularity applies, rather than always showing two numbers (a 5-hour
@@ -468,11 +467,11 @@ export function formatBeforeReset(secondsBeforeReset: number): string {
 // ---- Model and effort columns ----------------------------------------------------------
 
 /**
- * A shortened form of a model's display name — used in the table's model column (T-107: also
+ * A shortened form of a model's display name — used in the table's model column (also
  * `detail.ts`'s model badge for a Codex fallback), the full value shown in a tooltip instead.
  * Claude's `statusInfo.model` is already a human display name (Claude Code's own statusLine hook)
  * with any `(...)` suffix just dropped (e.g. `"Opus 5.5 (1M context)"` → `"Opus 5.5"`); Codex's
- * `model` (T-107, `json scan`'s new field, from its own transcript — there's no statusLine-style
+ * `model` (`json scan`'s new field, from its own transcript — there's no statusLine-style
  * hook to format it for display) is a raw model id like `"gpt-5.6-luna"` and needs an actual
  * transform (`codexShortModelName`) to read as a name rather than an id.
  */
@@ -487,7 +486,7 @@ export function shortModelName(model: string | null, agent: string): string {
 }
 
 /**
- * `"gpt-5.6-luna"` → `"GPT-5.6 Luna"` (T-107, my own judgment call — Codex's raw model id has no
+ * `"gpt-5.6-luna"` → `"GPT-5.6 Luna"` (my own judgment call — Codex's raw model id has no
  * separate human display name to fall back to, unlike Claude's statusLine). Splits on `-`: the
  * first segment is uppercased if it's short (≤3 chars — a brand/family-style prefix like `gpt`/
  * `o3`, not a real word); any digit-leading segment (a version number, e.g. `5.6`) stays

@@ -1,4 +1,4 @@
-// Codex's own terminal-title text, parsed for busy/asking signals (T-108). Codex writes an OSC 0
+// Codex's own terminal-title text, parsed for busy/asking signals. Codex writes an OSC 0
 // title itself (codex-rs/tui/src/terminal_title.rs) whenever its status changes — reading it back
 // via xterm's `onTitleChange` gives a far more immediate signal than waiting for the next daemon
 // poll of its rollout file, at the cost of only working while the user's own `tui.terminal_title`

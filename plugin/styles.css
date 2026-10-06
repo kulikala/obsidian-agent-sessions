@@ -20,19 +20,19 @@
 	min-height: 0;
 }
 
-/* ---- Manager: per-agent analytics panels (T-104, restructured as siblings in T-113) ---- */
+/* ---- Manager: per-agent analytics panels ---- */
 
 /* One panel per enabled agent when there's more than one — side by side when there's room, stacked
    otherwise (`auto-fit`/`minmax`, same technique as `.agent-sessions-manager-category-bars` below,
    no container query needed for this part). With 0 or 1 agent enabled, `.agent-sessions-manager-
    analysis-body` never gets this class at all — a single panel with no heading of its own, inside
-   the whole-area header/fold instead (unchanged from before T-104). */
+   the whole-area header/fold instead. */
 /* No explicit height, and no `overflow` of its own — grows to its natural content height, letting
    the outer `.agent-sessions-manager-analysis-body` (unchanged, still `overflow-y: auto`) scroll
    the whole grid together when it's taller than the fixed analysis-area height. Side by side
    (`align-items: stretch`, the grid default) means two same-row panels still match heights when
    both fit without scrolling. */
-/* T-114: always one column — stacked regardless of width (unlike the per-category bars inside
+/* Always one column — stacked regardless of width (unlike the per-category bars inside
    each panel, or their own bars again below that, which still go side by side when there's room;
    only the top-level agent panels themselves don't). */
 .agent-sessions-manager-analysis-panels {
@@ -49,8 +49,7 @@
 	border-top: 1px solid var(--background-modifier-border);
 }
 
-/* Clickable — folds/unfolds just this panel (T-104 additional feature, still true of a panel now
-   that T-113 made each one an independent sibling), independent of the whole analysis area's own
+/* Clickable — folds/unfolds just this panel (each panel is an independent sibling), independent of the whole analysis area's own
    fold (only relevant with 0/1 agent enabled, where this heading doesn't exist at all).
    `stopPropagation`'d in manager.ts so it doesn't also trigger the analysis body's
    click-to-refresh. */
@@ -82,8 +81,7 @@
 }
 
 /* The primary window's usage%, shown only while folded so a folded panel still says something
-   at a glance (my own design call — T-104 only asked for fold/unfold, not what a folded panel
-   shows). Pushed to the heading's right edge. */
+   at a glance (rather than going completely silent). Pushed to the heading's right edge. */
 .agent-sessions-manager-analysis-agent-summary {
 	margin-left: auto;
 	font-weight: var(--font-normal);
@@ -104,7 +102,7 @@
 	display: none;
 }
 
-/* T-113: shown instead of any stat cards for a non-Claude agent with no real window tracked yet
+/* Shown instead of any stat cards for a non-Claude agent with no real window tracked yet
    (e.g. a Codex account before its first json stats fetch, or one that's never had any quota
    data at all) — never a "—" 5-hour/7-day placeholder pair, which would misleadingly read as
    those two windows being tracked (just still loading) when they may not exist for this agent at
@@ -396,7 +394,7 @@
 	border-bottom: none;
 }
 
-/* T-113: no single "Analysis" heading at all once there's more than one sibling panel — each
+/* No single "Analysis" heading at all once there's more than one sibling panel — each
    panel has its own heading instead (`.agent-sessions-manager-analysis-agent-heading`). */
 .agent-sessions-manager-analysis.is-split .agent-sessions-manager-analysis-header {
 	display: none;
@@ -474,7 +472,7 @@
 	background-color: var(--background-modifier-hover);
 }
 
-/* T-112: matches the side panel's own frontmost-row treatment (a distinct "active" background,
+/* Matches the side panel's own frontmost-row treatment (a distinct "active" background,
    not the same one `:hover` uses, plus an accent bar) — applied to `<td>` rather than `<tr>`,
    same reason as asking/waiting below: with `border-collapse: collapse`, a `<tr>`'s own
    background/border don't render reliably. */
@@ -508,7 +506,7 @@
 	background-color: hsl(30 80% 50% / 0.1);
 }
 
-/* When a selected row is also asking/waiting (T-112), the state's own background/border (above,
+/* When a selected row is also asking/waiting, the state's own background/border (above,
    later in source order, so it wins) stays primary; selection still shows as a thin accent ring
    around the first cell instead of competing for the same background/border. */
 .agent-sessions-manager-row.is-selected.is-asking td:first-child,
@@ -627,9 +625,9 @@
 }
 
 /* When there isn't enough width, columns hide in this order: folder → effort → model → 5h
-   (both the `col` and the `td`/`th`). Thresholds are shifted +74px from their original values to
-   account for the wider effort/model/folder columns (§T-89 (5)), so the name column keeps
-   roughly the same amount of room at each step as before. */
+   (both the `col` and the `td`/`th`). Thresholds are shifted +74px to account for the wider
+   effort/model/folder columns, so the name column keeps roughly the same amount of room
+   at each step. */
 @container (max-width: 673px) {
 	.agent-sessions-manager-table col.agent-sessions-manager-col-folder {
 		display: none;
@@ -779,7 +777,7 @@
 	overflow-x: hidden;
 }
 
-/* The side panel's empty state (T-104) — shown instead of the (otherwise blank) list when
+/* The side panel's empty state — shown instead of the (otherwise blank) list when
    there are no sessions at all yet. */
 .agent-sessions-empty {
 	display: flex;
@@ -917,7 +915,7 @@
 	background-color: var(--background-modifier-hover);
 }
 
-/* T-112: bold alone was too easy to miss — a background (a theme "active" variant, readable on
+/* Bold alone is too easy to miss — a background (a theme "active" variant, readable on
    both light and dark) and a left accent bar make the frontmost tab's row stand out at a glance,
    not just on close reading. */
 .agent-sessions-row.is-front {
@@ -952,7 +950,7 @@
 	background-color: hsl(30 80% 50% / 0.1);
 }
 
-/* When the frontmost tab's row is also asking/waiting (T-112), the state's own background and
+/* When the frontmost tab's row is also asking/waiting, the state's own background and
    left border (above, declared later so they win the cascade) stay as the primary signal — color
    means urgency, not frontness. Frontness still shows, as a thin accent ring around the whole
    row, so neither is lost when both apply at once. */
@@ -1043,8 +1041,8 @@
 
 /* When the side panel itself is narrow, drop the time first rather than let the name shrink
    further — the name is the one thing on the row that identifies the session. 260px + ~22px
-   (the agent mark's own 14px plus its gap, added in T-96) so the name keeps the same safety
-   margin it had before the agent mark existed. */
+   (the agent mark's own 14px plus its gap) so the name keeps the same safety
+   margin it has without the agent mark. */
 @container (max-width: 282px) {
 	.agent-sessions-row-time {
 		display: none;
@@ -1239,7 +1237,7 @@
 	min-width: 0;
 }
 
-/* One grid for the whole area (T-111) — every row (any agent) is a `subgrid` sharing these same
+/* One grid for the whole area — every row (any agent) is a `subgrid` sharing these same
    column tracks (see `.agent-sessions-limits-row` below), so the label column is sized once,
    across every row together (`auto`, but now resolved *once* for the whole grid rather than
    independently per row), and every row's bar starts and ends at the same x position regardless
@@ -1266,15 +1264,15 @@
 	opacity: 0.6;
 }
 
-/* One wrapper per shown agent (T-104) — exists only for `LimitsView`'s own bookkeeping
-   (`agentWrapEls`); contributes nothing to layout itself (T-111 — `display: contents` removes its
+/* One wrapper per shown agent — exists only for `LimitsView`'s own bookkeeping
+   (`agentWrapEls`); contributes nothing to layout itself (`display: contents` removes its
    box entirely, so its `.agent-sessions-limits-row` children become direct items of the host's
    own grid above, each individually placed into its own row by normal grid auto-placement). */
 .agent-sessions-limits-agent {
 	display: contents;
 }
 
-/* A little extra space above the first row of a second-or-later agent group (T-111) — applied to
+/* A little extra space above the first row of a second-or-later agent group — applied to
    the row itself, since the now-`display: contents` agent wrapper above has no box of its own to
    put a margin on (`JS marks exactly the first row of every agent after the first with this
    class — `LimitsView.render()`). */
@@ -1282,10 +1280,10 @@
 	margin-top: var(--size-2-1);
 }
 
-/* Every row is a `subgrid` spanning the host's own column tracks (T-111) — its own icon/label/
+/* Every row is a `subgrid` spanning the host's own column tracks — its own icon/label/
    bar/%/countdown children are laid out against those *shared* tracks rather than a fresh set of
    tracks sized to this row alone, which is what made the bar's start position depend on this
-   row's own label width before. Rebuilt fresh on each redraw either way (T-104 addendum: a
+   row's own label width. Rebuilt fresh on each redraw either way (a
    non-Claude agent's row *count* itself can change as fresh `json stats` data arrives, so
    there's nothing worth preserving piecemeal across ticks). */
 .agent-sessions-limits-row {
@@ -1308,9 +1306,8 @@
 	height: 100%;
 }
 
-/* T-113: always the short form ("5h"/"7d"/"30d") — the side panel is too narrow for the long form
-   ("5-hour window") to ever be worth showing (unlike T-111's original container-query approach,
-   which switched to the short form only below 320px); the long form is still available, in a
+/* Always the short form ("5h"/"7d"/"30d") — the side panel is too narrow for the long form
+   ("5-hour window") to ever be worth showing (rather than switching to it only below a container width); the long form is still available, in a
    tooltip. */
 .agent-sessions-limits-label {
 	color: var(--text-muted);
@@ -1571,7 +1568,7 @@
 /* ---- Category/name dialog: a chip plus an <input> joined into a single input box ---- */
 
 /* A `Setting` whose control needs the dialog's full width rather than Obsidian's default
-   shrink-to-fit, right-aligned control column (T-102) — stacks label above control, and lets
+   shrink-to-fit, right-aligned control column — stacks label above control, and lets
    the control stretch to the row's full width instead of floating right within a narrow area. */
 .agent-sessions-wide-setting {
 	flex-direction: column;
@@ -1588,7 +1585,7 @@
 }
 
 /* The new-session dialog's agent picker (only shown with 2+ agents enabled) — icon+label
-   buttons rather than a native <select>, since an <option> can't hold an icon (T-102). */
+   buttons rather than a native <select>, since an <option> can't hold an icon. */
 .agent-sessions-agent-picker {
 	display: flex;
 	gap: var(--size-4-1);
@@ -1648,7 +1645,7 @@
 	cursor: pointer;
 }
 
-/* A small "×" on the chip itself (T-104(e)) — clicking it clears the category outright (its own
+/* A small "×" on the chip itself — clicking it clears the category outright (its own
    click handler stops propagation, so it doesn't also trigger the chip's own click-to-edit).
    Clicking the rest of the chip still reverts it to editable text, same as before. */
 .agent-sessions-name-chip-remove {
@@ -1681,7 +1678,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	padding: 0;
 }
 
-/* The chip's own click-to-edit-in-place replacement (T-112) — sized to its own content (a `size`
+/* The chip's own click-to-edit-in-place replacement — sized to its own content (a `size`
    attribute set in JS) rather than growing to fill the row like the main name input next to it,
    so it still reads as "this one chip became editable" rather than a second full-width field. */
 .agent-sessions-name-chip-edit {
@@ -1692,7 +1689,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 
 /* Category suggestions (candidates from existing categories, shown with a chip; only shown before
    a category is confirmed). `position: fixed`, appended to <body> rather than the input it
-   belongs to (T-104(e)) — these dialogs are Obsidian `Modal`s, whose own chrome (`.modal`) clips
+   belongs to — these dialogs are Obsidian `Modal`s, whose own chrome (`.modal`) clips
    an overflowing descendant to its rounded corners; a short dialog with many categories to
    suggest could cut the list off well before its own `max-height`. Escaping the modal's DOM
    subtree avoids that. `left`/`width`/`top`-or-`bottom` are all set per-instance in JS
@@ -2027,7 +2024,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 
 .agent-sessions-usage-table th:nth-child(2),
 .agent-sessions-usage-table td:nth-child(2) {
-	/* T-115: this cell shows `formatEpoch`'s locale date+time directly (not a tooltip), and its
+	/* This cell shows `formatEpoch`'s locale date+time directly (not a tooltip), and its
 	   longest rendered form is English's "9/25/26, 2:05 PM" (17 characters, wider than the old
 	   fixed "MM-DD HH:MM") — widened from 8em accordingly. */
 	width: 11em;
@@ -2321,7 +2318,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	color: var(--text-muted);
 }
 
-/* T-117: each agent's own sub-section within the Agents settings section (heading + toggle, then
+/* Each agent's own sub-section within the Agents settings section (heading + toggle, then
    its path/env/detection rows). A little breathing room between one agent's block and the next. */
 .agent-sessions-settings-agent + .agent-sessions-settings-agent {
 	margin-top: var(--size-4-3);

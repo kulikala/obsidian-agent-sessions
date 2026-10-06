@@ -49,7 +49,7 @@ describe("formatRelativeTime", () => {
 		expect(formatRelativeTime(now - 7 * 86400, now)).toBe(expected);
 	});
 
-	it("includes the year in the fallback date when it crosses into a different year than `now` (T-115)", () => {
+	it("includes the year in the fallback date when it crosses into a different year than `now`", () => {
 		const nowInJan = Math.floor(new Date(2026, 0, 3, 12, 0, 0).getTime() / 1000);
 		const aWeekEarlier = nowInJan - 7 * 86400; // lands in December 2025
 		expect(formatRelativeTime(aWeekEarlier, nowInJan)).toBe("12/27/25");
@@ -159,7 +159,7 @@ describe("AGENT_ICON / AGENT_NAME_KEY (every registered agent has both)", () => 
 	});
 });
 
-describe("enabledAgentsText (T-106 addendum: empty.desc's {agents})", () => {
+describe("enabledAgentsText (empty.desc's {agents})", () => {
 	afterEach(() => setLang("en"));
 
 	it("names the single agent given", () => {
@@ -192,7 +192,7 @@ describe("enabledAgentsText (T-106 addendum: empty.desc's {agents})", () => {
 	});
 });
 
-describe("DelayedRevert (T-110: the side panel's revert-to-default-detail trigger)", () => {
+describe("DelayedRevert (the side panel's revert-to-default-detail trigger)", () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
 	});
@@ -272,7 +272,7 @@ describe("DelayedRevert (T-110: the side panel's revert-to-default-detail trigge
 	});
 });
 
-describe("createRowActions (T-110: showDetail/hideDetail/cancelHideDetail wiring)", () => {
+describe("createRowActions (showDetail/hideDetail/cancelHideDetail wiring)", () => {
 	const fakePlugin = {} as AgentSessionsPlugin;
 
 	it("routes showDetail/hideDetail/cancelHideDetail straight to the given callbacks", () => {
@@ -295,7 +295,7 @@ describe("createRowActions (T-110: showDetail/hideDetail/cancelHideDetail wiring
 	});
 });
 
-describe("nextFrontId (T-112 follow-up: the frontmost tab's id must never go stale after relinkId)", () => {
+describe("nextFrontId (the frontmost tab's id must never go stale after relinkId)", () => {
 	it("uses the active terminal's live session id when there is one", () => {
 		expect(nextFrontId(null, "abc")).toBe("abc");
 		expect(nextFrontId("old", "abc")).toBe("abc");

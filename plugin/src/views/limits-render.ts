@@ -68,8 +68,7 @@ function readLimitsFiles(statusDir: string): RawLimitsFile[] {
 
 /**
  * Draws rows — a small agent icon at the head of each, a bar plus `NN%` plus the countdown to
- * reset — grouped per enabled agent. Claude always gets exactly two (5h/7d), unchanged since
- * before T-104. Every other agent's row *count* is dynamic (T-104 addendum): one row per window
+ * reset — grouped per enabled agent. Claude always gets exactly two (5h/7d). Every other agent's row *count* is dynamic: one row per window
  * it actually has a tracked percentage for, which can be the usual 5h/7d pair, a single
  * non-standard window (e.g. a 30-day-only plan), more than two, or none. Clicking re-reads/
  * re-fetches every agent's source right away.
@@ -84,7 +83,7 @@ export class LimitsView {
 	 * `["claude"]` alone if somehow none is, so there's always at least one agent's rows. */
 	private agents: AgentId[] = [];
 	private claudeInfo: LimitsInfo | null = null;
-	/** Every non-Claude enabled agent's windows, fetched via `json stats` (T-103/T-104). */
+	/** Every non-Claude enabled agent's windows, fetched via `json stats`. */
 	private statsWindows: Partial<Record<AgentId, StatsWindows>> = {};
 	private tickTimer: number | null = null;
 	private statsFetchTimer: number | null = null;
@@ -204,7 +203,7 @@ export class LimitsView {
 				return;
 			}
 			wrapEl.empty();
-			// T-111: a little extra space above the first row of a second-or-later agent group —
+			// a little extra space above the first row of a second-or-later agent group —
 			// applied to the row itself (`agentWrapEls[agent]`, i.e. this whole `.agent-sessions-
 			// limits-agent`, is `display: contents` now, so it has no box of its own to put a
 			// margin on; see styles.css).
@@ -218,7 +217,7 @@ export class LimitsView {
 				renderRow(t("stats.sevenDay"), t("stats.sevenDay.short"), rollForwardWindow(this.claudeInfo?.sevenDay ?? null, SEVEN_DAY_SECONDS, now));
 				return;
 			}
-			// Only windows this agent actually has a tracked percentage for (T-104 addendum) —
+			// Only windows this agent actually has a tracked percentage for —
 			// skips e.g. a null five_hour/seven_day pair entirely for an account whose only real
 			// window is a non-standard length, rather than showing a permanently dashed-out row.
 			for (const w of realWindows(this.statsWindows[agent] ?? null)) {
@@ -236,7 +235,7 @@ export class LimitsView {
 		w: RateLimitWindow | null,
 		isGroupStart: boolean
 	): void {
-		// T-111: every row is a `display: grid; grid-template-columns: subgrid` item spanning the
+		// every row is a `display: grid; grid-template-columns: subgrid` item spanning the
 		// host's own column tracks (`.agent-sessions-limits`), so the icon/label/bar/%/countdown
 		// columns line up across every row regardless of which agent it belongs to or how many
 		// other rows are above/below it — see styles.css for the full mechanism.
@@ -246,7 +245,7 @@ export class LimitsView {
 		if (icon) {
 			setIcon(el.createSpan({ cls: "agent-sessions-limits-agent-icon" }), icon);
 		}
-		// T-113: always the short form here ("5h"/"7d"/"30d") — the side panel is too narrow for
+		// always the short form here ("5h"/"7d"/"30d") — the side panel is too narrow for
 		// the long one ("5-hour window") at any width worth switching at, unlike the manager's own
 		// wider stat cards, which still use the long form. The long form is still available, in
 		// the tooltip.

@@ -9,19 +9,18 @@ recent candidate (walking backward) from any of `event_msg.item_completed`
 `rollout.is_real_user_text` in every case, since `response_item` mixes in
 Codex's own injected context (AGENTS.md instructions, `<environment_context>`,
 ...; see `rollout.INJECTED_PREFIXES`) and would surface that instead of what
-the user actually last said if it weren't filtered (T-101: some Codex CLI
+the user actually last said if it weren't filtered (some Codex CLI
 versions have neither `item_completed`(UserMessage) nor `user_message` events
 at all, so `response_item` -- filtered -- is a needed last resort, not
-skippable the way it used to be assumed). Recency, not source, decides which
+skippable). Recency, not source, decides which
 candidate wins: whichever passes the filter first while walking backward is
 the most recent one, regardless of which of the three event shapes produced
 it -- no separate tier logic is needed here the way `rollout.read_head` needs
 one (see that function), since `item_completed`/`user_message` don't coexist
 in one rollout in practice. `last_command` is left `None` -- Codex's `/rename`
-and `/compact` are plugin-side concerns (T-96), not something this phase reads
+and `/compact` are plugin-side concerns, not something this phase reads
 out of the transcript. `model`/`effort` come from the most recent
-`turn_context` (Codex has no statusLine to carry them the way Claude Code does
--- see plan/段9-Codex対応.md).
+`turn_context` (Codex has no statusLine to carry them the way Claude Code does).
 """
 import json
 from typing import Optional
@@ -113,7 +112,7 @@ def read_detail(path: str) -> Detail:
                         d.tools = list(reversed(tools))   # tools called after the response = what's currently running
                 elif ptype == 'message' and payload.get('role') == 'user' and not d.last_user:
                     # last resort: only used when neither item_completed(UserMessage)
-                    # nor user_message produced anything (T-101 -- some CLI versions
+                    # nor user_message produced anything (some CLI versions
                     # have neither), filtered the same way read_head's fallback is
                     text = rollout.text_of(payload.get('content'))
                     if text.strip() and rollout.is_real_user_text(text):

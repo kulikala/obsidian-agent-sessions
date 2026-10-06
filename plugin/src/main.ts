@@ -251,7 +251,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	 */
 	terminalStatuses = new Map<string, TerminalStatus>();
 	private stopIndex: (() => void) | null = null;
-	/** True for exactly one `onload`: saved data had no `agents` object at all (pre-T-96, or a
+	/** True for exactly one `onload`: saved data had no `agents` object at all (saved data from before the
+	 * `agents` setting existed, or a
 	 * genuinely first run) — `onload` runs `detectAgents` once and applies the result. */
 	private needsAgentDetection = false;
 	/** The login shell's env (`loginEnv`), once read: `agentEnvFor`'s fallback for OpenCode's XDG_* variables. */
@@ -543,7 +544,7 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	/**
 	 * First run only (`needsAgentDetection`: saved settings had no `agents` object at all —
-	 * pre-T-96 data or a genuinely first run): auto-detects Claude/Codex/OpenCode (`detectAgents`) and
+	 * data from before the `agents` setting existed, or a genuinely first run): auto-detects Claude/Codex/OpenCode (`detectAgents`) and
 	 * enables whichever is found. Neither found leaves Claude enabled (today's behavior,
 	 * unchanged) — at least one agent is always left enabled. Runs once; from then on the user's
 	 * own toggles in Settings are authoritative (re-detecting again only happens via the settings
@@ -633,7 +634,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		return defaultKeybindingsPath(homedir(), process.env.CLAUDE_CONFIG_DIR);
 	}
 
-	/** Where Codex's own `config.toml` lives (T-108) — the same `CODEX_HOME` resolution priority
+	/** Where Codex's own `config.toml` lives — the same `CODEX_HOME` resolution priority
 	 * as the Python side (`agentEnvFor`/`agentsessions/agents/codex/rollout.py`'s `codex_home()`):
 	 * this plugin's own "Codex environment variables" setting first, then the system env var,
 	 * then `~/.codex`. Also used by `AgentSessionsSettingTab`. */
@@ -644,7 +645,7 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	/**
 	 * Syncs `~/.codex/config.toml` with the current `submitKey` and `editorKey` settings and the
-	 * `status_line` default (T-108, `applyCodexConfig`) — called whenever either key setting
+	 * `status_line` default (`applyCodexConfig`) — called whenever either key setting
 	 * changes (`AgentSessionsSettingTab`'s dropdowns, same trigger as Claude's own
 	 * `applySubmitKey`) and when Codex is switched on or off. With Codex enabled the keymap lines
 	 * are written (or removed at the defaults) and the `status_line` default applied once; with
@@ -1147,7 +1148,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 		this.settings.agents[id].enabled = value;
 		await this.saveSettings();
-		// T-108: Codex's config.toml follows the switch — the key lines and the
+		// Codex's config.toml follows the switch — the key lines and the
 		// status_line default when it's enabled, the key lines taken away
 		// again when it's disabled.
 		if (id === "codex") {
@@ -1179,7 +1180,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		} else if (result.status === "unchanged") {
 			new Notice(t("notice.keybindingsUnchanged"));
 		}
-		// T-108: keeps Codex's own config.toml in step with the same setting.
+		// keeps Codex's own config.toml in step with the same setting.
 		this.noticeConfigResult(this.syncCodexConfig(), "notice.codexConfigWritten");
 		// The same for OpenCode's tui.json (restores it when the key goes back to Enter).
 		this.syncOpencodeTui();
@@ -2359,7 +2360,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * `plugin.index.sessions` (status from `rowTerminalStatus`, or `detached` without even a
 	 * ledger entry; name/label from the `Row` if there is one, agent from the `Row` or else the
 	 * leaf's own persisted state — `sessionDisplayName`'s "New Claude Code session"/"New Codex
-	 * session" fallback if neither has a name or label yet, T-106).
+	 * session" fallback if neither has a name or label yet).
 	 *
 	 * Two things get fixed:
 	 * 1. `leaf.view.icon`/`leaf.view.title` — `DeferredView` is still an instance of `View` (the
@@ -2510,13 +2511,11 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * Section order (T-118, correcting T-117's own first attempt): display (how the plugin
+	 * Section order: display (how the plugin
 	 * looks/reads) → input (how a session receives a keystroke) → other (everything else — paths,
 	 * sizes, counts with no natural home in the first two) → agents (which CLI to launch, and how)
-	 * last. T-117 had put agents first and submit key right after it with no heading of its own —
-	 * with no visual break between them, submit key read as if it were still part of Codex's own
-	 * block (Agents' last agent) rather than its own section. Giving submit key its own "Input"
-	 * heading fixes that regardless of where it sits, but moving agents to the very end (its own
+	 * last. Submit key has its own "Input" heading, so it doesn't read as part of the last agent's
+	 * block in the Agents section; putting agents at the very end (its own
 	 * settings are the most involved on the page — two sub-headings, six rows each) also means
 	 * every section above it is a short, uniform list, with nothing left to visually blend into.
 	 */
@@ -2650,7 +2649,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 	}
 
 	/**
-	 * The "Agents" section (T-117: one sub-heading per agent, replacing the old flat list where
+	 * The "Agents" section (one sub-heading per agent, replacing the old flat list where
 	 * both agents' "Executable" and "Environment variables" rows looked identical and only their
 	 * position told them apart). Each agent's block: an icon+name heading with its enabled toggle
 	 * on the same row, then the path field (empty = auto-detect), the multi-line "environment

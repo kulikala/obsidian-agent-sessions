@@ -48,7 +48,7 @@ class TestComputeRemoval(unittest.TestCase):
         self.assertEqual(new_text, text)
 
     def test_leaves_an_orphaned_section_header_alone(self):
-        # Per the contract (T-109): line-based only, nothing inferred about
+        # Per the contract: line-based only, nothing inferred about
         # emptied sections -- if the plugin only added keys to a table that
         # already existed (e.g. the user's or Codex's own [keymap]), the
         # header line itself never gets the marker, so it's always left

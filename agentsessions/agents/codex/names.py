@@ -2,7 +2,7 @@
 
 Never writes to the database, never holds a lock open. Any failure -- missing
 file, locked/corrupt database, unexpected schema -- falls back through
-`_last_known` (T-105) rather than raising or returning nothing: a name lookup
+`_last_known` rather than raising or returning nothing: a name lookup
 is a nice-to-have, never something scan/live/detail should fail over, but a
 session's name also shouldn't *disappear* just because this one read attempt
 didn't work.
@@ -20,7 +20,7 @@ all (see `rollout.py`'s module docstring on `item_completed`/`user_message`) --
 sqlite's own bookkeeping is more reliable than re-deriving it from the
 transcript whenever it's available.
 
-T-105 (a real report): with no `codex` process running, `state_5.sqlite`'s
+With no `codex` process running, `state_5.sqlite`'s
 `-wal`/`-shm` files can be entirely absent (WAL checkpointed and cleaned up on
 Codex's last clean exit) -- opening a WAL-mode database `mode=ro` in that state
 fails outright ("unable to open database file"), since sqlite normally needs to

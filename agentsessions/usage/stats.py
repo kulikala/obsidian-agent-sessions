@@ -410,7 +410,7 @@ def compute(now: float, projects_dir: str, status_dir: str, cache_path: str) -> 
         total, sessions = _window_totals(per_file, start, end)
         windows[key] = {
             'key': key,
-            # T-103 (agents.<name>.windows): every window, any agent, carries its
+            # agents.<name>.windows: every window, any agent, carries its
             # own length in minutes, so a pace-calculation formula that only cares
             # about window length (not which agent or which of the fixed
             # five_hour/seven_day slots) can run against any of them uniformly --

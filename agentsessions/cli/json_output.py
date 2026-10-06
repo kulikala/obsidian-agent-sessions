@@ -66,7 +66,7 @@ def _session_dict(s: Session) -> dict:
         'child': s.child,
         'transcript': s.path,
     }
-    # T-107: additive, Codex and OpenCode only for now -- Claude Code's model/effort come from
+    # additive, Codex and OpenCode only for now -- Claude Code's model/effort come from
     # statusLine (real-time, already surfaced separately), not scan; adding a
     # transcript-derived copy here would risk showing something stale or
     # inconsistent with what statusLine already reports for the same session.
@@ -390,7 +390,7 @@ def resolve_output(agent: str, pid: int, since: float, cwd: str) -> dict:
     for the contract (a freshly-started daemon session's real id, for an agent
     like Codex or OpenCode that can't be told what id to use up front).
     `{"thread": null, "transcript": null}` for any agent that doesn't need this
-    (Claude Code picks its own id via `--session-id` at launch, per T-96)."""
+    (Claude Code picks its own id via `--session-id` at launch)."""
     if agent not in ('codex', 'opencode'):
         return {'thread': None, 'transcript': None}
     st = store.load(path=config.STORE_PATH)
@@ -418,14 +418,14 @@ def ppid_output(pids: List[int]) -> dict:
 
 def stats_output() -> dict:
     """`{"windows": W2, "agents": {"claude": {"windows": W2}, "codex": {"windows": W2}}}`
-    (T-103) -- `W2 = {"five_hour": W, "seven_day": W}`, `W = {start, end,
+    -- `W2 = {"five_hour": W, "seven_day": W}`, `W = {start, end,
     used_percentage, total, sessions}`, the same shape for both agents so the
     plugin's analysis views can render either through the same code. Only an
     enabled agent gets an `agents.<name>` entry. The top-level `windows` key
     (always Claude's, unconditionally -- pre-dating `agents` entirely) is kept
     exactly as before for backward compatibility with a plugin build that reads
-    only that key; T-96/T-103 coordinated a migration to `agents.claude.windows`
-    instead, after which this top-level key can be dropped."""
+    only that key; once the plugin reads `agents.claude.windows` instead, this
+    top-level key can be dropped."""
     # Same reason as `_store_dict`: pass the config paths at call time.
     claude_windows = stats.compute(now=time.time(), projects_dir=config.PROJECTS_DIR,
                                     status_dir=config.STATUS_DIR, cache_path=config.STATS_CACHE_PATH)

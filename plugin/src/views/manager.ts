@@ -110,8 +110,7 @@ export class ManagerView extends ItemView {
 	/** Whether each group key has an asking/waiting row (rebuilt in `render()`). */
 	private groupUrgency: Map<string, GroupUrgency> = new Map();
 	/**
-	 * The agents shown as separate analytics panels (T-104, restructured as independent siblings
-	 * in T-113) — every enabled agent, falling back to `["claude"]` alone if somehow none is (so
+	 * The agents shown as separate analytics panels (independent siblings) — every enabled agent, falling back to `["claude"]` alone if somehow none is (so
 	 * there's always at least one panel to render into). Only actually split into headed sibling
 	 * panels when there's more than one; with 0 or 1 it's today's single, headingless panel inside
 	 * the whole-area "Analysis" header instead. Rebuilt in `buildAnalysisSections` (called from
@@ -121,10 +120,10 @@ export class ManagerView extends ItemView {
 	private analysisAgents: AgentId[] = [];
 	private statsBarEls: Partial<Record<AgentId, HTMLElement>> = {};
 	/** Each agent panel's per-category-bars wrapper — the individual bars inside it (one per
-	 * window, T-104 addendum) are rebuilt fresh on every `renderCategoryBars()` call, same as
+	 * window) are rebuilt fresh on every `renderCategoryBars()` call, same as
 	 * the stat cards, so no per-window element needs tracking here. */
 	private categoryBarWrapEls: Partial<Record<AgentId, HTMLElement>> = {};
-	/** The panel element itself (T-104 additional feature: per-agent fold, T-113: now the whole
+	/** The panel element itself (per-agent fold: the whole
 	 * sibling panel, not a sub-section within one shared "Analysis" wrapper), its caret, and the
 	 * small "primary window usage%" summary shown next to the heading only while folded — `null`
 	 * when there's no summary to show (nothing tracked yet for that agent). Only populated when
@@ -312,9 +311,8 @@ export class ManagerView extends ItemView {
 	/**
 	 * The whole-area heading: click to fold (a caret plus "Analysis"). Saves state to settings.
 	 * Only ever *visible* when exactly one agent is enabled (`buildAnalysisSections`'s `is-split`
-	 * class hides it via CSS otherwise — T-113 replaced the old single "Analysis" wrapper holding
-	 * every agent's section with independent sibling panels, each with its own heading, once
-	 * there's more than one) — always built regardless, so the DOM order (header, then body) stays
+	 * class hides it via CSS otherwise — with more than one agent, each agent is an
+	 * independent sibling panel with its own heading) — always built regardless, so the DOM order (header, then body) stays
 	 * right without needing to rebuild it conditionally.
 	 */
 	private buildAnalysisHeader(): void {
@@ -408,20 +406,18 @@ export class ManagerView extends ItemView {
 	}
 
 	/**
-	 * Builds one analytics section per agent in `analysisAgents` (T-104): a heading (icon+name)
+	 * Builds one analytics section per agent in `analysisAgents`: a heading (icon+name)
 	 * when there's more than one, then that agent's own usage bar (5-hour/7-day cards) and
 	 * per-category bars. With 0 or 1 agent enabled, `analysisAgents` is a single-item array
-	 * (falling back to `["claude"]`), so this renders exactly one section with no heading —
-	 * unchanged from before T-104. Called from `buildSkeleton`, so a settings change re-splits
+	 * (falling back to `["claude"]`), so this renders exactly one section with no heading.
+	 * Called from `buildSkeleton`, so a settings change re-splits
 	 * or re-merges the sections via the existing full-skeleton rebuild on `settings-changed`.
 	 */
 	/**
-	 * Builds one analytics panel per enabled agent (T-113: replaced the old single "Analysis"
-	 * wrapper holding every agent's own section — `buildAgentSectionHeading`'s old name — with
-	 * independent sibling panels, laid out side by side or stacked via `.agent-sessions-manager-
+	 * Builds one analytics panel per enabled agent (independent sibling panels, laid out side by side or stacked via `.agent-sessions-manager-
 	 * analysis-panels`' own `auto-fit`/`minmax` grid, once there's more than one agent). With 0 or
 	 * 1 agent enabled, this instead builds exactly one panel with no heading of its own, governed
-	 * by the whole-area header/fold (`buildAnalysisHeader`) — unchanged from before T-104 or T-113.
+	 * by the whole-area header/fold (`buildAnalysisHeader`).
 	 */
 	private buildAnalysisSections(): void {
 		this.analysisAgents = agentsWithLimits(this.plugin.settings.agents);
@@ -457,7 +453,7 @@ export class ManagerView extends ItemView {
 	}
 
 	/**
-	 * The panel heading: icon (`ui/icons.ts`, T-102) + "<Agent> analysis" + a caret — only built
+	 * The panel heading: icon (`ui/icons.ts`) + "<Agent> analysis" + a caret — only built
 	 * when more than one agent is enabled (`buildAnalysisSections`'s `split`; a single panel is
 	 * never foldable this way, and uses the whole-area heading/fold instead). Clicking it
 	 * folds/unfolds just this panel, saved per-agent to `managerAnalysisFolded` — independent of the
@@ -495,8 +491,7 @@ export class ManagerView extends ItemView {
 	}
 
 	/**
-	 * The small "primary window usage%" text shown next to a folded section's heading (my own
-	 * design call for T-104's per-agent-fold request, so a folded section still tells you
+	 * The small "primary window usage%" text shown next to a folded section's heading (so a folded section still tells you
 	 * something at a glance instead of going completely silent): that agent's shortest real
 	 * window (`realWindows(...)[0]` — 5-hour for Claude; for an account with no 5h/7d quota
 	 * tracked at all, whichever non-standard window it does track, e.g. 30-day). Empty when
@@ -515,13 +510,11 @@ export class ManagerView extends ItemView {
 	/** The usage bar (5-hour and 7-day windows) for every agent panel: usage bar, countdown, cost, tokens, call count, session count. */
 	/**
 	 * Claude always shows exactly its 5-hour/7-day pair, even as "—" placeholders before the first
-	 * `json stats` fetch (T-104's original loading look, unchanged by T-113 — team-lead's own
-	 * instruction: "Claude は今のまま"). Every other agent instead only ever shows windows it
-	 * actually has a tracked percentage for (`realWindows`, T-104 addendum/T-111's own rule for
-	 * the side panel's bars — T-113 brings the manager in line with it: showing 5-hour/7-day
-	 * placeholder cards for an agent that was never tracking either, e.g. a Codex account on a
-	 * 30-day-only plan, read as if those two windows were real, just still loading — a reported
-	 * bug); `stats.noUsageYet` is shown instead when there's nothing real to show yet.
+	 * `json stats` fetch. Every other agent instead only ever shows windows it
+	 * actually has a tracked percentage for (`realWindows`, the same rule as the side panel's
+	 * bars; placeholder 5-hour/7-day cards for an agent that never tracked either, e.g. a Codex account on a
+	 * 30-day-only plan, would read as if those two windows were real, just still loading);
+	 * `stats.noUsageYet` is shown instead when there's nothing real to show yet.
 	 */
 	private renderStatsBar(): void {
 		for (const agent of this.analysisAgents) {
@@ -555,7 +548,7 @@ export class ManagerView extends ItemView {
 	}
 
 	/** "Resets in…" next to the card's heading, a labeled 2×2 grid below it. The pace line is
-	 * shown for every window now (T-104 addendum — `weeklyPace`'s "too early" threshold scales
+	 * shown for every window now (`weeklyPace`'s "too early" threshold scales
 	 * with the window's own length, so a short window just settles into "too early" rather than
 	 * needing to be excluded here). */
 	private renderStatsCard(container: HTMLElement, label: string, w: StatsWindow | null): void {
@@ -598,7 +591,7 @@ export class ManagerView extends ItemView {
 
 	/**
 	 * One line below a card's usage bar: whether that window will last at the current pace
-	 * (`weeklyPace`, T-104 addendum — every window gets this line now, not just a fixed 7-day
+	 * (`weeklyPace` — every window gets this line now, not just a fixed 7-day
 	 * one). Green if on track, orange with a daily-cap estimate (second line) if it'll run out,
 	 * or muted gray with the reason if it can't be judged yet. The tooltip explains the judgment
 	 * (elapsed % and used %).
@@ -658,10 +651,10 @@ export class ManagerView extends ItemView {
 	}
 
 	/** Below each agent panel's usage bar: one "by category" horizontal bar per window in that
-	 * section (T-104 addendum — not just a fixed 5-hour/7-day pair), side by side when there's
+	 * section (not just a fixed 5-hour/7-day pair), side by side when there's
 	 * room and stacked when there isn't (each is `topCategoryTotals` up to 8 by cost) — counting
 	 * only that agent's own sessions. */
-	/** Same Claude-vs-everyone-else split as `renderStatsBar` (T-113) — a non-Claude agent with no
+	/** Same Claude-vs-everyone-else split as `renderStatsBar` — a non-Claude agent with no
 	 * real window yet renders nothing here at all rather than a second, redundant "no usage" line
 	 * (the stats bar above already says so). */
 	private renderCategoryBars(): void {
@@ -1007,7 +1000,7 @@ export class ManagerView extends ItemView {
 		}
 		const statusInfo = this.plugin.index.statusline.get(row.id);
 		// statusInfo (Claude's own live statusLine data) wins when present; row.model/effort
-		// (T-107, json scan's Codex-only fields, from its most recent turn_context) is the
+		// (json scan's Codex-only fields, from its most recent turn_context) is the
 		// fallback for an agent with no statusLine at all (Codex) — same fallback `detail.ts`'s
 		// badges use, just sourced from the already-scanned row instead of a per-session fetch.
 		const model = statusInfo?.model ?? row.model ?? null;
@@ -1040,7 +1033,7 @@ export class ManagerView extends ItemView {
 
 	/** One 5h/7d column cell: blank if that session had no usage within the window. Looks up
 	 * `row`'s own agent's windows (`sessionCostForRow`) — a mixed-agent table still attributes
-	 * each row's cost to the right agent's data (T-104). */
+	 * each row's cost to the right agent's data. */
 	private renderCostCell(tr: HTMLTableRowElement, cls: string, row: Row, key: "5h" | "7d"): void {
 		const cost = sessionCostForRow(this.statsResult, row, key);
 		tr.createEl("td", {

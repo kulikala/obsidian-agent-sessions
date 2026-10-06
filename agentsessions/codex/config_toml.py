@@ -1,5 +1,5 @@
 """Removes only the lines this project added to Codex CLI's own config
-(`~/.codex/config.toml`, respecting `CODEX_HOME`) -- the plugin (T-108) is
+(`~/.codex/config.toml`, respecting `CODEX_HOME`) -- the plugin is
 what writes them (the submit-key and editor-key keymap, and `[tui]` `status_line` only when
 it wasn't already set), marking each written line with a trailing comment
 (`MANAGED_MARKER`). This module is `agent-sessions setup --remove`/
@@ -29,7 +29,7 @@ from typing import List, Optional, Tuple
 from .. import i18n
 
 # Written at the end of every line this project adds to config.toml (agreed
-# with lnx-ts for T-108/T-109). A line is "ours" if it ends with this after
+# with the plugin). A line is "ours" if it ends with this after
 # trailing whitespace is stripped -- never a substring match elsewhere on the
 # line, so a value that happens to contain this text is never mistaken for
 # one of our own lines.

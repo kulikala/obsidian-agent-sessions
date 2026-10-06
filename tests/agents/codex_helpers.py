@@ -1,13 +1,12 @@
 """Shared helpers for building synthetic Codex rollout fixtures.
 
 Record shapes here mirror real `~/.codex/sessions/**/*.jsonl` data inspected
-2026-09-25 (session_meta/turn_context/response_item/event_msg/token_usage_record;
-see plan/段9-Codex対応.md and agentsessions/agents/codex/rollout.py's docstring) --
+(session_meta/turn_context/response_item/event_msg/token_usage_record;
+see agentsessions/agents/codex/rollout.py's docstring) --
 but every value (ids, cwd, message text) is synthetic, not copied from any real
-session. `plan/reports/T-95.md` notes this as a scope tradeoff: the contract asked
-for fixtures built by anonymizing real data, but hand-written synthetic fixtures
-covering the same shapes were faster to get right and carry zero risk of a
-real path/message slipping through an imperfect anonymizer.
+session. Hand-written synthetic fixtures are used rather than anonymized real data
+so there is zero risk of a real path/message slipping through an imperfect
+anonymizer.
 """
 import json
 import os
@@ -41,7 +40,7 @@ def turn_context(model: str = 'gpt-5.6-terra', effort: str = 'medium',
 def turn_context_old_format(model: str = 'gpt-5.6-terra', reasoning_effort: str = 'medium',
                              ts: str = '2026-09-24T01:30:30.100Z') -> dict:
     """An older rollout's `turn_context` -- no top-level `effort`, only nested
-    under `collaboration_mode.settings.reasoning_effort` (T-107)."""
+    under `collaboration_mode.settings.reasoning_effort`."""
     return {'timestamp': ts, 'type': 'turn_context',
             'payload': {'model': model,
                         'collaboration_mode': {'settings': {'reasoning_effort': reasoning_effort}}}}
@@ -51,7 +50,7 @@ def user_message(text: str, ts: str) -> dict:
     """A `response_item` role=user message -- Codex's own reconstructed prompt
     for the model, which real data shows mixes in injected context (AGENTS.md
     instructions, `<environment_context>`, ...) ahead of a real one. Ranked
-    lowest of the three sources `read_head`/`read_detail` try (T-101) -- a
+    lowest of the three sources `read_head`/`read_detail` try -- a
     last resort for CLI versions with neither of the other two -- so a fixture
     using only this one, filtered, should still surface a real (non-injected)
     message; use `event_user_message`/`item_completed_user_message` for a
@@ -74,7 +73,7 @@ def item_completed_user_message(text: str, ts: str, thread_id: str = 'thread-id'
                                  turn_id: str = 'turn-id') -> dict:
     """An `event_msg.item_completed` with `item.type == 'UserMessage'` -- the
     newer Codex CLI versions' (e.g. 0.156.1) equivalent of `event_user_message`
-    (T-101: these versions don't write `user_message` events at all, only
+    (these versions don't write `user_message` events at all, only
     this). Content blocks are typed `'text'`, not `'input_text'`/`'output_text'`
     -- see `rollout.text_of`."""
     return {'timestamp': ts, 'type': 'event_msg',
