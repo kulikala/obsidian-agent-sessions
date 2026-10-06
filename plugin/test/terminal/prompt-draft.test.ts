@@ -49,3 +49,33 @@ describe("promptHasDraft", () => {
 		expect(promptHasDraft([line("some output"), line(RULE)])).toBeNull();
 	});
 });
+
+describe("promptHasDraft (Codex)", () => {
+	const footer = line("  [? for shortcuts]");
+	const status = line("  [gpt-oss:20b default · Context 0% used]");
+
+	it("is false for an empty composer showing the dim placeholder", () => {
+		expect(promptHasDraft([line("› [Ask Codex to do anything]"), line(""), footer, status], "codex")).toBe(false);
+	});
+
+	it("is true when typed text follows the prompt, including on a continuation line", () => {
+		expect(promptHasDraft([line("› hello"), line(""), footer], "codex")).toBe(true);
+		expect(promptHasDraft([line("› "), line("  second line"), line(""), footer], "codex")).toBe(true);
+	});
+
+	it("takes the last prompt line, not a past message drawn with the same mark", () => {
+		expect(promptHasDraft([line("› say hi"), line(""), line("• Hi"), line(""), line("› [Ask Codex to do anything]"), line(""), footer], "codex")).toBe(false);
+	});
+
+	it("is null while input is disabled (a dim prompt) or with no composer on screen", () => {
+		expect(promptHasDraft([line("[›] [Input disabled.]"), line(""), footer], "codex")).toBeNull();
+		expect(promptHasDraft([line("loading"), footer], "codex")).toBeNull();
+	});
+
+	it("does not read Claude Code's prompt as Codex's, and knows no box for OpenCode", () => {
+		expect(promptHasDraft([line(RULE), line("❯ hello"), line(RULE)], "codex")).toBeNull();
+		expect(promptHasDraft([line("› hello")], "claude")).toBeNull();
+		expect(promptHasDraft([line(RULE), line("❯ hello"), line(RULE)], "opencode")).toBeNull();
+	});
+});
+

@@ -29,6 +29,9 @@ export interface Row extends ScanSession {
 	 * new session before its first message, or a Codex/OpenCode tab not yet linked to its real id.
 	 * Never in `SessionIndex.sessions`. */
 	tabOnly?: true;
+	/** A Codex row whose `name` is the one `sessions.json` holds from its creation, shown until
+	 * Codex's own title has a name (`rowFromScan`). */
+	nameStored?: true;
 }
 
 export interface SessionIndexDeps {
@@ -59,11 +62,18 @@ function delay(ms: number): Promise<void> {
 function rowFromScan(s: ScanSession, openTabIds: Set<string>, store: Store): Row {
 	const archivedEntry = store.archived.find((a) => a.id === s.id);
 	// OpenCode has no `/rename`: a name the user gave is kept in `sessions.json` and wins over the
-	// title OpenCode itself generated.
-	const storedName = s.agent === "opencode" ? store.sessions[s.id]?.name : undefined;
+	// title OpenCode itself generated. A Codex session named at creation has it there too, shown
+	// until Codex's own title has a name (`nameStored` tells the two apart).
+	const storedName = store.sessions[s.id]?.name;
+	const overlay =
+		s.agent === "opencode" && storedName
+			? { name: storedName }
+			: s.agent === "codex" && !s.name && storedName
+				? { name: storedName, nameStored: true as const }
+				: {};
 	return {
 		...s,
-		...(storedName ? { name: storedName } : {}),
+		...overlay,
 		status: null,
 		waitingFor: null,
 		compacted: false,

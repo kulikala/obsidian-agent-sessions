@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renameRoute, sessionAgentOf } from "../../src/sessions/rename";
+import { createNameRoute, renameRoute, sessionAgentOf } from "../../src/sessions/rename";
 
 describe("sessionAgentOf", () => {
 	it("trusts the tab before the row or the store (a fresh tab has neither)", () => {
@@ -24,5 +24,13 @@ describe("renameRoute", () => {
 	it("never types anything into OpenCode: it keeps the name until the id is known, then stores it", () => {
 		expect(renameRoute("opencode", true)).toBe("pending");
 		expect(renameRoute("opencode", false)).toBe("store");
+	});
+});
+
+describe("createNameRoute", () => {
+	it("names Claude Code on the command line, Codex through its composer, and keeps OpenCode's until the id is known", () => {
+		expect(createNameRoute("claude")).toBe("launch");
+		expect(createNameRoute("codex")).toBe("composer");
+		expect(createNameRoute("opencode")).toBe("pending");
 	});
 });

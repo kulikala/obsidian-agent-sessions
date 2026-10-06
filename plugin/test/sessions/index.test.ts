@@ -319,6 +319,26 @@ describe("SessionIndex", () => {
 		expect(index.sessions.get("c1")?.name).toBe("Claude's own");
 	});
 
+	it("shows a Codex session's creation name from sessions.json only until Codex's own title has a name", async () => {
+		updateStore(deps.storePath, (s) => {
+			s.sessions["t1"] = { agent: "codex", cwd: "/v", daemon: "p1", name: "Test: Codex named" };
+			s.sessions["t2"] = { agent: "codex", cwd: "/v", daemon: "p2", name: "Given at creation" };
+		});
+		scanImpl = async () => ({
+			sessions: [
+				scanSession({ id: "t1", agent: "codex", name: null }),
+				scanSession({ id: "t2", agent: "codex", name: "Renamed in Codex" }),
+			],
+			store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+		});
+		const index = new SessionIndex(deps);
+		await index.scan();
+
+		expect(index.sessions.get("t1")).toMatchObject({ name: "Test: Codex named", nameStored: true });
+		expect(index.sessions.get("t2")?.name).toBe("Renamed in Codex");
+		expect(index.sessions.get("t2")?.nameStored).toBeUndefined();
+	});
+
 	it("getDetail caches its result", async () => {
 		const index = new SessionIndex(deps);
 		await index.getDetail("a");

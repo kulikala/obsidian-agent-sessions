@@ -129,7 +129,6 @@ export const en = {
 	// ---- Notices and errors (main.ts, terminal.ts) ----
 	"notice.noActiveNote": "No note is open",
 	"notice.noActiveTerminal": "No terminal tab is open",
-	"notice.renameAtCreateUnsupported": "Naming a new session at creation isn't supported yet for this agent — rename it once it's running instead.",
 	"notice.needsOneAgentEnabled": "At least one agent must stay enabled.",
 	"notice.renameFailed": "Failed to rename: {error}",
 	"progress.renaming": "Renaming…",

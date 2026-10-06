@@ -95,7 +95,7 @@ import { registerAgentIcons } from "./ui/register-icons";
 import { sessionDisplayName } from "./sessions/name";
 import { restartDecision, type RestartDecision } from "./sessions/restart";
 import { resolveRowStatus } from "./sessions/terminal-status";
-import { renameRoute, sessionAgentOf } from "./sessions/rename";
+import { createNameRoute, renameRoute, sessionAgentOf } from "./sessions/rename";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./sessions/open-session";
 import {
 	AGENT_IDS,
@@ -187,6 +187,14 @@ const DRAFT_POLL_MS = 150;
 const DIALOG_WAIT_MS = 3000;
 /** Upper bound while waiting for `registry`'s state. */
 const WAIT_IDLE_MS = 60000;
+/** How long a new, named Codex tab waits for its composer to be on screen and empty before giving
+ * up on the `/rename` at start (the check after the link still runs), and how often it looks. */
+const WAIT_CODEX_COMPOSER_MS = 120000;
+const CODEX_COMPOSER_POLL_MS = 300;
+/** How long `confirmCodexName` gives a linked Codex row to show the name before sending it again,
+ * and how often it rescans that row meanwhile. */
+const CODEX_NAME_WAIT_MS = 15000;
+const CODEX_NAME_POLL_MS = 1000;
 /** Upper bound while waiting to see `busy` after sending. Commands that never go busy (like `/rename`) give up after this. */
 const WAIT_BUSY_MS = 10000;
 /** Upper bound from a headless session's `/exit` to its `exit` event. */
@@ -270,10 +278,13 @@ export default class AgentSessionsPlugin extends Plugin {
 	private cleanupExitedTimer: number | null = null;
 	/** The last-frontmost Markdown view. `activeEditor` is null while the terminal has focus, so this is tracked separately. */
 	private lastMarkdown: MarkdownView | null = null;
-	/** OpenCode names given before the session has its real id (naming at creation, or Rename on a
-	 * tab still under its placeholder id), by placeholder id. `linkAgentSession` moves them into
-	 * `sessions.json`. */
+	/** Names given to a Codex or OpenCode session before it has its real id (naming at creation, or
+	 * Rename on a tab still under its placeholder id), by placeholder id — shown in the tab title and
+	 * the side panel at once. `linkAgentSession` moves them into `sessions.json`. */
 	private pendingNames = new Map<string, string>();
+	/** Names given to new Codex sessions at creation, by placeholder id, for the check once the real
+	 * id is linked (`confirmCodexName`). */
+	private codexCreateNames = new Map<string, string>();
 	/** Names for new Claude sessions, by id, until their first launch passes them as `--name` (`launchArgv`). */
 	private launchNames = new Map<string, string>();
 	/** Placeholder ids of Codex/OpenCode sessions `resolveAgentSession` is still looking the real id for. */
@@ -1464,10 +1475,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	// ---- Session actions. `updateStore`'s `StoreLockError` is turned into a `Notice` here. --------
 
 	/**
-	 * New session: creates a uuid, records it in `sessions.json`, then opens the tab. If a name
-	 * was given, sends `/rename` once the tab's `start` has claude reach `idle` (no pending-name
-	 * state is kept elsewhere). After sending, waits via `index.waitForName` for `Row.name` to
-	 * reflect it (once it does, subscribers redraw the tab title themselves).
+	 * New session: creates a uuid, records it in `sessions.json`, then opens the tab. A name given
+	 * here reaches the session the way its agent takes one (`createNameRoute`).
 	 *
 	 * Returns the new session's id (`undefined` when the store couldn't be written), which the
 	 * welcome guide keeps to watch the session.
@@ -1484,10 +1493,14 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * (`TerminalView.relinkId`) and `sessions.json` links the two (design.md §3.3). A Claude name
 	 * goes on the command line (`--name`, `launchArgv`), so a Remote Control session started with it
 	 * carries the same title from the start, and is sent as `/rename` once the session is idle,
-	 * which writes it to the transcript before the first message does. An OpenCode name is kept in memory
-	 * (`pendingNames`, shown in the tab title) and written to `sessions.json` when
-	 * `linkAgentSession` learns the real id; Codex isn't supported yet (`/rename` needs an
-	 * `idle` and a scan to reflect it, and a still-unresolved session has neither).
+	 * which writes it to the transcript before the first message does; `index.waitForName` then
+	 * waits for `Row.name` to reflect it. A Codex or OpenCode name is kept in memory
+	 * (`pendingNames`, shown in the tab title and the side panel at once) and written to
+	 * `sessions.json` when `linkAgentSession` learns the real id. Codex also gets it as `/rename`
+	 * typed into its composer as soon as that is on screen and empty (`nameNewCodexSession`) — Codex
+	 * names its thread before the first message, and holds input typed before the thread has started
+	 * until it has — and once the tab is linked, `confirmCodexName` sends it again if Codex's own
+	 * title didn't take it.
 	 */
 	newSession(name?: string, agent: AgentId = this.settings.lastNewSessionAgent): string | undefined {
 		if (agent !== this.settings.lastNewSessionAgent) {
@@ -1508,9 +1521,11 @@ export default class AgentSessionsPlugin extends Plugin {
 			this.index.refreshStore();
 			if (name) {
 				this.launchNames.set(id, name);
-				// The tab title shows the name until the transcript's own takes over.
-				this.pendingNames.set(id, name);
 			}
+		}
+		if (name) {
+			// The tab title and the side panel show the name until the session's own takes over.
+			this.pendingNames.set(id, name);
 		}
 		const opened = this.openSession(id, { agent, cwd, fresh: true });
 		if (agent !== "claude") {
@@ -1519,13 +1534,18 @@ export default class AgentSessionsPlugin extends Plugin {
 		if (!name) {
 			return id;
 		}
-		if (agent === "opencode") {
+		const route = createNameRoute(agent);
+		if (route === "pending") {
 			// OpenCode has no `/rename`: the name waits here until the session has its real id.
-			this.pendingNames.set(id, name);
 			return id;
 		}
-		if (agent !== "claude") {
-			new Notice(t("notice.renameAtCreateUnsupported"));
+		if (route === "composer") {
+			this.codexCreateNames.set(id, name);
+			void opened
+				.then(() => this.nameNewCodexSession(id, name))
+				.catch((err) => {
+					new Notice(t("notice.renameFailed", { error: messageOf(err) }));
+				});
 			return id;
 		}
 		// Claude Code writes a `--name` to the transcript only with the first message; the same
@@ -1542,6 +1562,95 @@ export default class AgentSessionsPlugin extends Plugin {
 				new Notice(t("notice.renameFailed", { error: messageOf(err) }));
 			});
 		return id;
+	}
+
+	/**
+	 * Types `/rename <name>` into a new Codex tab still under `placeholderId`, once its composer is
+	 * on screen and empty (`TerminalView.promptHasDraft() === false` — a `/rename` pasted into a
+	 * draft would join it). Codex names its thread before the first message, and holds input typed
+	 * before the thread has started until it has, so this is the earliest it can be sent. Gives up
+	 * quietly when the tab closes, is linked first, or the composer stays busy past
+	 * `WAIT_CODEX_COMPOSER_MS`; `confirmCodexName` still checks the name once the tab is linked.
+	 */
+	private async nameNewCodexSession(placeholderId: string, name: string): Promise<void> {
+		const view = this.findTerminalView(placeholderId);
+		if (!view) {
+			return;
+		}
+		const deadline = Date.now() + WAIT_CODEX_COMPOSER_MS;
+		for (;;) {
+			if (view.sessionId !== placeholderId || this.codexCreateNames.get(placeholderId) !== name || !this.findTerminalView(placeholderId)) {
+				return;
+			}
+			if (view.isAttached() && view.promptHasDraft() === false) {
+				break;
+			}
+			if (Date.now() >= deadline) {
+				return;
+			}
+			await sleep(CODEX_COMPOSER_POLL_MS);
+		}
+		await this.sendViaView(view, `/rename ${name}`);
+	}
+
+	/**
+	 * Once a new Codex tab named at creation is linked to its real id (`resolveAgentSession`):
+	 * waits for its row to show the name, and when Codex's own title didn't take it (the `/rename`
+	 * at start was never sent, or this Codex version dropped it) sends `/rename` once more after
+	 * its turn has ended and its composer is empty. Does nothing when the session was renamed again
+	 * in the meantime (`renameSession` drops the entry).
+	 */
+	private async confirmCodexName(placeholderId: string, id: string): Promise<void> {
+		const name = this.codexCreateNames.get(placeholderId);
+		if (name === undefined) {
+			return;
+		}
+		// From here on keyed by the real id, which a Rename now goes through.
+		this.codexCreateNames.delete(placeholderId);
+		this.codexCreateNames.set(id, name);
+		// Codex's own title, not the name `sessions.json` shows in its place (`Row.nameStored`).
+		const named = (): boolean => {
+			const row = this.index.sessions.get(id);
+			return row?.name === name && !row.nameStored;
+		};
+		try {
+			const nameDeadline = Date.now() + CODEX_NAME_WAIT_MS;
+			while (!named() && Date.now() < nameDeadline) {
+				await sleep(CODEX_NAME_POLL_MS);
+				await this.index.rescan([id]);
+			}
+			if (named()) {
+				return;
+			}
+			// Codex reports no status of its own to the registry; its tab does (the title's spinner,
+			// `titleStatus`). Waits for the turn to end and the composer to be empty.
+			const view = this.findTerminalView(id);
+			if (view) {
+				const settled = (): boolean => {
+					const status = this.terminalStatuses.get(id);
+					return status !== "working" && status !== "asking" && status !== "connecting" && view.promptHasDraft() === false;
+				};
+				const deadline = Date.now() + WAIT_CODEX_COMPOSER_MS;
+				while (!settled() && Date.now() < deadline) {
+					await sleep(CODEX_COMPOSER_POLL_MS);
+				}
+				if (!settled()) {
+					return;
+				}
+			}
+			await this.index.rescan([id]);
+			if (this.codexCreateNames.get(id) !== name || named()) {
+				return;
+			}
+			await this.sendCommand(id, `/rename ${name}`);
+			void this.index.waitForName(id, name);
+		} catch (err) {
+			new Notice(t("notice.renameFailed", { error: messageOf(err) }));
+		} finally {
+			if (this.codexCreateNames.get(id) === name) {
+				this.codexCreateNames.delete(id);
+			}
+		}
 	}
 
 	/**
@@ -1665,6 +1774,7 @@ export default class AgentSessionsPlugin extends Plugin {
 					if (thread) {
 						this.linkAgentSession(agent, thread, cwd, placeholderId);
 						this.relinkTerminalViews(placeholderId, thread);
+						void this.confirmCodexName(placeholderId, thread);
 						return;
 					}
 					await sleep(RESOLVE_POLL_MS);
@@ -1841,6 +1951,12 @@ export default class AgentSessionsPlugin extends Plugin {
 			sessionAgentOf({ tab: view?.sessionAgent, row: this.index.sessions.get(id)?.agent, stored }),
 			this.unresolvedIds.has(id)
 		);
+		// A new name replaces the one given at creation: nothing checks for that one any more.
+		this.codexCreateNames.delete(id);
+		if (route === "command" && this.pendingNames.has(id)) {
+			this.pendingNames.set(id, name);
+			view?.refreshTitle();
+		}
 		if (route !== "command") {
 			// The tab title shows the name at once, also while the session has no row yet.
 			this.pendingNames.set(id, name);

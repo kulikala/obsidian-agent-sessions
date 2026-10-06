@@ -35,8 +35,9 @@ export interface ArchivedSession {
  * actually started under, once `json resolve <agent>` has learned this entry's key is the real
  * thread id (design.md §3.3). Absent for Claude (and for a session not yet resolved), where the
  * daemon id and this entry's own key are simply the same id.
- * `name`: only for OpenCode, which has no `/rename` — the name the user gave, overlaid on the
- * row (`sessions/index.ts`'s `rowFromScan`). */
+ * `name`: for OpenCode, which has no `/rename`, the name the user gave, overlaid on the row; for
+ * Codex, the name given at creation, shown until Codex's own title has one (`sessions/index.ts`'s
+ * `rowFromScan`). */
 export interface StoreSessionEntry {
 	agent: string;
 	cwd: string;

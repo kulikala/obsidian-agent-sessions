@@ -279,7 +279,7 @@ export class TerminalView extends ItemView {
 			}
 			lines.push(cells);
 		}
-		return promptHasDraft(lines);
+		return promptHasDraft(lines, this.agent);
 	}
 
 	/** Whether this tab is attached to the daemon (the condition `main.ts`'s `sendCommand` uses to pick its first route). */

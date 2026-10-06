@@ -130,7 +130,6 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	// ---- Notices and errors (main.ts, terminal.ts) ----
 	"notice.noActiveNote": "開いているノートがありません",
 	"notice.noActiveTerminal": "開いているターミナルがありません",
-	"notice.renameAtCreateUnsupported": "このエージェントでは、作成時に名前を付けることはまだできません——起動してから名前を変更してください",
 	"notice.needsOneAgentEnabled": "少なくとも1つのエージェントは有効にしてください",
 	"notice.renameFailed": "名前の変更に失敗しました: {error}",
 	"progress.renaming": "名前を変更しています…",
