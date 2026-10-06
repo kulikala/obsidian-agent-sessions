@@ -13,7 +13,7 @@ import {
 	type DropdownComponent,
 	type FileSystemAdapter,
 } from "obsidian";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import { BACKEND_FILES, BACKEND_VERSION } from "virtual:agent-sessions-backend";
@@ -127,6 +127,7 @@ import {
 	type TerminalStatus,
 } from "./sessions/terminal-status";
 import { claudeSettingsPath, readFullscreenTui } from "./terminal/tui-mode";
+import { resumeConnectsRemoteControl } from "./sessions/remote-control";
 import type { ArchivedSession, DaemonSession, Detail, LiveResult, ScanResult } from "./types";
 import {
 	AGENT_SKILLS_NOTICE,
@@ -193,6 +194,8 @@ const WAIT_EXIT_MS = 30000;
 const WAIT_RC_CONNECT_MS = 120000;
 /** How far a process's own `startedAt` may read before the moment the plugin started it. */
 const CLOCK_SLACK_MS = 2000;
+/** How long a headless `/rename` waits for Remote Control to connect when the session is expected to (`resumeConnectsRemoteControl`). */
+const WAIT_RC_HEADLESS_MS = 30000;
 /** After a headless `/rename` on a session connected to Remote Control, how long before `/exit`, so
  * the new title reaches the server first. */
 const RC_TITLE_SETTLE_MS = 2000;
@@ -2080,6 +2083,10 @@ export default class AgentSessionsPlugin extends Plugin {
 				throw new Error(t("error.agentStartWaitFailed", { name: t(AGENT_DISPLAY_NAME_KEY[agent]) }));
 			}
 			const plan = planHeadlessCommand(agent, text);
+			if (agent === "claude" && plan.wait.kind === "name" && this.resumeConnectsRemoteControl(row.transcript)) {
+				// Claude Code sends a new title to Remote Control only while connected: rename once it is.
+				await registry.waitUntil(id, (e) => e.rc && e.status === "idle", WAIT_RC_HEADLESS_MS);
+			}
 			const clearLine = async (seq: string): Promise<void> => {
 				if (seq) {
 					client.writeInput(Buffer.from(seq, "utf8"));
@@ -2121,6 +2128,22 @@ export default class AgentSessionsPlugin extends Plugin {
 			this.headless.delete(id);
 			notice.hide();
 		}
+	}
+
+	/** Whether resuming a Claude session connects Remote Control: on for all sessions in Claude Code's
+	 * settings, or recorded in the session's transcript (`sessions/remote-control.ts`). */
+	private resumeConnectsRemoteControl(transcript: string | null): boolean {
+		const read = (file: string | null): string | null => {
+			if (!file) {
+				return null;
+			}
+			try {
+				return readFileSync(file, "utf8");
+			} catch {
+				return null;
+			}
+		};
+		return resumeConnectsRemoteControl(read(claudeSettingsPath(homedir(), process.env.CLAUDE_CONFIG_DIR)), read(transcript));
 	}
 
 	/** End session: confirm → `kill`, addressed by the daemon's own id (`daemonIdFor` — a linked
