@@ -13,8 +13,8 @@ export function modelAliasLabel(alias: string): string {
 		case "opusplan":
 			return t("model.alias.opusplan");
 		default:
-			// Family names and the [1m] variants read the same in every language.
-			return alias.charAt(0).toUpperCase() + alias.slice(1).replace("[1m]", " (1M)");
+			// Family names read the same in every language.
+			return alias.charAt(0).toUpperCase() + alias.slice(1);
 	}
 }
 

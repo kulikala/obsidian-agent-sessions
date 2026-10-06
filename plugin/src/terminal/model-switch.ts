@@ -7,7 +7,7 @@
  * A full model id is also accepted ("Other…"). */
 export const MODEL_ALIAS_GROUPS: readonly (readonly string[])[] = [
 	["default", "best", "opusplan"],
-	["fable", "opus", "opus[1m]", "sonnet", "sonnet[1m]", "haiku"],
+	["fable", "opus", "sonnet", "haiku"],
 ];
 export const MODEL_ALIASES: readonly string[] = MODEL_ALIAS_GROUPS.flat();
 
@@ -40,8 +40,9 @@ export interface CurrentModel {
 }
 
 /**
- * The alias a status-line display name stands for ("Opus 5.5" → `opus`, "Sonnet 4.6 (1M context)"
- * → `sonnet[1m]`); null when it names no family this list knows.
+ * The alias a status-line display name stands for ("Opus 5.5" and "Opus 5.5 (1M context)" →
+ * `opus`: current models run with the 1M window without a `[1m]` variant); null when it names no
+ * family this list knows.
  */
 export function aliasFromDisplay(display: string | null): string | null {
 	if (!display) {
@@ -52,7 +53,7 @@ export function aliasFromDisplay(display: string | null): string | null {
 	if (!family) {
 		return null;
 	}
-	return /\b1m\b/.test(text) && family !== "haiku" && family !== "fable" ? `${family}[1m]` : family;
+	return family;
 }
 
 /** The model dropdown's preselection: the current alias, else "keep". */
