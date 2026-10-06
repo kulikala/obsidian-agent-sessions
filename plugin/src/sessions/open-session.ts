@@ -23,6 +23,13 @@ export interface OpenSessionOptions {
 	fresh?: boolean;
 }
 
+/** What the session index and `sessions.json` know about a session (`SessionOpener`'s `known`). */
+export interface KnownSession {
+	agent?: string;
+	cwd?: string;
+	daemonId?: string;
+}
+
 /** The existing leaf, if any, that's a terminal view whose state `id` matches. */
 export function findTerminalLeaf<L extends LeafLike>(workspace: WorkspaceLike<L>, id: string): L | undefined {
 	return workspace.getLeavesOfType(VIEW_TYPE_TERMINAL).find((leaf) => leaf.getViewState().state?.id === id);
@@ -36,12 +43,14 @@ export function findTerminalLeaf<L extends LeafLike>(workspace: WorkspaceLike<L>
 export class SessionOpener<L extends LeafLike> {
 	readonly opening = new Map<string, Promise<L>>();
 
-	/** `known` gives a listed session's agent and folder, used when the caller passes none (a
-	 * notice or command that only has the id); a Codex or OpenCode session opened as Claude Code
-	 * would be resumed with `claude --resume <its id>`. */
+	/** `known` describes a listed session: its agent and folder, used when the caller passes none (a
+	 * notice or command that only has the id; a Codex or OpenCode session opened as Claude Code
+	 * would be resumed with `claude --resume <its id>`), and the daemon id `sessions.json` links it to
+	 * (a Codex or OpenCode session runs under the id it started with, so a tab reopened for it
+	 * attaches to that PTY instead of resuming the session a second time). */
 	constructor(
 		private workspace: WorkspaceLike<L>,
-		private known: (id: string) => { agent?: string; cwd?: string } | undefined = () => undefined
+		private known: (id: string) => KnownSession | undefined = () => undefined
 	) {}
 
 	open(id: string, opts: OpenSessionOptions = {}): Promise<L> {
@@ -66,6 +75,8 @@ export class SessionOpener<L extends LeafLike> {
 		const state: Record<string, unknown> = { id, agent: opts.agent ?? row?.agent ?? "claude", cwd: opts.cwd ?? row?.cwd ?? "" };
 		if (opts.fresh) {
 			state.fresh = true;
+		} else if (row?.daemonId && row.daemonId !== id) {
+			state.daemonId = row.daemonId;
 		}
 		await leaf.setViewState({ type: VIEW_TYPE_TERMINAL, state, active: true });
 		await this.workspace.revealLeaf(leaf);

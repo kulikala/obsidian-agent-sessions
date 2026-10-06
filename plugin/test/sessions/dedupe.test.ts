@@ -63,6 +63,23 @@ describe("SessionOpener (concurrent calls)", () => {
 		expect((await opener.open("unknown")).getViewState().state).toEqual({ id: "unknown", agent: "claude", cwd: "" });
 	});
 
+	it("reopens a linked session on the daemon id it runs under, but not a fresh one", async () => {
+		const ws = new FakeWorkspace();
+		const opener = new SessionOpener(ws, () => ({ agent: "codex", daemonId: "placeholder-1" }));
+		expect((await opener.open("thread-1", { agent: "codex", cwd: "/v" })).getViewState().state).toEqual({
+			id: "thread-1",
+			agent: "codex",
+			cwd: "/v",
+			daemonId: "placeholder-1",
+		});
+		expect((await opener.open("thread-2", { agent: "codex", fresh: true })).getViewState().state).toEqual({
+			id: "thread-2",
+			agent: "codex",
+			cwd: "",
+			fresh: true,
+		});
+	});
+
 	it("after opening, subsequent calls only call revealLeaf and don't create a new leaf", async () => {
 		const ws = new FakeWorkspace();
 		const opener = new SessionOpener(ws);

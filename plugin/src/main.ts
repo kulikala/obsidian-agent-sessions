@@ -329,7 +329,16 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.app.workspace.onLayoutReady(() => {
 			this.stopIndex = this.index.start();
 		});
-		this.opener = new SessionOpener<WorkspaceLeaf>(this.app.workspace, (id) => this.index?.sessions.get(id));
+		this.opener = new SessionOpener<WorkspaceLeaf>(this.app.workspace, (id) => {
+			const row = this.index?.sessions.get(id);
+			let daemonId: string | undefined;
+			try {
+				daemonId = loadStore(this.storePath()).sessions[id]?.daemon;
+			} catch {
+				// No store yet: nothing is linked.
+			}
+			return { agent: row?.agent, cwd: row?.cwd, daemonId };
+		});
 
 		this.register(this.index.registry.onIdle((id) => void this.notifyIdle(id)));
 
