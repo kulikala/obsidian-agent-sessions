@@ -1408,6 +1408,7 @@
 
 .agent-sessions-editor-bar {
 	display: flex;
+	flex-wrap: wrap;
 	align-items: center;
 	gap: var(--size-4-2);
 	flex: 0 0 auto;
@@ -1417,7 +1418,8 @@
 }
 
 .agent-sessions-editor-file {
-	flex: 1 1 auto;
+	flex: 1 1 0;
+	min-width: 0;
 	overflow: hidden;
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -2941,12 +2943,11 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	display: flex;
 	align-items: center;
 	gap: var(--size-4-1);
-	flex: 0 1 auto;
-	min-width: 0;
+	flex: 0 0 auto;
 }
 
-/* The labels ("Model", "Effort") and the buttons keep their width; in a narrow pane the file name
-   and then the dropdowns give way instead. */
+/* The labels ("Model", "Effort"), the dropdowns and the buttons keep their width; in a narrow
+   pane only the file name gives way, down to nothing. */
 .agent-sessions-editor-select > span,
 .agent-sessions-editor-bar > button {
 	flex: 0 0 auto;
@@ -2956,17 +2957,13 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 /* The dropdowns size to their content, up to a cap; long entries are cut in the closed state
    (the option's title carries the full text). */
 .agent-sessions-editor-select select {
+	flex: 0 0 auto;
 	width: auto;
-	min-width: 0;
 	text-overflow: ellipsis;
 }
 
 .agent-sessions-editor-select.is-model select {
-	max-width: 9em;
-}
-
-.agent-sessions-editor-select.is-effort select {
-	max-width: 6em;
+	max-width: 14em;
 }
 
 .agent-sessions-model-other {
