@@ -443,7 +443,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"stats.categoryBar.empty": "この枠の使用はありません",
 	"stats.categoryBar.itemCost": "{cost}（{share}%）",
 	"stats.pace.unknown": "使用率を取得できません",
-	"stats.pace.tooEarly": "枠が始まったばかりで、まだ見通せません",
+	"stats.pace.tooEarly": "まだ使用量が少なく、見通せません",
 	"stats.pace.onTrack": "余裕あり — このペースならリセットまでの使用は約 {pct}",
 	"stats.pace.overPace": "このペースだと {when} に上限に達します（{beforeReset}）",
 	"stats.pace.tomorrow": "明日 {time}",

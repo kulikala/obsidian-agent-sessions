@@ -442,7 +442,7 @@ export const en = {
 	"stats.categoryBar.empty": "No usage in this window",
 	"stats.categoryBar.itemCost": "{cost} ({share}%)",
 	"stats.pace.unknown": "Usage percentage unavailable",
-	"stats.pace.tooEarly": "Too early in the window to project",
+	"stats.pace.tooEarly": "Under 1% used, so there is too little to project from",
 	"stats.pace.onTrack": "On track — about {pct} used by reset at this pace",
 	"stats.pace.overPace": "At this pace you'll hit the limit {when} ({beforeReset})",
 	"stats.pace.tomorrow": "tomorrow {time}",
