@@ -189,6 +189,13 @@ const WAIT_IDLE_MS = 60000;
 const WAIT_BUSY_MS = 10000;
 /** Upper bound from a headless session's `/exit` to its `exit` event. */
 const WAIT_EXIT_MS = 30000;
+/** How long a resumed Claude session gets to connect Remote Control before `syncRemoteControlTitle` gives up. */
+const WAIT_RC_CONNECT_MS = 120000;
+/** How far a process's own `startedAt` may read before the moment the plugin started it. */
+const CLOCK_SLACK_MS = 2000;
+/** After a headless `/rename` on a session connected to Remote Control, how long before `/exit`, so
+ * the new title reaches the server first. */
+const RC_TITLE_SETTLE_MS = 2000;
 /** How long OpenCode's terminal must be quiet before a headless session with no status is taken as ready. */
 const OPENCODE_QUIET_MS = 2500;
 /** After a kill, how long to wait for the `exit` event before forgetting the session. */
@@ -262,6 +269,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * tab still under its placeholder id), by placeholder id. `linkAgentSession` moves them into
 	 * `sessions.json`. */
 	private pendingNames = new Map<string, string>();
+	/** Names for new Claude sessions, by id, until their first launch passes them as `--name` (`launchArgv`). */
+	private launchNames = new Map<string, string>();
 	/** Placeholder ids of Codex/OpenCode sessions `resolveAgentSession` is still looking the real id for. */
 	private unresolvedIds = new Set<string>();
 	/** The daemon's session list as of the last live refresh that reached it. */
@@ -842,6 +851,11 @@ export default class AgentSessionsPlugin extends Plugin {
 		if (agent === "codex") {
 			return buildAgentArgv(agent, bin, id, fresh, undefined, await codexNoDaemon(bin));
 		}
+		if (agent === "claude") {
+			const name = fresh ? this.launchNames.get(id) : undefined;
+			this.launchNames.delete(id);
+			return buildAgentArgv(agent, bin, id, fresh, undefined, false, name);
+		}
 		if (agent !== "opencode" || settings.launchVia !== "ollama") {
 			return buildAgentArgv(agent, bin, id, fresh);
 		}
@@ -1402,8 +1416,9 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * *daemon-only* placeholder at first (the tab's own `TerminalView.daemonId` tracks it) while
 	 * `resolveAgentSession` polls `json resolve <agent>` in
 	 * the background to learn the real thread id; once found, the tab's own `id` is swapped to it
-	 * (`TerminalView.relinkId`) and `sessions.json` links the two (design.md §3.3). Naming at
-	 * creation works through `/rename` for Claude only. An OpenCode name is kept in memory
+	 * (`TerminalView.relinkId`) and `sessions.json` links the two (design.md §3.3). A Claude name
+	 * goes on the command line (`--name`, `launchArgv`), so a Remote Control session started with it
+	 * carries the same title from the start. An OpenCode name is kept in memory
 	 * (`pendingNames`, shown in the tab title) and written to `sessions.json` when
 	 * `linkAgentSession` learns the real id; Codex isn't supported yet (`/rename` needs an
 	 * `idle` and a scan to reflect it, and a still-unresolved session has neither).
@@ -1425,12 +1440,17 @@ export default class AgentSessionsPlugin extends Plugin {
 				return undefined;
 			}
 			this.index.refreshStore();
+			if (name) {
+				this.launchNames.set(id, name);
+				// The tab title shows the name until the transcript's own takes over.
+				this.pendingNames.set(id, name);
+			}
 		}
-		const opened = this.openSession(id, { agent, cwd, fresh: true });
+		this.openSession(id, { agent, cwd, fresh: true });
 		if (agent !== "claude") {
 			this.trackNewAgentSession(agent, id, cwd);
 		}
-		if (!name) {
+		if (!name || agent === "claude") {
 			return id;
 		}
 		if (agent === "opencode") {
@@ -1438,23 +1458,34 @@ export default class AgentSessionsPlugin extends Plugin {
 			this.pendingNames.set(id, name);
 			return id;
 		}
-		if (agent !== "claude") {
-			new Notice(t("notice.renameAtCreateUnsupported"));
-			return id;
-		}
-		void opened
-			.then(async () => {
-				if (!(await this.index.registry.waitFor(id, "idle", WAIT_IDLE_MS))) {
-					new Notice(t("notice.renameWaitFailed"));
-					return;
-				}
-				await this.sendCommand(id, `/rename ${name}`);
-				void this.index.waitForName(id, name);
-			})
-			.catch((err) => {
-				new Notice(t("notice.renameFailed", { error: messageOf(err) }));
-			});
+		new Notice(t("notice.renameAtCreateUnsupported"));
 		return id;
+	}
+
+	/**
+	 * Remote Control keeps the title a session had when Claude Code created it: a resumed session
+	 * reconnects to the same Remote Control session without sending its name, so a rename made
+	 * while it was not connected (a headless rename, Remote Control off or still connecting) stays
+	 * behind there. Once the Claude session resumed at `launchedAt` reports Remote Control
+	 * connected and idle, this sends `/rename` with its current name — the one way Claude Code
+	 * pushes a title to a connected session. Nothing happens for a session without a name or
+	 * without Remote Control.
+	 */
+	async syncRemoteControlTitle(id: string, launchedAt: number): Promise<void> {
+		const connected = await this.index.registry.waitUntil(
+			id,
+			(e) => e.rc && e.status === "idle" && (e.startedAt === undefined || e.startedAt >= launchedAt - CLOCK_SLACK_MS),
+			WAIT_RC_CONNECT_MS
+		);
+		const name = this.index.sessions.get(id)?.name;
+		if (!connected || !name) {
+			return;
+		}
+		try {
+			await this.sendCommand(id, `/rename ${name}`);
+		} catch (err) {
+			console.warn("agent-sessions: Remote Control title", err);
+		}
 	}
 
 	/** Starts finding the real id of a new Codex/OpenCode session that runs under `placeholderId`
@@ -2045,6 +2076,10 @@ export default class AgentSessionsPlugin extends Plugin {
 				const named = await this.index.waitForName(id, plan.wait.name, plan.wait.timeoutMs);
 				if (afterWait(plan.wait, named) === "teardown") {
 					throw new Error(t("error.renameWaitFailed"));
+				}
+				if (registry.get(id)?.rc) {
+					// Claude Code sends the new title to Remote Control after the transcript has it.
+					await sleep(RC_TITLE_SETTLE_MS);
 				}
 			} else {
 				await registry.waitFor(id, "busy", WAIT_BUSY_MS);

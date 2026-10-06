@@ -693,6 +693,7 @@ export class TerminalView extends ItemView {
 			this.daemonId = crypto.randomUUID();
 			this.plugin.linkAgentSession(agent, this.id, cwd, this.daemonId);
 		}
+		const launchedAt = Date.now();
 		const res = await client.start({
 			id: this.daemonId,
 			agent: this.agent,
@@ -703,6 +704,9 @@ export class TerminalView extends ItemView {
 		});
 		if (!res.ok && res.error !== "exists") {
 			throw new Error(t("error.startFailed", { error: res.error ?? "unknown" }));
+		}
+		if (agent === "claude" && !fresh && res.ok) {
+			void this.plugin.syncRemoteControlTitle(this.id, launchedAt);
 		}
 		this.startedAt = Date.now();
 		this.earlyOutput = "";

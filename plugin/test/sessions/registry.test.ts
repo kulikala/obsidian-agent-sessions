@@ -166,6 +166,29 @@ describe("Registry", () => {
 		expect(registry.listenerCount("change")).toBe(before);
 	});
 
+	it("waitUntil waits for a condition on the entry, such as Remote Control connected and idle", async () => {
+		writeSession(dir, "a.json", { pid: process.pid, sessionId: "a", status: "idle" });
+		const registry = new Registry(dir);
+		const waiting = registry.waitUntil("a", (e) => e.rc && e.status === "idle", 5000);
+
+		writeSession(dir, "a.json", { pid: process.pid, sessionId: "a", status: "busy", bridgeSessionId: "cse_1" });
+		registry.refresh();
+		let settled = false;
+		void waiting.then(() => (settled = true));
+		await Promise.resolve();
+		expect(settled).toBe(false);
+		writeSession(dir, "a.json", { pid: process.pid, sessionId: "a", status: "idle", bridgeSessionId: "cse_1" });
+		registry.refresh();
+
+		await expect(waiting).resolves.toBe(true);
+	});
+
+	it("waitUntil returns false on timeoutMs when the condition never holds", async () => {
+		writeSession(dir, "a.json", { pid: process.pid, sessionId: "a", status: "idle" });
+		const registry = new Registry(dir);
+		await expect(registry.waitUntil("a", (e) => e.rc, 20)).resolves.toBe(false);
+	});
+
 	it("calls onChange on every refresh", () => {
 		const registry = new Registry(dir);
 		let calls = 0;

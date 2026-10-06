@@ -32,6 +32,8 @@ import subprocess
 import threading
 from typing import Dict, List, Optional
 
+from . import cmdline
+
 _k32 = ctypes.WinDLL('kernel32', use_last_error=True)  # type: ignore[attr-defined]
 
 HPCON = w.HANDLE
@@ -136,12 +138,12 @@ def _env_block(env: Dict[str, str]) -> ctypes.Array:
 def resolve_command(argv: List[str], env: Dict[str, str]) -> List[str]:
     """`argv` with `argv[0]` resolved against the child's own `PATH`/`PATHEXT` (what `execvpe`
     does on Unix). A `.cmd`/`.bat` script runs through `cmd.exe /d /s /c` — CreateProcess can't
-    start one directly."""
+    start one directly; its arguments are escaped for `cmd.exe` (`cmdline.shim_line`)."""
     path = env.get('PATH') or env.get('Path') or os.environ.get('PATH', '')
     found = shutil.which(argv[0], path=path) or argv[0]
     if found.lower().endswith(('.cmd', '.bat')):
         comspec = env.get('ComSpec') or env.get('COMSPEC') or os.environ.get('ComSpec') or 'cmd.exe'
-        return [comspec, '/d', '/s', '/c', subprocess.list2cmdline([found] + argv[1:])]
+        return [comspec, '/d', '/s', '/c', cmdline.shim_line([found] + argv[1:])]
     return [found] + argv[1:]
 
 

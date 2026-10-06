@@ -120,6 +120,20 @@ describe("buildAgentArgv", () => {
 		expect(buildAgentArgv("claude", "/bin/claude", "abc-123", true)).toEqual(["/bin/claude", "--session-id", "abc-123"]);
 	});
 
+	it("claude fresh with a name: --name=NAME, one argument even when the name starts with a dash", () => {
+		expect(buildAgentArgv("claude", "/bin/claude", "abc", true, undefined, false, "Work: Fix login")).toEqual([
+			"/bin/claude",
+			"--session-id",
+			"abc",
+			"--name=Work: Fix login",
+		]);
+		expect(buildAgentArgv("claude", "/bin/claude", "abc", true, undefined, false, "-x")).toEqual(["/bin/claude", "--session-id", "abc", "--name=-x"]);
+	});
+
+	it("claude resume takes no name: the transcript already holds it", () => {
+		expect(buildAgentArgv("claude", "/bin/claude", "abc", false, undefined, false, "N")).toEqual(["/bin/claude", "--resume", "abc"]);
+	});
+
 	it("claude resume: --resume", () => {
 		expect(buildAgentArgv("claude", "/bin/claude", "abc-123", false)).toEqual(["/bin/claude", "--resume", "abc-123"]);
 	});
