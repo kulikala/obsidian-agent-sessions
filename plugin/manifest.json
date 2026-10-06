@@ -1,7 +1,7 @@
 {
 	"id": "agent-sessions",
 	"name": "Agent Sessions",
-	"version": "0.4.0",
+	"version": "0.5.0",
 	"minAppVersion": "1.8.7",
 	"description": "Runs Claude Code, Codex and OpenCode in terminal tabs, with a session manager and usage analytics. Sessions keep running in a background process when a tab is closed.",
 	"author": "Kaz Namba",
