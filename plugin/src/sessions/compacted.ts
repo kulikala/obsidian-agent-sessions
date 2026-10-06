@@ -71,10 +71,13 @@ export class CompactedTracker extends EventEmitter {
 		this.emit("change");
 	}
 
-	/** Starts `fs.watch` (200ms debounce). Returns a function to stop it. */
+	/** Starts `fs.watch` (200ms debounce). Returns a function to stop it. The folder is created
+	 * first: on a fresh install the hook hasn't written it yet, and a watch on a missing folder fails
+	 * for good. */
 	watch(): () => void {
 		if (!this.watcher) {
 			try {
+				fs.mkdirSync(this.dir, { recursive: true });
 				this.watcher = fs.watch(this.dir, () => this.scheduleRefresh());
 			} catch {
 				this.watcher = null;

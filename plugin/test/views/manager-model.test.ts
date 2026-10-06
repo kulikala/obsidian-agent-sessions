@@ -477,12 +477,27 @@ describe("weeklyPace", () => {
 		expect(weeklyPace(10, 100, 100, 200, 50)).toEqual({ kind: "unknown" });
 	});
 
-	it("is too-early when less than 6 hours have elapsed", () => {
-		const result = weeklyPace(10, 0, WEEK, 3600, 50);
-		expect(result.kind).toBe("too-early");
-		if (result.kind === "too-early") {
-			expect(result.elapsedPct).toBeCloseTo((3600 / WEEK) * 100, 5);
+	it("is too-early when under 1% is used, however much time has elapsed", () => {
+		expect(weeklyPace(0.5, 0, WEEK, 2 * 3600, 50).kind).toBe("too-early");
+		expect(weeklyPace(0, 0, WEEK, WEEK / 2, 0).kind).toBe("too-early");
+	});
+
+	it("is too-early when effectively no time has elapsed", () => {
+		expect(weeklyPace(5, 100, 100 + WEEK, 100, 50).kind).toBe("too-early");
+		expect(weeklyPace(5, 100, 100 + WEEK, 130, 50).kind).toBe("too-early");
+	});
+
+	it("projects 11% used 2 hours into a 7-day window", () => {
+		const result = weeklyPace(11, 0, WEEK, 2 * 3600, 50);
+		expect(result.kind).toBe("over-pace");
+		if (result.kind === "over-pace") {
+			expect(result.usedPct).toBe(11);
+			expect(result.elapsedPct).toBeCloseTo((2 * 3600 / WEEK) * 100, 5);
 		}
+	});
+
+	it("projects from exactly 1% used", () => {
+		expect(weeklyPace(1, 0, WEEK, 3600, 5).kind).not.toBe("too-early");
 	});
 
 	it("is on-track when the projection is 100 or under", () => {
@@ -518,15 +533,10 @@ describe("weeklyPace", () => {
 		}
 	});
 
-	it("the too-early threshold scales with the window's own length, not a fixed absolute time", () => {
+	it("the 5-hour window follows the same usage-only rule", () => {
 		const FIVE_HOURS = 5 * 60 * 60;
-		// ~3.57% of 5 hours is ~10.7 minutes — comfortably past that is "on track", not "too early",
-		// even though it's nowhere near the old fixed 6-hour threshold.
-		const settled = weeklyPace(10, 0, FIVE_HOURS, FIVE_HOURS * 0.2, 5);
-		expect(settled.kind).not.toBe("too-early");
-		// Just inside the same ~3.57% ratio is still "too early".
-		const early = weeklyPace(10, 0, FIVE_HOURS, FIVE_HOURS * 0.01, 5);
-		expect(early.kind).toBe("too-early");
+		expect(weeklyPace(10, 0, FIVE_HOURS, FIVE_HOURS * 0.01, 5).kind).not.toBe("too-early");
+		expect(weeklyPace(0.5, 0, FIVE_HOURS, FIVE_HOURS * 0.5, 5).kind).toBe("too-early");
 	});
 
 	it("guideUnit is 'hour' for a window whose own length is a day or less ('per remaining day' isn't meaningful for a 5-hour window)", () => {

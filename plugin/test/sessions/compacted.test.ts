@@ -67,7 +67,17 @@ describe("CompactedTracker (marking a session as just-compacted with no input ye
 		const missing = join(dir, "later");
 		const tracker = new CompactedTracker(missing);
 		const stop = tracker.watch();
-		mkdirSync(missing);
+		mkdirSync(missing, { recursive: true });
+		stop();
+	});
+
+	it("watch creates a missing folder, so a mark written later is seen", async () => {
+		const missing = join(dir, "fresh");
+		const tracker = new CompactedTracker(missing, 10);
+		const stop = tracker.watch();
+		mark(missing, "a");
+		await new Promise((r) => setTimeout(r, 300));
+		expect(tracker.has("a")).toBe(true);
 		stop();
 	});
 });

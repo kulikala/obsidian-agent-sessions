@@ -18,6 +18,8 @@ socket pair on Windows, since Windows' `select` takes sockets only).
 - Exit: detected via EOF/`EIO` on the master, or via `SIGCHLD` (delivered
   through a self-pipe; Unix only) followed by the terminal's `poll()`. An exited session is
   kept around until `forget` is called.
+- Suspend (Unix): nothing can `fg` a session, so a stopped child gets `SIGCONT` at once, and so
+  does one that suspended itself on Ctrl+Z (`_unsuspend`); the screen is then redrawn.
 - Lifetime: the daemon exits once there are zero running sessions and zero
   connections for `idle_exit` seconds. On exit (idle timeout, `shutdown`,
   or `SIGTERM`), only the records of already-exited sessions are written to
@@ -56,6 +58,10 @@ KILL_GRACE = 10.0                   # Time from `SIGTERM` to `SIGKILL`
 DEFAULT_IDLE_EXIT = 600
 NUDGE_DELAY = 0.05                  # Delay before restoring row count after shrinking it by 1 post-replay
 FINISH_REAP_WAIT = 0.5              # Max time to wait, at shutdown, for killed children to be reaped
+CTRL_Z = b'\x1a'
+SUSPEND_WATCH = 5.0                 # How long after a Ctrl+Z to watch for an agent that suspended itself
+SUSPEND_POLL = 0.05                 # How often to look while watching
+RESUME_RETRY = 0.5                  # Min gap between two `SIGCONT`s to the same session
 
 
 class AlreadyRunning(Exception):
@@ -117,6 +123,8 @@ class Session:
         self.eof_at: Optional[float] = None    # Master hit EOF but hasn't been reaped yet
         self.kill_at: Optional[float] = None   # Time to send `SIGKILL`, after `SIGTERM` was sent
         self.nudge_at: Optional[float] = None  # Time to restore the row count
+        self.suspend_until: Optional[float] = None  # Watching for a suspend (after a Ctrl+Z) until then
+        self.resumed_at: Optional[float] = None     # When the last `SIGCONT` went out
         self.cols = 0
         self.rows = 0
 
@@ -396,6 +404,8 @@ class Daemon:
                 continue
             if s.eof_at is not None:
                 timeout = min(timeout, 0.1)
+            if s.suspend_until is not None:
+                timeout = min(timeout, SUSPEND_POLL)
             for at in (s.kill_at, s.nudge_at):
                 if at is not None:
                     timeout = min(timeout, at - now)
@@ -468,6 +478,8 @@ class Daemon:
             if s.kill_at is not None and now >= s.kill_at:
                 s.kill_at = None
                 self._killpg(s, SIGKILL)
+            if not IS_WINDOWS:
+                self._unsuspend(s, now)
             if s.nudge_at is not None and now >= s.nudge_at:
                 s.nudge_at = None
                 if s.master_open and s.cols and s.rows:
@@ -744,6 +756,8 @@ class Daemon:
         if s is None or not s.master_open:
             return
         s.inq.extend(data)
+        if not IS_WINDOWS and CTRL_Z in data:
+            s.suspend_until = time.time() + SUSPEND_WATCH
         self._write_master(s)
 
     def _write_master(self, s: Session) -> None:
@@ -808,6 +822,33 @@ class Daemon:
                 s.term.signal(sig)
         except OSError as e:
             self._log('kill %s: %s' % (s.id, e))
+
+    def _unsuspend(self, s: Session, now: float) -> None:
+        """Undoes a suspend (Unix). Nothing can `fg` a session — it leads its own session, with no
+        shell above it — so a stopped child is continued at once, whatever stopped it. An agent that
+        suspends itself on Ctrl+Z (Claude Code, OpenCode: back to cooked mode, then `SIGTSTP` to its
+        own process group) is never actually stopped, since the kernel discards that signal for an
+        orphaned process group, and waits for a `SIGCONT` instead; so for a while after a Ctrl+Z, a
+        terminal back in cooked mode gets one too (again after `RESUME_RETRY`, in case the first one
+        came before the agent was listening). Either way the screen then gets a redraw."""
+        stopped = s.term.take_stopped()
+        why = 'stopped' if stopped else None
+        if why is None and s.suspend_until is not None:
+            if now >= s.suspend_until:
+                s.suspend_until = None
+            elif (s.resumed_at is None or now - s.resumed_at >= RESUME_RETRY) and s.term.canonical():
+                why = 'suspended'
+        if why is None:
+            return
+        s.resumed_at = now
+        s.term.resume()
+        self._log('continue %s (%s)' % (s.id, why))
+        if s.master_open and s.clients and s.rows > 1:
+            try:
+                s.term.set_size(s.cols, s.rows - 1)
+            except OSError:
+                pass
+            s.nudge_at = now + NUDGE_DELAY
 
     def _reap(self, s: Session, notify: bool = True) -> bool:
         """Polls the child. If it has exited, performs exit cleanup and returns True."""

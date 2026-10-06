@@ -552,8 +552,8 @@ export class ManagerView extends ItemView {
 	}
 
 	/** "Resets in…" next to the card's heading, a labeled 2×2 grid below it. The pace line is
-	 * shown for every window now (`weeklyPace`'s "too early" threshold scales
-	 * with the window's own length, so a short window just settles into "too early" rather than
+	 * shown for every window now (`weeklyPace` projects as soon as usage
+	 * reaches 1%, whatever the window's length, and otherwise reads "too early" rather than
 	 * needing to be excluded here). */
 	private renderStatsCard(container: HTMLElement, label: string, w: StatsWindow | null): void {
 		const card = container.createDiv({ cls: "agent-sessions-manager-stats-card" });

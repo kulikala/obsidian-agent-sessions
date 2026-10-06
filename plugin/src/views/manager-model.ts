@@ -344,14 +344,13 @@ export function topCategoryTotals(totals: CategoryTotal[], n: number): CategoryT
 // ---- Window pace judgment --------------------------------------------------
 
 /**
- * Below this elapsed *fraction* of the window's own length, the pace hasn't stabilized enough to
- * judge. A fraction rather than a fixed absolute time (pace judgment now applies
- * to every window an agent reports — 5-hour, 7-day, 30-day, or anything else — not just a fixed
- * 7-day one) — this is the exact ratio the original fixed 6-hour threshold worked out to for a
- * 7-day window, so a 7-day window's behavior is unchanged; a shorter window reaches this fraction
- * sooner in absolute terms, a longer one later.
+ * The projection starts once usage reaches this many percent, whatever the elapsed time and
+ * whatever the window's length (5-hour, 7-day, Codex windows alike). Below it there's too little
+ * signal to extrapolate from.
  */
-const MIN_PACE_ELAPSED_FRACTION = (6 * 60 * 60) / (7 * 24 * 60 * 60);
+const MIN_PACE_USED_PCT = 1;
+/** Elapsed seconds below which the projection `usedPct / elapsedFrac` would blow up (division guard). */
+const MIN_PACE_ELAPSED_SECONDS = 60;
 
 export type WeeklyPace =
 	| { kind: "unknown" }
@@ -386,9 +385,10 @@ export type WeeklyPace =
 
 /**
  * Judges whether a window (5-hour, 7-day, 30-day, or any other length) will run
- * out at the current pace. `unknown` if `usedPct` is absent. `too-early` if the elapsed fraction
- * `e = (now - start) / (end - start)` is under `MIN_PACE_ELAPSED_FRACTION`, or the window's
- * length (`end - start`) is 0 or less — the pace hasn't stabilized enough to judge yet.
+ * out at the current pace. `unknown` if `usedPct` is absent. `too-early` if usage is under
+ * `MIN_PACE_USED_PCT` (1%) or effectively no time has elapsed (under `MIN_PACE_ELAPSED_SECONDS`)
+ * — too little to extrapolate from. The elapsed time itself is no gate: 11% used 2 hours into a
+ * 7-day window is projected.
  * Otherwise, the projection `usedPct / e` being at most 100 means `on-track` (won't run out at
  * this pace); over 100 means `over-pace` (returns the projected exhaustion time and the
  * per-remaining-unit cap needed to avoid running out). `windowCost` (the window's total cost)
@@ -404,7 +404,7 @@ export function weeklyPace(usedPct: number | null, start: number, end: number, n
 	}
 	const elapsed = now - start;
 	const elapsedFrac = elapsed / duration;
-	if (elapsedFrac < MIN_PACE_ELAPSED_FRACTION) {
+	if (usedPct < MIN_PACE_USED_PCT || elapsed < MIN_PACE_ELAPSED_SECONDS) {
 		return { kind: "too-early", elapsedPct: Math.max(0, elapsedFrac * 100) };
 	}
 	const elapsedPct = elapsedFrac * 100;

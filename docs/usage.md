@@ -86,6 +86,8 @@ Keys inside a session tab:
 
 On Windows and Linux, other `Ctrl+<key>` combinations go to the agent, except `Ctrl+Tab` and `Ctrl+,`, which go to Obsidian. On Windows, `Ctrl+C` without a selection interrupts the agent as usual.
 
+`Ctrl+Z` does not leave a session suspended. On macOS and Linux, an agent that suspends itself on `Ctrl+Z` (Claude Code prints "Claude Code has been suspended") is continued at once and redraws its screen; there is no shell to type `fg` in, and none is needed.
+
 ## Switch between sessions
 
 - **Side panel:** click a session. Its tab comes to the front, or it opens in a new tab: a running session shows its current screen, and an ended one resumes its conversation.
