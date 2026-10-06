@@ -7,6 +7,7 @@ spelled `C:\\Users\\me\\vault`, `c:\\users\\me\\vault\\`, `C:/Users/me/vault` or
 `\\\\?\\C:\\Users\\me\\vault`, and Windows treats them all as one folder.
 
 `sqlite_uri` is the `file:` URI SQLite opens a database path by, with a drive letter on Windows.
+`without_spaces` names a Windows file through its folder's 8.3 form.
 """
 import ntpath
 import sys
@@ -53,3 +54,27 @@ def sqlite_uri(path: str, query: str, windows: Optional[bool] = None) -> str:
         if not p.startswith('/'):
             p = '/' + p
     return 'file:%s?%s' % (quote(p, safe='/:'), query)
+
+
+def short_path(path: str) -> str:
+    """`path`'s 8.3 form on Windows (`GetShortPathNameW`), or `path` itself when there is none or
+    elsewhere."""
+    if not IS_WINDOWS:
+        return path
+    import ctypes
+    buf = ctypes.create_unicode_buffer(32768)
+    if ctypes.windll.kernel32.GetShortPathNameW(path, buf, len(buf)):  # type: ignore[attr-defined]
+        return buf.value
+    return path
+
+
+def without_spaces(path: str, short=None) -> str:
+    """`path` with its folder named by its 8.3 form when that folder has a space, keeping the base
+    name (the built-in editor's shim: OpenCode splits `VISUAL` at every space, Codex at unquoted
+    ones, and Claude Code looks for "code" in the base name). `short` maps a folder to its 8.3 form
+    (`GetShortPathNameW` by default); a form that still has a space is not used."""
+    folder, name = ntpath.split(path)
+    if ' ' not in folder:
+        return path
+    shorter = (short or short_path)(folder)
+    return path if ' ' in shorter else ntpath.join(shorter, name)

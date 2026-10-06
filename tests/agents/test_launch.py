@@ -61,6 +61,39 @@ class TestBuildEnv(unittest.TestCase):
         self.assertEqual(env['PATH'], '/opt/node/bin')
 
 
+class TestWindows(unittest.TestCase):
+    CALLER = {'Path': 'C:\\Windows', 'SystemRoot': 'C:\\Windows', 'USERPROFILE': 'C:\\Users\\a',
+              'LOCALAPPDATA': 'C:\\Users\\a\\AppData\\Local', 'APPDATA': 'C:\\Users\\a\\AppData\\Roaming',
+              'PATHEXT': '.EXE;.CMD', 'ComSpec': 'C:\\Windows\\system32\\cmd.exe', 'TEMP': 'C:\\Users\\Jane Doe\\Temp',
+              'PROCESSOR_ARCHITECTURE': 'ARM64', 'CLAUDECODE': '1', 'AGENT_SESSIONS_ID': 'x', 'CODEX_THREAD_ID': 't'}
+
+    def test_the_system_variables_are_passed_on_but_no_session_marker(self):
+        env = launch.build_env('codex', self.CALLER, {}, 'C:\\codex\\codex.exe', None, None, platform='win32')
+        for key in ('SystemRoot', 'USERPROFILE', 'LOCALAPPDATA', 'APPDATA', 'PATHEXT', 'ComSpec', 'TEMP',
+                    'PROCESSOR_ARCHITECTURE'):
+            self.assertEqual(env[key], self.CALLER[key], key)
+        for key in ('CLAUDECODE', 'AGENT_SESSIONS_ID', 'CODEX_THREAD_ID'):
+            self.assertNotIn(key, env)
+        # `Path` keeps its spelling, with the binary's folder first.
+        self.assertNotIn('PATH', env)
+        self.assertTrue(env['Path'].startswith('C:\\codex'))
+
+    def test_opencode_gets_temp_without_spaces(self):
+        short = lambda folder: folder.replace('Jane Doe', 'JANEDO~1')
+        env = launch.build_env('opencode', self.CALLER, {}, 'C:\\o\\opencode.exe', None, None,
+                               platform='win32', short_folder=short)
+        self.assertEqual(env['TEMP'], 'C:\\Users\\JANEDO~1\\Temp')
+        env = launch.build_env('codex', self.CALLER, {}, 'C:\\c\\codex.exe', None, None,
+                               platform='win32', short_folder=short)
+        self.assertEqual(env['TEMP'], 'C:\\Users\\Jane Doe\\Temp')
+
+    def test_codex_runs_without_the_shared_background_server(self):
+        self.assertEqual(launch.build_argv('codex', 'C:\\c.exe', 'ID', platform='win32'), ['C:\\c.exe', '--no-daemon'])
+        self.assertEqual(launch.build_argv('codex', 'C:\\c.exe', 'ID', prompt='hi', platform='win32'),
+                         ['C:\\c.exe', '--no-daemon', '--', 'hi'])
+        self.assertEqual(launch.build_argv('codex', '/x', 'ID', platform='darwin'), ['/x'])
+
+
 class TestFindBinary(unittest.TestCase):
     def test_the_configured_path_is_used_as_is(self):
         self.assertEqual(launch.find_binary('claude', '/x/claude', '/nonexistent'), '/x/claude')

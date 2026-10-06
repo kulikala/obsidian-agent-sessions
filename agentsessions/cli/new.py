@@ -27,7 +27,7 @@ import time
 import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
-from .. import agents, config
+from .. import agents, config, paths
 from ..agents import claude as claude_agent
 from ..agents import launch
 from ..sessions import store
@@ -55,7 +55,12 @@ def launcher_path() -> str:
 
 
 def shim_path() -> Optional[str]:
+    """The built-in editor's shim: `agent-sessions-code`, on Windows the `.cmd` beside it, named
+    without spaces (`paths.without_spaces`)."""
     path = os.path.join(package_root(), 'bin', 'agent-sessions-code')
+    if sys.platform == 'win32':
+        path += '.cmd'
+        return paths.without_spaces(path) if os.path.exists(path) else None
     return path if os.path.exists(path) else None
 
 

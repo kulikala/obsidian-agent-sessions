@@ -16,11 +16,14 @@ that mirror, so a session started by the CLI is the one the plugin would have st
 Everything here is pure except `read_launch_config` and `find_binary`.
 """
 import json
+import ntpath
 import os
+import posixpath
 import shutil
+import sys
 from typing import Dict, List, Mapping, Optional
 
-from .. import config
+from .. import config, paths
 
 # What the plugin passes on from the login shell (`LOGIN_ENV_KEYS` in backend.ts). A session
 # started here gets exactly these from the caller and nothing else, which also leaves out
@@ -28,6 +31,19 @@ from .. import config
 # `CLAUDE_EFFORT`, `CLAUDE_CODE_*`, `CLAUDE_PLUGIN_*`, `AGENT_SESSIONS_ID`, `CODEX_THREAD_ID`,
 # `OPENCODE_PID`, ...): inherited, those would make the new session look like a child.
 INHERITED_ENV_KEYS = ('PATH', 'LANG', 'HOME', 'USER', 'TMPDIR', 'CLAUDE_CONFIG_DIR')
+# Windows has no login shell to take these from, and a program there needs the system's own
+# variables to find its home, its app data and the system itself (the plugin passes Obsidian's
+# whole environment). Compared case-insensitively, as Windows does.
+WINDOWS_INHERITED_ENV_KEYS = INHERITED_ENV_KEYS + (
+    'SYSTEMROOT', 'SYSTEMDRIVE', 'WINDIR', 'COMSPEC', 'PATHEXT', 'OS', 'TEMP', 'TMP',
+    'USERPROFILE', 'USERNAME', 'USERDOMAIN', 'HOMEDRIVE', 'HOMEPATH', 'APPDATA', 'LOCALAPPDATA',
+    'PROGRAMDATA', 'ALLUSERSPROFILE', 'PUBLIC', 'PROGRAMFILES', 'PROGRAMFILES(X86)', 'PROGRAMW6432',
+    'COMMONPROGRAMFILES', 'COMMONPROGRAMFILES(X86)', 'COMMONPROGRAMW6432', 'COMPUTERNAME',
+    'PROCESSOR_ARCHITECTURE', 'PROCESSOR_IDENTIFIER', 'NUMBER_OF_PROCESSORS', 'PSMODULEPATH',
+    'PYTHONUTF8')
+
+# Where an interactive Codex runs with `--no-daemon` (`CODEX_NO_DAEMON_PLATFORMS` in backend.ts).
+CODEX_NO_DAEMON_PLATFORMS = ('win32',)
 
 BIN_NAMES = {'claude': 'claude', 'codex': 'codex', 'opencode': 'opencode'}
 
@@ -73,7 +89,10 @@ def find_binary(agent: str, configured: str, search_path: Optional[str]) -> str:
     return found
 
 
-def inherited_env(environ: Mapping[str, str]) -> Dict[str, str]:
+def inherited_env(environ: Mapping[str, str], platform: str = sys.platform) -> Dict[str, str]:
+    if platform == 'win32':
+        wanted = set(WINDOWS_INHERITED_ENV_KEYS)
+        return {k: v for k, v in environ.items() if k.upper() in wanted}
     return {k: environ[k] for k in INHERITED_ENV_KEYS if k in environ}
 
 
@@ -85,28 +104,41 @@ def editor_env(agent: str, shim: Optional[str]) -> Dict[str, str]:
 
 
 def build_env(agent: str, environ: Mapping[str, str], agent_env: Mapping[str, str], bin_path: str,
-              vault: Optional[str], shim: Optional[str]) -> Dict[str, str]:
+              vault: Optional[str], shim: Optional[str], platform: str = sys.platform,
+              short_folder=None) -> Dict[str, str]:
     """The plugin's order: login env, editor env, the vault, then the agent's own variables (so the
-    user can override any of the above); `bin_path`'s directory goes onto PATH last."""
-    env = inherited_env(environ)
+    user can override any of the above); `bin_path`'s directory goes onto PATH last.
+    `short_folder` (Windows: a folder's 8.3 form, `paths.short_path` by default) is for testing."""
+    short_folder = short_folder or paths.short_path
+    env = inherited_env(environ, platform)
     env.update(editor_env(agent, shim))
     if vault:
         env['AGENT_SESSIONS_VAULT'] = vault
+    if platform == 'win32' and agent == 'opencode':
+        # OpenCode runs the editor through cmd.exe with its temp file unquoted (as `editorEnv` in main.ts).
+        for k in [k for k in env if k.upper() in ('TEMP', 'TMP') and ' ' in env[k]]:
+            env[k] = short_folder(env[k])
     env.update(agent_env)
-    bin_dir = os.path.dirname(bin_path)
-    env['PATH'] = bin_dir + os.pathsep + env['PATH'] if env.get('PATH') else bin_dir
+    windows = platform == 'win32'
+    bin_dir = (ntpath if windows else posixpath).dirname(bin_path)
+    # Windows spells it `Path` as often as `PATH`; a second key would leave the child's pick to chance.
+    key = next((k for k in env if k.upper() == 'PATH'), 'PATH')
+    env[key] = bin_dir + (';' if windows else ':') + env[key] if env.get(key) else bin_dir
     return env
 
 
 def build_argv(agent: str, bin_path: str, session_id: str, name: Optional[str] = None,
                remote_control: bool = False, prompt: Optional[str] = None,
-               ollama_bin: Optional[str] = None, ollama_model: str = '') -> List[str]:
+               ollama_bin: Optional[str] = None, ollama_model: str = '',
+               platform: str = sys.platform) -> List[str]:
     """argv for a fresh session. Claude Code takes its id (`--session-id`), name (`--name`) and Remote
     Control (`--remote-control[=name]`) as flags; Codex and OpenCode decide their own ids and take no
     name at launch. `prompt` is the session's first message. OpenCode set to start through ollama
-    goes through `ollama launch opencode --model <M> -y --`."""
+    goes through `ollama launch opencode --model <M> -y --`. Codex on Windows runs `--no-daemon`
+    (see `buildAgentArgv` in backend.ts)."""
     if agent == 'codex':
-        return [bin_path] + (['--', prompt] if prompt else [])
+        own = [bin_path, '--no-daemon'] if platform in CODEX_NO_DAEMON_PLATFORMS else [bin_path]
+        return own + (['--', prompt] if prompt else [])
     if agent == 'opencode':
         tail = ['--prompt', prompt] if prompt else []
         if ollama_bin:

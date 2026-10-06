@@ -556,6 +556,10 @@ export async function agentVersion(bin: string): Promise<string | null> {
  * plan/段9-Codex対応.md) — so a fresh Codex launch takes no id-related flag at all, just the bin. OpenCode is the same
  * (`opencode` / `opencode --session <id>`); with `opencodeLaunch` it goes through
  * `ollama launch opencode --model <M> -y -- …` instead.
+ *
+ * On Windows Codex gets `--no-daemon` (`CODEX_NO_DAEMON_PLATFORMS`): its TUI otherwise attaches to,
+ * or first installs, a shared background app-server, which refuses a package laid out differently
+ * from npm's (WinGet's: "the CLI package does not match this platform or executable").
  */
 export function buildAgentArgv(
 	agent: AgentId,
@@ -563,9 +567,11 @@ export function buildAgentArgv(
 	id: string,
 	fresh: boolean,
 	opencodeLaunch?: OpencodeLaunch,
+	platform: string = process.platform,
 ): string[] {
 	if (agent === "codex") {
-		return fresh ? [bin] : [bin, "resume", id];
+		const own = CODEX_NO_DAEMON_PLATFORMS.includes(platform) ? [bin, "--no-daemon"] : [bin];
+		return fresh ? own : [...own, "resume", id];
 	}
 	if (agent === "opencode") {
 		// OpenCode can't be told a new session's id either (like Codex): a fresh launch takes no
@@ -578,6 +584,9 @@ export function buildAgentArgv(
 	}
 	return fresh ? [bin, "--session-id", id] : [bin, "--resume", id];
 }
+
+/** Where an interactive Codex runs with `--no-daemon` (see `buildAgentArgv`). */
+export const CODEX_NO_DAEMON_PLATFORMS: readonly string[] = ["win32"];
 
 /** OpenCode started through `ollama launch opencode`: the ollama binary and the (non-empty) model. */
 export interface OpencodeLaunch {
