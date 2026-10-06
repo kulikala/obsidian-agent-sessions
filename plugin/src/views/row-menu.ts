@@ -31,9 +31,15 @@ export interface RowMenuState {
 /**
  * Groups: naming (rename, move to category, suggest a name and category); the running session (model, compact, restart); information; then end session and
  * archive (in that order), the destructive ones, last. Restart and End session exist for daemon sessions only;
- * Change model for Claude's (running) ones, and disabled for the other agents.
+ * Change model for Claude's (running) ones, and disabled for the other agents. A tab-only row
+ * (`Row.tabOnly`) has Rename and End session alone.
  */
-export function rowMenuGroups(row: Pick<Row, "agent" | "daemon">, state: RowMenuState): RowMenuEntry[][] {
+export function rowMenuGroups(row: Pick<Row, "agent" | "daemon" | "tabOnly">, state: RowMenuState): RowMenuEntry[][] {
+	if (row.tabOnly) {
+		// A tab whose session has no row yet: nothing is recorded to archive, count or copy — only
+		// what reaches the tab itself.
+		return [[{ id: "rename", enabled: true }], [{ id: "endSession", enabled: true }]];
+	}
 	const claude = row.agent === "claude";
 	const session: RowMenuEntry[] = [];
 	if (row.daemon || !claude) {

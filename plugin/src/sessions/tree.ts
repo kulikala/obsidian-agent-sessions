@@ -143,11 +143,19 @@ export interface SideList {
 
 /**
  * Order: open tabs (in tab order) → running (no tab) → the most recent N. Archived sessions and
- * unnamed child sessions never appear in "recent".
+ * unnamed child sessions never appear in "recent". `tabOnly` holds the rows for open tabs whose
+ * session has no row yet, keyed by the tab's id.
  */
-export function buildSideList(rows: Row[], leavesOrder: string[], recentCount: number): SideList {
+export function buildSideList(
+	rows: Row[],
+	leavesOrder: string[],
+	recentCount: number,
+	tabOnly: ReadonlyMap<string, Row> = new Map()
+): SideList {
 	const byId = new Map(rows.map((r) => [r.id, r]));
-	const openTabs = leavesOrder.map((id) => byId.get(id)).filter((r): r is Row => !!r);
+	// A tab whose session has no row yet keeps its place with its stand-in row (`tabOnly`) until the
+	// real row takes over under the same id.
+	const openTabs = leavesOrder.map((id) => byId.get(id) ?? tabOnly.get(id)).filter((r): r is Row => !!r);
 	const openIds = new Set(openTabs.map((r) => r.id));
 
 	const running = rows

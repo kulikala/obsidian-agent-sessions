@@ -12,7 +12,7 @@ import { TerminalView } from "./terminal";
 import { NewSessionModal } from "../ui/modals";
 import { OrganizeModal } from "../ui/organize-modal";
 import type { Row } from "../sessions/index";
-import { AGENT_IDS } from "../settings";
+import { AGENT_IDS, asAgentId } from "../settings";
 import type { SideList } from "../sessions/tree";
 import {
 	createRowActions,
@@ -279,6 +279,19 @@ export class SideView extends ItemView {
 		return this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL);
 	}
 
+	/** The three sections. Once the first scan is in, a tab whose session has no row yet is listed
+	 * with a stand-in row (`computeSideList`'s `tabOnly`) — before it, every tab would look rowless. */
+	private sideList(): SideList {
+		const plugin = this.plugin;
+		const tabOnly = plugin.index.loaded
+			? {
+					pendingName: (id: string) => plugin.pendingName(id),
+					agentEnabled: (agent: string) => plugin.settings.agents[asAgentId(agent)].enabled,
+				}
+			: undefined;
+		return computeSideList(plugin.index.sessions, this.terminalLeaves(), plugin.settings.recentCount, tabOnly);
+	}
+
 	private onLayoutChange(): void {
 		this.plugin.index.setOpenTabs(leafIdsOf(this.terminalLeaves()));
 		this.render();
@@ -341,7 +354,7 @@ export class SideView extends ItemView {
 			() => this.cancelPendingHoverHide()
 		);
 		this.actions = actions;
-		const list = computeSideList(this.plugin.index.sessions, this.terminalLeaves(), this.plugin.settings.recentCount);
+		const list = this.sideList();
 		// The needs-attention (asking/waiting) count is tallied across the whole list (open
 		// tabs + running + recent), and shown as a badge next to the "open tabs" heading.
 		const attention = attentionCounts(this.plugin, [...list.openTabs, ...list.running, ...list.recent]);
@@ -546,7 +559,7 @@ export class SideView extends ItemView {
 			return this.frontId;
 		}
 		const l =
-			list ?? computeSideList(this.plugin.index.sessions, this.terminalLeaves(), this.plugin.settings.recentCount);
+			list ?? this.sideList();
 		return l.openTabs[0]?.id ?? l.running[0]?.id ?? l.recent[0]?.id ?? null;
 	}
 

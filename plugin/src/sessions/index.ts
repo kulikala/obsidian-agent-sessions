@@ -25,6 +25,10 @@ export interface Row extends ScanSession {
 	exited: number | null;
 	hasTab: boolean;
 	archived: boolean;
+	/** An open tab whose session has no row of its own yet (`views/side-list.ts`'s `tabOnlyRow`): a
+	 * new session before its first message, or a Codex/OpenCode tab not yet linked to its real id.
+	 * Never in `SessionIndex.sessions`. */
+	tabOnly?: true;
 }
 
 export interface SessionIndexDeps {

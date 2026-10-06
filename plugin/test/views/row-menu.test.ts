@@ -33,4 +33,8 @@ describe("rowMenuGroups", () => {
 		const flat = Object.fromEntries(groups.flat().map((e) => [e.id, e.enabled]));
 		expect(flat).toMatchObject({ moveToCategory: false, suggestName: true, compact: false, restartSession: false, changeModel: true });
 	});
+
+	it("offers only rename and end session for a tab whose session has no row yet", () => {
+		expect(ids({ agent: "codex", daemon: true, tabOnly: true } as never)).toEqual([["rename"], ["endSession"]]);
+	});
 });
