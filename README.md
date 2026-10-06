@@ -100,6 +100,7 @@ Where the program goes, and installing from source: [`docs/installation.md`](doc
 - **An agent shows "Not found."**: set its path in the plugin's settings, or click **Detect again** in the welcome guide.
 - **A session ignores changed settings, hooks or skills**: choose **Restart session** in the session's ⋯ menu.
 - **Windows: the install dialog says Python or Claude Code is missing**: click **Install Python with WinGet** or **Install Claude Code with WinGet** (per user, no administrator prompt).
+- **Windows on ARM: an OpenCode tab stops at `bun:ffi dlopen() is not available in this build (TinyCC is disabled)`**: OpenCode's ARM64 build (the one WinGet installs there) cannot start its terminal UI. Install OpenCode's x64 build instead; Windows runs it under emulation.
 - **A hook fails with `node: not found`**, and other cases: [`docs/usage.md`](docs/usage.md#more-troubleshooting).
 
 ## Uninstall
