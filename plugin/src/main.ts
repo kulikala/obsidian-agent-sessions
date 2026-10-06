@@ -1418,7 +1418,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * the background to learn the real thread id; once found, the tab's own `id` is swapped to it
 	 * (`TerminalView.relinkId`) and `sessions.json` links the two (design.md §3.3). A Claude name
 	 * goes on the command line (`--name`, `launchArgv`), so a Remote Control session started with it
-	 * carries the same title from the start. An OpenCode name is kept in memory
+	 * carries the same title from the start, and is sent as `/rename` once the session is idle,
+	 * which writes it to the transcript before the first message does. An OpenCode name is kept in memory
 	 * (`pendingNames`, shown in the tab title) and written to `sessions.json` when
 	 * `linkAgentSession` learns the real id; Codex isn't supported yet (`/rename` needs an
 	 * `idle` and a scan to reflect it, and a still-unresolved session has neither).
@@ -1446,11 +1447,11 @@ export default class AgentSessionsPlugin extends Plugin {
 				this.pendingNames.set(id, name);
 			}
 		}
-		this.openSession(id, { agent, cwd, fresh: true });
+		const opened = this.openSession(id, { agent, cwd, fresh: true });
 		if (agent !== "claude") {
 			this.trackNewAgentSession(agent, id, cwd);
 		}
-		if (!name || agent === "claude") {
+		if (!name) {
 			return id;
 		}
 		if (agent === "opencode") {
@@ -1458,7 +1459,23 @@ export default class AgentSessionsPlugin extends Plugin {
 			this.pendingNames.set(id, name);
 			return id;
 		}
-		new Notice(t("notice.renameAtCreateUnsupported"));
+		if (agent !== "claude") {
+			new Notice(t("notice.renameAtCreateUnsupported"));
+			return id;
+		}
+		// Claude Code writes a `--name` to the transcript only with the first message; the same
+		// name sent as `/rename` once it is idle writes it at once, so the row shows it.
+		void opened
+			.then(async () => {
+				if (!(await this.index.registry.waitFor(id, "idle", WAIT_IDLE_MS))) {
+					return;
+				}
+				await this.sendCommand(id, `/rename ${name}`);
+				void this.index.waitForName(id, name);
+			})
+			.catch((err) => {
+				new Notice(t("notice.renameFailed", { error: messageOf(err) }));
+			});
 		return id;
 	}
 
