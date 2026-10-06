@@ -77,6 +77,10 @@ def _session_dict(s: Session) -> dict:
         out['model'] = s.model
     if s.effort is not None:
         out['effort'] = s.effort
+    # additive, only while the last compaction hasn't been answered by the model yet
+    # (`sessions.scan.read_after_compact`) -- the plugin's `compacted` state reads it.
+    if s.after_compact is not None:
+        out['after_compact'] = s.after_compact
     return out
 
 

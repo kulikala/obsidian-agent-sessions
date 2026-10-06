@@ -198,9 +198,9 @@ export function renderDetail(container: HTMLElement, ctx: DetailContext | null):
 
 	const statsRow = container.createDiv({ cls: "agent-sessions-detail-stats" });
 	renderDonut(statsRow, statusInfo?.ctxPercent ?? null);
-	// Right after a compact (SessionStart source=compact until the next UserPromptSubmit), ctx
-	// is near 0 and easy to mistake for other states, so show a small marker next to it.
-	// `row.compacted` comes from the marker file, so this works even for rows without a tab.
+	// Right after a compact (until a prompt the model answers), ctx is near 0 and easy to mistake
+	// for other states, so show a small marker next to it. `row.compacted` comes from the marker
+	// file and the scan, so this works even for rows without a tab.
 	if (row.compacted) {
 		statsRow.createSpan({ cls: "agent-sessions-detail-compacted", text: t("detail.compacted") });
 	}

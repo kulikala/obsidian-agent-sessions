@@ -108,6 +108,16 @@ class TestScanOutput(JsonoutTestBase):
         self.assertFalse(by_id[ID2]['goal']['met'])
         self.assertIsNone(by_id[ID1]['goal'])
 
+    def test_after_compact_only_while_unanswered(self):
+        write_jsonl(os.path.join(self.proj, ID2 + '.jsonl'), [
+            {'type': 'user', 'cwd': '/Users/k/other', 'message': {'role': 'user', 'content': 'unnamed question'}},
+            {'type': 'system', 'subtype': 'compact_boundary', 'content': 'Conversation compacted'},
+            {'type': 'system', 'subtype': 'local_command', 'content': '<command-name>/rename</command-name>'},
+        ])
+        by_id = {s['id']: s for s in jsonout.scan_output()['sessions']}
+        self.assertNotIn('after_compact', by_id[ID1])
+        self.assertEqual(by_id[ID2]['after_compact'], 'clean')
+
     def test_only_returns_just_that_id_and_updates_cache(self):
         out = jsonout.scan_output(only=[ID1])
         ids = [s['id'] for s in out['sessions']]

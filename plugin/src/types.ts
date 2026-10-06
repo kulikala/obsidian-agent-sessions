@@ -23,6 +23,9 @@ export interface ScanSession {
 	/** Claude Code's `/goal` (`sessions/goal.ts`); `null` without one, after `/goal clear`, and for
 	 * other agents. Absent from an older CLI's output. */
 	goal?: SessionGoal | null;
+	/** Claude only, additive: present while the transcript's last compaction hasn't been answered
+	 * by the model (`sessions/compacted.ts`'s `isCompacted`). */
+	after_compact?: AfterCompact;
 }
 
 /** A session's `/goal`, from the latest `goal_status` line of its transcript. Times are epoch seconds. */
@@ -39,6 +42,10 @@ export interface SessionGoal {
 	/** When its latest status was written. */
 	updated: number | null;
 }
+
+/** What has followed the last compaction (`agentsessions/sessions/scan.py`'s `read_after_compact`):
+ * `"clean"` — only local commands; `"input"` — a prompt with no reply yet. */
+export type AfterCompact = "clean" | "input";
 
 /** One archived entry in `sessions.json`. */
 export interface ArchivedSession {

@@ -51,7 +51,8 @@ def _update_compacted(data: dict) -> None:
     this hook to `compact`, but this checks again just in case). Cleared:
     `UserPromptSubmit` (the next prompt was sent) or `SessionEnd` (the session ended,
     which also doubles as cleanup for the marker). The plugin's `compacted` state reads
-    this so it isn't confused with `waiting` (an unread prompt for input).
+    this so it isn't confused with `waiting` (an unread prompt for input); past a
+    `SessionEnd` it reads the transcript instead (`sessions.scan.read_after_compact`).
     """
     if not isinstance(data, dict):
         return

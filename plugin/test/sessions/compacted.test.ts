@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { CompactedTracker } from "../../src/sessions/compacted";
+import { CompactedTracker, isCompacted } from "../../src/sessions/compacted";
 
 function mark(dir: string, id: string): void {
 	writeFileSync(join(dir, `${id}.json`), JSON.stringify({ compactedAt: 1700000000 }), "utf8");
@@ -69,5 +69,27 @@ describe("CompactedTracker (marking a session as just-compacted with no input ye
 		const stop = tracker.watch();
 		mkdirSync(missing);
 		stop();
+	});
+});
+
+describe("isCompacted (the last substantive input is the compaction)", () => {
+	it("the marker alone is enough", () => {
+		expect(isCompacted(true, undefined, null)).toBe(true);
+	});
+
+	it("only local commands since the compaction (after_compact: clean) — whatever the ctx reads", () => {
+		expect(isCompacted(false, "clean", undefined)).toBe(true);
+		expect(isCompacted(false, "clean", 12)).toBe(true);
+	});
+
+	it("a prompt with no reply yet counts only while ctx reads 0%", () => {
+		expect(isCompacted(false, "input", 0)).toBe(true);
+		expect(isCompacted(false, "input", 4)).toBe(false);
+		expect(isCompacted(false, "input", null)).toBe(false);
+		expect(isCompacted(false, "input", undefined)).toBe(false);
+	});
+
+	it("nothing pending: not compacted, even at ctx 0% (a resumed session before its first turn)", () => {
+		expect(isCompacted(false, undefined, 0)).toBe(false);
 	});
 });

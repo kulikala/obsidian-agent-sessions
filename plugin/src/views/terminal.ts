@@ -1429,7 +1429,7 @@ export class TerminalView extends ItemView {
 				| null
 				| undefined,
 			waiting: this.waiting,
-			compacted: this.plugin.index.compactedTracker.has(this.id),
+			compacted: this.plugin.index.isCompacted(this.id),
 			attached: this.attached,
 			titleStatus: this.titleStatus,
 		});

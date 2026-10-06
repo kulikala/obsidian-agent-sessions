@@ -21,7 +21,7 @@ RACY_WINDOW = 2.0
 # so upgrading agent-sessions itself can't leave stale extracted data sitting
 # in scan-cache.json forever (see agents/codex/scan.py's SCAN_SCHEMA_VERSION
 # for the same mechanism on the codex side, versioned independently).
-SCAN_SCHEMA_VERSION = 1
+SCAN_SCHEMA_VERSION = 2
 
 UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
 TITLE_PATTERN = '^{"type": *"custom-title"'      # grep (BRE)
@@ -36,6 +36,12 @@ HEAD_LIMIT = 2000   # max number of lines to scan for the first user message
 TAIL_CHUNK = 1 << 16   # unit size for reading from the end of the file
 TAIL_LIMIT = 1 << 24   # max bytes to scan backward from the end (fall back to mtime beyond this)
 _TS_RE = re.compile(rb'"timestamp":"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?)Z"')
+# Openings of a user line that records a local command or a `!` shell command rather than
+# something sent to the model: the command itself (`<command-name>`, also on a slash command
+# that does run a model turn -- that one is told apart by the assistant lines after it) and
+# its caveat and output.
+_LOCAL_INPUT_PREFIXES = ('<command-name>', '<command-message>', '<local-command-', '<bash-input>',
+                         '<bash-stdout>', '<bash-stderr>')
 
 
 def session_id_of(path: str) -> str:
@@ -293,10 +299,48 @@ def read_last_activity(path: str, chunk: int = TAIL_CHUNK, limit: int = TAIL_LIM
     return None
 
 
+def read_after_compact(path: str, chunk: int = TAIL_CHUNK, limit: int = TAIL_LIMIT) -> Optional[str]:
+    """What has happened since the transcript's last compaction, walking backward from the end.
+
+    `'clean'`: nothing but local commands since (`/rename`, `/model`, `/reload-plugins`, `!`
+    shell commands, ... -- recorded as `system`/`local_command` lines, or user lines opening
+    with `<command-name>`, `<local-command-...>` or `<bash-...>`) and machine lines (`isMeta`,
+    the compaction summary, attachments, titles). `'input'`: a user line that reads as a
+    prompt, but no reply from the model yet. `None`: the model has replied since (an
+    assistant line or a tool result), or there's no compaction within `limit` bytes.
+    """
+    seen_input = False
+    for line in iter_tail_lines(path, chunk, limit):
+        if b'"type":"assistant"' not in line and b'"type":"user"' not in line \
+                and b'compact_boundary' not in line:
+            continue
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(d, dict) or d.get('isSidechain'):
+            continue
+        kind = d.get('type')
+        if kind == 'system' and d.get('subtype') == 'compact_boundary':
+            return 'input' if seen_input else 'clean'
+        if kind == 'assistant':
+            return None
+        if kind != 'user' or d.get('isMeta') or d.get('isCompactSummary'):
+            continue
+        content = (d.get('message') or {}).get('content')
+        if isinstance(content, list) and any(isinstance(b, dict) and b.get('type') == 'tool_result'
+                                             for b in content):
+            return None
+        text = _text_of(content).lstrip()
+        if text and not text.startswith(_LOCAL_INPUT_PREFIXES):
+            seen_input = True
+    return None
+
+
 def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None) -> Dict[str, Session]:
     """If `cache` is passed, look up `path -> previous result` (mtime, size, head,
     last_activity); if it matches, reuse it instead of calling `read_head_info` /
-    `read_last_activity`. `cache` is updated in place (not written to disk until the
+    `read_last_activity` / `read_after_compact`. `cache` is updated in place (not written to disk until the
     caller calls `cache.save`).
 
     Files whose mtime is within `RACY_WINDOW` seconds of now aren't trusted from the
@@ -318,8 +362,10 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None) -> Dict[str,
                 h = Head(cwd=head.get('cwd', ''), prompt=head.get('prompt', ''),
                          child=bool(head.get('child')))
                 last_activity = cached.get('last_activity')
+                after_compact = cached.get('after_compact')
             else:
                 last_activity = read_last_activity(p)
+                after_compact = read_after_compact(p)
                 h = read_head_info(p)
                 if cache is not None:
                     cache[p] = {
@@ -328,6 +374,7 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None) -> Dict[str,
                         'schema_version': SCAN_SCHEMA_VERSION,
                         'head': {'cwd': h.cwd, 'prompt': h.prompt, 'child': h.child},
                         'last_activity': last_activity,
+                        'after_compact': after_compact,
                     }
             mtime = last_activity or st.st_mtime
         except OSError:
@@ -336,5 +383,6 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None) -> Dict[str,
         if not name and not h.prompt:
             continue
         out[sid] = Session(id=sid, name=name, cwd=h.cwd, mtime=mtime, path=p,
-                            first_prompt=h.prompt, child=h.child, goal=goals.get(sid))
+                            first_prompt=h.prompt, child=h.child, goal=goals.get(sid),
+                            after_compact=after_compact)
     return out

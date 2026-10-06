@@ -1,11 +1,27 @@
 // Watches `~/.agents/sessions/compacted/<id>.json`. Only whether the file exists matters —
 // if it does, the session just ran /compact (manual or automatic) and hasn't had a next
-// instruction sent yet. `agentsessions/hooks.py`'s `_update_compacted` creates it on
+// instruction sent yet. `agentsessions/claude/hooks.py`'s `_update_compacted` creates it on
 // `SessionStart` (source=compact) and removes it on `UserPromptSubmit`/`SessionEnd`. Same shape
 // as `registry.ts`/`statusline.ts` (fs.watch plus debounce).
+//
+// The marker is the fast signal; `isCompacted` also reads the transcript (the scan's
+// `after_compact`), which outlives a `SessionEnd` — a headless `/compact` that `/exit`s, a
+// restart or a resume all end the process and drop the marker.
 
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
+import type { AfterCompact } from "../types";
+
+/**
+ * Whether a session counts as compacted: its last substantive input is the compaction itself.
+ * Local commands after it (`/rename`, `/model`, `/effort`, `/reload-plugins`, `!` shell commands
+ * — the scan's `after_compact` is `"clean"` through them) don't change that; a prompt the model
+ * answers does. `"input"` (a prompt sent, nothing answered yet) still counts while the context
+ * reads 0% — no model turn has filled it since the compaction.
+ */
+export function isCompacted(marker: boolean, afterCompact: AfterCompact | undefined, ctxPercent: number | null | undefined): boolean {
+	return marker || afterCompact === "clean" || (afterCompact === "input" && ctxPercent === 0);
+}
 
 const SUFFIX = ".json";
 

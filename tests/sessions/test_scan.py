@@ -326,3 +326,100 @@ class TestLastActivity(unittest.TestCase):
         ])
         self.assertEqual(read_last_activity(p, chunk=64), 1788307200.0)
         self.assertIsNone(read_last_activity(p, chunk=64, limit=200))
+
+
+class TestAfterCompact(unittest.TestCase):
+    """`read_after_compact`: whether the last compaction has been followed by anything the
+    model answered, judged on the lines Claude Code writes for `/compact` and the local
+    commands after it."""
+
+    PROMPT = {'type': 'user', 'message': {'role': 'user', 'content': 'do the thing'}}
+    REPLY = {'type': 'assistant', 'message': {'role': 'assistant', 'content': [{'type': 'text', 'text': 'ok'}]}}
+    COMPACT = [
+        {'type': 'system', 'subtype': 'compact_boundary', 'content': 'Conversation compacted'},
+        {'type': 'user', 'isCompactSummary': True,
+         'message': {'role': 'user', 'content': 'This session is being continued from a previous conversation'}},
+        {'type': 'user', 'isMeta': True,
+         'message': {'role': 'user', 'content': '<local-command-caveat>Caveat</local-command-caveat>'}},
+        {'type': 'user', 'message': {'role': 'user', 'content':
+            '<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args></command-args>'}},
+        {'type': 'user', 'message': {'role': 'user', 'content': '<local-command-stdout>Compacted </local-command-stdout>'}},
+        {'type': 'custom-title', 'customTitle': 'A: b'},
+        {'type': 'last-prompt', 'lastPrompt': '/compact'},
+    ]
+    RENAME = [
+        {'type': 'system', 'subtype': 'local_command', 'content':
+            '<command-name>/rename</command-name>\n<command-args>A: c</command-args>'},
+        {'type': 'system', 'subtype': 'local_command', 'content':
+            '<local-command-stdout>Session renamed to: A: c</local-command-stdout>'},
+        {'type': 'user', 'isMeta': True, 'message': {'role': 'user', 'content':
+            '<system-reminder>The user named this session "A: c".</system-reminder>'}},
+    ]
+    MODEL = [
+        {'type': 'user', 'message': {'role': 'user', 'content':
+            '<command-name>/model</command-name>\n<command-args>opus</command-args>'}},
+        {'type': 'user', 'message': {'role': 'user', 'content': '<local-command-stdout>Set model to Opus</local-command-stdout>'}},
+    ]
+    BASH = [
+        {'type': 'user', 'message': {'role': 'user', 'content': '<bash-input>ls</bash-input>'}},
+        {'type': 'user', 'message': {'role': 'user', 'content': '<bash-stdout>a</bash-stdout><bash-stderr></bash-stderr>'}},
+    ]
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _state(self, records, **kw):
+        from agentsessions.sessions.scan import read_after_compact
+        p = os.path.join(self.tmp.name, ID1 + '.jsonl')
+        write_jsonl(p, records)
+        return read_after_compact(p, **kw)
+
+    def test_clean_right_after_compact(self):
+        self.assertEqual(self._state([self.PROMPT, self.REPLY] + self.COMPACT), 'clean')
+
+    def test_local_commands_keep_it_clean(self):
+        self.assertEqual(self._state([self.PROMPT, self.REPLY] + self.COMPACT + self.RENAME + self.MODEL + self.BASH),
+                         'clean')
+
+    def test_prompt_without_reply_is_input(self):
+        self.assertEqual(self._state(self.COMPACT + self.RENAME + [self.PROMPT]), 'input')
+
+    def test_reply_after_compact_clears(self):
+        self.assertIsNone(self._state(self.COMPACT + self.RENAME + [self.PROMPT, self.REPLY]))
+
+    def test_command_that_runs_the_model_clears(self):
+        review = [
+            {'type': 'user', 'message': {'role': 'user', 'content': '<command-name>/review</command-name>'}},
+            {'type': 'user', 'isMeta': True, 'message': {'role': 'user', 'content': 'Review this change.'}},
+            self.REPLY,
+        ]
+        self.assertIsNone(self._state(self.COMPACT + review))
+
+    def test_tool_result_clears(self):
+        # Automatic compaction in the middle of a turn: the model carries on after the boundary.
+        tool = {'type': 'user', 'message': {'role': 'user', 'content': [
+            {'type': 'tool_result', 'tool_use_id': 'x', 'content': 'r'}]}}
+        self.assertIsNone(self._state(self.COMPACT[:2] + [tool]))
+
+    def test_sidechain_lines_are_ignored(self):
+        side = dict(self.REPLY, isSidechain=True)
+        self.assertEqual(self._state(self.COMPACT + [side]), 'clean')
+
+    def test_no_compaction(self):
+        self.assertIsNone(self._state([self.PROMPT, self.REPLY] + self.RENAME))
+        self.assertIsNone(self._state([self.PROMPT]))
+
+    def test_scan_carries_it_and_caches_it(self):
+        p = os.path.join(self.tmp.name, 'proj', ID1 + '.jsonl')
+        os.makedirs(os.path.dirname(p))
+        write_jsonl(p, [dict(self.PROMPT, cwd='/a'), self.REPLY] + self.COMPACT + self.RENAME)
+        os.utime(p, (2_000_000_000, 2_000_000_000))
+        cache = {}
+        with mock.patch.object(scan_module.time, 'time', return_value=2_000_000_100):
+            self.assertEqual(scan([p], cache)[ID1].after_compact, 'clean')
+            self.assertEqual(cache[p]['after_compact'], 'clean')
+            with mock.patch.object(scan_module, 'read_after_compact', side_effect=AssertionError):
+                self.assertEqual(scan([p], cache)[ID1].after_compact, 'clean')

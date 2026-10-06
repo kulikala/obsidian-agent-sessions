@@ -22,6 +22,10 @@ class Session:
     # Claude Code only: the session's `/goal` (`sessions/scan.py`'s `apply_goal_status`), None
     # when it has none or it was cleared.
     goal: Optional[dict] = None
+    # Claude Code only (sessions/scan.py's `read_after_compact`): `'clean'` while nothing but
+    # local commands has followed the last compaction, `'input'` once a prompt has been sent
+    # but not yet answered, `None` otherwise.
+    after_compact: Optional[str] = None
 
 
 @dataclass
