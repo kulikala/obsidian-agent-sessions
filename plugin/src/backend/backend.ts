@@ -557,9 +557,10 @@ export async function agentVersion(bin: string): Promise<string | null> {
  * (`opencode` / `opencode --session <id>`); with `opencodeLaunch` it goes through
  * `ollama launch opencode --model <M> -y -- …` instead.
  *
- * On Windows Codex gets `--no-daemon` (`CODEX_NO_DAEMON_PLATFORMS`): its TUI otherwise attaches to,
- * or first installs, a shared background app-server, which refuses a package laid out differently
- * from npm's (WinGet's: "the CLI package does not match this platform or executable").
+ * `codexNoDaemon` adds `--no-daemon` (Windows, when the binary has it: `codexNoDaemon`): Codex's TUI
+ * otherwise attaches to, or first installs, a shared background app-server, which refuses a package
+ * laid out differently from npm's (WinGet's: "the CLI package does not match this platform or
+ * executable").
  */
 export function buildAgentArgv(
 	agent: AgentId,
@@ -567,10 +568,10 @@ export function buildAgentArgv(
 	id: string,
 	fresh: boolean,
 	opencodeLaunch?: OpencodeLaunch,
-	platform: string = process.platform,
+	codexNoDaemon = false,
 ): string[] {
 	if (agent === "codex") {
-		const own = CODEX_NO_DAEMON_PLATFORMS.includes(platform) ? [bin, "--no-daemon"] : [bin];
+		const own = codexNoDaemon ? [bin, "--no-daemon"] : [bin];
 		return fresh ? own : [...own, "resume", id];
 	}
 	if (agent === "opencode") {
@@ -587,6 +588,32 @@ export function buildAgentArgv(
 
 /** Where an interactive Codex runs with `--no-daemon` (see `buildAgentArgv`). */
 export const CODEX_NO_DAEMON_PLATFORMS: readonly string[] = ["win32"];
+
+/** Whether `codex --help` lists `--no-daemon` (Codex builds before the shared app-server lack it and
+ * refuse an unknown flag). Pure. */
+export function helpListsNoDaemon(help: string): boolean {
+	return /(^|\s)--no-daemon\b/m.test(help);
+}
+
+const codexNoDaemonCache = new Map<string, Promise<boolean>>();
+
+/** Whether Codex at `bin` should start with `--no-daemon` on `platform`: only where
+ * `CODEX_NO_DAEMON_PLATFORMS` says so, and only when its `--help` lists the flag (asked once per
+ * binary; a failed `--help` counts as no). */
+export function codexNoDaemon(bin: string, platform: string = process.platform): Promise<boolean> {
+	if (!CODEX_NO_DAEMON_PLATFORMS.includes(platform)) {
+		return Promise.resolve(false);
+	}
+	let known = codexNoDaemonCache.get(bin);
+	if (!known) {
+		known = execFileText(bin, ["--help"], withBinDirOnPath(process.env, bin), 15000).then(
+			({ stdout }) => helpListsNoDaemon(stdout),
+			() => false
+		);
+		codexNoDaemonCache.set(bin, known);
+	}
+	return known;
+}
 
 /** OpenCode started through `ollama launch opencode`: the ollama binary and the (non-empty) model. */
 export interface OpencodeLaunch {

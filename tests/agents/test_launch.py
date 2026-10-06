@@ -88,10 +88,23 @@ class TestWindows(unittest.TestCase):
         self.assertEqual(env['TEMP'], 'C:\\Users\\Jane Doe\\Temp')
 
     def test_codex_runs_without_the_shared_background_server(self):
-        self.assertEqual(launch.build_argv('codex', 'C:\\c.exe', 'ID', platform='win32'), ['C:\\c.exe', '--no-daemon'])
-        self.assertEqual(launch.build_argv('codex', 'C:\\c.exe', 'ID', prompt='hi', platform='win32'),
+        self.assertEqual(launch.build_argv('codex', 'C:\\c.exe', 'ID', codex_no_daemon=True), ['C:\\c.exe', '--no-daemon'])
+        self.assertEqual(launch.build_argv('codex', 'C:\\c.exe', 'ID', prompt='hi', codex_no_daemon=True),
                          ['C:\\c.exe', '--no-daemon', '--', 'hi'])
-        self.assertEqual(launch.build_argv('codex', '/x', 'ID', platform='darwin'), ['/x'])
+        self.assertEqual(launch.build_argv('codex', '/x', 'ID'), ['/x'])
+
+    def test_no_daemon_only_on_windows_and_only_when_codex_has_it(self):
+        self.assertTrue(launch.help_lists_no_daemon('Options:\n      --no-daemon\n          Run without'))
+        self.assertFalse(launch.help_lists_no_daemon('Options:\n      --no-alt-screen'))
+        self.assertFalse(launch.codex_no_daemon('/no/such/codex', platform='darwin'))
+        self.assertFalse(launch.codex_no_daemon('/no/such/codex', platform='win32'))
+        with tempfile.TemporaryDirectory() as tmp:
+            fake = os.path.join(tmp, 'codex')
+            with open(fake, 'w') as f:
+                f.write('#!/bin/sh\necho "      --no-daemon"\n')
+            os.chmod(fake, 0o755)
+            if os.name != 'nt':
+                self.assertTrue(launch.codex_no_daemon(fake, platform='win32'))
 
 
 class TestFindBinary(unittest.TestCase):

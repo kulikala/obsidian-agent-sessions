@@ -19,7 +19,9 @@ import json
 import ntpath
 import os
 import posixpath
+import re
 import shutil
+import subprocess
 import sys
 from typing import Dict, List, Mapping, Optional
 
@@ -89,6 +91,25 @@ def find_binary(agent: str, configured: str, search_path: Optional[str]) -> str:
     return found
 
 
+def help_lists_no_daemon(help_text: str) -> bool:
+    """Whether `codex --help` lists `--no-daemon` (Codex builds before the shared app-server lack it
+    and refuse an unknown flag)."""
+    return re.search(r'(^|\s)--no-daemon\b', help_text, re.M) is not None
+
+
+def codex_no_daemon(bin_path: str, platform: str = sys.platform) -> bool:
+    """Whether Codex at `bin_path` starts with `--no-daemon`: only on `CODEX_NO_DAEMON_PLATFORMS`, and
+    only when its `--help` lists the flag (a failed `--help` counts as no)."""
+    if platform not in CODEX_NO_DAEMON_PLATFORMS:
+        return False
+    try:
+        out = subprocess.run([bin_path, '--help'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                             stdin=subprocess.DEVNULL, timeout=15).stdout.decode('utf-8', 'replace')
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return help_lists_no_daemon(out)
+
+
 def inherited_env(environ: Mapping[str, str], platform: str = sys.platform) -> Dict[str, str]:
     if platform == 'win32':
         wanted = set(WINDOWS_INHERITED_ENV_KEYS)
@@ -130,14 +151,14 @@ def build_env(agent: str, environ: Mapping[str, str], agent_env: Mapping[str, st
 def build_argv(agent: str, bin_path: str, session_id: str, name: Optional[str] = None,
                remote_control: bool = False, prompt: Optional[str] = None,
                ollama_bin: Optional[str] = None, ollama_model: str = '',
-               platform: str = sys.platform) -> List[str]:
+               codex_no_daemon: bool = False) -> List[str]:
     """argv for a fresh session. Claude Code takes its id (`--session-id`), name (`--name`) and Remote
     Control (`--remote-control[=name]`) as flags; Codex and OpenCode decide their own ids and take no
     name at launch. `prompt` is the session's first message. OpenCode set to start through ollama
-    goes through `ollama launch opencode --model <M> -y --`. Codex on Windows runs `--no-daemon`
-    (see `buildAgentArgv` in backend.ts)."""
+    goes through `ollama launch opencode --model <M> -y --`. `codex_no_daemon` (`codex_no_daemon()`)
+    starts Codex with `--no-daemon` (see `buildAgentArgv` in backend.ts)."""
     if agent == 'codex':
-        own = [bin_path, '--no-daemon'] if platform in CODEX_NO_DAEMON_PLATFORMS else [bin_path]
+        own = [bin_path, '--no-daemon'] if codex_no_daemon else [bin_path]
         return own + (['--', prompt] if prompt else [])
     if agent == 'opencode':
         tail = ['--prompt', prompt] if prompt else []

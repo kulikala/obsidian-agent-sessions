@@ -22,6 +22,7 @@ import {
 	agentVersion,
 	BackendError,
 	buildAgentArgv,
+	codexNoDaemon,
 	detail,
 	detectAgent,
 	detectAgents,
@@ -838,6 +839,9 @@ export default class AgentSessionsPlugin extends Plugin {
 	 */
 	async launchArgv(agent: AgentId, bin: string, id: string, fresh: boolean): Promise<string[]> {
 		const settings = this.settings.agents[agent];
+		if (agent === "codex") {
+			return buildAgentArgv(agent, bin, id, fresh, undefined, await codexNoDaemon(bin));
+		}
 		if (agent !== "opencode" || settings.launchVia !== "ollama") {
 			return buildAgentArgv(agent, bin, id, fresh);
 		}

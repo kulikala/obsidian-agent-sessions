@@ -2,6 +2,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	agentEnvFor,
 	buildAgentArgv,
+	codexNoDaemon,
+	helpListsNoDaemon,
 	commonBinDirs,
 	parseOllamaList,
 	defaultLoginShell,
@@ -123,19 +125,26 @@ describe("buildAgentArgv", () => {
 	});
 
 	it("codex fresh: no id-related flag at all (codex assigns its own new thread id)", () => {
-		expect(buildAgentArgv("codex", "/bin/codex", "abc-123", true, undefined, "darwin")).toEqual(["/bin/codex"]);
+		expect(buildAgentArgv("codex", "/bin/codex", "abc-123", true)).toEqual(["/bin/codex"]);
 	});
 
 	it("codex resume: the resume subcommand, plain (not a flag)", () => {
-		expect(buildAgentArgv("codex", "/bin/codex", "abc-123", false, undefined, "linux")).toEqual(["/bin/codex", "resume", "abc-123"]);
+		expect(buildAgentArgv("codex", "/bin/codex", "abc-123", false)).toEqual(["/bin/codex", "resume", "abc-123"]);
 	});
 
-	it("codex on Windows: --no-daemon, fresh and resumed (no shared background server)", () => {
+	it("codex with --no-daemon, fresh and resumed (no shared background server); other agents ignore it", () => {
 		const bin = "C:\\codex\\codex.exe";
-		expect(buildAgentArgv("codex", bin, "abc-123", true, undefined, "win32")).toEqual([bin, "--no-daemon"]);
-		expect(buildAgentArgv("codex", bin, "abc-123", false, undefined, "win32")).toEqual([bin, "--no-daemon", "resume", "abc-123"]);
-		expect(buildAgentArgv("claude", "C:\\claude.exe", "abc", true, undefined, "win32")).toEqual(["C:\\claude.exe", "--session-id", "abc"]);
-		expect(buildAgentArgv("opencode", "C:\\oc.exe", "ses_a", false, undefined, "win32")).toEqual(["C:\\oc.exe", "--session", "ses_a"]);
+		expect(buildAgentArgv("codex", bin, "abc-123", true, undefined, true)).toEqual([bin, "--no-daemon"]);
+		expect(buildAgentArgv("codex", bin, "abc-123", false, undefined, true)).toEqual([bin, "--no-daemon", "resume", "abc-123"]);
+		expect(buildAgentArgv("claude", "C:\\claude.exe", "abc", true, undefined, true)).toEqual(["C:\\claude.exe", "--session-id", "abc"]);
+		expect(buildAgentArgv("opencode", "C:\\oc.exe", "ses_a", false, undefined, true)).toEqual(["C:\\oc.exe", "--session", "ses_a"]);
+	});
+
+	it("asks for --no-daemon only on Windows, and only when --help lists it", async () => {
+		expect(helpListsNoDaemon("Options:\n      --no-daemon\n          Run without the shared background server")).toBe(true);
+		expect(helpListsNoDaemon("Options:\n  -m, --model <MODEL>\n      --no-alt-screen")).toBe(false);
+		expect(await codexNoDaemon("/no/such/codex", "darwin")).toBe(false);
+		expect(await codexNoDaemon("/no/such/codex", "win32")).toBe(false);
 	});
 
 	it("opencode fresh: no id-related flag at all (opencode assigns its own session id)", () => {

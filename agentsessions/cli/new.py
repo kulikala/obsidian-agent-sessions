@@ -229,7 +229,8 @@ def start(ns: argparse.Namespace, environ: Optional[Dict[str, str]] = None) -> D
         raise Failure(str(e))
 
     daemon_id = str(uuid.uuid4())
-    argv = launch.build_argv(agent, bin_path, daemon_id, name, rc, prompt, ollama_bin, model)
+    argv = launch.build_argv(agent, bin_path, daemon_id, name, rc, prompt, ollama_bin, model,
+                             codex_no_daemon=agent == 'codex' and launch.codex_no_daemon(bin_path))
     env = launch.build_env(agent, environ, cfg.get('env', {}), bin_path, config.VAULT, shim_path())
     if agent == 'claude':
         _register_claude(daemon_id, cwd, warnings)
