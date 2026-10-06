@@ -78,6 +78,7 @@ import { getLang, languageOptions, resolveLang, setLang, t, type MessageKey } fr
 import { applyCodexConfig, defaultCodexConfigPath, type ApplyCodexConfigResult } from "./terminal/codex-config";
 import { msSinceKey, summarizeReloadSafety, type ReloadSafety } from "./terminal/reload-safety";
 import { applyEditorKey, applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./terminal/keybindings";
+import { commandChunks, PASTE_BEGIN, PASTE_END } from "./terminal/command-chunks";
 import { afterWait, planHeadlessCommand } from "./terminal/headless-plan";
 import { agentSendSequence, editorKeyLabel, reconcileSubmitKey } from "./terminal/keys";
 import {
@@ -172,11 +173,6 @@ const AGENT_DISPLAY_NAME_KEY: Record<AgentId, MessageKey> = {
 	codex: "settings.agents.codex.name",
 	opencode: "settings.agents.opencode.name",
 };
-/** Ctrl+S = Claude Code's `chat:stash` (stashes the draft; Claude restores it automatically after the next submit). */
-const STASH = "\x13";
-/** Bracketed paste markers. Wrapping a command in these lets it go in as one block without opening `/` completion. */
-const PASTE_BEGIN = "\x1b[200~";
-const PASTE_END = "\x1b[201~";
 /** Gap between the built-in editor's "send" and the submit sequence (lets Claude read the temp file back first). */
 const SUBMIT_AFTER_EDIT_MS = 300;
 /** After a `/model` or `/effort`, how long to let the line settle before the next step. */
@@ -1915,39 +1911,10 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 	}
 
-	/** Stash (Claude only) → command as bracketed paste → submit sequence (`submitSequence`: the
-	 * configured submit key for Claude and Codex, T-108 — same reasoning as `views/terminal.ts`'s
-	 * `sendSubmit()`; always `\r` for OpenCode, see below). */
-	private commandChunks(text: string, agent: AgentId, draft: boolean): string[] {
-		// Ctrl+S (`chat:stash`) only over a draft: on an empty box it brings a previously stashed
-		// draft back instead, and the command would be pasted after it.
-		const stash = agent === "claude" && draft ? STASH : "";
-		// OpenCode's slash popup answers to `\r` only (`\n` leaves it open), and `\r` runs the
-		// highlighted command whichever submit key is configured, so commands always end in `\r`.
-		const submit = agent === "opencode" ? "\r" : submitSequence(this.settings, agent);
-		const pasted = stash + PASTE_BEGIN + text + PASTE_END;
-		// Claude Code: a bare command (`/compact`) leaves the slash-command completion list open, and
-		// that list swallows a rebound submit key (meta+Enter). Tab accepts the completion first; it
-		// goes in its own write, after the list has had a moment to appear, and the submit after it.
-		if (agent === "claude" && !text.includes(" ")) {
-			return [pasted, "\t", submit];
-		}
-		// Codex: a bare command needs a trailing space to close its popup, then the submit key.
-		if (agent === "codex" && !text.includes(" ")) {
-			return [PASTE_BEGIN + text + " " + PASTE_END, submit];
-		}
-		// OpenCode: `\r` runs the highlighted popup command only once the popup is up; arriving with
-		// the paste, it's read as Return in the input box (a newline, with the managed keybinds).
-		if (agent === "opencode") {
-			return [pasted, submit];
-		}
-		return [pasted + submit];
-	}
-
 	/** Writes `commandChunks` through `write`, pausing `COMMAND_CHUNK_GAP_MS` between chunks.
 	 * `draft`: whether the input box holds a draft to stash first (known only for an open tab). */
 	private async writeCommand(write: (data: Buffer) => void, text: string, agent: AgentId, draft = false): Promise<void> {
-		const chunks = this.commandChunks(text, agent, draft);
+		const chunks = commandChunks(text, agent, draft, submitSequence(this.settings, agent));
 		for (let i = 0; i < chunks.length; i++) {
 			if (i > 0) {
 				await sleep(COMMAND_CHUNK_GAP_MS);
