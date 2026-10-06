@@ -332,7 +332,7 @@ export class OrganizeModal extends Modal {
 		let received = 0;
 		this.log(t("organize.logAsked", { agent: this.label(agent) }));
 		this.startTicker(agent, () => received);
-		const text = await runHeadless({
+		const { text } = await runHeadless({
 			agent,
 			bin,
 			env,

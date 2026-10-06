@@ -34,7 +34,8 @@ function execFileText(
 	cmd: string,
 	args: string[],
 	env?: NodeJS.ProcessEnv,
-	timeoutMs?: number
+	timeoutMs?: number,
+	maxBuffer?: number
 ): Promise<{ stdout: string; stderr: string }> {
 	// Windows: a launcher `.cmd` runs as `python script …` and an agent's npm shim through
 	// `cmd.exe` (execFile refuses `.cmd` files), with UTF-8 Python and no console window popping
@@ -42,7 +43,15 @@ function execFileText(
 	const call = programInvocation(cmd, args);
 	const callEnv = IS_WINDOWS ? { ...(env ?? process.env), PYTHONUTF8: "1" } : env;
 	return new Promise((resolve, reject) => {
-		const options = { encoding: "utf8" as const, env: callEnv, timeout: timeoutMs, windowsHide: true, windowsVerbatimArguments: call.verbatim };
+		const options = {
+			encoding: "utf8" as const,
+			env: callEnv,
+			timeout: timeoutMs,
+			// Node's default (1 MiB) unless a caller expects more (`json efficiency`).
+			...(maxBuffer ? { maxBuffer } : {}),
+			windowsHide: true,
+			windowsVerbatimArguments: call.verbatim,
+		};
 		execFile(call.file, call.args, options, (err, stdout, stderr) => {
 			if (err) {
 				const e = err as NodeJS.ErrnoException & { stderr?: string };
@@ -120,10 +129,27 @@ export function envWithVault(vaultPath: string, base: NodeJS.ProcessEnv = proces
 	return { ...base, ...extraJsonEnv, AGENT_SESSIONS_VAULT: vaultPath };
 }
 
+/** Options of one `json …` call: a time limit and a larger stdout buffer than Node's 1 MiB. */
+export interface RunJsonOptions {
+	timeoutMs?: number;
+	maxBuffer?: number;
+}
+
 /** Calls `agent-sessions json …` and returns stdout parsed as JSON. Throws `BackendError` on failure. */
-export async function runJson(agentSessionsPath: string, vaultPath: string, args: string[]): Promise<unknown> {
+export async function runJson(
+	agentSessionsPath: string,
+	vaultPath: string,
+	args: string[],
+	opts: RunJsonOptions = {}
+): Promise<unknown> {
 	try {
-		const { stdout } = await execFileText(agentSessionsPath, ["json", ...args], envWithVault(vaultPath));
+		const { stdout } = await execFileText(
+			agentSessionsPath,
+			["json", ...args],
+			envWithVault(vaultPath),
+			opts.timeoutMs,
+			opts.maxBuffer
+		);
 		return JSON.parse(stdout);
 	} catch (err) {
 		const stderr = (err as { stderr?: string }).stderr;
@@ -583,15 +609,21 @@ export function buildAgentArgv(
 	opencodeLaunch?: OpencodeLaunch,
 	codexNoDaemon = false,
 	name?: string,
+	start: LaunchStart = {},
 ): string[] {
+	// A first message and a permission mode only apply to a fresh session.
+	const prompt = fresh && start.prompt ? start.prompt : undefined;
 	if (agent === "codex") {
 		const own = codexNoDaemon ? [bin, "--no-daemon"] : [bin];
-		return fresh ? own : [...own, "resume", id];
+		if (!fresh) {
+			return [...own, "resume", id];
+		}
+		return prompt ? [...own, "--", prompt] : own;
 	}
 	if (agent === "opencode") {
 		// OpenCode can't be told a new session's id either (like Codex): a fresh launch takes no
 		// id flag; a resume passes `--session <id>`.
-		const tail = fresh ? [] : ["--session", id];
+		const tail = fresh ? (prompt ? ["--prompt", prompt] : []) : ["--session", id];
 		if (opencodeLaunch) {
 			return [opencodeLaunch.ollamaBin, "launch", "opencode", "--model", opencodeLaunch.model, "-y", "--", ...tail];
 		}
@@ -600,7 +632,19 @@ export function buildAgentArgv(
 	if (!fresh) {
 		return [bin, "--resume", id];
 	}
-	return name ? [bin, "--session-id", id, `--name=${name}`] : [bin, "--session-id", id];
+	const argv = name ? [bin, "--session-id", id, `--name=${name}`] : [bin, "--session-id", id];
+	if (start.permissionMode) {
+		argv.push("--permission-mode", start.permissionMode);
+	}
+	return prompt ? [...argv, "--", prompt] : argv;
+}
+
+/** How a fresh session starts: its first message, and (Claude Code) the permission mode --
+ * `plan` stops before any file is written. Same order as `launch.py`'s `build_argv`: Claude Code
+ * and Codex take the message after `--`, OpenCode as `--prompt`. */
+export interface LaunchStart {
+	prompt?: string;
+	permissionMode?: "plan";
 }
 
 /** Whether `codex --help` lists `--no-daemon` (Codex builds before the shared app-server lack it and

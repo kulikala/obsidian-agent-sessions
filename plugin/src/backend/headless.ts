@@ -1,5 +1,6 @@
-// Runs one headless agent request for "Organize names and categories": `claude -p`,
-// `codex exec` or `opencode run` (argv and output parsing in `sessions/organize-agent.ts`).
+// Runs one headless agent request (for "Organize names and categories" and token efficiency):
+// `claude -p`, `codex exec` or `opencode run` (argv and output parsing in
+// `sessions/organize-agent.ts`).
 // The prompt goes in on stdin and stdout is read as it streams, so the dialog can show that
 // text is arriving. Claude Code and Codex keep no transcript (and any `-p` / `exec` one would
 // be marked a child, which the session list hides); an OpenCode `run` session is deleted
@@ -9,14 +10,36 @@ import { spawn } from "child_process";
 import { mkdirSync } from "fs";
 import {
 	headlessArgs,
+	headlessUsage,
 	opencodeSessionId,
 	parseAgentOutput,
 	streamedChars,
+	type HeadlessModel,
+	type HeadlessUsage,
 } from "../sessions/organize-agent";
-import type { AgentId, OrganizeModel } from "../settings";
+import type { AgentId } from "../settings";
 import { programInvocation } from "./windows";
 
 const TIMEOUT_MS = 180000;
+
+/** What a finished run gives back: the reply, the raw stdout, and what the run cost. */
+export interface HeadlessResult {
+	text: string;
+	stdout: string;
+	usage: HeadlessUsage | null;
+}
+
+/** A failed run (error reported, bad output, non-zero exit, timeout or abort), with whatever the
+ * CLI printed, so a caller can tell a usage-limit failure from others. */
+export class HeadlessError extends Error {
+	constructor(
+		message: string,
+		readonly stdout: string = "",
+		readonly stderr: string = ""
+	) {
+		super(message);
+	}
+}
 
 export interface HeadlessRun {
 	agent: AgentId;
@@ -26,22 +49,27 @@ export interface HeadlessRun {
 	cwd: string;
 	prompt: string;
 	/** The Claude Code model (ignored by the other agents). */
-	model?: OrganizeModel;
+	model?: HeadlessModel;
+	/** More arguments for the CLI (Codex `-m`, OpenCode `--model`); see `headlessArgs`. */
+	extraArgs?: string[];
+	/** Milliseconds before the run is stopped (180,000 when left out). */
+	timeoutMs?: number;
 	signal?: AbortSignal;
 	/** Called with the running total of answer characters received so far. */
 	onProgress?: (chars: number) => void;
 }
 
-/** Resolves with the model's reply text; rejects on failure, timeout or abort. */
-export function runHeadless(run: HeadlessRun): Promise<string> {
+/** Resolves with the reply, the stdout and the usage; rejects with a `HeadlessError` on failure,
+ * timeout or abort. */
+export function runHeadless(run: HeadlessRun): Promise<HeadlessResult> {
 	mkdirSync(run.cwd, { recursive: true });
 	return new Promise((resolve, reject) => {
 		if (run.signal?.aborted) {
-			reject(new Error("aborted"));
+			reject(new HeadlessError("aborted"));
 			return;
 		}
 		// Windows: an npm-installed agent is a `.cmd` shim, which goes through cmd.exe.
-		const call = programInvocation(run.bin, headlessArgs(run.agent, run.model));
+		const call = programInvocation(run.bin, headlessArgs(run.agent, run.model, run.extraArgs));
 		const child = spawn(call.file, call.args, {
 			cwd: run.cwd,
 			env: run.env,
@@ -65,12 +93,12 @@ export function runHeadless(run: HeadlessRun): Promise<string> {
 		};
 		const onAbort = (): void => {
 			child.kill();
-			finish(() => reject(new Error("aborted")));
+			finish(() => reject(new HeadlessError("aborted", stdout, stderr)));
 		};
 		const timer = window.setTimeout(() => {
 			child.kill();
-			finish(() => reject(new Error("timed out")));
-		}, TIMEOUT_MS);
+			finish(() => reject(new HeadlessError("timed out", stdout, stderr)));
+		}, run.timeoutMs ?? TIMEOUT_MS);
 		run.signal?.addEventListener("abort", onAbort);
 		child.stdout.on("data", (chunk: Buffer) => {
 			const text = chunk.toString("utf8");
@@ -89,17 +117,18 @@ export function runHeadless(run: HeadlessRun): Promise<string> {
 			}
 		});
 		child.stderr.on("data", (chunk: Buffer) => (stderr += chunk.toString("utf8")));
-		child.on("error", (err) => finish(() => reject(err)));
+		child.on("error", (err) => finish(() => reject(new HeadlessError(err.message, stdout, stderr))));
 		child.on("close", (code) => {
 			if (run.agent === "opencode") {
 				deleteOpencodeSession(run, stdout);
 			}
 			finish(() => {
 				try {
-					resolve(parseAgentOutput(run.agent, stdout));
+					const text = parseAgentOutput(run.agent, stdout);
+					resolve({ text, stdout, usage: headlessUsage(run.agent, stdout) });
 				} catch (err) {
 					const detail = stderr.trim().split("\n").pop() || (err as Error).message;
-					reject(new Error(code === 0 ? (err as Error).message : detail));
+					reject(new HeadlessError(code === 0 ? (err as Error).message : detail, stdout, stderr));
 				}
 			});
 		});

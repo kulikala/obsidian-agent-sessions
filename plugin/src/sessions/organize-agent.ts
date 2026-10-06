@@ -4,6 +4,10 @@
 
 import type { AgentId, OrganizeModel } from "../settings";
 
+/** The Claude Code models a headless run may name: Organize offers Sonnet and Haiku, token
+ * efficiency Sonnet and Opus. */
+export type HeadlessModel = OrganizeModel | "opus";
+
 /** What the dialog needs of an agent's settings to choose. */
 export type AgentEnabled = Record<AgentId, { enabled: boolean }>;
 
@@ -18,12 +22,12 @@ export function pickOrganizeAgent(agents: AgentEnabled): AgentId | null {
 
 /** The model asked for, where the CLI lets one be named (Claude Code: the "Model for suggestions"
  * setting, Sonnet by default); the others use their own default. */
-export function organizeModel(agent: AgentId, setting: OrganizeModel = "sonnet"): string | null {
+export function organizeModel(agent: AgentId, setting: HeadlessModel = "sonnet"): string | null {
 	return agent === "claude" ? setting : null;
 }
 
 /** Display name of the agent and (when named) its model: "Claude Code (sonnet)". */
-export function agentLabel(agent: AgentId, setting: OrganizeModel = "sonnet"): string {
+export function agentLabel(agent: AgentId, setting: HeadlessModel = "sonnet"): string {
 	const name = agent === "claude" ? "Claude Code" : agent === "codex" ? "Codex" : "OpenCode";
 	const model = organizeModel(agent, setting);
 	return model ? `${name} (${model})` : name;
@@ -35,8 +39,10 @@ export function agentLabel(agent: AgentId, setting: OrganizeModel = "sonnet"): s
  * - Codex: `exec` with a read-only sandbox, outside a Git repository, no rollout file, and the
  *   user's execpolicy rules off; events as JSONL.
  * - OpenCode: `run` without external plugins, events as JSON.
+ * `extraArgs` (a model for Codex `-m` or OpenCode `--model`) go before Codex's `-` (the prompt
+ * from stdin) and at the end for the others.
  */
-export function headlessArgs(agent: AgentId, setting: OrganizeModel = "sonnet"): string[] {
+export function headlessArgs(agent: AgentId, setting: HeadlessModel = "sonnet", extraArgs: string[] = []): string[] {
 	switch (agent) {
 		case "claude":
 			return [
@@ -54,6 +60,7 @@ export function headlessArgs(agent: AgentId, setting: OrganizeModel = "sonnet"):
 				"--no-session-persistence",
 				"--settings",
 				JSON.stringify({ disableAllHooks: true }),
+				...extraArgs,
 			];
 		case "codex":
 			return [
@@ -64,10 +71,11 @@ export function headlessArgs(agent: AgentId, setting: OrganizeModel = "sonnet"):
 				"--ephemeral",
 				"--ignore-rules",
 				"--json",
+				...extraArgs,
 				"-",
 			];
 		case "opencode":
-			return ["run", "--pure", "--format", "json"];
+			return ["run", "--pure", "--format", "json", ...extraArgs];
 	}
 }
 
@@ -193,4 +201,73 @@ export function opencodeSessionId(stdout: string): string | null {
 		}
 	}
 	return null;
+}
+
+/** What one headless run cost, as its CLI reported it: tokens in (cache reads and writes
+ * included) and out, and dollars when the CLI says (`null` otherwise). */
+export interface HeadlessUsage {
+	input: number;
+	output: number;
+	usd: number | null;
+}
+
+function asNumber(value: unknown): number {
+	return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+/**
+ * The usage of a finished run, from its stdout, or `null` when the output has none:
+ * - Claude Code: the last `result` event's `usage` (input + cache creation + cache read, and
+ *   output) and `total_cost_usd`.
+ * - Codex: the `turn.completed` events' `usage` (input and output; no dollars).
+ * - OpenCode: the `step_finish` events' `part.tokens` (input + cache, output + reasoning) and
+ *   `part.cost`.
+ */
+export function headlessUsage(agent: AgentId, stdout: string): HeadlessUsage | null {
+	const events = parseEvents(stdout);
+	if (agent === "claude") {
+		const result = [...events].reverse().find((e) => e.type === "result" && e.usage && typeof e.usage === "object");
+		if (!result) {
+			return null;
+		}
+		const u = asRecord(result.usage);
+		return {
+			input: asNumber(u.input_tokens) + asNumber(u.cache_creation_input_tokens) + asNumber(u.cache_read_input_tokens),
+			output: asNumber(u.output_tokens),
+			usd: typeof result.total_cost_usd === "number" ? result.total_cost_usd : null,
+		};
+	}
+	let found = false;
+	const total: HeadlessUsage = { input: 0, output: 0, usd: null };
+	for (const e of events) {
+		if (agent === "codex" && e.type === "turn.completed" && e.usage) {
+			const u = asRecord(e.usage);
+			total.input += asNumber(u.input_tokens);
+			total.output += asNumber(u.output_tokens);
+			found = true;
+		} else if (agent === "opencode" && e.type === "step_finish") {
+			const part = asRecord(e.part);
+			const tokens = asRecord(part.tokens);
+			const cache = asRecord(tokens.cache);
+			total.input += asNumber(tokens.input) + asNumber(cache.read) + asNumber(cache.write);
+			total.output += asNumber(tokens.output) + asNumber(tokens.reasoning);
+			if (typeof part.cost === "number") {
+				total.usd = (total.usd ?? 0) + part.cost;
+			}
+			found = true;
+		}
+	}
+	return found ? total : null;
+}
+
+/** Adds two usages (a run and its retry); `null` when neither is known. */
+export function addUsage(a: HeadlessUsage | null, b: HeadlessUsage | null): HeadlessUsage | null {
+	if (!a || !b) {
+		return a ?? b;
+	}
+	return {
+		input: a.input + b.input,
+		output: a.output + b.output,
+		usd: a.usd === null && b.usd === null ? null : (a.usd ?? 0) + (b.usd ?? 0),
+	};
 }

@@ -40,7 +40,9 @@ import {
 	scan,
 	setAgentEnv,
 	withBinDirOnPath,
+	type LaunchStart,
 } from "./backend/backend";
+import { launchStart, rememberAgent, type NewSessionOptions } from "./sessions/new-session";
 import { planInPlace, planSuccessors, possibleSuccessors, type SuccessorCandidate, type SuccessorTab } from "./sessions/successor";
 import {
 	chooseInstallDir,
@@ -293,6 +295,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	private codexCreateNames = new Map<string, string>();
 	/** Names for new Claude sessions, by id, until their first launch passes them as `--name` (`launchArgv`). */
 	private launchNames = new Map<string, string>();
+	/** First messages and permission modes for new sessions, by id, until their first launch. */
+	private launchStarts = new Map<string, LaunchStart>();
 	/** Placeholder ids of Codex/OpenCode sessions `resolveAgentSession` is still looking the real id for. */
 	private unresolvedIds = new Set<string>();
 	/** The daemon's session list as of the last live refresh that reached it. */
@@ -921,16 +925,18 @@ export default class AgentSessionsPlugin extends Plugin {
 	 */
 	async launchArgv(agent: AgentId, bin: string, id: string, fresh: boolean): Promise<string[]> {
 		const settings = this.settings.agents[agent];
+		const start = fresh ? this.launchStarts.get(id) : undefined;
+		this.launchStarts.delete(id);
 		if (agent === "codex") {
-			return buildAgentArgv(agent, bin, id, fresh, undefined, await codexNoDaemon(bin));
+			return buildAgentArgv(agent, bin, id, fresh, undefined, await codexNoDaemon(bin), undefined, start);
 		}
 		if (agent === "claude") {
 			const name = fresh ? this.launchNames.get(id) : undefined;
 			this.launchNames.delete(id);
-			return buildAgentArgv(agent, bin, id, fresh, undefined, false, name);
+			return buildAgentArgv(agent, bin, id, fresh, undefined, false, name, start);
 		}
 		if (agent !== "opencode" || settings.launchVia !== "ollama") {
-			return buildAgentArgv(agent, bin, id, fresh);
+			return buildAgentArgv(agent, bin, id, fresh, undefined, false, undefined, start);
 		}
 		const model = (settings.ollamaModel ?? "").trim();
 		if (!model) {
@@ -942,7 +948,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		if (!ollamaBin) {
 			throw new BackendError(t("error.agentMissing", { name: "ollama" }));
 		}
-		return buildAgentArgv(agent, bin, id, fresh, { ollamaBin, model });
+		return buildAgentArgv(agent, bin, id, fresh, { ollamaBin, model }, false, undefined, start);
 	}
 
 	/**
@@ -1518,12 +1524,19 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * until it has — and once the tab is linked, `confirmCodexName` sends it again if Codex's own
 	 * title didn't take it.
 	 */
-	newSession(name?: string, agent: AgentId = this.settings.lastNewSessionAgent): string | undefined {
-		if (agent !== this.settings.lastNewSessionAgent) {
-			this.settings.lastNewSessionAgent = agent;
+	newSession(
+		name?: string,
+		agent: AgentId = this.settings.lastNewSessionAgent,
+		opts: NewSessionOptions = {}
+	): string | undefined {
+		if (rememberAgent(this.settings, agent, opts)) {
 			void this.saveSettings();
 		}
 		const id = crypto.randomUUID();
+		const start = launchStart(opts);
+		if (start) {
+			this.launchStarts.set(id, start);
+		}
 		const cwd = this.vaultPath();
 		if (agent === "claude") {
 			try {
