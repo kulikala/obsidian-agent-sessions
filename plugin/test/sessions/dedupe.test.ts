@@ -55,6 +55,14 @@ describe("SessionOpener (concurrent calls)", () => {
 		expect(opener.opening.size).toBe(0);
 	});
 
+	it("takes a listed session's agent and folder when the caller passes none", async () => {
+		const ws = new FakeWorkspace();
+		const opener = new SessionOpener(ws, (id) => (id === "thread-1" ? { agent: "codex", cwd: "/v" } : undefined));
+		expect((await opener.open("thread-1")).getViewState().state).toEqual({ id: "thread-1", agent: "codex", cwd: "/v" });
+		expect((await opener.open("ses_x", { agent: "opencode" })).getViewState().state).toEqual({ id: "ses_x", agent: "opencode", cwd: "" });
+		expect((await opener.open("unknown")).getViewState().state).toEqual({ id: "unknown", agent: "claude", cwd: "" });
+	});
+
 	it("after opening, subsequent calls only call revealLeaf and don't create a new leaf", async () => {
 		const ws = new FakeWorkspace();
 		const opener = new SessionOpener(ws);

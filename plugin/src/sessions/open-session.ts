@@ -36,7 +36,13 @@ export function findTerminalLeaf<L extends LeafLike>(workspace: WorkspaceLike<L>
 export class SessionOpener<L extends LeafLike> {
 	readonly opening = new Map<string, Promise<L>>();
 
-	constructor(private workspace: WorkspaceLike<L>) {}
+	/** `known` gives a listed session's agent and folder, used when the caller passes none (a
+	 * notice or command that only has the id); a Codex or OpenCode session opened as Claude Code
+	 * would be resumed with `claude --resume <its id>`. */
+	constructor(
+		private workspace: WorkspaceLike<L>,
+		private known: (id: string) => { agent?: string; cwd?: string } | undefined = () => undefined
+	) {}
 
 	open(id: string, opts: OpenSessionOptions = {}): Promise<L> {
 		const inflight = this.opening.get(id);
@@ -56,7 +62,8 @@ export class SessionOpener<L extends LeafLike> {
 
 	private async create(id: string, opts: OpenSessionOptions): Promise<L> {
 		const leaf = this.workspace.getLeaf("tab");
-		const state: Record<string, unknown> = { id, agent: opts.agent ?? "claude", cwd: opts.cwd ?? "" };
+		const row = this.known(id);
+		const state: Record<string, unknown> = { id, agent: opts.agent ?? row?.agent ?? "claude", cwd: opts.cwd ?? row?.cwd ?? "" };
 		if (opts.fresh) {
 			state.fresh = true;
 		}
