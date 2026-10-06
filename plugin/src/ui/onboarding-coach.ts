@@ -18,7 +18,6 @@ import {
 	OPERATION_STEPS,
 	skipStep,
 	STEP_SCENES,
-	stepState,
 	type OnboardingCoach,
 	type OnboardingProgress,
 	type OnboardingStepId,
@@ -356,10 +355,7 @@ export class OnboardingCoachWindow implements OnboardingCoach {
 
 	private applyPosition(el: HTMLElement): void {
 		if (this.position) {
-			el.style.left = `${this.position.left}px`;
-			el.style.top = `${this.position.top}px`;
-			el.style.right = "auto";
-			el.style.bottom = "auto";
+			el.setCssStyles({ left: `${this.position.left}px`, top: `${this.position.top}px`, right: "auto", bottom: "auto" });
 		}
 	}
 

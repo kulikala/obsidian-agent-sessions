@@ -6,12 +6,14 @@ import {
 	Platform,
 	Plugin,
 	PluginSettingTab,
+	requireApiVersion,
 	setIcon,
 	Setting,
 	setTooltip,
 	WorkspaceLeaf,
 	type DropdownComponent,
 	type FileSystemAdapter,
+	type SettingDefinitionItem,
 } from "obsidian";
 import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -2654,15 +2656,41 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 }
 
-/** The plugin's settings tab. */
 /** The whole settings tab on a platform this plugin can't run on. */
 class UnsupportedSettingTab extends PluginSettingTab {
+	/** Obsidian 1.13+: the message as the tab's only row. */
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		return [{ name: t("notice.unsupportedPlatform") }];
+	}
+
+	/** Before Obsidian 1.13. */
 	display(): void {
 		this.containerEl.empty();
 		this.containerEl.createEl("p", { text: t("notice.unsupportedPlatform") });
 	}
 }
 
+/**
+ * One row of the settings tab. `render` fills in a row that already carries `name` (and `desc`,
+ * when given); a row with `mount` instead draws a whole block of rows into an element of its own.
+ */
+interface SettingsRow {
+	name: string;
+	desc?: string;
+	/** More words Obsidian's settings search matches this row by (Obsidian 1.13+). */
+	aliases?: string[];
+	/** Whether the row is shown; asked again each time the tab is drawn. */
+	visible?: () => boolean;
+	render?: (setting: Setting) => void;
+	mount?: (el: HTMLElement) => void;
+}
+
+interface SettingsSection {
+	heading: string;
+	rows: SettingsRow[];
+}
+
+/** The plugin's settings tab. */
 class AgentSessionsSettingTab extends PluginSettingTab {
 	plugin: AgentSessionsPlugin;
 	/** `ollama list`'s model names for OpenCode's model dropdown. Lives as long as the tab is open
@@ -2679,6 +2707,66 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 	}
 
 	/**
+	 * Obsidian 1.13+ draws the tab from these definitions, and its settings search finds every
+	 * row by them. Each section is a group under its heading; each row is drawn by the same code
+	 * `display()` uses.
+	 */
+	getSettingDefinitions(): SettingDefinitionItem[] {
+		return this.sections().map((section) => ({
+			type: "group",
+			heading: section.heading,
+			items: section.rows.map((row) => ({
+				name: row.name,
+				desc: row.desc,
+				aliases: row.aliases,
+				visible: row.visible,
+				render: (setting: Setting) => {
+					if (row.mount) {
+						setting.settingEl.empty();
+						setting.settingEl.addClass("agent-sessions-settings-block");
+						row.mount(setting.settingEl);
+						return;
+					}
+					row.render?.(setting);
+				},
+			})),
+		}));
+	}
+
+	/** Before Obsidian 1.13: the same sections, each under a heading row. */
+	display(): void {
+		const { containerEl } = this;
+		containerEl.empty();
+		for (const section of this.sections()) {
+			new Setting(containerEl).setName(section.heading).setHeading();
+			for (const row of section.rows) {
+				if (row.visible && !row.visible()) {
+					continue;
+				}
+				if (row.mount) {
+					row.mount(containerEl);
+					continue;
+				}
+				const setting = new Setting(containerEl).setName(row.name);
+				if (row.desc) {
+					setting.setDesc(row.desc);
+				}
+				row.render?.(setting);
+			}
+		}
+	}
+
+	/** Draws the open tab again after a change that alters what it shows. On Obsidian 1.13+
+	 * `update()` also re-reads the definitions, so names follow a change of language. */
+	private redraw(): void {
+		if (requireApiVersion("1.13.0")) {
+			this.update();
+		} else {
+			this.display();
+		}
+	}
+
+	/**
 	 * Section order: display (how the plugin
 	 * looks/reads) → input (how a session receives a keystroke) → other (everything else — paths,
 	 * sizes, counts with no natural home in the first two) → agents (which CLI to launch, and how)
@@ -2687,133 +2775,218 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 	 * settings are the most involved on the page — two sub-headings, six rows each) also means
 	 * every section above it is a short, uniform list, with nothing left to visually blend into.
 	 */
-	display(): void {
-		const { containerEl } = this;
-		containerEl.empty();
-
-		new Setting(containerEl).setName(t("settings.display.heading")).setHeading();
-
-		new Setting(containerEl)
-			.setName(t("settings.font.name"))
-			.addText((text) =>
-				text.setValue(this.plugin.settings.fontFamily).onChange(async (value) => {
-					this.plugin.settings.fontFamily = value;
-					await this.plugin.saveSettings();
-				})
-			);
-
-		new Setting(containerEl)
-			.setName(t("settings.fontSize.name"))
-			.addText((text) =>
-				text.setValue(String(this.plugin.settings.fontSize)).onChange(async (value) => {
-					const n = Number(value);
-					if (Number.isFinite(n) && n > 0) {
-						this.plugin.settings.fontSize = n;
-						await this.plugin.saveSettings();
-					}
-				})
-			);
-
-		new Setting(containerEl)
-			.setName(t("settings.padding.name"))
-			.addDropdown((dropdown) =>
-				dropdown
-					.addOptions({
-						comfortable: t("settings.padding.comfortable"),
-						compact: t("settings.padding.compact"),
-						none: t("settings.padding.none"),
-					})
-					.setValue(this.plugin.settings.padding)
-					.onChange(async (value) => {
-						this.plugin.settings.padding = value as AgentSessionsSettings["padding"];
-						await this.plugin.saveSettings();
-					})
-			);
-
-		this.renderLanguageSetting(containerEl);
-
-		new Setting(containerEl).setName(t("settings.input.heading")).setHeading();
-		this.renderSubmitKeySetting(containerEl);
-		this.renderEditorKeySetting(containerEl);
-
-		new Setting(containerEl).setName(t("settings.other.heading")).setHeading();
-
-		new Setting(containerEl)
-			.setName(t("settings.recentCount.name"))
-			.addText((text) =>
-				text.setValue(String(this.plugin.settings.recentCount)).onChange(async (value) => {
-					const n = Number(value);
-					if (Number.isFinite(n) && n >= 0) {
-						this.plugin.settings.recentCount = n;
-						await this.plugin.saveSettings();
-					}
-				})
-			);
-
-		new Setting(containerEl)
-			.setName(t("settings.notifyOnIdle.name"))
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.notifyOnIdle).onChange(async (value) => {
-					this.plugin.settings.notifyOnIdle = value;
-					await this.plugin.saveSettings();
-				})
-			);
-
-		this.renderBackendSetting(containerEl);
-		this.renderOnboardingSetting(containerEl);
-
-		new Setting(containerEl)
-			.setName(t("settings.agentSessionsPath.name"))
-			.setDesc(t("settings.agentSessionsPath.desc"))
-			.addText((text) =>
-				text.setValue(this.plugin.settings.agentSessionsPath).onChange(async (value) => {
-					this.plugin.settings.agentSessionsPath = value;
-					await this.plugin.saveSettings();
-				})
-			);
-
-		new Setting(containerEl)
-			.setName(t("settings.editorHeight.name"))
-			.setDesc(t("settings.editorHeight.desc"))
-			.addText((text) =>
-				text.setValue(String(this.plugin.settings.editorHeight)).onChange(async (value) => {
-					const n = Number(value);
-					if (Number.isFinite(n) && n >= 10 && n <= 90) {
-						this.plugin.settings.editorHeight = n;
-						await this.plugin.saveSettings();
-					}
-				})
-			);
-
-		new Setting(containerEl)
-			.setName(t("settings.scrollback.name"))
-			.addText((text) =>
-				text.setValue(String(this.plugin.settings.scrollback)).onChange(async (value) => {
-					const n = Number(value);
-					if (Number.isFinite(n) && n > 0) {
-						this.plugin.settings.scrollback = n;
-						await this.plugin.saveSettings();
-					}
-				})
-			);
-
-		new Setting(containerEl)
-			.setName(t("settings.organizeModel.name"))
-			.setDesc(t("settings.organizeModel.desc"))
-			.addDropdown((dropdown) =>
-				dropdown
-					.addOptions({
-						sonnet: t("settings.organizeModel.sonnet"),
-						haiku: t("settings.organizeModel.haiku"),
-					})
-					.setValue(this.plugin.settings.organizeModel)
-					.onChange(async (value) => {
-						this.plugin.settings.organizeModel = value as OrganizeModel;
-						await this.plugin.saveSettings();
-					})
-			);
-
-		this.renderAgentsSetting(containerEl);
+	private sections(): SettingsSection[] {
+		const keybindingsPath = this.plugin.keybindingsPath();
+		return [
+			{
+				heading: t("settings.display.heading"),
+				rows: [
+					{
+						name: t("settings.font.name"),
+						render: (setting) => {
+							setting.addText((text) =>
+								text.setValue(this.plugin.settings.fontFamily).onChange(async (value) => {
+									this.plugin.settings.fontFamily = value;
+									await this.plugin.saveSettings();
+								})
+							);
+						},
+					},
+					{
+						name: t("settings.fontSize.name"),
+						render: (setting) => {
+							setting.addText((text) =>
+								text.setValue(String(this.plugin.settings.fontSize)).onChange(async (value) => {
+									const n = Number(value);
+									if (Number.isFinite(n) && n > 0) {
+										this.plugin.settings.fontSize = n;
+										await this.plugin.saveSettings();
+									}
+								})
+							);
+						},
+					},
+					{
+						name: t("settings.padding.name"),
+						render: (setting) => {
+							setting.addDropdown((dropdown) =>
+								dropdown
+									.addOptions({
+										comfortable: t("settings.padding.comfortable"),
+										compact: t("settings.padding.compact"),
+										none: t("settings.padding.none"),
+									})
+									.setValue(this.plugin.settings.padding)
+									.onChange(async (value) => {
+										this.plugin.settings.padding = value as AgentSessionsSettings["padding"];
+										await this.plugin.saveSettings();
+									})
+							);
+						},
+					},
+					{
+						name: t("settings.language.name"),
+						render: (setting) => {
+							this.renderLanguageSetting(setting);
+						},
+					},
+				],
+			},
+			{
+				heading: t("settings.input.heading"),
+				rows: [
+					{ name: t("settings.submitKey.name"), render: (setting) => this.renderSubmitKeySetting(setting, keybindingsPath) },
+					{
+						name: t("settings.submitKeyMismatch.name"),
+						visible: () => this.submitKeyMismatched(keybindingsPath),
+						render: (setting) => this.renderSubmitKeyMismatch(setting),
+					},
+					{
+						name: t("settings.editorKey.name"),
+						desc: t("settings.editorKey.desc"),
+						render: (setting) => this.renderEditorKeySetting(setting, keybindingsPath),
+					},
+				],
+			},
+			{
+				heading: t("settings.other.heading"),
+				rows: [
+					{
+						name: t("settings.recentCount.name"),
+						render: (setting) => {
+							setting.addText((text) =>
+								text.setValue(String(this.plugin.settings.recentCount)).onChange(async (value) => {
+									const n = Number(value);
+									if (Number.isFinite(n) && n >= 0) {
+										this.plugin.settings.recentCount = n;
+										await this.plugin.saveSettings();
+									}
+								})
+							);
+						},
+					},
+					{
+						name: t("settings.notifyOnIdle.name"),
+						render: (setting) => {
+							setting.addToggle((toggle) =>
+								toggle.setValue(this.plugin.settings.notifyOnIdle).onChange(async (value) => {
+									this.plugin.settings.notifyOnIdle = value;
+									await this.plugin.saveSettings();
+								})
+							);
+						},
+					},
+					{ name: t("settings.backend.name"), render: (setting) => this.renderBackendSetting(setting) },
+					{
+						name: t("settings.onboarding.name"),
+						desc: t("settings.onboarding.desc"),
+						render: (setting) => this.renderOnboardingSetting(setting),
+					},
+					{
+						name: t("settings.onboardingImages.name"),
+						desc: t("settings.onboardingImages.desc"),
+						render: (setting) => {
+							setting.addToggle((toggle) =>
+								toggle.setValue(this.plugin.settings.onboardingImages).onChange(async (value) => {
+									this.plugin.settings.onboardingImages = value;
+									await this.plugin.saveSettings();
+								})
+							);
+						},
+					},
+					{
+						name: t("settings.onboardingOnUpdate.name"),
+						render: (setting) => {
+							setting.addToggle((toggle) =>
+								toggle.setValue(this.plugin.settings.onboardingOnUpdate).onChange(async (value) => {
+									this.plugin.settings.onboardingOnUpdate = value;
+									await this.plugin.saveSettings();
+								})
+							);
+						},
+					},
+					{
+						name: t("settings.agentSessionsPath.name"),
+						desc: t("settings.agentSessionsPath.desc"),
+						render: (setting) => {
+							setting.addText((text) =>
+								text.setValue(this.plugin.settings.agentSessionsPath).onChange(async (value) => {
+									this.plugin.settings.agentSessionsPath = value;
+									await this.plugin.saveSettings();
+								})
+							);
+						},
+					},
+					{
+						name: t("settings.editorHeight.name"),
+						desc: t("settings.editorHeight.desc"),
+						render: (setting) => {
+							setting.addText((text) =>
+								text.setValue(String(this.plugin.settings.editorHeight)).onChange(async (value) => {
+									const n = Number(value);
+									if (Number.isFinite(n) && n >= 10 && n <= 90) {
+										this.plugin.settings.editorHeight = n;
+										await this.plugin.saveSettings();
+									}
+								})
+							);
+						},
+					},
+					{
+						name: t("settings.scrollback.name"),
+						render: (setting) => {
+							setting.addText((text) =>
+								text.setValue(String(this.plugin.settings.scrollback)).onChange(async (value) => {
+									const n = Number(value);
+									if (Number.isFinite(n) && n > 0) {
+										this.plugin.settings.scrollback = n;
+										await this.plugin.saveSettings();
+									}
+								})
+							);
+						},
+					},
+					{
+						name: t("settings.organizeModel.name"),
+						desc: t("settings.organizeModel.desc"),
+						render: (setting) => {
+							setting.addDropdown((dropdown) =>
+								dropdown
+									.addOptions({
+										sonnet: t("settings.organizeModel.sonnet"),
+										haiku: t("settings.organizeModel.haiku"),
+									})
+									.setValue(this.plugin.settings.organizeModel)
+									.onChange(async (value) => {
+										this.plugin.settings.organizeModel = value as OrganizeModel;
+										await this.plugin.saveSettings();
+									})
+							);
+						},
+					},
+				],
+			},
+			{
+				heading: t("settings.agents.heading"),
+				rows: [
+					{
+						// The agents' rows are one block: each agent's heading carries its own toggle,
+						// and its rows dim and redraw together with it.
+						name: t("settings.agents.heading"),
+						desc: t("settings.agents.desc"),
+						aliases: [
+							...AGENT_IDS.map((id) => t(AGENT_DISPLAY_NAME_KEY[id])),
+							t("settings.agents.path.name"),
+							t("settings.agents.env.name"),
+							t("settings.agents.launchVia.name"),
+							t("settings.agents.ollamaModel.name"),
+							t("settings.agents.detect.name"),
+						],
+						mount: (el) => this.renderAgentsSetting(el),
+					},
+				],
+			},
+		];
 	}
 
 	/**
@@ -2840,7 +3013,6 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 
 		const redraw = (): void => {
 			sectionEl.empty();
-			new Setting(sectionEl).setName(t("settings.agents.heading")).setHeading();
 			sectionEl.createDiv({ cls: "setting-item-description agent-sessions-agents-desc", text: t("settings.agents.desc") });
 
 			for (const id of AGENT_IDS) {
@@ -3051,9 +3223,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 	 * below, or linked into `~/bin` by `install.sh`, is only reported — the plugin didn't put it
 	 * there, so it doesn't offer to replace or remove it.
 	 */
-	private renderBackendSetting(containerEl: HTMLElement): void {
+	private renderBackendSetting(setting: Setting): void {
 		const plugin = this.plugin;
-		const setting = new Setting(containerEl).setName(t("settings.backend.name"));
 		const bundled = plugin.bundled;
 		const inUse = plugin.agentSessionsPath();
 		if (!plugin.backendAvailable()) {
@@ -3062,7 +3233,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 				button
 					.setButtonText(t("action.installBackend"))
 					.setCta()
-					.onClick(() => plugin.openInstallBackend(() => this.display()))
+					.onClick(() => plugin.openInstallBackend(() => this.redraw()))
 			);
 			return;
 		}
@@ -3072,7 +3243,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		}
 		setting.setDesc(t("settings.backend.bundled", { dir: bundled.dir, python: bundled.python }));
 		setting.addButton((button) =>
-			button.setButtonText(t("action.reinstall")).onClick(() => plugin.openInstallBackend(() => this.display()))
+			button.setButtonText(t("action.reinstall")).onClick(() => plugin.openInstallBackend(() => this.redraw()))
 		);
 		setting.addButton((button) =>
 			button
@@ -3083,7 +3254,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 						void plugin.uninstallBackend().then(
 							() => {
 								new Notice(t("uninstall.done"));
-								this.display();
+								this.redraw();
 							},
 							(err: unknown) => new Notice(t("uninstall.failed", { error: String(err) }))
 						);
@@ -3092,38 +3263,18 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		);
 	}
 
-	/** The welcome guide: a button to open it, and whether it comes back after updates. */
-	private renderOnboardingSetting(containerEl: HTMLElement): void {
-		const guide = new Setting(containerEl).setName(t("settings.onboarding.name")).setDesc(t("settings.onboarding.desc"));
+	/** The welcome guide's buttons: continue it (while it can be), or show it from the start. */
+	private renderOnboardingSetting(guide: Setting): void {
 		if (canContinue(this.plugin.settings.onboardingProgress)) {
 			guide.addButton((button) =>
 				button.setCta().setButtonText(t("action.continueWelcome")).onClick(() => this.plugin.openOnboarding("continue"))
 			);
 		}
 		guide.addButton((button) => button.setButtonText(t("action.showWelcome")).onClick(() => this.plugin.openOnboarding("restart")));
-		new Setting(containerEl)
-			.setName(t("settings.onboardingImages.name"))
-			.setDesc(t("settings.onboardingImages.desc"))
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.onboardingImages).onChange(async (value) => {
-					this.plugin.settings.onboardingImages = value;
-					await this.plugin.saveSettings();
-				})
-			);
-		new Setting(containerEl)
-			.setName(t("settings.onboardingOnUpdate.name"))
-			.addToggle((toggle) =>
-				toggle.setValue(this.plugin.settings.onboardingOnUpdate).onChange(async (value) => {
-					this.plugin.settings.onboardingOnUpdate = value;
-					await this.plugin.saveSettings();
-				})
-			);
 	}
 
-	private renderLanguageSetting(containerEl: HTMLElement): void {
-		new Setting(containerEl)
-			.setName(t("settings.language.name"))
-			.addDropdown((dropdown) =>
+	private renderLanguageSetting(setting: Setting): void {
+		setting.addDropdown((dropdown) =>
 				dropdown
 					.addOptions(languageOptions())
 					.setValue(this.plugin.settings.language)
@@ -3131,7 +3282,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 						this.plugin.settings.language = value as AgentSessionsSettings["language"];
 						this.plugin.applyLanguage();
 						await this.plugin.saveSettings();
-						this.display();
+						this.redraw();
 					})
 			);
 	}
@@ -3152,10 +3303,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 	}
 
 	/** The submit-key setting. Reads `keybindings.json` and shows the current value every time this is opened. */
-	private renderSubmitKeySetting(containerEl: HTMLElement): void {
-		const keybindingsPath = this.plugin.keybindingsPath();
-
-		const setting = new Setting(containerEl).setName(t("settings.submitKey.name"));
+	private renderSubmitKeySetting(setting: Setting, keybindingsPath: string): void {
 		setting.descEl.createDiv({
 			text: t("settings.submitKey.desc"),
 		});
@@ -3168,14 +3316,12 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			dropdown.setValue(this.plugin.settings.submitKey);
 			dropdown.onChange((value) => {
 				const current = this.plugin.settings.submitKey;
-				if (!this.plugin.requestSubmitKey(value as SubmitKey, () => this.display())) {
-					// Revert the dropdown's appearance until confirmed (display() rebuilds it once applied).
+				if (!this.plugin.requestSubmitKey(value as SubmitKey, () => this.redraw())) {
+					// Revert the dropdown's appearance until confirmed (the redraw rebuilds it once applied).
 					dropdown.setValue(current);
 				}
 			});
 		});
-
-		this.renderSubmitKeyMismatch(containerEl, keybindingsPath);
 	}
 
 	/**
@@ -3185,9 +3331,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 	 * it out of the first two again (OpenCode's `editor_open` is written for every choice, since
 	 * its own default is a different key).
 	 */
-	private renderEditorKeySetting(containerEl: HTMLElement): void {
-		const keybindingsPath = this.plugin.keybindingsPath();
-
+	private renderEditorKeySetting(setting: Setting, keybindingsPath: string): void {
 		const applyAndSave = (next: EditorKey) => {
 			const result = applyEditorKey(keybindingsPath, next);
 			this.plugin.settings.editorKey = next;
@@ -3195,39 +3339,36 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			this.plugin.noticeConfigResult(result, "notice.keybindingsWritten");
 			this.plugin.noticeConfigResult(this.plugin.syncCodexConfig(), "notice.codexConfigWritten");
 			this.plugin.syncOpencodeTui();
-			this.display();
+			this.redraw();
 		};
 
-		new Setting(containerEl)
-			.setName(t("settings.editorKey.name"))
-			.setDesc(t("settings.editorKey.desc"))
-			.addDropdown((dropdown) => {
-				for (const key of EDITOR_KEYS) {
-					dropdown.addOption(key, editorKeyLabel(key, Platform.isMacOS));
+		setting.addDropdown((dropdown) => {
+			for (const key of EDITOR_KEYS) {
+				dropdown.addOption(key, editorKeyLabel(key, Platform.isMacOS));
+			}
+			dropdown.setValue(this.plugin.settings.editorKey);
+			dropdown.onChange((value) => {
+				const next = value as EditorKey;
+				const current = this.plugin.settings.editorKey;
+				if (next === current) {
+					return;
 				}
-				dropdown.setValue(this.plugin.settings.editorKey);
-				dropdown.onChange((value) => {
-					const next = value as EditorKey;
-					const current = this.plugin.settings.editorKey;
-					if (next === current) {
-						return;
-					}
-					if (next !== DEFAULT_SETTINGS.editorKey) {
-						const agents = this.plugin.settings.agents;
-						const vars = { key: editorKeyLabel(next, Platform.isMacOS) };
-						const message =
-							(agents.codex.enabled
-								? t("confirm.writeEditorKey.messageWithCodex", vars)
-								: t("confirm.writeEditorKey.message", vars)) +
-							(agents.opencode.enabled ? t("confirm.writeEditorKey.opencodeNote", vars) : "");
-						new ConfirmModal(this.app, message, t("action.write"), () => applyAndSave(next)).open();
-						// Revert the dropdown's appearance until confirmed (display() rebuilds it once applied).
-						dropdown.setValue(current);
-					} else {
-						applyAndSave(next);
-					}
-				});
+				if (next !== DEFAULT_SETTINGS.editorKey) {
+					const agents = this.plugin.settings.agents;
+					const vars = { key: editorKeyLabel(next, Platform.isMacOS) };
+					const message =
+						(agents.codex.enabled
+							? t("confirm.writeEditorKey.messageWithCodex", vars)
+							: t("confirm.writeEditorKey.message", vars)) +
+						(agents.opencode.enabled ? t("confirm.writeEditorKey.opencodeNote", vars) : "");
+					new ConfirmModal(this.app, message, t("action.write"), () => applyAndSave(next)).open();
+					// Revert the dropdown's appearance until confirmed (the redraw rebuilds it once applied).
+					dropdown.setValue(current);
+				} else {
+					applyAndSave(next);
+				}
 			});
+		});
 	}
 
 	/**
@@ -3235,15 +3376,14 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 	 * the file has `chat:newline` but the setting is still `enter`). "Match the file" runs
 	 * `syncSubmitKeyFromKeybindings()`.
 	 */
-	private renderSubmitKeyMismatch(containerEl: HTMLElement, keybindingsPath: string): void {
+	private submitKeyMismatched(keybindingsPath: string): boolean {
 		const info = readEnterMode(keybindingsPath);
 		const submitKey = this.plugin.settings.submitKey;
-		const mismatched = (info.mode === "newline" && submitKey === "enter") || (info.mode === "submit" && submitKey !== "enter");
-		if (!mismatched) {
-			return;
-		}
+		return (info.mode === "newline" && submitKey === "enter") || (info.mode === "submit" && submitKey !== "enter");
+	}
 
-		const setting = new Setting(containerEl).setName(t("settings.submitKeyMismatch.name"));
+	/** The row shown while `submitKeyMismatched`: what disagrees, and a button to match the file. */
+	private renderSubmitKeyMismatch(setting: Setting): void {
 		setting.descEl.createSpan({
 			text: t("settings.submitKeyMismatch.desc"),
 			cls: "agent-sessions-settings-mismatch",
@@ -3254,7 +3394,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 				if (changed) {
 					new Notice(t("notice.matchedKeybindings"));
 				}
-				this.display();
+				this.redraw();
 			})
 		);
 	}
