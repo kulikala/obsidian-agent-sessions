@@ -85,6 +85,21 @@ class DetectorTest(unittest.TestCase):
             self.assertEqual((h['remedy_kind'], h['change'], h['targets']),
                              ('fix', 'add', ['/work/vault/CLAUDE.md']))
 
+    def test_e01_fix_goes_to_the_repository_worked_on(self):
+        vault = os.path.join(self.root, 'v')
+        repo = os.path.join(self.root, 'repo')
+        os.makedirs(os.path.join(repo, '.git'))
+        os.makedirs(vault)
+        open(os.path.join(vault, 'CLAUDE.md'), 'w').close()
+        for _ in range(3):
+            t = self.session(cwd=vault)
+            t.read(os.path.join(repo, 'src', 'app.py'))
+            self.big_output(t, 4, command='npm test -- --all')
+            self.save(t)
+        hits = of(run(self.root), 'E01')
+        self.assertEqual(len(hits), 3)
+        self.assertEqual({tuple(h['targets']) for h in hits}, {(os.path.join(repo, 'CLAUDE.md'),)})
+
     # ---- E02
     def test_e02_large_context(self):
         t = self.session()

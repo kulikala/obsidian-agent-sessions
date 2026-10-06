@@ -109,21 +109,40 @@ def e01(analysed: List[dict], rng: Tuple[float, float]) -> List[dict]:
         for entry in by_call.values():
             call, tool, est, later = entry['call'], entry['tool'], entry['est'], entry['later']
             contrib = {impact.call_key(c): est * impact.P_READ for c in later}
+            owner = _e01_owner(s, call, tool)
             found.append(_hit(
                 'E01', s['id'], call['id'], call['ts'], chain=call['chain'],
                 task=_task_of(a, call),
                 metrics={'est_tokens': est, 'reads_after': len(later), 'results': entry['results']},
                 impact_w=est * len(later) * impact.P_READ,
                 impact_usd=sum(impact.read_usd(est, c.get('model')) for c in later),
-                _contrib=contrib, _group=(s['cwd'], tool['n'], tool.get('c', '')), _cwd=s['cwd']))
+                _contrib=contrib, _group=(owner, tool['n'], tool.get('c', '')), _owner=owner))
     groups: Dict[tuple, int] = {}
     for h in found:
         groups[h['_group']] = groups.get(h['_group'], 0) + 1
     for h in found:
         h['metrics']['repeats'] = groups[h['_group']]
-        if groups[h['_group']] >= E01_FIX_REPEATS and h['_cwd']:
-            h.update(remedy_kind='fix', change='add', targets=_claude_md(h['_cwd']))
+        if groups[h['_group']] >= E01_FIX_REPEATS and h['_owner']:
+            h.update(remedy_kind='fix', change='add', targets=[h['_owner']])
     return found
+
+
+def _e01_owner(s: dict, call: dict, tool: dict) -> Optional[str]:
+    """The instruction file a large result's rule belongs in (the same owner rule as E08): the
+    owner of the file read, or, for a command, of the last file that chain read or edited
+    before it (the repository being worked on); the session folder's own when there is none."""
+    path = normalize.abs_path(tool.get('p'), call.get('cwd') or s['cwd']) if tool.get('p') else None
+    if path is None:
+        for c in reversed([c for c in s['calls'] if c['chain'] == call['chain']
+                           and c['ts'] is not None and call['ts'] is not None and c['ts'] <= call['ts']]):
+            touched = [t for t in c['tools'] if t['k'] in ('read', 'edit') and t.get('p')]
+            if touched:
+                path = normalize.abs_path(touched[-1]['p'], c.get('cwd') or s['cwd'])
+                break
+    owner = owner_instructions(path) if path else None
+    if owner is None and s['cwd']:
+        owner = _claude_md(s['cwd'])[0]
+    return owner
 
 
 # ---- E02 -----------------------------------------------------------------------
