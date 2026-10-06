@@ -66,7 +66,7 @@ export const en = {
 	"model.alias.best": "Best available",
 	"model.alias.bestShort": "Best",
 	"model.alias.opusplan": "Opus Plan (Opus to plan, Sonnet to run)",
-	"effort.auto": "Auto (clear the saved level)",
+	"effort.auto": "Default",
 	"modal.changeModel.title": "Change model",
 	"modal.changeModel.model": "Model",
 	"modal.changeModel.current": "Now: {model} · {effort}",

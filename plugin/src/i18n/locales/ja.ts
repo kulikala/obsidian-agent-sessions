@@ -67,7 +67,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"model.alias.best": "最良のモデル",
 	"model.alias.bestShort": "最良",
 	"model.alias.opusplan": "Opus Plan（計画は Opus、実行は Sonnet）",
-	"effort.auto": "自動（保存したレベルを解除）",
+	"effort.auto": "デフォルト",
 	"modal.changeModel.title": "モデルを変更",
 	"modal.changeModel.model": "モデル",
 	"modal.changeModel.current": "現在: {model} · {effort}",

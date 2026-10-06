@@ -8,11 +8,11 @@ import { t, type MessageKey } from "../i18n";
 import { applyChipEditResult, composeName, filterCategories, tokenizeNameInput } from "../sessions/name";
 import { AGENT_IDS, type AgentId } from "../settings";
 import { splitName } from "../sessions/tree";
-import { effortLabel, modelAliasLabel } from "./modal-labels";
+import { addGroups, effortLabel, modelAliasLabel } from "./modal-labels";
 import {
-	EFFORT_CHOICES,
+	EFFORT_CHOICE_GROUPS,
 	KEEP,
-	MODEL_ALIASES,
+	MODEL_ALIAS_GROUPS,
 	OTHER_MODEL,
 	planModelChange,
 	preselectedEffort,
@@ -806,9 +806,7 @@ export class ChangeModelModal extends Modal {
 			if (this.model === KEEP) {
 				dd.addOption(KEEP, current.display ?? t("common.default"));
 			}
-			for (const alias of MODEL_ALIASES) {
-				dd.addOption(alias, modelAliasLabel(alias));
-			}
+			addGroups(dd.selectEl, MODEL_ALIAS_GROUPS, (alias) => dd.addOption(alias, modelAliasLabel(alias)));
 			dd.addOption(OTHER_MODEL, t("modal.changeModel.other"));
 			dd.setValue(this.model);
 			dd.onChange((value) => {
@@ -825,9 +823,7 @@ export class ChangeModelModal extends Modal {
 			if (this.effort === KEEP) {
 				dd.addOption(KEEP, current.effort ?? t("common.default"));
 			}
-			for (const level of EFFORT_CHOICES) {
-				dd.addOption(level, effortLabel(level));
-			}
+			addGroups(dd.selectEl, EFFORT_CHOICE_GROUPS, (level) => dd.addOption(level, effortLabel(level)));
 			dd.setValue(this.effort);
 			dd.onChange((value) => {
 				this.effort = value;

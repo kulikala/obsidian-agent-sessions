@@ -2954,8 +2954,8 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	white-space: nowrap;
 }
 
-/* A closed dropdown is as wide as the value it shows, not its longest option (the effort list
-   has "Auto (clear the saved level)"), up to a cap; a longer value is cut (its title carries the
+/* A closed dropdown is as wide as the value it shows, not its longest option (the model list
+   has "Opus Plan (Opus to plan, Sonnet to run)"), up to a cap; a longer value is cut (its title carries the
    full text). The open list still shows every option in full. */
 .agent-sessions-editor-select select {
 	flex: 0 0 auto;

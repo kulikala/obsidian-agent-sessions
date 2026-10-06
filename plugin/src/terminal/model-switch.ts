@@ -2,23 +2,22 @@
 // offer, which of the current values they preselect, and which commands a change needs. Pure,
 // so the planning can be tested without a session.
 
-/** `/model` aliases from Claude Code's docs; a full model id is also accepted ("Other…"). */
-export const MODEL_ALIASES = [
-	"default",
-	"best",
-	"fable",
-	"opus",
-	"sonnet",
-	"haiku",
-	"sonnet[1m]",
-	"opus[1m]",
-	"opusplan",
-] as const;
+/** `/model` aliases from Claude Code's docs, as the dropdowns list them: the choices that pick a
+ * model for you, then the families from the most capable down, the groups separated by a line.
+ * A full model id is also accepted ("Other…"). */
+export const MODEL_ALIAS_GROUPS: readonly (readonly string[])[] = [
+	["default", "best", "opusplan"],
+	["fable", "opus", "opus[1m]", "sonnet", "sonnet[1m]", "haiku"],
+];
+export const MODEL_ALIASES: readonly string[] = MODEL_ALIAS_GROUPS.flat();
 
-/** `/effort` levels; `max` lasts for the session only. `auto` clears the saved level. */
+/** `/effort` levels; `max` lasts for the session only. `auto` clears the saved level, which is
+ * Claude Code's default, so it is labelled "Default". */
 export const EFFORT_LEVELS = ["low", "medium", "high", "xhigh", "max"] as const;
 export const EFFORT_AUTO = "auto";
-export const EFFORT_CHOICES: readonly string[] = [...EFFORT_LEVELS, EFFORT_AUTO];
+/** The effort dropdowns' groups: the default, then the levels from the highest down. */
+export const EFFORT_CHOICE_GROUPS: readonly (readonly string[])[] = [[EFFORT_AUTO], [...EFFORT_LEVELS].reverse()];
+export const EFFORT_CHOICES: readonly string[] = EFFORT_CHOICE_GROUPS.flat();
 
 /** The "keep as is" value of both dropdowns, offered when the current value can't be told. */
 export const KEEP = "";

@@ -35,3 +35,13 @@ export function modelAliasShortLabel(alias: string): string {
 export function effortLabel(level: string): string {
 	return level === EFFORT_AUTO ? t("effort.auto") : level;
 }
+
+/** Adds grouped options to a dropdown through `add`, with a line between one group and the next. */
+export function addGroups(select: HTMLSelectElement, groups: readonly (readonly string[])[], add: (value: string) => void): void {
+	groups.forEach((values, i) => {
+		if (i > 0) {
+			select.createEl("hr");
+		}
+		values.forEach(add);
+	});
+}

@@ -16,16 +16,16 @@ import { indentEdit } from "../terminal/indent";
 import { classifyEnter, submitKeyButtonLabel } from "../terminal/keys";
 import type { SubmitKey } from "../settings";
 import {
-	EFFORT_CHOICES,
+	EFFORT_CHOICE_GROUPS,
 	KEEP,
-	MODEL_ALIASES,
+	MODEL_ALIAS_GROUPS,
 	preselectedEffort,
 	preselectedModel,
 	type CurrentModel,
 	type ModelChoice,
 } from "../terminal/model-switch";
 import { noteKey } from "../terminal/reload-safety";
-import { effortLabel, modelAliasLabel, modelAliasShortLabel } from "../ui/modal-labels";
+import { addGroups, effortLabel, modelAliasLabel, modelAliasShortLabel } from "../ui/modal-labels";
 
 export type EditResult = "send" | "return" | "cancel";
 
@@ -186,8 +186,8 @@ export class EditorPane {
 		bar.createSpan({ cls: "agent-sessions-editor-file", text: path.basename(this.file) });
 		const current = this.deps.model;
 		if (current) {
-			this.modelSelect = this.addSelect(bar, t("editor.model"), preselectedModel(current), current.display, MODEL_ALIASES, modelAliasShortLabel, "is-model", modelAliasLabel);
-			this.effortSelect = this.addSelect(bar, t("editor.effort"), preselectedEffort(current), current.effort, EFFORT_CHOICES, effortLabel, "is-effort");
+			this.modelSelect = this.addSelect(bar, t("editor.model"), preselectedModel(current), current.display, MODEL_ALIAS_GROUPS, modelAliasShortLabel, "is-model", modelAliasLabel);
+			this.effortSelect = this.addSelect(bar, t("editor.effort"), preselectedEffort(current), current.effort, EFFORT_CHOICE_GROUPS, effortLabel, "is-effort");
 		}
 		const send = bar.createEl("button", {
 			text: t("action.send", { key: submitKeyButtonLabel(this.deps.submitKey, this.deps.isMac) }),
@@ -227,7 +227,8 @@ export class EditorPane {
 		label: string,
 		selected: string,
 		currentText: string | null,
-		options: readonly string[],
+		/** The options in groups; a line separates one group from the next. */
+		groups: readonly (readonly string[])[],
 		labelOf: (value: string) => string,
 		cls: string,
 		/** The full text, shown as each option's (and the closed dropdown's) tooltip. */
@@ -239,9 +240,9 @@ export class EditorPane {
 		if (selected === KEEP) {
 			select.createEl("option", { value: KEEP, text: currentText ?? t("editor.keepCurrent") });
 		}
-		for (const value of options) {
+		addGroups(select, groups, (value) => {
 			select.createEl("option", { value, text: labelOf(value), attr: { title: fullLabelOf(value) } });
-		}
+		});
 		select.value = selected;
 		const showFull = () => {
 			select.title = select.value === KEEP ? (currentText ?? t("editor.keepCurrent")) : fullLabelOf(select.value);

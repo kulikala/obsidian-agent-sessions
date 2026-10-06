@@ -14,8 +14,8 @@ const opusMedium = { display: "Opus 5.5", effort: "medium" };
 
 describe("lists", () => {
 	it("offers Claude Code's aliases and effort levels", () => {
-		expect([...MODEL_ALIASES]).toEqual(["default", "best", "fable", "opus", "sonnet", "haiku", "sonnet[1m]", "opus[1m]", "opusplan"]);
-		expect(EFFORT_CHOICES).toEqual(["low", "medium", "high", "xhigh", "max", "auto"]);
+		expect([...MODEL_ALIASES]).toEqual(["default", "best", "opusplan", "fable", "opus", "opus[1m]", "sonnet", "sonnet[1m]", "haiku"]);
+		expect(EFFORT_CHOICES).toEqual(["auto", "max", "xhigh", "high", "medium", "low"]);
 	});
 });
 
