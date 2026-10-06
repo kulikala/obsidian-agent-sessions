@@ -19,6 +19,10 @@ class Session:
     # cli/json_output.py's _session_dict for why scan rows never carry them for claude).
     model: Optional[str] = None
     effort: Optional[str] = None
+    # Claude Code only (sessions/scan.py's `read_after_compact`): `'clean'` while nothing but
+    # local commands has followed the last compaction, `'input'` once a prompt has been sent
+    # but not yet answered, `None` otherwise.
+    after_compact: Optional[str] = None
 
 
 @dataclass

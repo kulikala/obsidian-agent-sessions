@@ -120,7 +120,7 @@ The tab, the side panel and the Session manager show the same icon, color and mo
 | **Waiting for your answer** | a question or permission prompt is open |
 | **Waiting for input** | it finished responding and you have not looked at the tab yet |
 | **Editing** | the built-in editor is open |
-| **Compacted (context was reset)** | `/compact` just ran |
+| **Compacted (context was reset)** | `/compact` ran and nothing has been sent to the model since — renaming, changing the model or effort, `/reload-plugins` or ending and resuming the session keep this state |
 | **Idle** | nothing is happening |
 | **Not connected** | the tab exists but is not connected yet |
 | **Exited** | the agent has exited |

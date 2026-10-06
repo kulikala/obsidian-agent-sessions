@@ -1,7 +1,7 @@
 // Tallies sessions that need the user's attention (pure functions). Priority order, highest
 // first: needs-input (asking — Claude is waiting on an answer: AskUserQuestion, a permission
 // prompt, etc.) then needs-review (waiting — went busy→idle but that tab hasn't been brought to
-// front yet — or compacted — just /compact'd, no next instruction sent yet). Grouped via
+// front yet — or compacted — just /compact'd, nothing sent to the model since). Grouped via
 // `terminal-status.ts`'s `statusGroup`, the same classification the manager's status filter
 // uses. No dependency on `obsidian` (tested in test/attention.test.ts).
 

@@ -127,7 +127,7 @@ sequenceDiagram
     Row->>Row: icon/color/motion + StatusGroup update
 ```
 
-`asking` is read straight from Claude Code's own `waiting` value in the ledger — no hook involved. `compacted` has no ledger field, so it's the one state detected purely through a hook (`SessionStart` with `source=compact`, cleared on the next prompt). Full mapping: [`design.md` §7.5](design.md#75-tab-state-and-icons) and the status model in §4 below.
+`asking` is read straight from Claude Code's own `waiting` value in the ledger — no hook involved. `compacted` has no ledger field, so it's detected through a hook (`SessionStart` with `source=compact`, cleared on the next prompt) and the transcript (`json scan`'s `after_compact`: only local commands since the last compaction), which keeps it through `/rename`, `/model`, an exit or a resume. Full mapping: [`design.md` §7.5](design.md#75-tab-state-and-icons) and the status model in §4 below.
 
 ### 3.3 Naming (`/rename`)
 
@@ -180,7 +180,7 @@ Every terminal tab, side-panel row, and manager row computes the same fine-grain
 | `running-shell` | Ledger `status: "shell"` | `running` |
 | `working` | Ledger `status: "busy"` | `running` |
 | `waiting` | After `busy → idle`, before the tab has been brought to front | `needs-review` |
-| `compacted` | Just after `/compact` (manual or automatic), until the next prompt | `needs-review` |
+| `compacted` | Just after `/compact` (manual or automatic), until a prompt the model answers (local commands keep it) | `needs-review` |
 | `detached` | Tab exists but isn't connected | `done` |
 | `idle` | Connected and idle | `done` |
 

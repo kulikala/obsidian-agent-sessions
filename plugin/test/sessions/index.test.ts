@@ -522,5 +522,61 @@ describe("SessionIndex", () => {
 			expect(changes).toBe(1);
 			expect(index.sessions.get("a")?.compacted).toBe(false);
 		});
+
+		it("stays compacted from the transcript (after_compact) once the marker is gone — /rename, /model, a resume", async () => {
+			scanImpl = async () => ({
+				sessions: [scanSession({ id: "a", after_compact: "clean" }), scanSession({ id: "b" })],
+				store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+			});
+			const index = new SessionIndex(deps);
+			await index.scan();
+
+			expect(index.sessions.get("a")?.compacted).toBe(true);
+			expect(index.isCompacted("a")).toBe(true);
+			expect(index.sessions.get("b")?.compacted).toBe(false);
+		});
+
+		it("an unanswered prompt after the compaction counts only while the statusLine's ctx reads 0%", async () => {
+			mkdirSync(deps.statusDir, { recursive: true });
+			writeFileSync(join(deps.statusDir, "a.json"), JSON.stringify({ context_window: { used_percentage: 0 } }), "utf8");
+			writeFileSync(join(deps.statusDir, "b.json"), JSON.stringify({ context_window: { used_percentage: 3 } }), "utf8");
+			scanImpl = async () => ({
+				sessions: [
+					scanSession({ id: "a", after_compact: "input" }),
+					scanSession({ id: "b", after_compact: "input" }),
+					scanSession({ id: "c", after_compact: "input" }),
+				],
+				store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+			});
+			const index = new SessionIndex(deps);
+			await index.scan();
+
+			expect(index.sessions.get("a")?.compacted).toBe(true);
+			expect(index.sessions.get("b")?.compacted).toBe(false);
+			expect(index.sessions.get("c")?.compacted).toBe(false);
+		});
+
+		it("a rescan that finds the model's reply clears it", async () => {
+			let after: "clean" | undefined = "clean";
+			scanImpl = async () => ({
+				sessions: [scanSession({ id: "a", after_compact: after })],
+				store: { folded: [], archived: [], pendingRenames: {}, sessions: {} },
+			});
+			const index = new SessionIndex(deps);
+			await index.scan();
+			expect(index.sessions.get("a")?.compacted).toBe(true);
+
+			after = undefined;
+			await index.rescan(["a"]);
+			expect(index.sessions.get("a")?.compacted).toBe(false);
+		});
+
+		it("isCompacted falls back to the marker for an id with no row", () => {
+			mkdirSync(deps.compactedDir, { recursive: true });
+			writeFileSync(join(deps.compactedDir, "t.json"), JSON.stringify({ compactedAt: 1 }), "utf8");
+			const index = new SessionIndex(deps);
+			expect(index.isCompacted("t")).toBe(true);
+			expect(index.isCompacted("u")).toBe(false);
+		});
 	});
 });

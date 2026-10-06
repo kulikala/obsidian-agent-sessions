@@ -2084,10 +2084,11 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * Whether the session has just been compacted and no instruction has been sent since — the
-	 * just-compacted marker (`CompactedTracker`), which the SessionStart(compact) hook sets and
-	 * the next prompt clears. Not the transcript's most recent slash command: that stays `/compact`
-	 * through any number of ordinary prompts afterwards.
+	 * Whether the session has just been compacted and no instruction has been sent since —
+	 * `row.compacted` (`compacted.ts`'s `isCompacted`: the SessionStart(compact) marker, or the
+	 * transcript's `after_compact`, which local commands such as `/rename` don't clear). Not the
+	 * transcript's most recent slash command: that stays `/compact` through any number of ordinary
+	 * prompts afterwards.
 	 */
 	isJustCompacted(id: string): boolean {
 		return this.index.sessions.get(id)?.compacted === true;

@@ -47,7 +47,7 @@ export interface TerminalStatusInput {
 	titleStatus?: "working" | "asking" | null;
 	/**
 	 * Right after a compact (manual `/compact` or automatic context compaction), before the next
-	 * instruction has been sent (`CompactedTracker`). Kept as its own state rather than folded
+	 * instruction the model answers (`SessionIndex.isCompacted`; local commands don't count). Kept as its own state rather than folded
 	 * into "waiting for input" (`waiting`), since the context having just been reset is a
 	 * distinct thing to signal.
 	 */

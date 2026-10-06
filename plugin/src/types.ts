@@ -20,7 +20,14 @@ export interface ScanSession {
 	 * effort columns). */
 	model?: string;
 	effort?: string;
+	/** Claude only, additive: present while the transcript's last compaction hasn't been answered
+	 * by the model (`sessions/compacted.ts`'s `isCompacted`). */
+	after_compact?: AfterCompact;
 }
+
+/** What has followed the last compaction (`agentsessions/sessions/scan.py`'s `read_after_compact`):
+ * `"clean"` — only local commands; `"input"` — a prompt with no reply yet. */
+export type AfterCompact = "clean" | "input";
 
 /** One archived entry in `sessions.json`. */
 export interface ArchivedSession {

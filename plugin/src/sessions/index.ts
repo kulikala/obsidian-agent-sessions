@@ -5,7 +5,7 @@
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import { assignCategoryColor, ensureCategoryColors } from "./category";
-import { CompactedTracker } from "./compacted";
+import { CompactedTracker, isCompacted } from "./compacted";
 import { listCategories } from "./name";
 import { Registry } from "./registry";
 import { StatusLine } from "./statusline";
@@ -17,7 +17,8 @@ export interface Row extends ScanSession {
 	status: string | null;
 	/** The reason when `status === "waiting"` (claude's own "asking"). `null` otherwise. */
 	waitingFor: string | null;
-	/** Whether the session just compacted and hasn't had the next instruction sent yet (`CompactedTracker`). */
+	/** Whether the session's last substantive input is a compaction (`compacted.ts`'s `isCompacted`:
+	 * the `CompactedTracker` marker, or the scan's `after_compact` with the statusLine's ctx). */
 	compacted: boolean;
 	pid: number | null;
 	rc: boolean;
@@ -547,10 +548,21 @@ export class SessionIndex extends EventEmitter {
 		}
 	}
 
-	/** Applies the just-compacted marker to rows. Same shape as `applyRegistry`. */
+	/**
+	 * Whether `id` counts as compacted (`isCompacted`). For an id with no row yet (a tab whose
+	 * session hasn't been scanned), only the marker can say.
+	 */
+	isCompacted(id: string): boolean {
+		const row = this.sessions.get(id);
+		return row ? row.compacted : this.compactedTracker.has(id);
+	}
+
+	/** Applies `isCompacted` to rows. Same shape as `applyRegistry`. The statusLine's ctx is read
+	 * only for a row whose scan says `after_compact: "input"`. */
 	private applyCompacted(): void {
 		for (const row of this.sessions.values()) {
-			row.compacted = this.compactedTracker.has(row.id);
+			const ctx = row.after_compact === "input" ? this.statusline.get(row.id)?.ctxPercent : undefined;
+			row.compacted = isCompacted(this.compactedTracker.has(row.id), row.after_compact, ctx);
 		}
 	}
 }
