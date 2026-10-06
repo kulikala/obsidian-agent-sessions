@@ -155,6 +155,7 @@ import {
 import { UsageModal } from "./usage/usage-modal";
 import { writeVaultState } from "./backend/vault-state";
 import { ActivityView, VIEW_TYPE_ACTIVITY } from "./views/activity";
+import { syncTabGoalMark } from "./views/goal-render";
 import { ManagerView, VIEW_TYPE_MANAGER } from "./views/manager";
 import { SideView, VIEW_TYPE_SIDE } from "./views/side";
 import { TerminalView } from "./views/terminal";
@@ -2655,6 +2656,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			if (titleEl) {
 				titleEl.setText(name);
 			}
+			syncTabGoalMark(headerEl, row?.goal, status);
 			const iconEl = headerEl?.querySelector<HTMLElement>(".workspace-tab-header-inner-icon");
 			if (!iconEl) {
 				continue;

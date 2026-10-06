@@ -479,6 +479,13 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"detail.tools": "ツール",
 	"detail.folder": "フォルダ",
 
+	// ---- /goal (sessions/goal.ts) ----
+	"goal.active": "ゴール進行中",
+	"goal.met": "ゴール達成",
+	"goal.failed": "ゴール到達不能と判定",
+	"goal.reason": "判定",
+	"goal.since": "{time} に設定",
+
 	// ---- Rate-limit view (views/limits.ts) ----
 	"limits.countdownDays": "{days} 日 {h}:{mm}",
 

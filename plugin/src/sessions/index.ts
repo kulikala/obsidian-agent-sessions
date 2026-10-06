@@ -6,6 +6,7 @@ import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
 import { assignCategoryColor, ensureCategoryColors } from "./category";
 import { CompactedTracker } from "./compacted";
+import { goalNeedsRescan } from "./goal";
 import { listCategories } from "./name";
 import { Registry } from "./registry";
 import { StatusLine } from "./statusline";
@@ -137,6 +138,7 @@ export class SessionIndex extends EventEmitter {
 	private eventsDebounce: number | null = null;
 	private registryUnsubscribe: () => void;
 	private registryIdleUnsubscribe: () => void;
+	private registryBusyUnsubscribe: () => void;
 	private compactedUnsubscribe: () => void;
 	private liveDebounce: number | null = null;
 
@@ -156,7 +158,11 @@ export class SessionIndex extends EventEmitter {
 		});
 		// Drop the detail cache on busy→idle (including right after sending /compact or
 		// /rename) so the next getDetail re-reads the new last_command, last_user, etc.
-		this.registryIdleUnsubscribe = this.registry.onIdle((id) => this.invalidateDetail(id));
+		this.registryIdleUnsubscribe = this.registry.onIdle((id) => {
+			this.invalidateDetail(id);
+			this.rescanForGoal("idle", id);
+		});
+		this.registryBusyUnsubscribe = this.registry.onBusy((id) => this.rescanForGoal("busy", id));
 		this.eventsOffset = this.currentEventsLogSize();
 	}
 
@@ -274,6 +280,13 @@ export class SessionIndex extends EventEmitter {
 	/** Drops `id`'s detail cache entry. The next `getDetail`/`getCachedDetail` re-fetches it. */
 	invalidateDetail(id: string): void {
 		this.detailCache.delete(id);
+	}
+
+	/** Rescans `id` when a `/goal` may just have been set or evaluated (`goalNeedsRescan`). */
+	private rescanForGoal(transition: "busy" | "idle", id: string): void {
+		if (goalNeedsRescan(transition, this.sessions.get(id))) {
+			void this.rescan([id]);
+		}
 	}
 
 	/** A full scan (same as `rescan()`). */
@@ -449,6 +462,7 @@ export class SessionIndex extends EventEmitter {
 	dispose(): void {
 		this.registryUnsubscribe();
 		this.registryIdleUnsubscribe();
+		this.registryBusyUnsubscribe();
 		this.compactedUnsubscribe();
 		if (this.timer) {
 			window.clearInterval(this.timer);

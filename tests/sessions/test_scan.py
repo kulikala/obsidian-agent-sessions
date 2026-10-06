@@ -2,7 +2,8 @@ import json, os, tempfile, unittest
 from unittest import mock
 
 from agentsessions.sessions import scan as scan_module
-from agentsessions.sessions.scan import list_transcripts, scan_names, read_head, scan
+from agentsessions.sessions.scan import (apply_goal_status, list_transcripts, read_head, scan, scan_names,
+                                         scan_names_and_goals)
 
 ID1 = '11111111-1111-1111-1111-111111111111'
 ID2 = '22222222-2222-2222-2222-222222222222'
@@ -135,6 +136,139 @@ class TestScan(unittest.TestCase):
     def test_title_grep_cmd_none_when_neither_available(self):
         with mock.patch('agentsessions.sessions.scan.shutil.which', return_value=None):
             self.assertIsNone(scan_module._title_grep_cmd())
+
+
+def goal_line(ts, **attachment):
+    return {'parentUuid': None, 'isSidechain': False, 'type': 'attachment', 'timestamp': ts,
+            'attachment': dict({'type': 'goal_status'}, **attachment)}
+
+
+T0 = '2026-10-01T00:00:00.000Z'
+T1 = '2026-10-01T00:10:00.000Z'
+T2 = '2026-10-01T00:20:00.000Z'
+T3 = '2026-10-01T00:30:00.000Z'
+E0 = 1790812800.0   # T0 in epoch seconds
+
+
+class TestGoal(unittest.TestCase):
+    """`/goal` as Claude Code records it: attachment lines of type `goal_status`."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.proj = os.path.join(self.tmp.name, '-Users-k-vault')
+        os.makedirs(self.proj)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def goals(self, records, python=False):
+        write_jsonl(os.path.join(self.proj, ID1 + '.jsonl'),
+                    [{'type': 'user', 'cwd': '/x', 'message': {'role': 'user', 'content': 'q'}}] + records)
+        paths = list_transcripts(self.tmp.name)
+        if python:
+            with mock.patch('agentsessions.sessions.scan.shutil.which', return_value=None):
+                return scan_names_and_goals(paths)[1].get(ID1)
+        return scan_names_and_goals(paths)[1].get(ID1)
+
+    def test_no_goal(self):
+        self.assertIsNone(self.goals([]))
+
+    def test_set(self):
+        g = self.goals([goal_line(T0, met=False, sentinel=True, condition='finish the plan')])
+        self.assertEqual(g, {'condition': 'finish the plan', 'met': False, 'reason': None,
+                             'since': E0, 'updated': E0})
+
+    def test_unmet_evaluation_keeps_since_and_carries_the_reason(self):
+        g = self.goals([
+            goal_line(T0, met=False, sentinel=True, condition='c'),
+            goal_line(T1, met=False, condition='c', reason='T-12 onward not started'),
+        ])
+        self.assertFalse(g['met'])
+        self.assertEqual(g['reason'], 'T-12 onward not started')
+        self.assertEqual(g['since'], E0)
+        self.assertEqual(g['updated'], E0 + 600)
+
+    def test_met(self):
+        g = self.goals([
+            goal_line(T0, met=False, sentinel=True, condition='c'),
+            goal_line(T1, met=False, condition='c', reason='not yet'),
+            goal_line(T2, met=True, condition='c', reason='all done', iterations=2, durationMs=1, tokens=1),
+        ])
+        self.assertTrue(g['met'])
+        self.assertEqual(g['reason'], 'all done')
+        self.assertEqual(g['since'], E0)
+        self.assertNotIn('failed', g)
+
+    def test_cleared(self):
+        # `/goal clear` appends a sentinel with met: true.
+        self.assertIsNone(self.goals([
+            goal_line(T0, met=False, sentinel=True, condition='c'),
+            goal_line(T1, met=True, sentinel=True, condition='c'),
+        ]))
+
+    def test_replaced_by_a_new_goal(self):
+        g = self.goals([
+            goal_line(T0, met=False, sentinel=True, condition='old'),
+            goal_line(T1, met=False, condition='old', reason='not yet'),
+            goal_line(T2, met=False, sentinel=True, condition='new'),
+        ])
+        self.assertEqual(g['condition'], 'new')
+        self.assertIsNone(g['reason'])
+        self.assertEqual(g['since'], E0 + 1200)
+
+    def test_new_goal_after_a_met_one(self):
+        g = self.goals([
+            goal_line(T0, met=False, sentinel=True, condition='c'),
+            goal_line(T1, met=True, condition='c', reason='done'),
+            goal_line(T2, met=False, sentinel=True, condition='c'),
+        ])
+        self.assertFalse(g['met'])
+        self.assertEqual(g['since'], E0 + 1200)
+
+    def test_resent_sentinel_keeps_since(self):
+        # Claude Code re-sends the sentinel for the goal still active (on resume, after compaction).
+        g = self.goals([
+            goal_line(T0, met=False, sentinel=True, condition='c'),
+            goal_line(T1, met=False, condition='c', reason='not yet'),
+            goal_line(T3, met=False, sentinel=True, condition='c'),
+        ])
+        self.assertEqual(g['since'], E0)
+        self.assertEqual(g['reason'], 'not yet')
+
+    def test_failed(self):
+        g = self.goals([
+            goal_line(T0, met=False, sentinel=True, condition='c'),
+            goal_line(T1, met=False, failed=True, condition='c', reason='cannot be done'),
+        ])
+        self.assertFalse(g['met'])
+        self.assertTrue(g['failed'])
+
+    def test_reason_is_cut(self):
+        g = self.goals([goal_line(T0, met=False, condition='c', reason='x' * 5000)])
+        self.assertEqual(len(g['reason']), scan_module.GOAL_REASON_CHARS)
+
+    def test_quoted_text_is_not_a_goal(self):
+        # A tool result quoting a goal line has it escaped inside a string, never as a bare key.
+        quoted = json.dumps(goal_line(T0, met=False, sentinel=True, condition='c'))
+        self.assertIsNone(self.goals([{'type': 'user', 'message': {'role': 'user', 'content': quoted}}]))
+
+    def test_python_fallback_agrees(self):
+        records = [
+            goal_line(T0, met=False, sentinel=True, condition='c'),
+            goal_line(T1, met=True, condition='c', reason='done'),
+        ]
+        self.assertEqual(self.goals(records, python=True), self.goals(records))
+
+    def test_scan_sets_session_goal_and_names_still_work(self):
+        self.goals([{'type': 'custom-title', 'customTitle': 'A: b', 'sessionId': ID1},
+                    goal_line(T0, met=False, sentinel=True, condition='c')])
+        s = scan(list_transcripts(self.tmp.name))[ID1]
+        self.assertEqual(s.name, 'A: b')
+        self.assertEqual(s.goal['condition'], 'c')
+
+    def test_apply_ignores_other_attachments(self):
+        g = {'condition': 'c', 'met': False, 'reason': None, 'since': 1.0, 'updated': 1.0}
+        self.assertIs(apply_goal_status(g, {'type': 'attachment', 'attachment': {'type': 'file'}}), g)
 
 
 class TestLastActivity(unittest.TestCase):

@@ -54,6 +54,7 @@ import {
 import { readObsidianTheme } from "../terminal/theme";
 import type { DaemonSession } from "../types";
 import { EditorPane, type EditResult } from "./editor-pane";
+import { syncTabGoalMark } from "./goal-render";
 import { planEditorSend } from "../terminal/model-switch";
 import { submitsAfterEdit } from "../backend/edit-server";
 
@@ -1456,6 +1457,11 @@ export class TerminalView extends ItemView {
 			this.icon = icon;
 			this.updateHeader();
 		}
+		syncTabGoalMark(
+			(this.leaf as unknown as { tabHeaderEl?: HTMLElement }).tabHeaderEl,
+			this.plugin.index.sessions.get(this.id)?.goal,
+			status
+		);
 		const iconEl = this.headerIconEl();
 		if (!iconEl) {
 			return;

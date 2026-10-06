@@ -1217,6 +1217,46 @@
 	overflow: hidden;
 }
 
+/* The `/goal` card (`renderGoal`): a coloured left edge for its state, the mark and state in the
+   label line, then the condition and the evaluator's reason (muted, smaller). */
+.agent-sessions-detail-goal {
+	border-left: 3px solid var(--color-purple, #8b5cf6);
+}
+
+.agent-sessions-detail-goal.is-met {
+	border-left-color: var(--color-green, #2e9e5b);
+}
+
+.agent-sessions-detail-goal.is-failed {
+	border-left-color: var(--background-modifier-border);
+}
+
+.agent-sessions-detail-goal-head {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+}
+
+.agent-sessions-detail-goal-since {
+	margin-inline-start: auto;
+	color: var(--text-faint);
+}
+
+.agent-sessions-detail-goal-reason {
+	margin-top: var(--size-2-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.agent-sessions-detail-goal-reason.is-clamped {
+	display: -webkit-box;
+	-webkit-line-clamp: 3;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+
 .agent-sessions-detail-field {
 	margin-bottom: var(--size-4-1);
 }
@@ -1572,12 +1612,63 @@
 	color: var(--text-faint);
 }
 
+/* A session's `/goal` (`sessions/goal.ts`): a small extra mark next to the name in rows and the
+   tab header, never in place of the state mark. Purple while active — a colour no state uses — and
+   breathing slowly (opacity) only while the session is running (`is-live`), so it reads as "this
+   work has a target" without competing with the state mark's spin or pulse. Green and still once
+   the evaluator found it met; faint once it judged it unreachable. */
+@keyframes agent-sessions-goal-breathe {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.45;
+	}
+}
+
+.agent-sessions-goal-mark {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex: 0 0 auto;
+	width: 14px;
+	height: 14px;
+}
+
+.agent-sessions-goal-mark svg {
+	width: 14px;
+	height: 14px;
+}
+
+.agent-sessions-goal-active {
+	color: var(--color-purple, #8b5cf6);
+}
+
+.agent-sessions-goal-active.is-live {
+	animation: agent-sessions-goal-breathe 2.4s ease-in-out infinite;
+}
+
+.agent-sessions-goal-met {
+	color: var(--color-green, #2e9e5b);
+}
+
+.agent-sessions-goal-failed {
+	color: var(--text-faint);
+}
+
+/* In the tab header, after the title (`syncTabGoalMark`). */
+.agent-sessions-tab-goal {
+	margin-inline-start: var(--size-4-1);
+}
+
 @media (prefers-reduced-motion: reduce) {
 	.agent-sessions-status-connecting svg,
 	.agent-sessions-status-working svg,
 	.agent-sessions-status-running-shell,
 	.agent-sessions-status-asking,
-	.agent-sessions-status-waiting {
+	.agent-sessions-status-waiting,
+	.agent-sessions-goal-active.is-live {
 		animation: none;
 	}
 }

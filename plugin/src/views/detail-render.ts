@@ -17,6 +17,10 @@ import { t } from "../i18n";
 import type { Row } from "../sessions/index";
 import type { UsageTotal } from "../types";
 import { categoryAndLabel, totalTokens, type DetailContext } from "./detail";
+import { GOAL_LABEL_KEY, goalState } from "../sessions/goal";
+import type { SessionGoal } from "../types";
+import { renderGoalMark } from "./goal-render";
+import { formatTime } from "./rows";
 
 const USAGE_TTL_MS = 60000;
 const usageCache = new Map<string, { at: number; total: UsageTotal | null }>();
@@ -130,6 +134,34 @@ function renderCard(container: HTMLElement, label: string, value: string | null 
 	});
 }
 
+/**
+ * The session's `/goal`: its state with the goal mark, when it was set, the condition, and the
+ * evaluator's latest reason (both clamped like the cards below; click to expand).
+ */
+function renderGoal(container: HTMLElement, goal: SessionGoal | null | undefined): void {
+	const state = goalState(goal);
+	if (!goal || !state) {
+		return;
+	}
+	const card = container.createDiv({ cls: `agent-sessions-detail-card agent-sessions-detail-goal is-${state}` });
+	const head = card.createDiv({ cls: "agent-sessions-detail-card-label agent-sessions-detail-goal-head" });
+	renderGoalMark(head, goal, null);
+	head.createSpan({ text: t(GOAL_LABEL_KEY[state]) });
+	if (goal.since) {
+		head.createSpan({ cls: "agent-sessions-detail-goal-since", text: t("goal.since", { time: formatTime(goal.since) }) });
+	}
+	const body = card.createDiv({ cls: "agent-sessions-detail-card-body is-clamped", text: goal.condition });
+	const reason = goal.reason
+		? card.createDiv({ cls: "agent-sessions-detail-goal-reason is-clamped", text: `${t("goal.reason")}: ${goal.reason}` })
+		: null;
+	let expanded = false;
+	card.addEventListener("click", () => {
+		expanded = !expanded;
+		body.toggleClass("is-clamped", !expanded);
+		reason?.toggleClass("is-clamped", !expanded);
+	});
+}
+
 /** A label+value row. Returns the value's `span` so it can be updated later. */
 function field(container: HTMLElement, label: string, value: string): { el: HTMLElement; valueEl: HTMLElement } {
 	const el = container.createDiv({ cls: "agent-sessions-detail-field" });
@@ -177,6 +209,7 @@ export function renderDetail(container: HTMLElement, ctx: DetailContext | null):
 	const cost = field(statsText, t("detail.totalCost"), "…");
 
 	const cards = container.createDiv({ cls: "agent-sessions-detail-cards" });
+	renderGoal(cards, row.goal);
 	renderCard(cards, t("detail.lastUser"), detail?.last_user);
 	renderCard(cards, t("detail.lastAssistant"), detail?.last_assistant);
 

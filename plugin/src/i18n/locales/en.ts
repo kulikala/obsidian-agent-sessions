@@ -478,6 +478,13 @@ export const en = {
 	"detail.tools": "Tools",
 	"detail.folder": "Folder",
 
+	// ---- /goal (sessions/goal.ts) ----
+	"goal.active": "Goal active",
+	"goal.met": "Goal met",
+	"goal.failed": "Goal judged unreachable",
+	"goal.reason": "Evaluator",
+	"goal.since": "Set {time}",
+
 	// ---- Rate-limit view (views/limits.ts) ----
 	"limits.countdownDays": "{days}d {h}:{mm}",
 

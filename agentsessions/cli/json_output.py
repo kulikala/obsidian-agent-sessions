@@ -65,6 +65,9 @@ def _session_dict(s: Session) -> dict:
         'last_activity': s.mtime,
         'child': s.child,
         'transcript': s.path,
+        # Claude Code's `/goal` -- `{condition, met, reason, since, updated}` (+ `failed`), or
+        # null (none, cleared, or an agent without goals).
+        'goal': s.goal,
     }
     # additive, Codex and OpenCode only for now -- Claude Code's model/effort come from
     # statusLine (real-time, already surfaced separately), not scan; adding a

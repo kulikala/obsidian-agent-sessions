@@ -86,6 +86,7 @@ class TestScanOutput(JsonoutTestBase):
         self.assertFalse(s1['child'])
         self.assertTrue(s1['transcript'].endswith(ID1 + '.jsonl'))
         self.assertIsInstance(s1['last_activity'], float)
+        self.assertIsNone(s1['goal'])
 
         s2 = by_id[ID2]
         self.assertIsNone(s2['name'])
@@ -96,6 +97,16 @@ class TestScanOutput(JsonoutTestBase):
         self.assertEqual(out['store']['archived'], [])
         self.assertEqual(out['store']['pendingRenames'], {})
         self.assertEqual(out['store']['sessions'], {})
+
+    def test_scan_output_carries_the_goal(self):
+        with open(os.path.join(self.proj, ID2 + '.jsonl'), 'a') as f:
+            f.write(json.dumps({'type': 'attachment', 'timestamp': '2026-10-01T00:00:00.000Z',
+                                'attachment': {'type': 'goal_status', 'met': False, 'sentinel': True,
+                                               'condition': 'ship it'}}, separators=(',', ':')) + '\n')
+        by_id = {s['id']: s for s in jsonout.scan_output()['sessions']}
+        self.assertEqual(by_id[ID2]['goal']['condition'], 'ship it')
+        self.assertFalse(by_id[ID2]['goal']['met'])
+        self.assertIsNone(by_id[ID1]['goal'])
 
     def test_only_returns_just_that_id_and_updates_cache(self):
         out = jsonout.scan_output(only=[ID1])

@@ -27,6 +27,11 @@ UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 TITLE_PATTERN = '^{"type": *"custom-title"'      # grep (BRE)
 TITLE_PATTERN_RG = r'^\{"type": ?"custom-title"'  # ripgrep / Python re (also valid BRE)
 _TITLE_RE = re.compile(TITLE_PATTERN_RG)
+# Claude Code's `/goal` records (always an attachment line, never at the start of the line).
+GOAL_PATTERN = '"attachment":{"type":"goal_status"'       # grep (BRE)
+GOAL_PATTERN_RG = r'"attachment":\{"type":"goal_status"'  # ripgrep / Python re
+_GOAL_MARK = '"attachment":{"type":"goal_status"'
+GOAL_REASON_CHARS = 1000   # the evaluator's reason is cut to this many characters
 HEAD_LIMIT = 2000   # max number of lines to scan for the first user message
 TAIL_CHUNK = 1 << 16   # unit size for reading from the end of the file
 TAIL_LIMIT = 1 << 24   # max bytes to scan backward from the end (fall back to mtime beyond this)
@@ -43,51 +48,110 @@ def list_transcripts(projects_dir: str) -> List[str]:
 
 
 def _title_grep_cmd() -> Optional[List[str]]:
-    """`rg`/`grep` invocation for `scan_names`, found via PATH — never a hard-coded
+    """`rg`/`grep` invocation for `scan_names_and_goals` (custom-title and goal_status lines), found via PATH — never a hard-coded
     path, since not every environment has `grep` at `/usr/bin/grep` (or has `grep` at
     all). `None` if neither is available; the caller falls back to reading the files
     directly in that case."""
     rg = shutil.which('rg')
     if rg:
-        return [rg, '-N', '-H', '--no-heading', '--no-config', TITLE_PATTERN_RG, '--']
+        return [rg, '-N', '-H', '--no-heading', '--no-config',
+                '-e', TITLE_PATTERN_RG, '-e', GOAL_PATTERN_RG, '--']
     grep = shutil.which('grep')
     if grep:
-        return [grep, '-H', TITLE_PATTERN, '--']
+        return [grep, '-H', '-e', TITLE_PATTERN, '-e', GOAL_PATTERN, '--']
     return None
 
 
-def _scan_names_python(paths: List[str]) -> Dict[str, str]:
-    """Pure-Python fallback for `scan_names` when neither `rg` nor `grep` is on PATH."""
+def _iso_ts(value) -> Optional[float]:
+    if not isinstance(value, str) or not value.endswith('Z'):
+        return None
+    ts = value[:-1]
+    fmt = '%Y-%m-%dT%H:%M:%S.%f' if '.' in ts else '%Y-%m-%dT%H:%M:%S'
+    try:
+        return datetime.strptime(ts, fmt).replace(tzinfo=timezone.utc).timestamp()
+    except ValueError:
+        return None
+
+
+def apply_goal_status(goal: Optional[dict], rec: dict) -> Optional[dict]:
+    """Folds one `goal_status` attachment line into the session's goal so far, the way Claude
+    Code itself reads them (the latest one decides):
+
+    - `sentinel` + `met: false`: `/goal <condition>` set it (re-sent unchanged on resume and
+      after compaction, which keeps `since`);
+    - `sentinel` + `met: true`: `/goal clear` (also `stop`/`off`/`reset`/`none`/`cancel`) → None;
+    - `met: false` with a `reason`: the evaluator ran after a turn and found it not met yet;
+    - `met: true`: the evaluator found it met (Claude Code removes the goal itself);
+    - `failed: true`: the evaluator judged it impossible (also removes the goal).
+
+    A new `/goal` while one is active simply comes next, so the newest condition wins.
+    Returns `{condition, met, reason, since, updated}` (+ `failed: True`), times in epoch seconds."""
+    a = rec.get('attachment')
+    if not isinstance(a, dict) or a.get('type') != 'goal_status':
+        return goal
+    condition = a.get('condition')
+    if not isinstance(condition, str) or not condition:
+        return goal
+    ts = _iso_ts(rec.get('timestamp'))
+    same = goal is not None and goal['condition'] == condition
+    if a.get('sentinel'):
+        if a.get('met'):
+            return None
+        if same and not goal['met'] and not goal.get('failed'):
+            return dict(goal, updated=ts or goal['updated'])
+        return {'condition': condition, 'met': False, 'reason': None, 'since': ts, 'updated': ts}
+    reason = a.get('reason')
+    reason = reason[:GOAL_REASON_CHARS] if isinstance(reason, str) and reason else None
+    out = {'condition': condition, 'met': bool(a.get('met')) and not a.get('failed'), 'reason': reason,
+           'since': goal['since'] if same else ts, 'updated': ts}
+    if a.get('failed'):
+        out['failed'] = True
+    return out
+
+
+def _fold_line(names: Dict[str, str], goals: Dict[str, Optional[dict]], sid: str, d) -> None:
+    if not isinstance(d, dict):
+        return
+    if d.get('type') == 'custom-title':
+        title = d.get('customTitle')
+        if title:
+            names[sid] = title
+    elif d.get('type') == 'attachment':
+        goals[sid] = apply_goal_status(goals.get(sid), d)
+
+
+def _scan_names_python(paths: List[str]) -> Tuple[Dict[str, str], Dict[str, Optional[dict]]]:
+    """Pure-Python fallback for `scan_names_and_goals` when neither `rg` nor `grep` is on PATH."""
     names: Dict[str, str] = {}
+    goals: Dict[str, Optional[dict]] = {}
     for p in paths:
         try:
             with open(p, encoding='utf-8', errors='replace') as f:
                 for line in f:
-                    if not _TITLE_RE.match(line):
+                    if not _TITLE_RE.match(line) and _GOAL_MARK not in line:
                         continue
                     try:
                         d = json.loads(line)
                     except ValueError:
                         continue
-                    if not isinstance(d, dict):
-                        continue
-                    title = d.get('customTitle')
-                    if title:
-                        names[session_id_of(p)] = title
+                    _fold_line(names, goals, session_id_of(p), d)
         except OSError:
             continue
-    return names
+    return names, goals
 
 
-def scan_names(paths: List[str]) -> Dict[str, str]:
-    """id -> current name. If the same ID has multiple lines, the later one wins."""
+def scan_names_and_goals(paths: List[str]) -> Tuple[Dict[str, str], Dict[str, Optional[dict]]]:
+    """(id -> current name, id -> current `/goal` or None), from one `rg`/`grep` pass over the
+    transcripts' custom-title and goal_status lines. If the same ID has multiple lines, the later
+    one wins (goals: see `apply_goal_status`)."""
     if not paths:
-        return {}
+        return {}, {}
     cmd = _title_grep_cmd()
     if cmd is None:
         return _scan_names_python(paths)
     r = subprocess.run(cmd + list(paths), capture_output=True, text=True)
     names: Dict[str, str] = {}
+    goals: Dict[str, Optional[dict]] = {}
     for line in r.stdout.splitlines():
         path, sep, body = line.partition(':{')
         if not sep:
@@ -96,10 +160,13 @@ def scan_names(paths: List[str]) -> Dict[str, str]:
             d = json.loads('{' + body)
         except ValueError:
             continue
-        title = d.get('customTitle')
-        if title:
-            names[session_id_of(path)] = title
-    return names
+        _fold_line(names, goals, session_id_of(path), d)
+    return names, goals
+
+
+def scan_names(paths: List[str]) -> Dict[str, str]:
+    """id -> current name. If the same ID has multiple lines, the later one wins."""
+    return scan_names_and_goals(paths)[0]
 
 
 def _text_of(content) -> str:
@@ -236,7 +303,7 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None) -> Dict[str,
     cache: two rewrites within the same clock tick (same size if the content length is
     unchanged) can be indistinguishable by mtime alone, depending on clock granularity
     (this shows up notably on tmpfs and in some container environments)."""
-    names = scan_names(paths)
+    names, goals = scan_names_and_goals(paths)
     now = time.time()
     out: Dict[str, Session] = {}
     for p in paths:
@@ -269,5 +336,5 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None) -> Dict[str,
         if not name and not h.prompt:
             continue
         out[sid] = Session(id=sid, name=name, cwd=h.cwd, mtime=mtime, path=p,
-                            first_prompt=h.prompt, child=h.child)
+                            first_prompt=h.prompt, child=h.child, goal=goals.get(sid))
     return out

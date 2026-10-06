@@ -36,6 +36,12 @@ function scanSession(s) {
 		row.model = s.model;
 		row.effort = s.effort;
 	}
+	if (s.goal) {
+		const since = now - s.goal.sinceMinutesAgo * 60;
+		row.goal = { condition: s.goal.condition, met: s.goal.met, reason: s.goal.reason ?? null, since, updated: lastActivity(s) };
+	} else {
+		row.goal = null;
+	}
 	return row;
 }
 

@@ -10,6 +10,7 @@ export const HOME_DISPLAY = "/Users/demo";
  * its terminal title instead (`title` below). `daemon`: the session is running in the daemon.
  * `tab`: opened as a terminal tab, in this order. `flipToIdle`: starts `busy` and turns `idle`
  * while in the background, which is what makes a tab "Needs review" and raises the idle notice.
+ * `goal`: the session's `/goal` as `json scan` reports it (`sinceMinutesAgo` instead of `since`).
  */
 export const SESSIONS = [
 	{
@@ -25,6 +26,12 @@ export const SESSIONS = [
 		tab: true,
 		rc: true,
 		ctx: 46,
+		goal: {
+			condition: "Every checkout test passes and the coupon total never flashes a stale value.",
+			met: false,
+			reason: "The fix is in, but the full checkout suite is still running.",
+			sinceMinutesAgo: 40,
+		},
 		transcript: "claude-checkout",
 		detail: {
 			last_user: "The checkout page flashes the old total after a coupon is applied. Fix it and add a regression test.",
@@ -86,6 +93,12 @@ export const SESSIONS = [
 		daemon: true,
 		tab: true,
 		ctx: 31,
+		goal: {
+			condition: "A one-page v3 → v4 migration guide covering every breaking change.",
+			met: true,
+			reason: "docs/migrate-to-v4.md covers all three breaking changes with before/after snippets.",
+			sinceMinutesAgo: 25,
+		},
 		transcript: "claude-docs",
 		detail: {
 			last_user: "Draft the v3 → v4 migration guide from the changelog. Keep it to one page.",
@@ -340,6 +353,7 @@ export async function scenarioFor(lang) {
 				...s,
 				name: text.name,
 				detail: { ...s.detail, last_user: text.last_user, last_assistant: text.last_assistant },
+				...(s.goal ? { goal: { ...s.goal, ...text.goal } } : {}),
 				...(s.turns ? { turns: s.turns.map((turn, i) => ({ ...turn, prompt: text.prompts[i] })) } : {}),
 			};
 		}),

@@ -32,6 +32,7 @@ import {
 	type RowActions,
 } from "./rows";
 import { rowMenuGroups, type RowMenuId } from "./row-menu";
+import { renderGoalMark } from "./goal-render";
 
 const HOVER_DELAY_MS = 300;
 
@@ -152,6 +153,7 @@ export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptio
 		renderCategoryChip(el, category, opts.plugin.index.categoryColorIndex(category));
 	}
 	el.createSpan({ cls: "agent-sessions-row-name", text: rowLabel(row) });
+	renderGoalMark(el, row.goal, attentionStatus);
 	const time = formatRelativeTime(row.last_activity);
 	if (time) {
 		const timeEl = el.createSpan({ cls: "agent-sessions-row-time", text: time });

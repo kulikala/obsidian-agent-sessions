@@ -20,6 +20,24 @@ export interface ScanSession {
 	 * effort columns). */
 	model?: string;
 	effort?: string;
+	/** Claude Code's `/goal` (`sessions/goal.ts`); `null` without one, after `/goal clear`, and for
+	 * other agents. Absent from an older CLI's output. */
+	goal?: SessionGoal | null;
+}
+
+/** A session's `/goal`, from the latest `goal_status` line of its transcript. Times are epoch seconds. */
+export interface SessionGoal {
+	condition: string;
+	/** The evaluator found the condition met (Claude Code then removes the goal). */
+	met: boolean;
+	/** The evaluator judged the condition impossible (also removes the goal). */
+	failed?: boolean;
+	/** The evaluator's latest explanation; `null` before its first run. */
+	reason: string | null;
+	/** When the goal was set. */
+	since: number | null;
+	/** When its latest status was written. */
+	updated: number | null;
 }
 
 /** One archived entry in `sessions.json`. */

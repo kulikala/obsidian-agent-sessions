@@ -67,6 +67,7 @@ import {
 	type RowActions,
 } from "./rows";
 import { renderAgentMark, rowStatusMark, showRowMenu } from "./rows-render";
+import { renderGoalMark } from "./goal-render";
 import { TerminalView } from "./terminal";
 
 const STATS_FETCH_INTERVAL_MS = 60000;
@@ -1014,6 +1015,7 @@ export class ManagerView extends ItemView {
 			renderCategoryChip(nameWrap, category, this.plugin.index.categoryColorIndex(category));
 		}
 		nameWrap.createSpan({ cls: "agent-sessions-manager-name-text", text: rowLabel(row) });
+		renderGoalMark(nameWrap, row.goal, attentionStatus);
 		const timeTd = tr.createEl("td", { cls: "agent-sessions-manager-col-time", text: formatRelativeTime(row.last_activity) });
 		if (row.last_activity) {
 			setTooltip(timeTd, formatTime(row.last_activity));
