@@ -76,6 +76,10 @@ The **Activity calendar** shows working time as blocks, by 7-day window, week or
 
 ![The activity calendar: a week of sessions as colored blocks, one lane per agent in each day, with hours and concurrency per agent, and the details panel for one block with its prompts and Open session](docs/images/calendar.png)
 
+### Where tokens could be saved
+
+**Analyze token efficiency**, in the Session manager's ⋯ menu, finds where recent tokens went and what would save them: large tool outputs read again, conversations that carry earlier work along, caches that expired, files read at the start of every session. Each finding shows its evidence, cost and remedy, and a finding a file can fix can be handed to an agent, which starts in plan mode and shows the change before writing it. Statistics stay on this machine; see [What Token efficiency sends](#what-token-efficiency-sends). [More](docs/usage.md#token-efficiency)
+
 Two [agent skills](docs/usage.md#agent-skills) also let you ask an agent about your usage, your other sessions, or how to use the plugin. All features: [`docs/usage.md`](docs/usage.md).
 
 **Not included:** a chat panel, inline editing of notes, and Obsidian mobile. OpenCode has no usage windows, and its sub-agent sessions and `opencode run` sessions are not listed.
@@ -149,6 +153,8 @@ To list sessions and calculate usage:
 
 A database that cannot be opened read-only is copied to a temporary folder, read, and deleted.
 
+To analyze token efficiency, it reads the same Claude Code transcripts, including what Claude Code recorded about each session's start: the sizes of `CLAUDE.md`, `.claude/rules/` and auto memory `MEMORY.md`, and the number of skills (those files themselves are not opened). To find the instruction file that owns a file sessions keep reading, it checks whether a `.git` or a `CLAUDE.md` exists in the folders above that file.
+
 ### Files it writes
 
 | Path | Contents | When |
@@ -162,6 +168,9 @@ A database that cannot be opened read-only is copied to a temporary folder, read
 | `~/.config/opencode/agent-sessions-tui.jsx` | status line | OpenCode enabled |
 | `~/.config/opencode/tui.json` | editor key, submit keys, status line entry | OpenCode enabled |
 | a temporary file | the prompt being edited | built-in editor open |
+| `~/.agents/sessions/efficiency/cache/` | token efficiency statistics (numbers and relative paths, no conversation text) | Token efficiency opened |
+| `~/.agents/sessions/efficiency/last-claude.json`, `prev-claude.json` | the last two analyses, with masked quotes | after Analyze |
+| `~/.agents/sessions/efficiency-run/` | an empty folder per analysis | during Analyze |
 | `<vault>/.agents/sessions/sessions.json` | sessions started here (folder, agent), archive, category colors, folded groups | always |
 | `<vault>/.claude/skills/` | the `agent-sessions` and `agent-sessions-help` skills | Claude Code enabled |
 | `<vault>/.agents/skills/` | the same skills | Codex enabled |
@@ -181,6 +190,14 @@ Nothing is sent until you press **Suggest** in **Organize names and categories**
 - OpenCode: `opencode run`, its stored session deleted afterwards.
 
 For up to 30 sessions, or the one you chose, it sends the current name, the folder, the first prompt, your last three prompts and a short excerpt of the last reply; your existing category names with their session counts and up to three example session names each; and, if you ask again, the previous suggestion and your comments. This goes to that agent's service under your account and counts toward its usage limits.
+
+### What Token efficiency sends
+
+Opening **Analyze token efficiency** computes statistics on this machine and sends nothing. Only when you press **Analyze** in an agent's pane does the plugin run that conversation's own agent once: for Claude Code, `claude -p` with Sonnet (or Opus, in the settings), without tools, nothing saved. A conversation is never sent to another agent or provider. The pane shows where it goes and how much before you press it, and **Show what is sent** shows the exact text.
+
+It sends the range's numbers (totals, the largest tasks and the findings' figures), masked session names and folders, the sizes of the instruction files and the number of skills, and excerpts of up to 8 tasks: your prompts (up to 600 characters each), the start of the agent's replies (200 characters), and the tool calls (names, paths, the start of commands, the size of results). Tool results and file contents are not sent. Paths, URLs, e-mail addresses and anything that looks like a key or token are masked. At most 60,000 characters per analysis. The run starts in a new empty folder, which is removed when it ends. The statistics cache holds no conversation text; the last two results, with their masked quotes, stay in `~/.agents/sessions/efficiency/` until you delete them. This goes to that agent's service under your account and counts toward its usage limits.
+
+**Ask an agent to fix** only starts a new session in the vault, in plan mode, with a request you can read and edit first. The plugin writes no file itself.
 
 ### Other access
 

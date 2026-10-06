@@ -294,6 +294,17 @@ Use a test vault. For the first-run items, a vault where the plugin was never en
 - [ ] A row menu's "Suggest name and category…" (in the first group, after "Move to category…") opens the dialog for that one session: no "only unnamed" toggle, the agent line names Claude Code (sonnet), Suggest sends nothing until pressed, the result is one row with a comment field, "Suggest again" takes the comment into account, and Apply renames only that session.
 - [ ] Settings > "Model for suggestions": Sonnet by default; Haiku makes the dialog's agent line read Claude Code (haiku).
 
+### Token efficiency
+
+- [ ] The command "Analyze token efficiency" and the manager's ⋯ menu item (under Organize) both open the dialog. While it reads the records it shows "Reading the records… N s"; nothing is sent.
+- [ ] The range line names the rule (5-hour window, 7-day window, or the budget), its start and end, the session count and the tokens; the totals, "Where the tokens went" and the statistics' findings (marked "From the statistics") follow.
+- [ ] The agent's pane names the agent and model, the number of sessions, characters and estimated tokens, and the window's usage; "Show what is sent" shows the text, with no home folder path, e-mail address or token in it.
+- [ ] "Analyze" shows the working line and the log; "Cancel" stops it, the statistics' findings stay, and `~/.agents/sessions/efficiency-run/` is empty afterwards.
+- [ ] After an analysis, the findings show their evidence (sessions open from "Open"), the analysis's own tokens and cost are shown, `~/.agents/sessions/efficiency-run/` is empty, and `~/.agents/sessions/efficiency/last-claude.json` exists; reopening the dialog shows "Previous analysis (…)".
+- [ ] A habit finding has no button; a correction finding has "Copy template". No text in the dialog recommends `/clear`.
+- [ ] "Ask an agent to fix" shows the agent, the session name, the files with the change kind, and the editable request. "Start" opens a new session in the vault in plan mode (`--permission-mode plan`), which shows a diff and stops without writing; the new-session dialog's default agent is unchanged.
+- [ ] Settings: "Usage limit threshold" outside 50–95 and "Budget" outside 1,000,000–100,000,000 are not saved; "Model for the analysis" Opus makes the pane name opus.
+
 ### Agent skills
 
 - [ ] After installing the program, the install dialog lists the vault folders for "Agent skills" and says two skills are added; afterwards each enabled agent's skill folder holds `agent-sessions/SKILL.md`, `agent-sessions-help/SKILL.md` and `agent-sessions-help/reference.md`.

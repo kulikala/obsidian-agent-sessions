@@ -17,6 +17,7 @@ How to do things with Agent Sessions, what each screen shows, and what to do whe
 - [Session manager](#session-manager)
 - [Activity calendar](#activity-calendar)
 - [Usage and limits](#usage-and-limits)
+- [Token efficiency](#token-efficiency)
 - [Agent skills](#agent-skills)
 - [Remote Control](#remote-control)
 - [Settings](#settings)
@@ -295,6 +296,32 @@ Shows when each agent was working. Open it from the Session manager toolbar, the
 - One session's cost, tokens and tools, turn by turn: [Session analytics](#session-analytics).
 - They come from each agent's own local files.
 
+## Token efficiency
+
+Shows where your recent tokens could be saved, why they were spent, and what to change, from your local records.
+
+1. In the Session manager, open the ⋯ menu and choose **Analyze token efficiency**, or run **Analyze token efficiency** from the command palette.
+2. The dialog reads the records on this machine (nothing is sent) and shows the range, the totals, where the tokens went, and the findings the statistics found on their own (marked **From the statistics**).
+3. To have the agent look into causes and remedies, read its pane (where the excerpts go, how much, and the window's usage), open **Show what is sent** if you like, and press **Analyze**. **Cancel** stops it; the statistics' findings stay.
+4. On a finding that a file or setting can fix, press **Ask an agent to fix**, check or edit the request, and press **Start**.
+
+What the dialog shows:
+
+- **The range line**: which recent stretch was analysed. If the 5-hour or 7-day window is used at least as much as **Usage limit threshold**, that window; otherwise the newest calls up to the **Budget** in weighted tokens, at most 7 days back. Then the session count and the tokens.
+- **Weighted tokens**: input, plus cache writes at 1.25 (five minutes) or 2 (one hour), cache reads at 0.1, and output at 5, so different usage compares on one scale.
+- **Where the tokens went**: each call counted once, under the finding that costs it the most; teammates under **Team**, the rest under **Other**.
+- **A finding**: its impact (weighted tokens, dollars when known, share of the range), the estimated saving, the confidence, the cause, the evidence (open it to see the sessions, with **Open** links, and quotes), and what to do.
+- **Candidates**: mixed topics in one conversation and correction round trips are found from timing and edits only; they become findings only after **Analyze** confirms them.
+- **The analysis's cost**: shown under the findings; it counts toward that agent's usage limits.
+- **Previous analysis**: the last result is kept and shown when you open the dialog again for an overlapping range; **This is the same content as the previous analysis** means sending again would send the same text.
+
+What the findings ask of you:
+
+- **Ask an agent to fix** starts a new session in the vault, named "Token efficiency: …", in plan mode. It shows the change as a diff and waits for your approval before writing; only the listed files may change. The change applies to conversations started afterwards.
+- Advice about habits (when to start a new conversation, which model to use, how to write a request) has no button. To switch to a new conversation, open a new tab. **Copy template** copies a request outline (target, expected result, how to check, what not to touch).
+- If the records are too few (under 100 prompts in 14 days), some checks are skipped and the dialog says so.
+- What is sent, and where: see [What Token efficiency sends](../README.md#what-token-efficiency-sends).
+
 ## Agent skills
 
 Two skills are installed with the program, into the vault only:
@@ -334,6 +361,9 @@ A Claude Code session with Remote Control (started with it, or with "Enable Remo
 | **Scrollback lines** | terminal history |
 | **Editor pane height (%)** | built-in editor height |
 | **Model for suggestions** | Sonnet, Haiku |
+| **Usage limit threshold** (Token efficiency) | 50–95%, 80 by default |
+| **Budget** (Token efficiency) | 1,000,000–100,000,000 weighted tokens, 10,000,000 by default |
+| **Model for the analysis** (Token efficiency) | Sonnet, Opus |
 | **Language** | Auto, English, 日本語 |
 | **Show the welcome guide after updates** | on, off |
 | **Load the guide's pictures from GitHub** | on, off |

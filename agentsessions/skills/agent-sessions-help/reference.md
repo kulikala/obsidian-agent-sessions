@@ -4,7 +4,7 @@
 
 Facts about the Agent Sessions plugin for Obsidian, by task. Each name is written as "English / 日本語": the label in an English UI and in a Japanese UI. Where nothing is given in Japanese, the label is the same (an agent or program name). Source: the plugin's README, its design and testing docs, and its English and Japanese UI strings.
 
-Contents: What it is - Where things are - Install, update, remove - Welcome guide - Start and resume a session - Close, end and restart - Name and categorize - Organize names and categories - Row menu, change model, compact, archive - Session list and states - Session manager - Activity calendar - Usage and limits - Built-in editor - Keys and terminal tab - Settings - Agents - Language - Supported platforms - Troubleshooting - What the agent can do - Privacy
+Contents: What it is - Where things are - Install, update, remove - Welcome guide - Start and resume a session - Close, end and restart - Name and categorize - Organize names and categories - Token efficiency - Row menu, change model, compact, archive - Session list and states - Session manager - Activity calendar - Usage and limits - Built-in editor - Keys and terminal tab - Settings - Agents - Language - Supported platforms - Troubleshooting - What the agent can do - Privacy
 
 ## What it is
 
@@ -23,6 +23,7 @@ Agent Sessions runs Claude Code, Codex and OpenCode sessions as terminal tabs in
   - Start the welcome guide from the beginning / ようこそガイドを最初から始める
   - Continue the welcome guide / ようこそガイドの続きから (only while an unfinished run exists)
   - Insert current note with @ / 現在のノートを @ で挿入
+  - Analyze token efficiency / トークン効率を解析
 - Settings: Settings -> Community plugins -> Agent Sessions (the plugin's settings tab).
 
 ## Install, update, remove
@@ -80,6 +81,19 @@ For many sessions at once: `⋯` menu of the side panel or the Session manager -
 4. The result lists each session: current category and name, suggested category and name, and a round apply toggle. Untick the ones to skip; unticked rows get a comment field (and one comment for all). "Suggest again for unchecked / チェックを外した行だけ再提案" re-asks for only those; "Suggest all again / すべてやり直す" redoes all.
 5. "Apply selected / 選択を適用" renames the ticked sessions. Nothing changes before that; closing the dialog changes nothing.
 It sends excerpts of the sessions (folder, first prompt, the last three prompts, a short excerpt of the last reply, existing category names with a few example session names) to that agent under the user's own account, and counts against its usage limits. See Privacy.
+
+## Token efficiency
+
+Where recent tokens could be saved. Open it from the Session manager's `⋯` menu -> "Analyze token efficiency / トークン効率を解析", or the command of the same name.
+1. Opening it reads the local records only (nothing is sent; "Reading the records… / 記録を読んでいます…"). It shows a range line, the totals in weighted tokens, "Where the tokens went / トークンの行き先", and findings the statistics found alone, marked "From the statistics / 統計による".
+2. The range: the 5-hour or the 7-day window when it is used at least as much as Settings -> "Usage limit threshold / 利用枠のしきい値" (80% by default); otherwise the newest calls up to "Budget / 予算" in weighted tokens (10,000,000 by default), at most 7 days back.
+3. Weighted tokens count input once, cache writes 1.25 (five minutes) or 2 (one hour), cache reads 0.1 and output 5, so different kinds of usage compare on one scale.
+4. "Analyze / 解析する" sends masked excerpts to the same agent (Claude Code `claude -p`, Sonnet by default; Settings -> "Model for the analysis / 解析のモデル" switches to Opus). The pane first says how much goes where; "Show what is sent / 送るものを見る" shows the exact text. "Cancel / 取り消す" stops it; the statistics' findings stay.
+5. Each finding card has its impact, estimated saving, confidence, cause, "Evidence / 根拠" (with "Open / 開く" links to the sessions) and "What to do / 対策".
+6. "Ask an agent to fix / エージェントに直してもらう" (only on findings a file or setting can fix) shows the request, which you can change first, and "Start / 始める" opens a new session in the vault, named "Token efficiency: … / トークン効率: …", in plan mode: it shows a diff and waits for approval before writing. The change applies to conversations started afterwards.
+7. Advice about habits has no button. To switch conversations, open a new tab with a new conversation. "Copy template / 型をコピー" copies a request outline.
+8. The last result is kept and shown as "Previous analysis / 前回の解析" next time for an overlapping range. With under 100 prompts in 14 days, "Some checks were skipped because there are too few records. / 記録が少ないため、一部の検出を行っていません。"
+It sends nothing until "Analyze / 解析する". See Privacy.
 
 ## Row menu, change model, compact, archive
 
@@ -157,6 +171,7 @@ Settings -> Community plugins -> Agent Sessions. Sections and items (English / �
 - Display / 表示: Font / フォント; Font size / フォントサイズ; Padding / 余白 (Comfortable ゆったり, Compact コンパクト, None なし); Language / 言語.
 - Input / 入力: Submit key / 送信キー; Editor key / エディタキー.
 - Other / その他: Recent count (side panel) / 最近の件数（サイドパネル）; Notify when waiting for input / 指示待ちの通知; agent-sessions location / agent-sessions の場所; Editor pane height (%) / 編集領域の高さ（%）; Scrollback lines / スクロールバック行数.
+- Token efficiency / トークン効率: Usage limit threshold / 利用枠のしきい値 (50–95%); Budget / 予算 (weighted tokens); Model for the analysis / 解析のモデル (Sonnet, Opus).
 - Also in the settings tab: "agent-sessions program / agent-sessions プログラム" (state, Reinstall, Remove) and "Welcome guide / ようこそガイド" (continue or restart the guide, "Show the welcome guide after updates", "Load the guide's pictures from GitHub").
 - Agents / エージェント: for Claude Code, Codex and OpenCode, a toggle to enable it, "Executable / 実行ファイル" (empty = find automatically), "Environment variables / 環境変数" (one `KEY=VALUE` per line, passed at launch) and "Find again / もう一度探す". OpenCode also has "Launch with / 起動方法" and "Ollama model / Ollama のモデル". At least one agent must stay enabled.
 
@@ -199,4 +214,4 @@ Through the `agent-sessions` skill (installed in the vault along with this one),
 
 ## Privacy
 
-No network use by the plugin or the program, except the welcome guide's pictures from GitHub (can be turned off). It reads the agents' own files to list sessions and compute usage, writes `~/.agents/sessions/` (daemon socket, logs, caches) and the vault's `.agents/sessions/sessions.json` (names, archive, category colors), and changes only the entries it marked in the agents' settings. "Organize names and categories" is the one feature that sends session excerpts, to an agent CLI under the user's own account, only after the user presses Suggest. Full list: README, "Disclosures".
+No network use by the plugin or the program, except the welcome guide's pictures from GitHub (can be turned off). It reads the agents' own files to list sessions and compute usage, writes `~/.agents/sessions/` (daemon socket, logs, caches) and the vault's `.agents/sessions/sessions.json` (names, archive, category colors), and changes only the entries it marked in the agents' settings. Two features send session excerpts, each to an agent CLI under the user's own account and only on a press: "Organize names and categories" after "Suggest", and "Analyze token efficiency" after "Analyze / 解析する" (masked excerpts, at most 60,000 characters, to the same agent the conversations ran on; the run uses an empty folder that is removed afterwards). Full list: README, "Disclosures".
