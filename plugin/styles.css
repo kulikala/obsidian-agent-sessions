@@ -2945,6 +2945,14 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	min-width: 0;
 }
 
+/* The labels ("Model", "Effort") and the buttons keep their width; in a narrow pane the file name
+   and then the dropdowns give way instead. */
+.agent-sessions-editor-select > span,
+.agent-sessions-editor-bar > button {
+	flex: 0 0 auto;
+	white-space: nowrap;
+}
+
 /* The dropdowns size to their content, up to a cap; long entries are cut in the closed state
    (the option's title carries the full text). */
 .agent-sessions-editor-select select {
