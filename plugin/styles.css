@@ -27,17 +27,19 @@
    no container query needed for this part). With 0 or 1 agent enabled, `.agent-sessions-manager-
    analysis-body` never gets this class at all — a single panel with no heading of its own, inside
    the whole-area header/fold instead. */
-/* No explicit height, and no `overflow` of its own — grows to its natural content height, letting
-   the outer `.agent-sessions-manager-analysis-body` (unchanged, still `overflow-y: auto`) scroll
-   the whole grid together when it's taller than the fixed analysis-area height. Side by side
-   (`align-items: stretch`, the grid default) means two same-row panels still match heights when
-   both fit without scrolling. */
+/* No `overflow` of its own — the outer `.agent-sessions-manager-analysis-body` (`overflow-y: auto`)
+   scrolls the whole grid together when it's taller than the fixed analysis-area height. That body
+   is also a flex item stretched to the area's height, so when the panels are shorter (e.g. every
+   panel folded down to its heading) `align-content: start` keeps them packed at the top; the grid
+   default (`stretch`) would share the leftover height out between the rows, opening a gap below
+   each heading. */
 /* Always one column — stacked regardless of width (unlike the per-category bars inside
    each panel, or their own bars again below that, which still go side by side when there's room;
    only the top-level agent panels themselves don't). */
 .agent-sessions-manager-analysis-panels {
 	display: grid;
 	grid-template-columns: 1fr;
+	align-content: start;
 }
 
 .agent-sessions-manager-analysis-panel {
