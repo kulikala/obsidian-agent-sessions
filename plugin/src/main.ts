@@ -43,6 +43,7 @@ import {
 	type LaunchStart,
 } from "./backend/backend";
 import { launchStart, rememberAgent, type NewSessionOptions } from "./sessions/new-session";
+import { runtimeDir } from "./backend/paths";
 import { planInPlace, planSuccessors, possibleSuccessors, type SuccessorCandidate, type SuccessorTab } from "./sessions/successor";
 import {
 	chooseInstallDir,
@@ -166,7 +167,7 @@ import { TerminalView } from "./views/terminal";
 
 export { VIEW_TYPE_SIDE, VIEW_TYPE_MANAGER, VIEW_TYPE_TERMINAL };
 
-const RUNTIME_DIR = join(homedir(), ".agents", "sessions");
+const RUNTIME_DIR = runtimeDir();
 /** Where `install.sh` links the program; used when present, ahead of an install made from inside the plugin. */
 const LINKED_AGENT_SESSIONS = join(homedir(), "bin", "agent-sessions");
 /** What the index sees while the program isn't installed: nothing, rather than a failed call

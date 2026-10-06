@@ -4,12 +4,11 @@
 // (`plugin.renameSession`). Nothing is applied without pressing Apply. Opened with a session id
 // (the row menu's "Suggest name and category…"), the same dialog covers that one session.
 
-import { homedir } from "os";
-import { join } from "path";
 import { Modal, Notice, Platform, Setting } from "obsidian";
 import type AgentSessionsPlugin from "../main";
 import { loginEnv, resolveAgentBinary, withBinDirOnPath } from "../backend/backend";
 import { runHeadless } from "../backend/headless";
+import { organizeDir } from "../backend/paths";
 import { t } from "../i18n";
 import type { Row } from "../sessions/index";
 import {
@@ -38,7 +37,7 @@ import { paletteHueDeg } from "../sessions/category";
 
 const DETAIL_CONCURRENCY = 4;
 /** A folder with no CLAUDE.md above it, so the headless run doesn't pick up a project's instructions. */
-const HEADLESS_CWD = join(homedir(), ".agents", "sessions", "organize");
+const HEADLESS_CWD = organizeDir();
 const SUMMARY_FALLBACK_MAX = 120;
 
 interface ReviewRow {

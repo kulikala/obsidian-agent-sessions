@@ -11,9 +11,9 @@
 import { EventEmitter } from "node:events";
 import * as net from "node:net";
 import { spawn } from "node:child_process";
-import { homedir } from "node:os";
 import { join } from "node:path";
 import { t } from "../i18n";
+import { runtimeDir } from "./paths";
 import { connectEndpoint } from "./transport";
 import { programInvocation } from "./windows";
 
@@ -27,9 +27,9 @@ export interface Frame {
 const KIND_BYTE: Record<FrameKind, number> = { J: 0x4a, D: 0x44, R: 0x52 };
 const BYTE_KIND: Record<number, FrameKind> = { 0x4a: "J", 0x44: "D", 0x52: "R" };
 
-/** The socket's default path (`~/.agents/sessions/daemon.sock`). */
+/** The socket's default path (`<runtime>/daemon.sock`, see `runtimeDir`). */
 export function defaultSockPath(): string {
-	return join(homedir(), ".agents", "sessions", "daemon.sock");
+	return join(runtimeDir(), "daemon.sock");
 }
 
 export function encodeFrame(kind: FrameKind, payload: Uint8Array | Buffer): Buffer {
