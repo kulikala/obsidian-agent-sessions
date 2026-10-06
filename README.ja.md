@@ -12,7 +12,7 @@
 
 ### エージェントの CLI をそのままタブで
 
-1つのセッションは、Obsidian のタブで動くエージェントのコマンドラインプログラムです。設定、ログイン、スラッシュコマンド、フック、スキル、MCP サーバーは、ターミナルと同じように使えます。出力に出た vault 内のパスは、リンクとして開けます。[詳しく](docs/usage.md#work-in-a-session-tab)
+各セッションでは、エージェントのコマンドラインプログラムそのものが Obsidian のタブで動きます。設定、ログイン、スラッシュコマンド、フック、スキル、MCP サーバーは、ターミナルと同じように使えます。出力に出た vault 内のパスは、リンクとして開けます。[詳しく](docs/usage.md#work-in-a-session-tab)
 
 ![ターミナルタブで動く Codex のセッションが、テストのコマンドを実行してよいか尋ねているところ](docs/images/codex.png)
 
@@ -42,7 +42,7 @@
 
 ### いつ、どのエージェントが作業していたか
 
-**稼働カレンダー** は、作業していた時間をブロックで示します。単位は7日枠・週・日から選べます。ブロックをクリックすると、その中のプロンプトを見て、セッションを開けます。[詳しく](docs/usage.md#activity-calendar)
+**稼働カレンダー** は、作業していた時間をブロックで示します。単位は7日枠・週・日から選べます。ブロックをクリックすると、その時間のプロンプトが並び、そこからセッションを開けます。[詳しく](docs/usage.md#activity-calendar)
 
 ![稼働カレンダー：1週間のセッションを色付きのブロックで並べ、日ごとにエージェント別のレーンと、エージェントごとの時間と同時実行数を表示](docs/images/calendar.png)
 
@@ -71,8 +71,8 @@ Ctrl+G で、ターミナルの下の枠にプロンプトを書けます。`@` 
 ## 動作に必要なもの
 
 - Obsidian 1.8.7 以降のデスクトップ版。
-- Python 3.9 以降。追加のパッケージは要りません。セッションを動かし続ける補助プログラムに使います。
-- Claude Code・Codex・OpenCode のどれか（インストール済みのもの）。
+- Python 3.9 以降。セッションを動かし続ける補助プログラムに使います。追加のパッケージは要りません。
+- インストール済みの Claude Code・Codex・OpenCode のどれか。
 
 ## 対応環境
 
@@ -84,7 +84,7 @@ Ctrl+G で、ターミナルの下の枠にプロンプトを書けます。`@` 
 | Windows | WSL | 非対応 |
 | WSL2（WSLg） | 同じ WSL ディストリビューション | 対応 |
 
-Obsidian とエージェントは、同じ OS で動かしてください。プラグインがエージェントのプロセスを起動し、そのファイルを読むためです。エージェントを WSL で使うなら、Obsidian も WSLg で WSL の中で動かし、vault は `/mnt/c` ではなく WSL のファイルシステムに置いてください。
+Obsidian とエージェントは、同じ OS で動かしてください。プラグインがエージェントのプロセスを起動し、そのファイルを読むためです。エージェントを WSL で使うなら、Obsidian も WSL の中で（WSLg で）動かし、vault は `/mnt/c` ではなく WSL のファイルシステムに置いてください。
 
 ## インストール
 
@@ -100,12 +100,12 @@ Obsidian とエージェントは、同じ OS で動かしてください。プ�
 - **エージェントに「見つかりませんでした。」と出る**：プラグインの設定でパスを指定するか、ようこそガイドの **検出し直す** を押します。
 - **変えた設定・フック・スキルがセッションに効かない**：セッションの ⋯ メニューで **セッションを再起動** を選びます。
 - **Windows で、インストールのダイアログに Python か Claude Code が無いと出る**：**WinGet で Python をインストール** か **WinGet で Claude Code をインストール** を押します（ユーザー単位で、管理者の確認は出ません）。
-- **ARM 版 Windows で、OpenCode のタブが `bun:ffi dlopen() is not available in this build (TinyCC is disabled)` で止まる**：OpenCode の ARM64 版（ARM 版 Windows で WinGet が入れるもの）は、ターミナル画面を起動できません。OpenCode の x64 版を入れてください。Windows がエミュレーションで動かします。
+- **ARM 版 Windows で、OpenCode のタブが `bun:ffi dlopen() is not available in this build (TinyCC is disabled)` で止まる**：OpenCode の ARM64 版（ARM 版 Windows で WinGet が入れるもの）は、ターミナル画面を起動できません。OpenCode の x64 版を入れてください。x64 版は、Windows のエミュレーションで動きます。
 - **フックが `node: not found` で失敗する**、そのほかの場合：[`docs/usage.md`](docs/usage.md#more-troubleshooting)。
 
 ## アンインストール
 
-1. **設定 → agent-sessions プログラム → 削除**。動いているセッションを終え、プログラム、エージェントの設定に足した項目、vault のスキルを取り除きます。OpenCode の `tui.json` は元の値に戻します。
+1. **設定 → agent-sessions プログラム → 削除** を押します。動いているセッションを終え、プログラム、エージェントの設定に足した項目、vault のスキルを取り除きます。OpenCode の `tui.json` は元の値に戻します。
 2. コミュニティプラグインで **Agent Sessions** を無効にして、削除します。
 3. 何も残したくない場合は、`~/.agents/sessions/`、`<vault>/.agents/sessions/`、バックアップの `~/.claude/settings.json.bak-*` と `~/.codex/config.toml.bak-*` を削除します。
 
@@ -156,7 +156,7 @@ Obsidian とエージェントは、同じ OS で動かしてください。プ�
 | `<vault>/.opencode/skills/` | 同じスキル | OpenCode だけのとき |
 
 - `~/.claude/settings.json` と `~/.codex/config.toml` は、変える前にバックアップします。`tui.json` の元の値は `~/.agents/sessions/opencode-tui-backup.json` に残します。
-- プラグインが足した項目には印を付けるか（Codex、OpenCode、スキルのファイル）、コマンドで見分けます（Claude Code）。それ以外は変えません。
+- プラグインが足した項目は、Codex・OpenCode・スキルのファイルでは付けた印で、Claude Code では項目のコマンドで見分けます。それ以外の項目は変えません。
 - vault を同期していれば、`sessions.json` も同期されます。
 - プログラムが置かれうるほかのフォルダ：[`docs/installation.md`](docs/installation.md#where-the-program-goes)。
 
