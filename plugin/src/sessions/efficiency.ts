@@ -379,7 +379,8 @@ export function replaceUnknownNumbers(text: string, sent: number[], canned: stri
 			used = true;
 		}
 	}
-	return out.join(" ");
+	// CJK sentences follow each other without a space.
+	return out.reduce((acc, part) => (acc === "" ? part : /[。！？]$/.test(acc) ? acc + part : `${acc} ${part}`), "");
 }
 
 const CLEAR_RE = /\/clear\b/i;
@@ -405,7 +406,9 @@ function num(value: unknown): number {
 
 function seconds(value: number): string {
 	const minutes = Math.round(value / 60);
-	return minutes >= 120 ? `${Math.round(minutes / 60)} h` : `${minutes} min`;
+	return minutes >= 120
+		? t("efficiency.duration.hours", { count: Math.round(minutes / 60) })
+		: t("efficiency.duration.minutes", { count: minutes });
 }
 
 function fileLabel(hit: EffHit): string {

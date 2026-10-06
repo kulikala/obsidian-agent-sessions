@@ -13,6 +13,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectPage, sleep } from "./cdp.mjs";
+import { efficiencyReply } from "./efficiency.mjs";
 import { startFakeDaemon } from "./fake-daemon.mjs";
 import { cwdOf, LIMITS, scenarioFor } from "./scenario.mjs";
 import { LANGUAGES, readOnboardingScenes } from "./scenes.mjs";
@@ -40,6 +41,11 @@ const OBSIDIAN_BIN =
 
 const keep = process.argv.includes("--keep");
 const onboarding = process.argv.includes("--onboarding");
+// `--efficiency` shoots only the token efficiency dialog (efficiency-stats, -result, -fix).
+const efficiencyOnly = process.argv.includes("--efficiency");
+// `--out DIR` writes the README set's images there (DIR/<lang>/ for a language other than English).
+const outArg = process.argv.indexOf("--out");
+const README_OUT = outArg >= 0 ? resolve(process.argv[outArg + 1]) : OUT_DIR;
 const langArg = process.argv.indexOf("--lang");
 const languages = langArg >= 0 ? [process.argv[langArg + 1]] : LANGUAGES;
 if (languages.some((l) => !LANGUAGES.includes(l))) {
@@ -101,7 +107,7 @@ function buildSandbox(root, now, look) {
 	// The stand-in CLI.
 	const statePath = join(root, "state.json");
 	const logPath = join(root, "unhandled.log");
-	writeJson(statePath, { now, sessions, limits: LIMITS, logPath });
+	writeJson(statePath, { now, sessions, limits: LIMITS, logPath, lang: look.lang });
 	const cli = join(home, "bin", "agent-sessions");
 	mkdirSync(dirname(cli), { recursive: true });
 	writeFileSync(cli, `#!/bin/sh\nexec "${process.execPath}" "${join(HERE, "fake-cli.mjs")}" "${statePath}" "$@"\n`);
@@ -111,7 +117,11 @@ function buildSandbox(root, now, look) {
 	// answers with the canned ones from the scenario, in Claude Code's stream-json shape.
 	const claudeBin = join(home, "bin", "claude");
 	writeJson(join(root, "organize.json"), look.scenario.suggestions);
-	writeFileSync(claudeBin, `#!/bin/sh\nexec "${process.execPath}" "${join(HERE, "fake-claude.mjs")}" "${join(root, "organize.json")}"\n`);
+	writeJson(join(root, "efficiency.json"), efficiencyReply(look.lang));
+	writeFileSync(
+		claudeBin,
+		`#!/bin/sh\nexec "${process.execPath}" "${join(HERE, "fake-claude.mjs")}" "${join(root, "organize.json")}" "${join(root, "efficiency.json")}"\n`
+	);
 	chmodSync(claudeBin, 0o755);
 
 	writeJson(join(pluginDir, "data.json"), {
@@ -298,6 +308,45 @@ async function readmeScenes(page, box, look) {
 
 	await openOrganizeResult(page, look);
 	await capture(page, "organize");
+}
+
+/** The dialog's own box with a little of the dimmed window around it. */
+async function dialogClip(page, look, selector) {
+	const dialog = await unionOf(page, [selector]);
+	const margin = 24;
+	return {
+		x: Math.max(0, dialog.x - margin),
+		y: Math.max(0, dialog.y - margin),
+		width: Math.min(look.window.width, dialog.width + 2 * margin),
+		height: Math.min(look.window.height, dialog.height + 2 * margin),
+	};
+}
+
+/**
+ * Token efficiency: the statistics with the consent area, the findings after the stand-in
+ * `claude` answers the analysis, and the confirmation before a fixing session starts.
+ */
+async function efficiencyScenes(page, box, look) {
+	console.log("Scenes:");
+	await clearNotices(page);
+	await page.evaluate(`app.commands.executeCommandById('agent-sessions:analyze-token-efficiency')`);
+	await page.waitFor(`document.querySelector('.agent-sessions-efficiency-consent button')`, { what: "the efficiency dialog" });
+	await capture(page, "efficiency-stats", await dialogClip(page, look, ".agent-sessions-efficiency"));
+
+	const analyze = msg(look.lang, "efficiency.consent.send");
+	await page.evaluate(`[...document.querySelectorAll('.agent-sessions-efficiency-consent button')].find((b) => b.textContent.includes(${JSON.stringify(analyze)})).click()`);
+	await page.waitFor(`document.querySelector('.agent-sessions-efficiency-cost')?.textContent.length > 0`, { what: "the analysis" });
+	await page.evaluate(`(() => {
+		const cards = [...document.querySelectorAll('.agent-sessions-efficiency-card')];
+		cards.forEach((c) => c.querySelector('.agent-sessions-efficiency-card-evidence')?.setAttribute('open', ''));
+		document.querySelector('.agent-sessions-efficiency-findings').scrollIntoView({ block: "start" });
+	})()`);
+	await capture(page, "efficiency-result", await dialogClip(page, look, ".agent-sessions-efficiency"));
+
+	const fix = msg(look.lang, "efficiency.card.fixButton");
+	await page.evaluate(`[...document.querySelectorAll('.agent-sessions-efficiency-card button')].find((b) => b.textContent.includes(${JSON.stringify(fix)})).click()`);
+	await page.waitFor(`document.querySelector('.agent-sessions-efficiency-fix textarea')`, { what: "the fix confirmation" });
+	await capture(page, "efficiency-fix", await dialogClip(page, look, ".agent-sessions-efficiency-fix"));
 }
 
 /**
@@ -653,8 +702,8 @@ async function run() {
 		const imageBase = `http://127.0.0.1:${server.address().port}`;
 		try {
 			for (const lang of languages) {
-				readmeOutDir = lang === "en" ? OUT_DIR : join(OUT_DIR, lang);
-				await withObsidian({ lang, light: false, window: WINDOW, scale: 2, imageBase }, readmeScenes);
+				readmeOutDir = lang === "en" ? README_OUT : join(README_OUT, lang);
+				await withObsidian({ lang, light: false, window: WINDOW, scale: 2, imageBase }, efficiencyOnly ? efficiencyScenes : readmeScenes);
 			}
 		} finally {
 			server.close();

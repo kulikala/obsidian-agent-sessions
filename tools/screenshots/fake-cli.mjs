@@ -3,6 +3,7 @@
 // Usage (via the wrapper `shoot.mjs` writes): node fake-cli.mjs <state.json> <args…>
 
 import { appendFileSync, readFileSync } from "node:fs";
+import { efficiencyOutput } from "./efficiency.mjs";
 
 const [statePath, ...args] = process.argv.slice(2);
 const state = JSON.parse(readFileSync(statePath, "utf8"));
@@ -303,6 +304,8 @@ if (args[0] === "--version") {
 	} else if (cmd === "activity") {
 		const opt = (name) => rest[rest.indexOf(name) + 1];
 		out(activityOutput(Date.parse(opt("--from")) / 1000, Date.parse(opt("--to")) / 1000, rest.includes("--raw")));
+	} else if (cmd === "efficiency") {
+		out(efficiencyOutput(now, sessions, state.lang ?? "en"));
 	} else if (cmd === "resolve") {
 		out({ thread: null, transcript: null });
 	} else {

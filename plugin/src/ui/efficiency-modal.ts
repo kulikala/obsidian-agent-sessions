@@ -36,7 +36,7 @@ import { detectorMetrics, loadResult, overlaps, payloadHash, saveResult, type Sa
 import type { HeadlessUsage } from "../sessions/organize-agent";
 import { sessionDisplayName } from "../sessions/name";
 import { parseEnvLines, type AgentId } from "../settings";
-import { formatCost, formatK } from "../usage/usage";
+import { formatCost, formatK, formatNumber } from "../usage/usage";
 import {
 	analysisFailureMessage,
 	classifyAnalysisFailure,
@@ -244,7 +244,7 @@ export class EfficiencyModal extends Modal {
 		if (typeof tot.cache_hit === "number") {
 			parts.push(t("efficiency.total.cacheHit", { percent: Math.round(tot.cache_hit * 100) }));
 		}
-		parts.push(t("efficiency.total.calls", { count: tot.calls }));
+		parts.push(t("efficiency.total.calls", { count: formatNumber(tot.calls) }));
 		if (typeof tot.preamble_median === "number") {
 			parts.push(t("efficiency.total.preamble", { tokens: formatK(tot.preamble_median) }));
 		}
@@ -309,7 +309,7 @@ export class EfficiencyModal extends Modal {
 		if (waiting.length > 0) {
 			el.createDiv({
 				text: t("efficiency.consent.candidates", {
-					list: waiting.map(([d, count]) => t(`efficiency.candidate.${d}` as MessageKey, { count })).join(", "),
+					list: waiting.map(([d, count]) => t(`efficiency.candidate.${d}` as MessageKey, { count })).join(t("efficiency.listSeparator")),
 				}),
 			});
 		}
@@ -320,13 +320,9 @@ export class EfficiencyModal extends Modal {
 		details.createEl("summary", { text: t("efficiency.consent.preview") });
 		details.createEl("pre", { text: pane.prompt });
 		const pstate = this.state.panes[pane.agent];
-		new Setting(el).addButton((b) =>
-			b
-				.setButtonText(t(pstate === "result" ? "efficiency.consent.again" : "efficiency.consent.send"))
-				.setCta()
-				.setDisabled(pstate === "working")
-				.onClick(() => void this.analyze(pane))
-		);
+		const send = actionButton(el, t(pstate === "result" ? "efficiency.consent.again" : "efficiency.consent.send"), true);
+		send.disabled = pstate === "working";
+		send.addEventListener("click", () => void this.analyze(pane));
 	}
 
 	// ---- Analysis --------------------------------------------------------------------------
@@ -552,7 +548,7 @@ export class EfficiencyModal extends Modal {
 			const task = q.ref.replace(/\.[pr]\d+$/, "");
 			const ex = pane.block.excerpts.find((e) => e.task === task);
 			const who = ex ? this.sessionLabel(ex.session, pane.block) : task;
-			evidence.createDiv({ cls: "agent-sessions-efficiency-quote", text: `${who}: “${q.text}”` });
+			evidence.createDiv({ cls: "agent-sessions-efficiency-quote", text: t("efficiency.card.quote", { session: who, text: q.text }) });
 		}
 		const remedy = card.createDiv({ cls: "agent-sessions-efficiency-card-remedy" });
 		remedy.createDiv({ cls: "agent-sessions-efficiency-subhead", text: t("efficiency.card.remedy") });
@@ -574,19 +570,11 @@ export class EfficiencyModal extends Modal {
 				remedy.createDiv({ cls: "agent-sessions-efficiency-subhead", text: t("efficiency.card.draft") });
 				remedy.createEl("pre", { text: f.remedy.draft });
 			}
-			new Setting(remedy).addButton((b) =>
-				b
-					.setButtonText(t("efficiency.card.fixButton"))
-					.setCta()
-					.onClick(() => this.openFix(pane, f, hits))
-			);
+			actionButton(remedy, t("efficiency.card.fixButton"), true).addEventListener("click", () => this.openFix(pane, f, hits));
 		} else if (TEMPLATE_DETECTORS.has(f.detector)) {
-			new Setting(remedy).addButton((b) =>
-				b.setButtonText(t("efficiency.card.copyTemplate")).onClick(async () => {
-					await navigator.clipboard.writeText(requestTemplate());
-					new Notice(t("efficiency.card.copied"));
-				})
-			);
+			actionButton(remedy, t("efficiency.card.copyTemplate"), false).addEventListener("click", () => {
+				void navigator.clipboard.writeText(requestTemplate()).then(() => new Notice(t("efficiency.card.copied")));
+			});
 		}
 	}
 
@@ -610,6 +598,15 @@ export class EfficiencyModal extends Modal {
 		}
 		new FixConfirmModal(this.plugin, pane.agent as AgentId, f, prompt).open();
 	}
+}
+
+/** A right-aligned button row under `parent` (a plain row: no setting divider above it). */
+function actionButton(parent: HTMLElement, text: string, cta: boolean): HTMLButtonElement {
+	const button = parent.createDiv({ cls: "agent-sessions-efficiency-actions" }).createEl("button", { text });
+	if (cta) {
+		button.addClass("mod-cta");
+	}
+	return button;
 }
 
 /** The confirmation before a fixing session starts: the agent, the session's name, the files it

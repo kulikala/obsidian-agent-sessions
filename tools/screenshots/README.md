@@ -41,6 +41,12 @@ SCRATCH=$(mktemp -d)
 node tools/screenshots/shoot.mjs --plugin-js $SCRATCH/main.js   # add --keep to leave the sandbox behind
 ```
 
+`--efficiency` shoots only the token efficiency dialog: `efficiency-stats.png` (the statistics and the consent area), `efficiency-result.png` (the findings after the stand-in `claude` answers the analysis) and `efficiency-fix.png` (the confirmation before a fixing session). `--out DIR` writes the README set to DIR (DIR/ja for Japanese) instead of `docs/images/`; use it for images the README does not show:
+
+```sh
+node tools/screenshots/shoot.mjs --efficiency --out "$SCRATCH/shots" --plugin-js $SCRATCH/main.js
+```
+
 `--plugin-js PATH` (or `AGENT_SESSIONS_PLUGIN_JS`) names the built `main.js`; without it the script
 loads `plugin/main.js`. `manifest.json` and `styles.css` come from `plugin/`.
 
@@ -58,10 +64,11 @@ Every run builds a throwaway sandbox under the system temp directory:
   `~/.claude` and `~/.agents` are the sandbox's; `--use-mock-keychain` keeps macOS from asking
   for a keychain that doesn't exist there.
 - **A stand-in CLI** (`fake-cli.mjs`) — the plugin's `agentSessionsPath` points at it, and it
-  answers `json scan`, `live`, `detail`, `stats`, `usage`, and `activity` from the scenario (`activity` makes up a few working spans per day for every session, deterministically).
+  answers `json scan`, `live`, `detail`, `stats`, `usage`, `activity`, and `efficiency` (made-up statistics and excerpts in `efficiency.mjs`) from the scenario (`activity` makes up a few working spans per day for every session, deterministically).
 - **A stand-in `claude`** (`fake-claude.mjs`) — the Claude Code path in the plugin's settings;
   "Organize names and categories" runs it headless, and it answers with
-  `ORGANIZE_SUGGESTIONS` from `scenario.mjs` in Claude Code's `stream-json` shape.
+  `ORGANIZE_SUGGESTIONS` from `scenario.mjs` in Claude Code's `stream-json` shape; a token
+  efficiency analysis (its prompt carries `<<<DATA`) gets the findings from `efficiency.mjs`.
 - **A stand-in daemon** (`fake-daemon.mjs`) — listens on the sandbox's `daemon.sock`, speaks the
   plugin's framed protocol, and replays a canned transcript (`transcripts.mjs`) when a tab
   attaches; it never starts a process.
