@@ -789,7 +789,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"settings.efficiencyThreshold.name": "利用枠のしきい値",
 	"settings.efficiencyThreshold.desc": "5 時間枠か 7 日枠の使用率がこの値（50〜95%）以上なら、その枠を解析します。",
 	"settings.efficiencyBudget.name": "予算",
-	"settings.efficiencyBudget.desc": "そうでなければ、新しい呼び出しからこの換算トークン（1,000,000〜100,000,000）に達するまでを、最大 7 日分解析します。",
+	"settings.efficiencyBudget.desc": "そうでなければ、新しい呼び出しからこの換算トークン（1,000,000〜100,000,000）に達するまでを、少なくとも直近 24 時間、最大 7 日分解析します。",
 	"settings.efficiencyModel.name": "解析のモデル",
 	"settings.efficiencyModel.desc": "「解析する」を押したときに抜粋を読む Claude Code のモデル。",
 	"settings.efficiencyModel.sonnet": "Sonnet",

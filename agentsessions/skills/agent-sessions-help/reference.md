@@ -86,7 +86,7 @@ It sends excerpts of the sessions (folder, first prompt, the last three prompts,
 
 Where recent tokens could be saved. Open it from the Session manager's `⋯` menu -> "Analyze token efficiency / トークン効率を解析", or the command of the same name.
 1. Opening it reads the local records only (nothing is sent; "Reading the records… / 記録を読んでいます…"). It shows a range line, the totals in weighted tokens, "Where the tokens went / トークンの行き先", and findings the statistics found alone, marked "From the statistics / 統計による".
-2. The range: the 5-hour or the 7-day window when it is used at least as much as Settings -> "Usage limit threshold / 利用枠のしきい値" (80% by default); otherwise the newest calls up to "Budget / 予算" in weighted tokens (10,000,000 by default), at most 7 days back.
+2. The range: the 5-hour or the 7-day window when it is used at least as much as Settings -> "Usage limit threshold / 利用枠のしきい値" (80% by default); otherwise the newest calls up to "Budget / 予算" in weighted tokens (10,000,000 by default), and at least the last 24 hours, at most 7 days back.
 3. Weighted tokens count input once, cache writes 1.25 (five minutes) or 2 (one hour), cache reads 0.1 and output 5, so different kinds of usage compare on one scale.
 4. "Analyze / 解析する" sends masked excerpts to the same agent (Claude Code `claude -p`, Sonnet by default; Settings -> "Model for the analysis / 解析のモデル" switches to Opus). The pane first says how much goes where; "Show what is sent / 送るものを見る" shows the exact text. "Cancel / 取り消す" stops it; the statistics' findings stay.
 5. Each finding card has its impact, estimated saving, confidence, cause, "Evidence / 根拠" (with "Open / 開く" links to the sessions) and "What to do / 対策".

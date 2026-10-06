@@ -47,7 +47,12 @@ class RangeRuleTest(unittest.TestCase):
         calls = [_call(self.NOW - i * 3600, 1_000_000) for i in range(10)]
         r = report.choose_range(self.NOW, self.windows(None, None), calls, 80, 3_000_000)
         self.assertEqual(r['rule'], 'budget')
-        self.assertEqual(r['start'], self.NOW - 2 * 3600)      # the call that reaches the budget
+        self.assertEqual(r['start'], self.NOW - 24 * 3600)     # reached in 2 hours: still a whole day
+        sparse = [_call(self.NOW - i * 10 * 3600, 1_000_000) for i in range(10)]
+        r = report.choose_range(self.NOW, self.windows(None, None), sparse, 80, 3_000_000)
+        self.assertEqual(r['start'], self.NOW - 24 * 3600)     # budget reached at 20 hours: still a day
+        r = report.choose_range(self.NOW, self.windows(None, None), sparse, 80, 5_000_000)
+        self.assertEqual(r['start'], self.NOW - 40 * 3600)     # the call that reaches the budget
 
     def test_budget_stops_at_seven_days(self):
         calls = [_call(self.NOW - i * DAY, 1000) for i in range(10)]

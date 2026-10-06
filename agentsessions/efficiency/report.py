@@ -14,6 +14,7 @@ from . import cache, detect, excerpt, impact, normalize, tasks
 
 DAY = 86400.0
 MAX_LOOKBACK_DAYS = 7
+MIN_LOOKBACK_HOURS = 24
 DEFAULT_THRESHOLD = 80.0
 DEFAULT_BUDGET = 10_000_000
 DEFAULT_MAX_SESSIONS = 200
@@ -31,8 +32,8 @@ SUMMARY_SLACK = 2000
 def choose_range(now: float, windows: Dict[str, dict], calls: List[dict], threshold: float,
                  budget: float) -> dict:
     """The first rule that applies: the 5-hour window at or over `threshold` (or exhausted),
-    the 7-day window likewise, else the newest calls up to `budget` weighted tokens (no
-    further back than 7 days)."""
+    the 7-day window likewise, else the newest calls up to `budget` weighted tokens, and at
+    least the last 24 hours (no further back than 7 days)."""
     for key in ('five_hour', 'seven_day'):
         win = windows.get(key)
         if not win:
@@ -52,6 +53,8 @@ def choose_range(now: float, windows: Dict[str, dict], calls: List[dict], thresh
             break
     else:
         start = floor
+    # The budget alone can be a few minutes of heavy parallel use: always look back a day.
+    start = max(min(start, now - MIN_LOOKBACK_HOURS * 3600), floor)
     return {'rule': 'budget', 'start': start, 'end': now, 'used_percentage': None,
             'exhausted': False, 'budget': budget}
 

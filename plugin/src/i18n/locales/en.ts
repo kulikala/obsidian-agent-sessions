@@ -789,7 +789,7 @@ export const en = {
 	"settings.efficiencyThreshold.name": "Usage limit threshold",
 	"settings.efficiencyThreshold.desc": "When the 5-hour or 7-day window is used at least this much (50–95%), that window is analysed.",
 	"settings.efficiencyBudget.name": "Budget",
-	"settings.efficiencyBudget.desc": "Otherwise, the newest calls up to this many weighted tokens (1,000,000–100,000,000) are analysed, at most the last 7 days.",
+	"settings.efficiencyBudget.desc": "Otherwise, the newest calls up to this many weighted tokens (1,000,000–100,000,000) are analysed, and at least the last 24 hours, at most the last 7 days.",
 	"settings.efficiencyModel.name": "Model for the analysis",
 	"settings.efficiencyModel.desc": "The Claude Code model that reads the excerpts when you press Analyze.",
 	"settings.efficiencyModel.sonnet": "Sonnet",

@@ -307,7 +307,7 @@ Shows where your recent tokens could be saved, why they were spent, and what to 
 
 What the dialog shows:
 
-- **The range line**: which recent stretch was analysed. If the 5-hour or 7-day window is used at least as much as **Usage limit threshold**, that window; otherwise the newest calls up to the **Budget** in weighted tokens, at most 7 days back. Then the session count and the tokens.
+- **The range line**: which recent stretch was analysed. If the 5-hour or 7-day window is used at least as much as **Usage limit threshold**, that window; otherwise the newest calls up to the **Budget** in weighted tokens, and at least the last 24 hours, at most 7 days back. Then the session count and the tokens.
 - **Weighted tokens**: input, plus cache writes at 1.25 (five minutes) or 2 (one hour), cache reads at 0.1, and output at 5, so different usage compares on one scale.
 - **Where the tokens went**: each call counted once, under the finding that costs it the most; teammates under **Team**, the rest under **Other**.
 - **A finding**: its impact (weighted tokens, dollars when known, share of the range), the estimated saving, the confidence, the cause, the evidence (open it to see the sessions, with **Open** links, and quotes), and what to do.
