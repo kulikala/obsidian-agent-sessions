@@ -122,6 +122,13 @@ describe("agentEnvFor", () => {
 		expect(agentEnvFor(settings, {})).toEqual({ AGENT_SESSIONS_AGENTS: "claude" });
 	});
 
+	it("forwards Codex's CODEX_SQLITE_HOME with CODEX_HOME", () => {
+		const settings = {
+			agents: { ...DEFAULT_SETTINGS.agents, codex: { enabled: true, path: "", env: "CODEX_HOME=/p2\nCODEX_SQLITE_HOME=/db\nX=1" } },
+		};
+		expect(agentEnvFor(settings)).toEqual({ AGENT_SESSIONS_AGENTS: "claude,codex", CODEX_HOME: "/p2", CODEX_SQLITE_HOME: "/db" });
+	});
+
 	it("omits CODEX_HOME when codex's env setting doesn't have one", () => {
 		expect(agentEnvFor({ agents: DEFAULT_SETTINGS.agents })).toEqual({ AGENT_SESSIONS_AGENTS: "claude" });
 	});

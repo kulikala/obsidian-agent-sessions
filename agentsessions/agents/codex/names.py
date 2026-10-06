@@ -37,6 +37,7 @@ process ever sees that copy, and it's deleted once the query is done.
 """
 import json
 import os
+import re
 import shutil
 import sqlite3
 import tempfile
@@ -147,6 +148,39 @@ def _save_last_known(cache_path: str, fresh: Dict[str, ThreadInfo]) -> None:
         pass   # best-effort -- a failed cache write never blocks the lookup itself
 
 
+_SQLITE_HOME_LINE = re.compile(r"""^\s*sqlite_home\s*=\s*(?:"((?:[^"\\]|\\.)*)"|'([^']*)')\s*(?:#.*)?$""")
+_TABLE_LINE = re.compile(r'^\s*\[')
+
+
+def _configured_sqlite_home(home: str) -> Optional[str]:
+    """`sqlite_home` at the top level of `home`'s `config.toml` (before the first table), if set."""
+    try:
+        with open(os.path.join(home, 'config.toml'), encoding='utf-8') as f:
+            lines = f.read().splitlines()
+    except (OSError, UnicodeDecodeError):
+        return None
+    for line in lines:
+        if _TABLE_LINE.match(line):
+            return None
+        m = _SQLITE_HOME_LINE.match(line)
+        if m:
+            value = m.group(2) if m.group(1) is None else m.group(1).replace('\\\\', '\\').replace('\\"', '"')
+            return value or None
+    return None
+
+
+def sqlite_home(home: str, environ: Optional[Dict[str, str]] = None) -> str:
+    """The folder holding `state_5.sqlite`, by Codex's own order (`codex-rs/core/src/config/mod.rs`):
+    `sqlite_home` in `config.toml`, else `CODEX_SQLITE_HOME`, else `home` (`CODEX_HOME`). A relative
+    path is taken against `home`."""
+    from .rollout import codex_variable
+    chosen = _configured_sqlite_home(home) or codex_variable('CODEX_SQLITE_HOME', environ).strip()
+    if not chosen:
+        return home
+    chosen = os.path.expanduser(chosen)
+    return chosen if os.path.isabs(chosen) else os.path.join(home, chosen)
+
+
 def lookup_thread_info(home: str, session_ids: List[str],
                         names_cache_path: Optional[str] = None) -> Dict[str, ThreadInfo]:
     """`{thread_id: ThreadInfo}` for every id in `session_ids` that has a
@@ -159,7 +193,7 @@ def lookup_thread_info(home: str, session_ids: List[str],
         names_cache_path = config.CODEX_NAMES_CACHE_PATH
     if not session_ids:
         return {}
-    path = os.path.join(home, DB_FILENAME)
+    path = os.path.join(sqlite_home(home), DB_FILENAME)
     if not os.path.exists(path):
         return _last_known_subset(names_cache_path, session_ids)
 

@@ -38,7 +38,7 @@ import os
 import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Iterator, List, Optional, Tuple
+from typing import Iterator, List, Mapping, Optional, Tuple
 
 from ...sessions.scan import RACY_WINDOW, TAIL_CHUNK, TAIL_LIMIT, iter_tail_lines  # noqa: F401  (re-exported for callers)
 
@@ -76,10 +76,23 @@ def is_real_user_text(text: str) -> bool:
     return not any(stripped.startswith(p) for p in INJECTED_PREFIXES)
 
 
-def codex_home() -> str:
-    """env `CODEX_HOME`, or `~/.codex`. Re-read on every call (not cached at import
+def codex_variable(name: str, environ: Optional[Mapping[str, str]] = None,
+                   ui_state: Optional[str] = None) -> str:
+    """`name` (`CODEX_HOME`, `CODEX_SQLITE_HOME`) from the environment, else from Codex's
+    "environment variables" setting as the plugin mirrors it into `ui.json` (`agentLaunch`), so a
+    command run outside a Codex session (the TUI, a Claude Code session's tool) reads the same
+    profile the plugin's Codex tabs use. `''` when neither has it."""
+    environ = os.environ if environ is None else environ
+    if environ.get(name):
+        return environ[name]
+    from ..launch import read_launch_config
+    return read_launch_config(ui_state).get('codex', {}).get('env', {}).get(name, '')
+
+
+def codex_home(environ: Optional[Mapping[str, str]] = None, ui_state: Optional[str] = None) -> str:
+    """`CODEX_HOME` (`codex_variable`), or `~/.codex`. Re-read on every call (not cached at import
     time) since the plugin can pass a different value per invocation."""
-    return os.environ.get('CODEX_HOME') or os.path.join(os.path.expanduser('~'), '.codex')
+    return codex_variable('CODEX_HOME', environ, ui_state) or os.path.join(os.path.expanduser('~'), '.codex')
 
 
 def session_id_of(path: str) -> Optional[str]:

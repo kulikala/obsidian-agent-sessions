@@ -76,9 +76,13 @@ export function setAgentEnv(vars: Record<string, string>): void {
  * with. */
 const OPENCODE_LOCATION_VARS = ["XDG_DATA_HOME", "XDG_CONFIG_HOME", "OPENCODE_DB", "OPENCODE_DISABLE_CHANNEL_DB"] as const;
 
+/** The variables Codex locates its files by: `CODEX_HOME` (rollouts, `config.toml`) and
+ * `CODEX_SQLITE_HOME` (`state_5.sqlite`, when `config.toml` sets no `sqlite_home`). */
+const CODEX_LOCATION_VARS = ["CODEX_HOME", "CODEX_SQLITE_HOME"] as const;
+
 /** The env `setAgentEnv` expects, computed from the current agent settings: `AGENT_SESSIONS_AGENTS`
- * (every enabled agent, comma-separated) plus Codex's `CODEX_HOME` if its "environment
- * variables" setting has one (Python reads `CODEX_HOME` straight from its own env on every
+ * (every enabled agent, comma-separated) plus Codex's `CODEX_HOME` / `CODEX_SQLITE_HOME` if its
+ * "environment variables" setting has them (Python reads `CODEX_HOME` straight from its own env on every
  * call — see `agentsessions/agents/codex/rollout.py`'s `codex_home()`), and OpenCode's
  * `XDG_DATA_HOME` / `XDG_CONFIG_HOME` / `OPENCODE_DB` / `OPENCODE_DISABLE_CHANNEL_DB`: from its own
  * "environment variables" setting, else from
@@ -90,9 +94,11 @@ export function agentEnvFor(
 ): Record<string, string> {
 	const enabled = AGENT_IDS.filter((id) => settings.agents[id].enabled);
 	const vars: Record<string, string> = { AGENT_SESSIONS_AGENTS: enabled.join(",") };
-	const codexHome = parseEnvLines(settings.agents.codex.env).CODEX_HOME;
-	if (codexHome) {
-		vars.CODEX_HOME = codexHome;
+	const codexEnv = parseEnvLines(settings.agents.codex.env);
+	for (const name of CODEX_LOCATION_VARS) {
+		if (codexEnv[name]) {
+			vars[name] = codexEnv[name];
+		}
 	}
 	const opencodeEnv = parseEnvLines(settings.agents.opencode.env);
 	for (const name of OPENCODE_LOCATION_VARS) {

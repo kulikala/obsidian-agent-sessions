@@ -5,7 +5,8 @@ import tempfile
 import unittest
 from unittest import mock
 
-from agentsessions.agents.codex import names
+from agentsessions import config
+from agentsessions.agents.codex import names, rollout
 
 ID1 = '07000000-0000-0000-0000-000000000001'
 ID2 = '07000000-0000-0000-0000-000000000002'
@@ -157,3 +158,69 @@ class TestConnectFallback(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestSqliteHome(unittest.TestCase):
+    """`state_5.sqlite`'s folder, by Codex's own order: `sqlite_home` in config.toml, then
+    `CODEX_SQLITE_HOME`, then CODEX_HOME."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = os.path.join(self.tmp.name, 'p2')
+        os.makedirs(self.home)
+        self.ui = os.path.join(self.tmp.name, 'ui.json')
+        p = mock.patch.object(config, 'UI_STATE_PATH', self.ui)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def config(self, text):
+        with open(os.path.join(self.home, 'config.toml'), 'w') as f:
+            f.write(text)
+
+    def test_codex_home_by_default(self):
+        self.assertEqual(names.sqlite_home(self.home, {}), self.home)
+
+    def test_environment_then_config(self):
+        db = os.path.join(self.tmp.name, 'db')
+        self.assertEqual(names.sqlite_home(self.home, {'CODEX_SQLITE_HOME': db}), db)
+        self.config('model = "m"\nsqlite_home = "%s" # here\n[tui]\n' % os.path.join(self.tmp.name, 'cfg').replace('\\', '\\\\'))
+        self.assertEqual(names.sqlite_home(self.home, {'CODEX_SQLITE_HOME': db}), os.path.join(self.tmp.name, 'cfg'))
+
+    def test_only_the_top_level_key_counts_and_relative_paths_are_under_home(self):
+        self.config("[profiles.x]\nsqlite_home = '/nope'\n")
+        self.assertEqual(names.sqlite_home(self.home, {}), self.home)
+        self.config("sqlite_home = 'state'\n")
+        self.assertEqual(names.sqlite_home(self.home, {}), os.path.join(self.home, 'state'))
+
+    def test_names_are_read_from_the_sqlite_home(self):
+        db_dir = os.path.join(self.tmp.name, 'db')
+        os.makedirs(db_dir)
+        _write_wal_db(db_dir, [(ID1, 'Elsewhere', None)])
+        cache = os.path.join(self.tmp.name, 'cache.json')
+        with mock.patch.dict(os.environ, {'CODEX_SQLITE_HOME': db_dir}):
+            self.assertEqual(names.lookup_thread_info(self.home, [ID1], names_cache_path=cache)[ID1].name, 'Elsewhere')
+
+
+class TestProfileFromSettings(unittest.TestCase):
+    """Outside a Codex session (no CODEX_HOME in the environment) the profile comes from the
+    plugin's Codex setting, mirrored into ui.json."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.ui = os.path.join(self.tmp.name, 'ui.json')
+
+    def write_ui(self, env):
+        with open(self.ui, 'w') as f:
+            json.dump({'agentLaunch': {'codex': {'path': '', 'env': env}}}, f)
+
+    def test_environment_first_then_the_setting_then_the_default(self):
+        self.write_ui({'CODEX_HOME': '/p2', 'CODEX_SQLITE_HOME': '/db'})
+        self.assertEqual(rollout.codex_home({'CODEX_HOME': '/env'}, self.ui), '/env')
+        self.assertEqual(rollout.codex_home({}, self.ui), '/p2')
+        self.assertEqual(rollout.codex_variable('CODEX_SQLITE_HOME', {}, self.ui), '/db')
+        self.write_ui({})
+        self.assertEqual(rollout.codex_home({}, self.ui), os.path.join(os.path.expanduser('~'), '.codex'))
+        self.assertEqual(rollout.codex_home({}, os.path.join(self.tmp.name, 'missing.json')),
+                         os.path.join(os.path.expanduser('~'), '.codex'))

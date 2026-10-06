@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
 	applyCodexConfig,
+	codexProfileNeedsSync,
 	defaultCodexConfigPath,
 	hasAnyKey,
 	looksMalformed,
@@ -285,5 +286,14 @@ describe("sendSequence × applyCodexConfig (T-108: the bytes sent must match wha
 		for (const key of ["shift+enter", "ctrl+enter", "alt+enter", "cmd+enter"] as const) {
 			expect(sendSequence("newline", key)).toBe("\r");
 		}
+	});
+});
+
+describe("codexProfileNeedsSync", () => {
+	it("syncs a profile that moved to an existing folder, never a half-typed or unchanged one", () => {
+		const exists = (dir: string) => dir === "/p2";
+		expect(codexProfileNeedsSync("/h/.codex/config.toml", "/p2/config.toml", exists)).toBe(true);
+		expect(codexProfileNeedsSync("/h/.codex/config.toml", "/p/config.toml", exists)).toBe(false);
+		expect(codexProfileNeedsSync("/p2/config.toml", "/p2/config.toml", exists)).toBe(false);
 	});
 });

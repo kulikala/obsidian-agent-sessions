@@ -339,6 +339,13 @@ function backupTimestamp(): string {
 
 /** Where `config.toml` lives — under `$CODEX_HOME` if it's set, matching the Python side's
  * `DEFAULT_CONFIG_TOML_PATH`. */
+/** Whether a changed Codex profile (`CODEX_HOME`) gets the managed lines now: when the config path
+ * moved and the new profile's folder exists (Codex refuses a `CODEX_HOME` that doesn't, and a
+ * half-typed path must not leave folders behind). Pure. */
+export function codexProfileNeedsSync(previousConfig: string, nextConfig: string, folderExists: (dir: string) => boolean): boolean {
+	return previousConfig !== nextConfig && folderExists(path.dirname(nextConfig));
+}
+
 export function defaultCodexConfigPath(homeDir: string, codexHome?: string): string {
 	const base = codexHome || path.join(homeDir, ".codex");
 	return path.join(base, "config.toml");

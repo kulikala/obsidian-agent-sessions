@@ -76,7 +76,7 @@ import { CONFIRM_KEY, isModelSwitchDialog, mayAskToConfirm } from "./terminal/mo
 import { EditServer, editReplyFor, submitsAfterEdit, tabOwnsEditSession, type EditReply, type EditRequest } from "./backend/edit-server";
 import { SessionIndex, type Row } from "./sessions/index";
 import { getLang, languageOptions, resolveLang, setLang, t, type MessageKey } from "./i18n";
-import { applyCodexConfig, defaultCodexConfigPath, type ApplyCodexConfigResult } from "./terminal/codex-config";
+import { applyCodexConfig, codexProfileNeedsSync, defaultCodexConfigPath, type ApplyCodexConfigResult } from "./terminal/codex-config";
 import { msSinceKey, summarizeReloadSafety, type ReloadSafety } from "./terminal/reload-safety";
 import { applyEditorKey, applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./terminal/keybindings";
 import { commandChunks, PASTE_BEGIN, PASTE_END } from "./terminal/command-chunks";
@@ -2641,6 +2641,18 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 							agentSettings.env = value;
 							await this.plugin.saveSettings();
 						});
+						if (id === "codex") {
+							// A new `CODEX_HOME` is a new profile: its config.toml gets the managed
+							// lines once the field is left, not on every keystroke of a path.
+							let configPath = this.plugin.codexConfigPath();
+							textArea.inputEl.addEventListener("change", () => {
+								const next = this.plugin.codexConfigPath();
+								if (codexProfileNeedsSync(configPath, next, (dir) => existsSync(dir)) && agentSettings.enabled) {
+									this.plugin.noticeConfigResult(this.plugin.syncCodexConfig(), "notice.codexConfigWritten");
+								}
+								configPath = next;
+							});
+						}
 						textArea.inputEl.rows = 3;
 						textArea.inputEl.addClass("agent-sessions-agent-env");
 					});
