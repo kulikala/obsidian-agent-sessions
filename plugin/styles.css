@@ -242,7 +242,7 @@
 .agent-sessions-manager-category-bars {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-	column-gap: var(--size-4-3);
+	gap: 0 var(--size-4-3);
 	flex: 0 0 auto;
 	/* Lets the vertical divider below tell side-by-side (2 columns) from stacked (1) apart, based
 	   on this row's own rendered width rather than the viewport's. */
@@ -1298,8 +1298,7 @@
 .agent-sessions-limits {
 	display: grid;
 	grid-template-columns: auto auto 1fr 3em 6.5em;
-	column-gap: var(--size-4-2);
-	row-gap: 2px;
+	gap: 2px var(--size-4-2);
 	padding: var(--size-4-2) var(--size-4-3);
 	font-size: var(--font-ui-smaller);
 	min-width: 0;
@@ -1315,18 +1314,10 @@
 	opacity: 0.6;
 }
 
-/* One wrapper per shown agent — exists only for `LimitsView`'s own bookkeeping
-   (`agentWrapEls`); contributes nothing to layout itself (`display: contents` removes its
-   box entirely, so its `.agent-sessions-limits-row` children become direct items of the host's
-   own grid above, each individually placed into its own row by normal grid auto-placement). */
-.agent-sessions-limits-agent {
-	display: contents;
-}
-
 /* A little extra space above the first row of a second-or-later agent group — applied to
-   the row itself, since the now-`display: contents` agent wrapper above has no box of its own to
-   put a margin on (`JS marks exactly the first row of every agent after the first with this
-   class — `LimitsView.render()`). */
+   the row itself, since every agent's rows are direct items of the host's grid above, with no
+   per-agent box to put a margin on (`JS marks exactly the first row of every agent after the
+   first with this class — `LimitsView.render()`). */
 .agent-sessions-limits-row.is-group-start {
 	margin-top: var(--size-2-1);
 }
@@ -2360,10 +2351,10 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
     overflow: hidden;
 }
 
-.xterm-dim {
+.xterm .xterm-dim {
     /* Dim should not apply to background, so the opacity of the foreground color is applied
      * explicitly in the generated class and reset to 1 here */
-    opacity: 1 !important;
+    opacity: 1;
 }
 
 .xterm-underline-1 { text-decoration: underline; }
@@ -2424,6 +2415,14 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 /* "Find again"'s result, shown in its own row once it's been run for that agent this session. */
 .agent-sessions-agent-detected {
 	color: var(--text-muted);
+}
+
+/* Obsidian 1.13+ draws the settings tab as groups of rows; the Agents group holds one row that
+   carries the agents' own rows. That row adds no box of its own, so the rows inside line up
+   with every other row on the page. */
+.setting-group .setting-item.agent-sessions-settings-block:not(.setting-item-heading) {
+	display: block;
+	padding: 0;
 }
 
 /* Each agent's own sub-section within the Agents settings section (heading + toggle, then
@@ -2893,7 +2892,6 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 .agent-sessions-organize-cell-suggested {
 	grid-area: suggested;
 	display: flex;
-	flex-wrap: wrap;
 	flex-wrap: wrap;
 	align-items: center;
 	gap: var(--size-4-1);

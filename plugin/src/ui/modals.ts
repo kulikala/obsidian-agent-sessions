@@ -806,7 +806,9 @@ export class ChangeModelModal extends Modal {
 			if (this.model === KEEP) {
 				dd.addOption(KEEP, current.display ?? t("common.default"));
 			}
-			addGroups(dd.selectEl, MODEL_ALIAS_GROUPS, (alias) => dd.addOption(alias, modelAliasLabel(alias)));
+			addGroups(dd.selectEl, MODEL_ALIAS_GROUPS, (alias) => {
+				dd.addOption(alias, modelAliasLabel(alias));
+			});
 			dd.addOption(OTHER_MODEL, t("modal.changeModel.other"));
 			dd.setValue(this.model);
 			dd.onChange((value) => {
@@ -823,7 +825,9 @@ export class ChangeModelModal extends Modal {
 			if (this.effort === KEEP) {
 				dd.addOption(KEEP, current.effort ?? t("common.default"));
 			}
-			addGroups(dd.selectEl, EFFORT_CHOICE_GROUPS, (level) => dd.addOption(level, effortLabel(level)));
+			addGroups(dd.selectEl, EFFORT_CHOICE_GROUPS, (level) => {
+				dd.addOption(level, effortLabel(level));
+			});
 			dd.setValue(this.effort);
 			dd.onChange((value) => {
 				this.effort = value;

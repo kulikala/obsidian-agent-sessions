@@ -59,7 +59,7 @@ export function runHeadless(run: HeadlessRun): Promise<string> {
 				return;
 			}
 			settled = true;
-			clearTimeout(timer);
+			window.clearTimeout(timer);
 			run.signal?.removeEventListener("abort", onAbort);
 			fn();
 		};
@@ -67,7 +67,7 @@ export function runHeadless(run: HeadlessRun): Promise<string> {
 			child.kill();
 			finish(() => reject(new Error("aborted")));
 		};
-		const timer = setTimeout(() => {
+		const timer = window.setTimeout(() => {
 			child.kill();
 			finish(() => reject(new Error("timed out")));
 		}, TIMEOUT_MS);

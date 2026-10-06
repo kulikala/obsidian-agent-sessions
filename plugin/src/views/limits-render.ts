@@ -76,11 +76,10 @@ function readLimitsFiles(statusDir: string): RawLimitsFile[] {
  * re-fetches every agent's source right away.
  */
 export class LimitsView {
+	/** The grid every agent's rows go straight into, in agent order. The rows are rebuilt fresh on
+	 * every `render()` tick (the row count itself can change for a non-Claude agent as fresh
+	 * `json stats` data arrives), so no row element needs tracking here. */
 	private hostEl: HTMLElement;
-	/** One wrapper per shown agent — its rows are rebuilt fresh on every `render()` tick (the row
-	 * count itself can change for a non-Claude agent as fresh `json stats` data arrives), so no
-	 * per-row element needs tracking here, just the per-agent container. */
-	private agentWrapEls: Partial<Record<AgentId, HTMLElement>> = {};
 	/** The agents currently shown (`rebuildRows`'s snapshot of the enabled set) — falls back to
 	 * `["claude"]` alone if somehow none is, so there's always at least one agent's rows. */
 	private agents: AgentId[] = [];
@@ -106,9 +105,9 @@ export class LimitsView {
 		this.statsFetchTimer = window.setInterval(() => void this.reloadStatsAgents(), STATS_FETCH_INTERVAL_MS);
 	}
 
-	/** Rebuilds the per-agent containers for the currently-enabled agent set — call whenever that
-	 * set might have changed (`side.ts` calls this alongside its own settings-changed handling).
-	 * A no-op (keeps existing containers and data) if the set is unchanged. */
+	/** Rebuilds the rows for the currently-enabled agent set — call whenever that set might have
+	 * changed (`side.ts` calls this alongside its own settings-changed handling). A no-op (keeps
+	 * the existing rows and data) if the set is unchanged. */
 	refreshAgents(): void {
 		const next = agentsWithLimits(this.plugin.settings.agents);
 		if (next.length === this.agents.length && next.every((id, i) => id === this.agents[i])) {
@@ -123,10 +122,6 @@ export class LimitsView {
 		// Only OpenCode enabled: nothing to show, and no empty box either.
 		this.hostEl.toggleClass("is-empty", this.agents.length === 0);
 		this.hostEl.empty();
-		this.agentWrapEls = {};
-		for (const agent of this.agents) {
-			this.agentWrapEls[agent] = this.hostEl.createDiv({ cls: "agent-sessions-limits-agent" });
-		}
 	}
 
 	/** Re-reads/re-fetches every currently-shown agent's source (called whenever the statusLine
@@ -205,19 +200,14 @@ export class LimitsView {
 		// second) — so the window shown is always the current one from the moment it resets,
 		// independent of how often `reload()`/`reloadStatsAgents()` runs.
 		const now = Date.now() / 1000;
+		this.hostEl.empty();
 		this.agents.forEach((agent, agentIndex) => {
-			const wrapEl = this.agentWrapEls[agent];
-			if (!wrapEl) {
-				return;
-			}
-			wrapEl.empty();
 			// a little extra space above the first row of a second-or-later agent group —
-			// applied to the row itself (`agentWrapEls[agent]`, i.e. this whole `.agent-sessions-
-			// limits-agent`, is `display: contents` now, so it has no box of its own to put a
-			// margin on; see styles.css).
+			// applied to the row itself, since the rows of every agent sit directly in the
+			// host's grid with no per-agent box to put a margin on (see styles.css).
 			let rowIndexWithinAgent = 0;
 			const renderRow = (label: string, shortLabel: string, w: RateLimitWindow | null) => {
-				this.renderAgentWindow(wrapEl, agent, label, shortLabel, w, isGroupStartRow(agentIndex, rowIndexWithinAgent));
+				this.renderAgentWindow(this.hostEl, agent, label, shortLabel, w, isGroupStartRow(agentIndex, rowIndexWithinAgent));
 				rowIndexWithinAgent++;
 			};
 			if (agent === "claude") {
