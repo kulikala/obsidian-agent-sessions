@@ -32,6 +32,8 @@ export interface EffRange {
 	used_percentage: number | null;
 	exhausted: boolean;
 	budget?: number;
+	/** What set a budget range's start: the budget, the one-day minimum, or the 7-day maximum. */
+	basis?: "budget" | "min_day" | "max_week";
 	windows?: Record<string, EffWindow>;
 }
 
@@ -76,6 +78,8 @@ export interface EffHit {
 	change: ChangeKind | null;
 	targets: string[];
 	shown_targets: string[];
+	/** E08: the file read at the start of every session (absolute; `metrics.shown_path` masked). */
+	read_path?: string;
 }
 
 export interface EffQuoteSource {
@@ -137,7 +141,13 @@ export function rangeLine(agentName: string, block: Pick<EffAgent, "range" | "to
 	} else if (r.rule.startsWith("window_")) {
 		rule = t("efficiency.range.window", { label: r.rule, usage: usageLabel(r), start, end });
 	} else if (r.rule === "budget") {
-		rule = t("efficiency.range.budget", { budget: formatK(r.budget ?? 0), start });
+		const budget = formatK(r.budget ?? 0);
+		rule =
+			r.basis === "min_day"
+				? t("efficiency.range.budgetDay", { budget })
+				: r.basis === "max_week"
+					? t("efficiency.range.budgetWeek", { budget })
+					: t("efficiency.range.budget", { budget, start, hours: Math.max(1, Math.round((r.end - r.start) / 3600)) });
 	} else {
 		rule = t("efficiency.range.explicit", { start, end });
 	}
@@ -262,6 +272,8 @@ export interface Finding {
 	impactUsd: number | null;
 	effectW: number;
 	sessions: string[];
+	/** Files the finding is about besides its targets (E08: what sessions keep reading). */
+	sources?: string[];
 	/** From the statistics alone (canned text), not from the model. */
 	fromStats: boolean;
 }
@@ -438,6 +450,7 @@ export function canned(hits: EffHit[]): { title: string; cause: string; remedy: 
 			vars.write = formatK(num(m.cache_write));
 			break;
 		case "E08":
+			vars.path = String(m.shown_path ?? h.read_path ?? "");
 			vars.sessions = num(m.sessions);
 			vars.tokens = formatK(num(m.est_tokens));
 			if (h.remedy_kind === "fix") {
@@ -499,6 +512,10 @@ function remedyFromHits(hits: EffHit[], summary: string): Remedy {
 	};
 }
 
+function sourcesOf(hits: EffHit[]): string[] {
+	return [...new Set(hits.map((h) => h.read_path).filter((p): p is string => !!p))];
+}
+
 function sameList(a: string[], b: string[]): boolean {
 	return a.length === b.length && a.every((x, i) => x === b[i]);
 }
@@ -517,6 +534,7 @@ export function statFinding(hits: EffHit[]): Finding {
 		confidence: hits[0].confidence,
 		...impactOf(hits),
 		sessions: [...new Set(hits.map((h) => h.session))],
+		sources: sourcesOf(hits),
 		fromStats: true,
 	};
 }
@@ -659,6 +677,7 @@ export function mergeReply(reply: string, block: Pick<EffAgent, "hits" | "excerp
 			confidence: asStr(raw.confidence) || hits[0].confidence,
 			...impactOf(hits),
 			sessions: [...new Set(hits.map((h) => h.session))],
+			sources: sourcesOf(hits),
 			fromStats: false,
 		});
 	}
@@ -724,6 +743,9 @@ export function fixPrompt(finding: Finding, evidence: string[]): string | null {
 				change: change === "move" ? t(i === 0 ? "efficiency.fix.moveFrom" : "efficiency.fix.moveTo") : t(`efficiency.change.${change}`),
 			})
 		),
+		...(finding.sources && finding.sources.length > 0
+			? [t("efficiency.fix.prompt.sources"), ...finding.sources.slice(0, 3).map((p) => `- ${p}`)]
+			: []),
 		t("efficiency.fix.prompt.draft"),
 		finding.remedy.draft || finding.remedy.summary,
 		"",

@@ -111,7 +111,7 @@ export function classifyAnalysisFailure(err: unknown, aborted: boolean): Analysi
 	}
 	const message = err instanceof Error ? err.message : String(err);
 	const code = (err as NodeJS.ErrnoException | undefined)?.code;
-	if (code === "ENOENT" || /ENOENT|not found/i.test(message)) {
+	if (code === "ENOENT" || /\bspawn\b.*\bENOENT\b/.test(message)) {
 		return { kind: "agentUnavailable", detail: message };
 	}
 	if (err instanceof HeadlessError) {

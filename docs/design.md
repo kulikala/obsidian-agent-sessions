@@ -794,7 +794,7 @@ Name, label, and category are the ones `json scan` reports (`category` is the gr
 
 Shows where recent tokens could be saved, with evidence, and lets an agent fix the findings that live in files (`agentsessions/efficiency/`, `plugin/src/sessions/efficiency.ts`, `plugin/src/ui/efficiency-modal.ts`).
 
-**Range.** Per agent, the first that applies: the 5-hour window when its usage is at or above the threshold (setting, 80%) or it is exhausted; the 7-day window likewise; otherwise the newest calls, sub-agents included, until their weighted tokens reach the budget (setting, 10,000,000) and at least the last 24 hours, going back at most 7 days. `--from/--to` gives the range directly (`explicit`). The range is fixed once per run and returned as `range`.
+**Range.** Per agent, the first that applies: the 5-hour window when its usage is at or above the threshold (setting, 80%) or it is exhausted; the 7-day window likewise; otherwise the newest calls, sub-agents included, until their weighted tokens reach the budget (setting, 10,000,000) and at least the last 24 hours, going back at most 7 days; `range.basis` says which of the three set the start (`budget`, `min_day`, `max_week`), and the range line says it in words. `--from/--to` gives the range directly (`explicit`). The range is fixed once per run and returned as `range`.
 
 **Weighted tokens.** `W = input + 1.25 × 5-minute cache writes + 2 × 1-hour cache writes + 0.1 × cache reads + 5 × output`, the same for every agent; hits are ranked by it, and dollars are added where `pricing.py` knows the model.
 

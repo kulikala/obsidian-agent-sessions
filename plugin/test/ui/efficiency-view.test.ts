@@ -67,6 +67,8 @@ describe("failures", () => {
 		const missing = Object.assign(new Error("spawn claude ENOENT"), { code: "ENOENT" });
 		expect(classifyAnalysisFailure(missing, false).kind).toBe("agentUnavailable");
 		expect(classifyAnalysisFailure(new HeadlessError("timed out"), false)).toEqual({ kind: "timeout" });
+		expect(classifyAnalysisFailure(new HeadlessError("model not found"), false)).toEqual({ kind: "llm", detail: "model not found" });
+		expect(classifyAnalysisFailure(new Error("spawn /x/claude ENOENT"), false).kind).toBe("agentUnavailable");
 		expect(classifyAnalysisFailure(new HeadlessError("boom", CLAUDE_RESULT), false)).toEqual({ kind: "llm", detail: "boom" });
 	});
 

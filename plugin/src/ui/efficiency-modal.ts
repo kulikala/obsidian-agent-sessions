@@ -375,7 +375,10 @@ export class EfficiencyModal extends Modal {
 		try {
 			const agent = pane.agent as AgentId;
 			const settings = this.plugin.settings.agents[agent];
-			const bin = await resolveAgentBinary(agent, settings.path, Platform.isMacOS);
+			const bin = await resolveAgentBinary(agent, settings.path, Platform.isMacOS).catch((err: Error) => {
+				// Not found on this machine: the same failure as a spawn that can't find it.
+				throw Object.assign(new Error(err.message), { code: "ENOENT" });
+			});
 			const env = withBinDirOnPath(
 				{
 					...process.env,

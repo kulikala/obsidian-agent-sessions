@@ -1589,7 +1589,12 @@ export default class AgentSessionsPlugin extends Plugin {
 			return id;
 		}
 		// Claude Code writes a `--name` to the transcript only with the first message; the same
-		// name sent as `/rename` once it is idle writes it at once, so the row shows it.
+		// name sent as `/rename` once it is idle writes it at once, so the row shows it. A session
+		// started with its first message already has one (and may be waiting on a plan approval,
+		// where typed text would be read as a choice), so it gets no `/rename`.
+		if (start?.prompt) {
+			return id;
+		}
 		void opened
 			.then(async () => {
 				if (!(await this.index.registry.waitFor(id, "idle", WAIT_IDLE_MS))) {

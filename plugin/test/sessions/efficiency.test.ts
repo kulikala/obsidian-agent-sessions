@@ -258,6 +258,29 @@ describe("prompts", () => {
 		}
 	});
 
+	it("an E08 request names the file read at the start of every session", () => {
+		const hits = [
+			hit({
+				id: "h-e08",
+				detector: "E08",
+				metrics: { sessions: 4, est_tokens: 3000, shown_path: "docs/ref.md" },
+				remedy_kind: "fix",
+				change: "add",
+				targets: ["/v/CLAUDE.md"],
+				shown_targets: ["CLAUDE.md"],
+				read_path: "/v/docs/ref.md",
+			}),
+		];
+		const [f] = statFindings(hits);
+		expect(f.cause).toContain("docs/ref.md");
+		expect(f.remedy.summary).toContain("docs/ref.md");
+		const text = fixPrompt(f, []) as string;
+		expect(text).toContain(t("efficiency.fix.prompt.sources"));
+		expect(text).toContain("- /v/docs/ref.md");
+		setLang("ja");
+		expect(fixPrompt(statFindings(hits)[0], []) as string).toContain("- /v/docs/ref.md");
+	});
+
 	it("no fix request for advice", () => {
 		expect(fixPrompt({ ...FIX, remedy: { ...FIX.remedy, kind: "habit" } }, [])).toBeNull();
 	});
@@ -279,7 +302,19 @@ describe("rangeLine", () => {
 			totals,
 			sessions,
 		});
-		expect(budget).toContain("latest 10.0M weighted tokens (from ");
+		expect(budget).toContain("the last 5 hours, up to 10.0M weighted tokens (from ");
+		const day = rangeLine("Claude Code", {
+			range: { rule: "budget", basis: "min_day", start: 1_000_000, end: 1_086_400, used_percentage: null, exhausted: false, budget: 10_000_000 },
+			totals,
+			sessions,
+		});
+		expect(day).toContain("the last 24 hours (at least a day; 10.0M weighted tokens were reached sooner)");
+		const week = rangeLine("Claude Code", {
+			range: { rule: "budget", basis: "max_week", start: 1_000_000, end: 1_604_800, used_percentage: null, exhausted: false, budget: 10_000_000 },
+			totals,
+			sessions,
+		});
+		expect(week).toContain("the last 7 days (10.0M weighted tokens not reached)");
 		setLang("ja");
 		const ja = rangeLine("Claude Code", {
 			range: { rule: "seven_day", start: 1_000_000, end: 1_018_000, used_percentage: null, exhausted: true },
