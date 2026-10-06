@@ -16,12 +16,6 @@ The **Session manager** groups sessions named `Category: Name` and shows their c
 
 ![The Session manager: sessions grouped by category with model, effort and cost, and below, the 5-hour and 7-day windows and cost per category](docs/images/manager.png)
 
-### When each agent was working
-
-The **Activity calendar** shows working time as blocks, by 7-day window, week or day. Click a block to see its prompts and open the session. [More](docs/usage.md#activity-calendar)
-
-![The activity calendar: a week of sessions as colored blocks, one lane per agent in each day, with hours and concurrency per agent, and the details panel for one block with its prompts and Open session](docs/images/calendar.png)
-
 ### Start a session with any agent
 
 **New session** asks for a name, and which agent when more than one is on. Claude Code, Codex and OpenCode sessions share the same lists. [More](docs/usage.md#start-a-session)
@@ -64,17 +58,23 @@ In the same menu, **Compact session** sends `/compact`, and **Restart session** 
 
 ![A session's menu in four groups: Rename, Move to category…, Suggest name and category…; Change model…, Compact session, Restart session; Session analytics, Copy ID; End session, Archive](docs/onboarding/en/row-menu.png)
 
+### Setup with the welcome guide
+
+On first install, the welcome guide checks Python and your agents, shows what the helper program will write before installing it, and walks you through your first session. [More](docs/usage.md#welcome-guide)
+
+![The Install agent-sessions dialog listing the install folder, Python, the hooks added to Claude Code's settings, and the two agent skills added to the vault](docs/onboarding/en/install.png)
+
 ### What a session cost, turn by turn
 
 **Session analytics** shows one session's cost, tokens, turns and duration, the tools it called, and each prompt with its own input, output and cost. Click the first and last row of a stretch of turns to count only those, and copy the result as Markdown. [More](docs/usage.md#session-analytics)
 
 ![Session analytics for one session: cost, tokens, turns and duration at the top, input, output and tool-use bars below, and a table with one row per prompt](docs/images/analytics.png)
 
-### Setup with the welcome guide
+### When each agent was working
 
-On first install, the welcome guide checks Python and your agents, shows what the helper program will write before installing it, and walks you through your first session. [More](docs/usage.md#welcome-guide)
+The **Activity calendar** shows working time as blocks, by 7-day window, week or day. Click a block to see its prompts and open the session. [More](docs/usage.md#activity-calendar)
 
-![The Install agent-sessions dialog listing the install folder, Python, the hooks added to Claude Code's settings, and the two agent skills added to the vault](docs/onboarding/en/install.png)
+![The activity calendar: a week of sessions as colored blocks, one lane per agent in each day, with hours and concurrency per agent, and the details panel for one block with its prompts and Open session](docs/images/calendar.png)
 
 Two [agent skills](docs/usage.md#agent-skills) also let you ask an agent about your usage, your other sessions, or how to use the plugin. All features: [`docs/usage.md`](docs/usage.md).
 
