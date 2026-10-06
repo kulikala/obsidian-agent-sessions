@@ -152,11 +152,10 @@ describe("buildAgentArgv", () => {
 		expect(buildAgentArgv("opencode", "C:\\oc.exe", "ses_a", false, undefined, true)).toEqual(["C:\\oc.exe", "--session", "ses_a"]);
 	});
 
-	it("asks for --no-daemon only on Windows, and only when --help lists it", async () => {
+	it("asks for --no-daemon only when --help lists it", async () => {
 		expect(helpListsNoDaemon("Options:\n      --no-daemon\n          Run without the shared background server")).toBe(true);
 		expect(helpListsNoDaemon("Options:\n  -m, --model <MODEL>\n      --no-alt-screen")).toBe(false);
-		expect(await codexNoDaemon("/no/such/codex", "darwin")).toBe(false);
-		expect(await codexNoDaemon("/no/such/codex", "win32")).toBe(false);
+		expect(await codexNoDaemon("/no/such/codex")).toBe(false);
 	});
 
 	it("opencode fresh: no id-related flag at all (opencode assigns its own session id)", () => {

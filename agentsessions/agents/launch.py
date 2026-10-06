@@ -44,8 +44,6 @@ WINDOWS_INHERITED_ENV_KEYS = INHERITED_ENV_KEYS + (
     'PROCESSOR_ARCHITECTURE', 'PROCESSOR_IDENTIFIER', 'NUMBER_OF_PROCESSORS', 'PSMODULEPATH',
     'PYTHONUTF8')
 
-# Where an interactive Codex runs with `--no-daemon` (`CODEX_NO_DAEMON_PLATFORMS` in backend.ts).
-CODEX_NO_DAEMON_PLATFORMS = ('win32',)
 
 BIN_NAMES = {'claude': 'claude', 'codex': 'codex', 'opencode': 'opencode'}
 
@@ -97,11 +95,9 @@ def help_lists_no_daemon(help_text: str) -> bool:
     return re.search(r'(^|\s)--no-daemon\b', help_text, re.M) is not None
 
 
-def codex_no_daemon(bin_path: str, platform: str = sys.platform) -> bool:
-    """Whether Codex at `bin_path` starts with `--no-daemon`: only on `CODEX_NO_DAEMON_PLATFORMS`, and
-    only when its `--help` lists the flag (a failed `--help` counts as no)."""
-    if platform not in CODEX_NO_DAEMON_PLATFORMS:
-        return False
+def codex_no_daemon(bin_path: str) -> bool:
+    """Whether Codex at `bin_path` starts with `--no-daemon`: when its `--help` lists the flag (a
+    failed `--help` counts as no). See `buildAgentArgv` in backend.ts for why."""
     try:
         out = subprocess.run([bin_path, '--help'], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                              stdin=subprocess.DEVNULL, timeout=15).stdout.decode('utf-8', 'replace')

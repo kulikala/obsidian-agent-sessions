@@ -559,10 +559,11 @@ export async function agentVersion(bin: string): Promise<string | null> {
  * (`opencode` / `opencode --session <id>`); with `opencodeLaunch` it goes through
  * `ollama launch opencode --model <M> -y -- …` instead.
  *
- * `codexNoDaemon` adds `--no-daemon` (Windows, when the binary has it: `codexNoDaemon`): Codex's TUI
- * otherwise attaches to, or first installs, a shared background app-server, which refuses a package
- * laid out differently from npm's (WinGet's: "the CLI package does not match this platform or
- * executable").
+ * `codexNoDaemon` adds `--no-daemon` (when the binary has it: `codexNoDaemon`). Without it Codex's TUI
+ * attaches to a shared background app-server, started by the first Codex tab with that tab's
+ * environment, so every later tab's commands run with the first tab's `AGENT_SESSIONS_ID`; on
+ * Windows that server's install also refuses a package laid out differently from npm's (WinGet's:
+ * "the CLI package does not match this platform or executable").
  */
 export function buildAgentArgv(
 	agent: AgentId,
@@ -588,9 +589,6 @@ export function buildAgentArgv(
 	return fresh ? [bin, "--session-id", id] : [bin, "--resume", id];
 }
 
-/** Where an interactive Codex runs with `--no-daemon` (see `buildAgentArgv`). */
-export const CODEX_NO_DAEMON_PLATFORMS: readonly string[] = ["win32"];
-
 /** Whether `codex --help` lists `--no-daemon` (Codex builds before the shared app-server lack it and
  * refuse an unknown flag). Pure. */
 export function helpListsNoDaemon(help: string): boolean {
@@ -599,13 +597,9 @@ export function helpListsNoDaemon(help: string): boolean {
 
 const codexNoDaemonCache = new Map<string, Promise<boolean>>();
 
-/** Whether Codex at `bin` should start with `--no-daemon` on `platform`: only where
- * `CODEX_NO_DAEMON_PLATFORMS` says so, and only when its `--help` lists the flag (asked once per
+/** Whether Codex at `bin` starts with `--no-daemon`: when its `--help` lists the flag (asked once per
  * binary; a failed `--help` counts as no). */
-export function codexNoDaemon(bin: string, platform: string = process.platform): Promise<boolean> {
-	if (!CODEX_NO_DAEMON_PLATFORMS.includes(platform)) {
-		return Promise.resolve(false);
-	}
+export function codexNoDaemon(bin: string): Promise<boolean> {
 	let known = codexNoDaemonCache.get(bin);
 	if (!known) {
 		known = execFileText(bin, ["--help"], withBinDirOnPath(process.env, bin), 15000).then(
