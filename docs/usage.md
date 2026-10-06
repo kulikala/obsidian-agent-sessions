@@ -69,7 +69,7 @@ The side panel (right sidebar) lists sessions in three groups:
 
 | Group | Holds |
 |---|---|
-| **Open tabs** | sessions with a tab |
+| **Open tabs** | sessions with a tab, including a new one before its first message |
 | **Running** | sessions still running without a tab |
 | **Recent** | recent sessions |
 

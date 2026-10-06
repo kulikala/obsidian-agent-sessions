@@ -53,7 +53,7 @@ A walkthrough with pictures: it opens by itself on first install and, after an u
 - New: `+` in the side panel or the Session manager toolbar, the command "New session / 新規セッション", or the "New session" button shown in an empty side panel. The dialog has "Name / 名前" (optional; a category can be written as `Category: Name`) and "Agent / エージェント" (asked only when more than one agent is enabled). It opens a terminal tab.
 - Resume: click a row in "Recent / 最近" (opens a tab that resumes that conversation), or in "Running / 起動中" (attaches a tab to a session the daemon is still holding). A row under "Open tabs / 開いているタブ" already has a tab; clicking it brings it to the front. One session has one tab; the plugin jumps to the existing tab instead of opening a second.
 - The first time an agent runs, its terminal may ask about the theme, login or trusting the folder; answer in the terminal.
-- A new Codex session cannot be named at creation; rename it once it is running. Codex and OpenCode record a session only after its first message.
+- A name given in the new-session dialog works for every agent: Claude Code and Codex get `/rename` as soon as they are ready (Codex before its first message), OpenCode gets the name once its session is recorded. The tab and the side panel show it from the start. Codex and OpenCode record a session only after its first message; until then its row under "Open tabs / 開いているタブ" offers Rename and End session only.
 - OpenCode can run through Ollama for a local model: Settings -> Agents -> OpenCode -> "Launch with / 起動方法" = `ollama launch opencode`, then choose the "Ollama model / Ollama のモデル" (from `ollama list`, or type a name). Ollama must be installed.
 
 ## Close, end and restart
@@ -161,7 +161,7 @@ Settings -> Community plugins -> Agent Sessions. Sections and items (English / �
 ## Agents
 
 - Which to use: enable the agents in Settings -> Agents (they are auto-detected on first run). With several enabled, "New session" asks which one to start, and the lists, filters and usage panels mix or split them by agent.
-- Enabling or disabling an agent changes the files the plugin keeps for it: Codex gets its submit-key and editor-key lines and a default status line in `~/.codex/config.toml`; OpenCode gets a status plugin and a status line in `~/.config/opencode/` and key entries in its `tui.json`; turning the agent off (or Remove) takes them out again. The vault's agent skills are rewritten for the enabled agents.
+- Enabling or disabling an agent changes the files the plugin keeps for it: Codex gets its submit-key and editor-key lines and a default status line in `~/.codex/config.toml` (also written at install, and once on load for a Codex enabled before; a status line you remove is not added back on load); OpenCode gets a status plugin and a status line in `~/.config/opencode/` and key entries in its `tui.json`; turning the agent off (or Remove) takes them out again. The vault's agent skills are rewritten for the enabled agents.
 - Claude Code relies on its hooks and status line (added at install). Which usage windows each agent has is under Usage and limits.
 
 ## Language
