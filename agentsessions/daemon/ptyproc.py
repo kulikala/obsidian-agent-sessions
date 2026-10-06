@@ -9,6 +9,7 @@
 - `set_size(cols, rows)`,
 - `terminate()` (the gentle stop), `kill()` (the forced one), `signal(sig)` (Unix only),
 - `poll()` -> the exit code once the child is gone, else `None`,
+- `take_stopped()`, `canonical()`, `resume()` — job control (Unix only; see below),
 - `close()` (the daemon's end of the terminal), `release()` (all remaining handles).
 """
 
@@ -53,6 +54,7 @@ class PosixPty:
         self.pid = pid
         self._fd: Optional[int] = master
         self._code: Optional[int] = None
+        self._stopped = False
 
     def fileno(self) -> int:
         assert self._fd is not None
@@ -91,14 +93,41 @@ class PosixPty:
         if self._code is not None:
             return self._code
         try:
-            pid, status = os.waitpid(self.pid, os.WNOHANG)
+            pid, status = os.waitpid(self.pid, os.WNOHANG | os.WUNTRACED)
         except ChildProcessError:
             self._code = -1
             return self._code
         if pid == 0:
             return None
+        if os.WIFSTOPPED(status):
+            self._stopped = True
+            return None
         self._code = os.waitstatus_to_exitcode(status)
         return self._code
+
+    # Job control. The child leads its own session (`pty.fork` calls `setsid`) and there is no shell
+    # to `fg` it, so a suspend has to be undone here: `take_stopped()` says whether `poll()` saw the
+    # child stopped (`SIGSTOP`, or a `SIGTSTP` that did stop it) since the last call; `canonical()`
+    # whether the terminal is back in cooked mode, which is how an agent that suspends itself on
+    # Ctrl+Z looks while it waits for `SIGCONT` (its own `SIGTSTP` to an orphaned process group is
+    # discarded by the kernel, so it never actually stops); `resume()` sends that `SIGCONT`.
+
+    def take_stopped(self) -> bool:
+        if self._code is None:
+            self.poll()
+        stopped, self._stopped = self._stopped, False
+        return stopped
+
+    def canonical(self) -> bool:
+        if self._fd is None:
+            return False
+        try:
+            return bool(termios.tcgetattr(self._fd)[3] & termios.ICANON)
+        except (termios.error, OSError):
+            return False
+
+    def resume(self) -> None:
+        self.signal(signal.SIGCONT)
 
     def close(self) -> None:
         if self._fd is None:

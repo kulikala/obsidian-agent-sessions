@@ -3,6 +3,7 @@ import os
 import shutil
 import socket
 import stat
+import sys
 import tempfile
 import threading
 import time
@@ -403,6 +404,97 @@ class TestSessions(DaemonTestCase):
         self.assertEqual(self.h.daemon.sessions['big'].buffered, len(replayed))
         c.wait_event('exit')
 
+
+# Agents that suspend themselves on Ctrl+Z the way Claude Code and OpenCode do: back to cooked mode,
+# then `SIGTSTP` to their own process group, then wait for `SIGCONT` to take the terminal back.
+SELF_SUSPENDER = r"""
+import os, signal, termios, tty
+cooked = termios.tcgetattr(0)
+tty.setraw(0)
+def cont(*_):
+    tty.setraw(0)
+    os.write(1, b'RESUMED\r\n')
+signal.signal(signal.SIGCONT, cont)
+os.write(1, b'READY\r\n')
+line = b''
+while True:
+    b = os.read(0, 1)
+    if not b:
+        break
+    if b == b'\x1a':
+        termios.tcsetattr(0, termios.TCSANOW, cooked)
+        os.write(1, b'SUSPENDED\r\n')
+        os.kill(0, signal.SIGTSTP)
+    elif b in b'\r\n':
+        os.write(1, b'GOT:' + line + b'\r\n')
+        line = b''
+    else:
+        line += b
+"""
+
+# A raw-mode program that gives Ctrl+Z a meaning of its own (and reports any `SIGCONT`).
+CTRL_Z_USER = r"""
+import os, signal, tty
+tty.setraw(0)
+signal.signal(signal.SIGCONT, lambda *_: os.write(1, b'SIGCONT\r\n'))
+os.write(1, b'READY\r\n')
+while True:
+    b = os.read(0, 1)
+    if not b:
+        break
+    if b == b'\x1a':
+        os.write(1, b'UNDO\r\n')
+"""
+
+# A program that stops itself outright (`SIGSTOP` can't be discarded or caught).
+SELF_STOPPER = r"""
+import os, signal
+os.write(1, b'READY\r\n')
+os.kill(os.getpid(), signal.SIGSTOP)
+os.write(1, b'CONTINUED\r\n')
+os.read(0, 1)
+"""
+
+
+@unittest.skipIf(sys.platform == 'win32', 'no job control under ConPTY')
+class TestSuspend(DaemonTestCase):
+    def start_py(self, c, script, id='s1'):
+        res = c.request('start', id=id, agent='test', cwd=self.tmpdir,
+                        argv=[sys.executable, '-c', script], env={'PATH': '/usr/bin:/bin'},
+                        cols=80, rows=24)
+        self.assertTrue(res['ok'], res)
+        c.request('attach', id=id, cols=80, rows=24)
+        c.replay()
+        return c.read_output(lambda b: b'READY' in b)
+
+    def log(self):
+        with open(os.path.join(self.tmpdir, 'daemon.log'), encoding='utf-8') as f:
+            return f.read()
+
+    def test_ctrl_z_self_suspend_comes_back(self):
+        c = self.h.client()
+        self.start_py(c, SELF_SUSPENDER)
+        c.write(b'\x1a')
+        c.read_output(lambda b: b'RESUMED' in b)
+        self.assertIn('continue s1 (suspended)', self.log())
+        c.write(b'hello\r')
+        c.read_output(lambda b: b'GOT:hello' in b)
+        self.assertIsNone(c.request('list')['sessions'][0]['exited'])
+
+    def test_stopped_child_is_continued(self):
+        c = self.h.client()
+        self.start_py(c, SELF_STOPPER)
+        c.read_output(lambda b: b'CONTINUED' in b)
+        self.assertIn('continue s1 (stopped)', self.log())
+
+    def test_ctrl_z_without_suspend_sends_nothing(self):
+        c = self.h.client()
+        self.start_py(c, CTRL_Z_USER)
+        c.write(b'\x1a')
+        c.read_output(lambda b: b'UNDO' in b)
+        out = c.collect(2 * daemon.RESUME_RETRY)
+        self.assertNotIn(b'SIGCONT', out)
+        self.assertNotIn('continue s1', self.log())
 
 class TestExitedFile(unittest.TestCase):
     def setUp(self):
