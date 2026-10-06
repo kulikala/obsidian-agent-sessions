@@ -262,6 +262,16 @@ describe("clearedName", () => {
 		expect(clearedName("Probe 2", new Set(["Probe 3"]))).toBe("Probe 4");
 	});
 
+	it("counts only 2 to 99: a year, a version or 1 stays part of the name", () => {
+		expect(clearedName("Probe 99", none)).toBe("Probe 100");
+		expect(clearedName("Plan 2026", none)).toBe("Plan 2026 2");
+		expect(clearedName("Plan 100", none)).toBe("Plan 100 2");
+		expect(clearedName("Claude 4.6", none)).toBe("Claude 4.6 2");
+		expect(clearedName("Step 1", none)).toBe("Step 1 2");
+		expect(clearedName("Step 05", none)).toBe("Step 05 2");
+		expect(clearedName("Plan 2026 2", none)).toBe("Plan 2026 3");
+	});
+
 	it("needs a space before the number", () => {
 		expect(clearedName("Probe2", none)).toBe("Probe2 2");
 	});

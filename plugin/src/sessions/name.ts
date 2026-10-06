@@ -171,11 +171,13 @@ export function categorizableLabel(row: { name: string | null; label: string | n
 
 /**
  * The name for the session `/clear` started out of a session named `name`: `name 2`, or, when
- * `name` already ends in a number, that number plus one (`Foo 2` → `Foo 3`). A number some other
+ * `name` already ends in a counter (` 2` to ` 99`), that number plus one (`Foo 2` → `Foo 3`). Any
+ * other trailing number is part of the name (`Plan 2026` → `Plan 2026 2`). A number some other
  * session already has (`taken`) is skipped. A category prefix stays as it is (`Cat: Foo 2`).
  */
 export function clearedName(name: string, taken: ReadonlySet<string>): string {
-	const counted = /^(.*\S) (\d+)$/.exec(name);
+	const match = /^(.*\S) ([1-9]\d?)$/.exec(name);
+	const counted = match && Number(match[2]) >= 2 ? match : null;
 	const base = counted ? counted[1] : name;
 	let n = counted ? Number(counted[2]) + 1 : 2;
 	while (taken.has(`${base} ${n}`)) {

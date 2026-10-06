@@ -61,7 +61,7 @@ Each session is one Obsidian tab running the agent in a terminal.
 - **Closing the tab or quitting Obsidian does not end the session.** Reopen it and the last screen is shown again.
 - **Paths in the output** that point inside the vault become links.
 - **A notice** tells you when a session in another tab finishes or needs an answer.
-- **`/clear` in a Claude Code tab** starts a new session in the same tab. The tab follows the new session, the cleared one goes to the Archive, and a named session's new part is named with the next number: `Work: Report` becomes `Work: Report 2`, then `Work: Report 3`. An unnamed session stays unnamed. `/resume` typed in the tab also moves the tab to that session, without archiving or renaming.
+- **`/clear` in a Claude Code tab** starts a new session in the same tab. The tab follows the new session, the cleared one goes to the Archive, and a named session's new part is named with the next number: `Work: Report` becomes `Work: Report 2`, then `Work: Report 3`. Only a final 2 to 99 counts up: `Plan 2026` becomes `Plan 2026 2`. An unnamed session stays unnamed. `/resume` typed in the tab also moves the tab to that session, without archiving or renaming.
 
 The tab header has these buttons:
 
