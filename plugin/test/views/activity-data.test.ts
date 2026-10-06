@@ -131,6 +131,26 @@ describe("ActivityStore content", () => {
 	});
 });
 
+describe("the session order key", () => {
+	const [d0, d1] = days(2);
+
+	it("carries the program's `first` through the store into the blocks, whatever the period or gap", () => {
+		const a: RawSession = { ...raw("a", [[d0.start + 3600, d0.start + 7200, 1], [d1.start + 3600, d1.start + 7200, 2]]), first: d0.start - 86400 };
+		const store = new ActivityStore();
+		store.put([d0, d1], [a], d1.end + 1);
+		expect(store.rawFor([d1])[0].first).toBe(d0.start - 86400);
+		for (const gap of [30, 60, 120]) {
+			expect(buildSessions(store.rawFor([d1]), gap, d1.start, d1.end)[0].first).toBe(d0.start - 86400);
+			expect(buildSessions(store.rawFor([d0, d1]), gap, d0.start, d1.end)[0].first).toBe(d0.start - 86400);
+		}
+	});
+
+	it("falls back to the earliest run loaded when the program gives none", () => {
+		const a = raw("a", [[d0.start + 7200, d0.start + 9000, 2], [d0.start + 3600, d0.start + 4000, 1]]);
+		expect(buildSessions([a], 30, d0.start, d0.end)[0].first).toBe(d0.start + 3600);
+	});
+});
+
 describe("ActivityLoader: switching never calls the program", () => {
 	const makeLoader = () => {
 		const calls: [Date, Date][] = [];

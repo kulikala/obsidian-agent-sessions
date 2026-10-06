@@ -18,6 +18,7 @@ import {
 	agentCardState,
 	canGoNext,
 	clockLabel,
+	compareSessions,
 	dayColumns,
 	dayCounts,
 	expandForMinHeight,
@@ -650,7 +651,7 @@ export class ActivityView extends ItemView {
 		}
 	}
 
-	/** One lane's blocks: every block at least `minSeconds` tall, overlapping ones side by side. */
+	/** One lane's blocks: every block at least `minSeconds` tall, overlapping ones side by side in session order. */
 	private renderLane(
 		lane: HTMLElement,
 		pieces: readonly (DayPiece<ActivitySpan> & { session: ActivitySession })[],
@@ -659,7 +660,7 @@ export class ActivityView extends ItemView {
 		drawn: DrawPiece[]
 	): void {
 		const withTrue = pieces.map((p) => ({ ...p, trueEnd: p.end }));
-		for (const l of layoutOverlaps(expandForMinHeight(withTrue, minSeconds))) {
+		for (const l of layoutOverlaps(expandForMinHeight(withTrue, minSeconds), (a, b) => compareSessions(a.session, b.session))) {
 			drawn.push(l.item);
 			this.renderBlock(lane, l.item.session, l.item, dayStart, l.col, l.cols);
 		}

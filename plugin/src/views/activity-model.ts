@@ -175,6 +175,15 @@ export function expandForMinHeight<T extends DayPiece>(pieces: readonly T[], min
 	return pieces.map((p) => ({ ...p, end: Math.min(Math.max(p.end, p.start + minSeconds), Math.max(p.end, SECONDS_PER_DAY)) }));
 }
 
+/**
+ * The calendar's left-to-right order of sessions: by when each first worked (at any time, not just
+ * in the period shown), ties by id. It depends on nothing the view changes (period, mode, gap,
+ * agent switches, filter), so a session keeps its place everywhere.
+ */
+export function compareSessions(a: Pick<ActivitySession, "id" | "first">, b: Pick<ActivitySession, "id" | "first">): number {
+	return a.first - b.first || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
+
 export interface LaidOut<T> {
 	item: T;
 	/** 0-based column inside its overlap cluster. */
@@ -184,40 +193,48 @@ export interface LaidOut<T> {
 }
 
 /**
- * Side-by-side layout of overlapping intervals inside one lane: items that overlap (directly or
- * through a chain) form a cluster; each takes the first column free at its start, and the whole
- * cluster shares the widest column count it needed. Items that merely touch don't overlap.
+ * Side-by-side layout of overlapping intervals inside one lane, keeping `order`: of two items
+ * that overlap, the one `order` puts first is always to the left. Taken in that order, each item
+ * goes to the leftmost column right of every overlapping item placed before it. Items that
+ * overlap (directly or through a chain) form a cluster that shares its widest column count; an
+ * item with nothing beside it is full width. Items that merely touch don't overlap.
  */
-export function layoutOverlaps<T extends { start: number; end: number }>(items: readonly T[]): LaidOut<T>[] {
-	const sorted = [...items].sort((a, b) => a.start - b.start || b.end - a.end);
-	const out: LaidOut<T>[] = [];
+export function layoutOverlaps<T extends { start: number; end: number }>(
+	items: readonly T[],
+	order: (a: T, b: T) => number
+): LaidOut<T>[] {
+	const placed: LaidOut<T>[] = [];
+	for (const item of [...items].sort((a, b) => order(a, b) || a.start - b.start)) {
+		let col = 0;
+		for (const p of placed) {
+			if (p.item.start < item.end && item.start < p.item.end) {
+				col = Math.max(col, p.col + 1);
+			}
+		}
+		placed.push({ item, col, cols: 0 });
+	}
+	// Clusters: sweep by start; an item starting at or after everything before it has ended opens a new one.
+	const byStart = [...placed].sort((a, b) => a.item.start - b.item.start);
 	let cluster: LaidOut<T>[] = [];
-	let colEnds: number[] = [];
 	let clusterEnd = -Infinity;
 	const close = () => {
+		const cols = Math.max(...cluster.map((l) => l.col)) + 1;
 		for (const l of cluster) {
-			l.cols = colEnds.length;
+			l.cols = cols;
 		}
-		out.push(...cluster);
 		cluster = [];
-		colEnds = [];
 	};
-	for (const item of sorted) {
-		if (cluster.length > 0 && item.start >= clusterEnd) {
+	for (const l of byStart) {
+		if (cluster.length > 0 && l.item.start >= clusterEnd) {
 			close();
 		}
-		let col = colEnds.findIndex((end) => end <= item.start);
-		if (col === -1) {
-			col = colEnds.length;
-			colEnds.push(item.end);
-		} else {
-			colEnds[col] = item.end;
-		}
-		cluster.push({ item, col, cols: 0 });
-		clusterEnd = Math.max(clusterEnd, item.end);
+		cluster.push(l);
+		clusterEnd = Math.max(clusterEnd, l.item.end);
 	}
-	close();
-	return out;
+	if (cluster.length > 0) {
+		close();
+	}
+	return byStart;
 }
 
 /** Whether a block is tall enough to carry its label (`minHeightPx` ≈ the font's line plus padding). */
@@ -352,7 +369,7 @@ export interface SessionColumn {
 
 /**
  * Day mode: one column per session active on `day` (`dayIndex` into `days`), grouped by agent
- * in `agentOrder` (other agents last), each group ordered by when its sessions first worked.
+ * in `agentOrder` (other agents last), each group in the calendar's session order (`compareSessions`).
  */
 export function dayColumns(
 	sessions: readonly ActivitySession[],
@@ -373,9 +390,7 @@ export function dayColumns(
 	}
 	return columns.sort(
 		(a, b) =>
-			rank(a.session.agent) - rank(b.session.agent) ||
-			Math.min(...a.pieces.map((p) => p.start)) - Math.min(...b.pieces.map((p) => p.start)) ||
-			a.session.id.localeCompare(b.session.id)
+			rank(a.session.agent) - rank(b.session.agent) || compareSessions(a.session, b.session)
 	);
 }
 

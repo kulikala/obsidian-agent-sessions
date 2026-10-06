@@ -228,6 +228,8 @@ function activityOutput(from, to, raw) {
 			label,
 			category,
 			child: false,
+			// when the session first worked: a fixed point in the past, the same for every range
+			first: Math.round(now - (10 + mulberry32(si + 1)() * 20) * 86400),
 			turns: turns.filter((t) => keys.has(t.start)),
 			runs: inRange,
 		});

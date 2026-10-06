@@ -202,6 +202,7 @@ Shows when each agent was working. Open it from the Session manager toolbar, the
 - A pause of 30 minutes or more inside a turn is not counted.
 - Turns less than 30 minutes apart join into one block. The **30 min / 1 h / 2 h** control changes this gap; the line under the title states the current one.
 - A block under a minute shows as one minute and is always a few pixels tall. Overlapping sessions sit side by side.
+- Sessions keep one left-to-right order everywhere: the session that started first is on the left, in every hour, every day, and in Day mode's columns. Changing the gap, the filter or the agents shown doesn't reorder them.
 - The calendar shows the sessions the Session manager lists: archived sessions and unnamed child sessions started by other sessions are left out.
 
 **Working with it**

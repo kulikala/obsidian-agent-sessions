@@ -243,6 +243,8 @@ export interface ActivitySession {
 	/** The part of the name before `': '`, if any. */
 	category: string | null;
 	child: boolean;
+	/** When the session first worked, at any time (epoch seconds): its place in the calendar's left-to-right order. */
+	first: number;
 	spans: ActivitySpan[];
 }
 
@@ -271,6 +273,8 @@ export interface RawSession {
 	label: string | null;
 	category: string | null;
 	child: boolean;
+	/** The session's earliest activity, in the range or not (epoch seconds); absent from an older program. */
+	first?: number | null;
 	turns: RawTurn[];
 	runs: RawRun[];
 }

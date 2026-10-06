@@ -16,7 +16,9 @@ import {
 	filterSessions,
 	firstActiveSeconds,
 	fitsLabel,
+	compareSessions,
 	layoutOverlaps,
+	type LaidOut,
 	maxConcurrency,
 	minBlockSeconds,
 	splitDuration,
@@ -178,36 +180,82 @@ describe("splitSpansByDay", () => {
 });
 
 describe("layoutOverlaps", () => {
-	const iv = (start: number, end: number) => ({ start, end });
+	// `r` is the item's place in the session order (`compareSessions`'s job in the view).
+	const iv = (start: number, end: number, r = 0) => ({ start, end, r });
+	const byRank = (a: { r: number }, b: { r: number }) => a.r - b.r;
+	const cells = (l: LaidOut<{ start: number; end: number; r: number }>[]) =>
+		new Map(l.map((x) => [`${x.item.r}@${x.item.start}`, [x.col, x.cols]]));
 
 	it("puts a lone item at full width", () => {
-		expect(layoutOverlaps([iv(0, 10)])).toEqual([{ item: iv(0, 10), col: 0, cols: 1 }]);
+		expect(layoutOverlaps([iv(0, 10)], byRank)).toEqual([{ item: iv(0, 10), col: 0, cols: 1 }]);
 	});
 
-	it("places overlapping items side by side", () => {
-		const l = layoutOverlaps([iv(0, 10), iv(5, 15)]);
-		expect(l.map((x) => [x.col, x.cols])).toEqual([[0, 2], [1, 2]]);
+	it("places overlapping items side by side, the earlier one in the order on the left", () => {
+		// the later-ranked item starts first; the order still decides the side
+		const c = cells(layoutOverlaps([iv(0, 10, 2), iv(5, 15, 1)], byRank));
+		expect(c.get("1@5")).toEqual([0, 2]);
+		expect(c.get("2@0")).toEqual([1, 2]);
 	});
 
 	it("does not treat touching items as overlapping", () => {
-		const l = layoutOverlaps([iv(0, 10), iv(10, 20)]);
+		const l = layoutOverlaps([iv(0, 10, 1), iv(10, 20, 0)], byRank);
 		expect(l.map((x) => [x.col, x.cols])).toEqual([[0, 1], [0, 1]]);
 	});
 
-	it("reuses a freed column and sizes the cluster by its widest point", () => {
-		// A 0-10, B 2-4, C 5-8 (reuses B's column), D 20-30 is a separate cluster
-		const l = layoutOverlaps([iv(0, 10), iv(2, 4), iv(5, 8), iv(20, 30)]);
-		const byStart = new Map(l.map((x) => [x.item.start, x]));
-		expect([byStart.get(0)!.col, byStart.get(0)!.cols]).toEqual([0, 2]);
-		expect([byStart.get(2)!.col, byStart.get(2)!.cols]).toEqual([1, 2]);
-		expect([byStart.get(5)!.col, byStart.get(5)!.cols]).toEqual([1, 2]);
-		expect([byStart.get(20)!.col, byStart.get(20)!.cols]).toEqual([0, 1]);
+	it("reuses a free column and sizes the cluster by its widest point", () => {
+		// A 0-10, B 2-4, C 5-8 (both right of A, B and C apart), D 20-30 a cluster of its own
+		const c = cells(layoutOverlaps([iv(0, 10, 0), iv(2, 4, 1), iv(5, 8, 2), iv(20, 30, 3)], byRank));
+		expect(c.get("0@0")).toEqual([0, 2]);
+		expect(c.get("1@2")).toEqual([1, 2]);
+		expect(c.get("2@5")).toEqual([1, 2]);
+		expect(c.get("3@20")).toEqual([0, 1]);
 	});
 
-	it("chains overlaps into one cluster", () => {
-		const l = layoutOverlaps([iv(0, 10), iv(8, 20), iv(18, 30)]);
-		expect(l.map((x) => x.cols)).toEqual([2, 2, 2]);
-		expect(l.map((x) => x.col)).toEqual([0, 1, 0]);
+	it("goes as far left as the order allows: an item overlapping only later ones takes column 0", () => {
+		// 1 overlaps 2 only; 0 overlaps nothing in time with 1 but sits beside 2 later
+		const c = cells(layoutOverlaps([iv(0, 10, 1), iv(5, 20, 2), iv(15, 25, 0)], byRank));
+		expect(c.get("1@0")).toEqual([0, 2]);
+		expect(c.get("0@15")).toEqual([0, 2]);
+		expect(c.get("2@5")).toEqual([1, 2]);
+	});
+
+	it("keeps the order through a chain, at the cost of a column", () => {
+		// 0 beside 1, then 1 beside 2: 2 has to be right of 1, which is right of 0
+		const l = layoutOverlaps([iv(0, 10, 0), iv(8, 20, 1), iv(18, 30, 2)], byRank);
+		expect(l.map((x) => [x.item.r, x.col, x.cols])).toEqual([[0, 0, 3], [1, 1, 3], [2, 2, 3]]);
+	});
+
+	it("never puts an item left of an overlapping item ranked before it, whatever the input order", () => {
+		const rand = (() => {
+			let seed = 7;
+			return () => ((seed = (seed * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
+		})();
+		for (let round = 0; round < 200; round++) {
+			const items = Array.from({ length: 2 + Math.floor(rand() * 10) }, (_, i) => {
+				const start = Math.floor(rand() * 100);
+				return iv(start, start + 1 + Math.floor(rand() * 30), i);
+			});
+			const shuffled = [...items].sort(() => rand() - 0.5);
+			const l = layoutOverlaps(shuffled, byRank);
+			expect(cells(layoutOverlaps(items, byRank))).toEqual(cells(l));
+			for (const a of l) {
+				expect(a.col).toBeLessThan(a.cols);
+				for (const b of l) {
+					if (a.item.r < b.item.r && a.item.start < b.item.end && b.item.start < a.item.end) {
+						expect(a.col).toBeLessThan(b.col);
+						expect(a.cols).toBe(b.cols);
+					}
+				}
+			}
+		}
+	});
+});
+
+describe("compareSessions", () => {
+	it("orders by first activity, then by id", () => {
+		const s = (id: string, first: number) => ({ id, first });
+		const list = [s("b", 20), s("c", 10), s("a", 20)];
+		expect([...list].sort(compareSessions).map((x) => x.id)).toEqual(["c", "a", "b"]);
 	});
 });
 
@@ -226,7 +274,7 @@ describe("hours and concurrency", () => {
 
 	it("summarizes per agent", () => {
 		const s = (id: string, agent: string, spans: ActivitySession["spans"]): ActivitySession => ({
-			id, agent, name: id, label: id, category: null, child: false, spans,
+			id, agent, name: id, label: id, category: null, child: false, first: 0, spans,
 		});
 		const out = summarizeByAgent(
 			[s("a", "claude", [sp(0, 3600)]), s("b", "claude", [sp(1800, 5400)]), s("c", "codex", [sp(0, 7200)])],
@@ -242,7 +290,7 @@ describe("hours and concurrency", () => {
 
 describe("filter, counts, scroll, labels", () => {
 	const mk = (id: string, name: string | null, spans: ActivitySession["spans"], agent = "claude"): ActivitySession => ({
-		id, agent, name, label: name, category: name?.includes(": ") ? name.split(": ")[0] : null, child: false, spans,
+		id, agent, name, label: name, category: name?.includes(": ") ? name.split(": ")[0] : null, child: false, first: 0, spans,
 	});
 
 	it("filters by name, category or id, case-insensitively", () => {
@@ -324,19 +372,19 @@ describe("minimum block height", () => {
 			{ day: 0, start: 1240, end: 1300, span },
 			{ day: 0, start: 5000, end: 5060, span },
 		];
-		const laid = layoutOverlaps(expandForMinHeight(pieces, 600));
+		const laid = layoutOverlaps(expandForMinHeight(pieces, 600), (a, b) => a.start - b.start);
 		expect(laid.map((l) => [l.col, l.cols])).toEqual([[0, 2], [1, 2], [0, 1]]);
 	});
 });
 
 describe("day mode columns", () => {
 	const days = periodDays(periodContaining("day", at(2026, 9, 23, 12), null));
-	const mk = (id: string, agent: string, spans: ActivitySession["spans"]): ActivitySession => ({
-		id, agent, name: id, label: id, category: null, child: false, spans,
+	const mk = (id: string, agent: string, spans: ActivitySession["spans"], first = spans[0]?.start ?? 0): ActivitySession => ({
+		id, agent, name: id, label: id, category: null, child: false, first, spans,
 	});
 	const h = (hour: number) => at(2026, 9, 23, hour).getTime() / 1000;
 
-	it("makes one column per session active that day, grouped by agent order, then by first activity", () => {
+	it("makes one column per session active that day, grouped by agent order, then in session order", () => {
 		const sessions = [
 			mk("late-codex", "codex", [sp(h(15), h(16))]),
 			mk("early-claude", "claude", [sp(h(8), h(9))]),
@@ -346,6 +394,12 @@ describe("day mode columns", () => {
 		];
 		const cols = dayColumns(sessions, ["claude", "codex"], days);
 		expect(cols.map((c) => c.session.id)).toEqual(["early-claude", "late-claude", "early-codex", "late-codex"]);
+	});
+
+	it("orders by when a session first worked at all, not by its first block of the day", () => {
+		// "old" started days ago and works in the afternoon; "new" started this morning
+		const sessions = [mk("new", "claude", [sp(h(8), h(9))]), mk("old", "claude", [sp(h(14), h(15))], h(-48))];
+		expect(dayColumns(sessions, ["claude"], days).map((c) => c.session.id)).toEqual(["old", "new"]);
 	});
 
 	it("keeps only the part of a session that falls on the day", () => {
@@ -358,7 +412,7 @@ describe("day mode columns", () => {
 		expect(days).toHaveLength(1);
 		const pieces = splitSpansByDay([sp(h(9), h(11)), sp(h(10), h(12)), sp(h(1) - 7200, h(1))], days);
 		expect(pieces).toHaveLength(3);
-		const laid = layoutOverlaps(pieces);
+		const laid = layoutOverlaps(pieces, (a, b) => a.span.start - b.span.start);
 		expect(laid.filter((l) => l.cols === 2)).toHaveLength(2);
 		expect(laid.find((l) => l.item.start === 0)).toMatchObject({ col: 0, cols: 1 });
 	});

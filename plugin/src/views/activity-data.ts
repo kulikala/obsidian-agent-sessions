@@ -98,7 +98,9 @@ export function buildSessions(raw: readonly RawSession[], gapMinutes: number, fr
 	for (const s of raw) {
 		const spans = clipSpans(joinRuns(s, gapMinutes), from, to);
 		if (spans.length > 0) {
-			out.push({ id: s.id, agent: s.agent, name: s.name, label: s.label, category: s.category, child: s.child, spans });
+			// Without `first` from the program, the earliest run loaded stands in.
+			const first = s.first ?? Math.min(...s.runs.map((r) => r.start));
+			out.push({ id: s.id, agent: s.agent, name: s.name, label: s.label, category: s.category, child: s.child, first, spans });
 		}
 	}
 	return out;
@@ -230,6 +232,7 @@ export class ActivityStore {
 			label: meta.label,
 			category: meta.category,
 			child: meta.child,
+			first: meta.first,
 			turns: [...turns.values()],
 			runs: [...runs.values()],
 		}));
