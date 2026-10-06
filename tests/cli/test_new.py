@@ -259,6 +259,23 @@ class TestResolvedAgents(NewTestCase):
         self.assertEqual(entry, {'agent': 'codex', 'cwd': self.work, 'daemon': result['daemon_id']})
         self.assertTrue(any('/rename' in w for w in result['warnings']))
 
+    def test_a_link_obsidian_made_first_counts_as_confirmed(self):
+        # Obsidian adopts the unlinked daemon session and links it; `json resolve` then leaves that
+        # thread out as already linked and never returns it.
+        daemon = '0f0f0f0f-0000-4000-8000-000000000001'
+
+        def fake(agent, pid, since, cwd):
+            store.update(lambda st: st.sessions.__setitem__(
+                'thread-p', {'agent': 'codex', 'cwd': cwd, 'daemon': daemon}), self.store_path)
+            return {'thread': None, 'transcript': None}
+        with mock.patch.object(cmd_new.uuid, 'uuid4', return_value=daemon), \
+                mock.patch.object(json_output, 'resolve_output', fake):
+            rc, out, _ = self.run_new('--agent', 'codex', '--prompt', 'hi', '--timeout', '5', '--json')
+        self.assertEqual(rc, 0)
+        self.assertEqual(json.loads(out)['id'], 'thread-p')
+        self.assertEqual(cmd_new.linked_to({'a': {'daemon': 'x'}, 'b': 'junk'}, 'x'), 'a')
+        self.assertIsNone(cmd_new.linked_to({'a': {'daemon': 'y'}}, 'x'))
+
     def test_an_id_that_does_not_appear_in_time_exits_1_and_says_how_to_attach(self):
         with self.resolver(None):
             rc, out, _ = self.run_new('--agent', 'codex', '--prompt', 'hi', '--timeout', '0.5', '--json')

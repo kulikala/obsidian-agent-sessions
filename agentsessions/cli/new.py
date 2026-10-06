@@ -303,6 +303,23 @@ def _wait_running(result: Dict[str, Any]) -> None:
     result['confirmed'] = True
 
 
+def linked_to(sessions: Dict[str, Any], daemon_id: str) -> Optional[str]:
+    """The real id `sessions.json` already links to `daemon_id`, if any."""
+    for sid, entry in sessions.items():
+        if isinstance(entry, dict) and entry.get('daemon') == daemon_id:
+            return sid
+    return None
+
+
+def _linked_by_plugin(daemon_id: str) -> Optional[str]:
+    if not config.STORE_PATH:
+        return None
+    try:
+        return linked_to(store.load(path=config.STORE_PATH).sessions, daemon_id)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _wait_resolved(result: Dict[str, Any], name: Optional[str], since: float, timeout: float,
                    warnings: List[str]) -> None:
     daemon_id, agent, cwd = result['daemon_id'], result['agent'], result['cwd']
@@ -312,6 +329,13 @@ def _wait_resolved(result: Dict[str, Any], name: Optional[str], since: float, ti
         if s is None or s.get('exited') is not None:
             raise Failure('the session ended right after it started (see %s)'
                           % os.path.join(config.RUNTIME_DIR, 'daemon.log'))
+        # Obsidian, which adopts every unlinked daemon session, may link it first; `json resolve`
+        # then leaves that thread out as already linked, so the link itself is the answer.
+        linked = _linked_by_plugin(daemon_id)
+        if linked:
+            result['id'] = linked
+            result['confirmed'] = True
+            return
         pid = s.get('pid')
         if isinstance(pid, int):
             thread = json_output.resolve_output(agent, pid, since, cwd).get('thread')
