@@ -237,12 +237,14 @@ export class Registry extends EventEmitter {
 	 * observed before. `busy` also matches `shell`.
 	 */
 	waitFor(id: string, status: "idle" | "busy", timeoutMs: number): Promise<boolean> {
+		return this.waitUntil(id, (entry) => (status === "busy" ? isBusyLike(entry.status) : entry.status === "idle"), timeoutMs);
+	}
+
+	/** Like `waitFor`, for any condition on `id`'s entry (`syncRemoteControlTitle`: connected and idle). */
+	waitUntil(id: string, test: (entry: RegistryEntry) => boolean, timeoutMs: number): Promise<boolean> {
 		const matches = (): boolean => {
 			const entry = this.entries.get(this.resolve(id));
-			if (!entry) {
-				return false;
-			}
-			return status === "busy" ? isBusyLike(entry.status) : entry.status === "idle";
+			return !!entry && test(entry);
 		};
 		if (matches()) {
 			return Promise.resolve(true);

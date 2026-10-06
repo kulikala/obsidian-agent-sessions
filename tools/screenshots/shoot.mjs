@@ -21,6 +21,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..", "..");
 const PLUGIN_DIR = join(REPO, "plugin");
 const OUT_DIR = join(REPO, "docs", "images");
+/** Where the README scenes of the run in progress go: docs/images/ for English, docs/images/<lang>/ otherwise. */
+let readmeOutDir = OUT_DIR;
 const ONBOARDING_DIR = join(REPO, "docs", "onboarding");
 const WINDOW = { width: 1600, height: 1100 };
 // The onboarding images: 16:10, Obsidian's default light theme. Rendered at 2x (the terminal
@@ -205,8 +207,8 @@ async function clearNotices(page) {
 
 async function capture(page, name) {
 	await sleep(1200);
-	mkdirSync(OUT_DIR, { recursive: true });
-	const file = join(OUT_DIR, `${name}.png`);
+	mkdirSync(readmeOutDir, { recursive: true });
+	const file = join(readmeOutDir, `${name}.png`);
 	writeFileSync(file, await page.screenshot());
 	console.log(`  wrote ${file}`);
 }
@@ -270,7 +272,7 @@ async function readmeScenes(page, box, look) {
 	// The language step has no picture, so the README shows the next step with its picture loaded
 	// (from the folder served in `run`; needs a development build of the plugin).
 	await sleep(800);
-	await page.evaluate(`[...document.querySelectorAll('.agent-sessions-onboarding button')].find((b) => b.textContent.trim() === ${JSON.stringify(msg('en', 'action.next'))}).click()`);
+	await page.evaluate(`[...document.querySelectorAll('.agent-sessions-onboarding button')].find((b) => b.textContent.trim() === ${JSON.stringify(msg(look.lang, 'action.next'))}).click()`);
 	await sleep(1500);
 	await page.waitFor(`(() => { const img = document.querySelector('.agent-sessions-onboarding img'); return !!img && img.complete && img.naturalWidth > 0; })()`, { what: "the guide's picture" });
 	await capture(page, "welcome");
@@ -633,7 +635,10 @@ async function run() {
 		await new Promise((done) => server.listen(0, "127.0.0.1", done));
 		const imageBase = `http://127.0.0.1:${server.address().port}`;
 		try {
-			await withObsidian({ lang: "en", light: false, window: WINDOW, scale: 2, imageBase }, readmeScenes);
+			for (const lang of languages) {
+				readmeOutDir = lang === "en" ? OUT_DIR : join(OUT_DIR, lang);
+				await withObsidian({ lang, light: false, window: WINDOW, scale: 2, imageBase }, readmeScenes);
+			}
 		} finally {
 			server.close();
 		}

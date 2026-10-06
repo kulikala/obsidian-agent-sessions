@@ -233,7 +233,11 @@ Two skills are installed with the program, into the vault only:
 
 ## Remote Control
 
-For a Claude Code session started with Remote Control, renaming it in Agent Sessions sends `/rename` to the session, so the name also changes in Remote Control (claude.ai and the Claude app).
+A Claude Code session with Remote Control (started with it, or with "Enable Remote Control for all sessions" on in Claude Code's `/config`) shows the same name in Remote Control (claude.ai and the Claude app) as in Agent Sessions:
+
+- A session named when you create it starts with that name, so its Remote Control session is created under it.
+- Renaming a session sends `/rename`, which renames its Remote Control session too. For a session that is not running, Agent Sessions starts it in the background, waits for Remote Control to connect, renames it and ends it again.
+- When a named session is resumed (opened again after it ended, or restarted) and Remote Control connects, Agent Sessions sends `/rename` with its current name once. Claude Code reconnects to the earlier Remote Control session without passing on a name changed while it was not connected, so this brings the two back together. The session shows one "Session renamed" line each time.
 
 ## Welcome guide
 

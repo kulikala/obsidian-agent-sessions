@@ -1,7 +1,8 @@
 # Screenshots
 
-Two sets come from the same sandbox: the README images (`docs/images/`, dark) and the welcome
-guide's scenes (`docs/onboarding/<lang>/<scene>.png`, Obsidian's light theme, English and Japanese).
+Two sets come from the same sandbox: the README images (`docs/images/`, dark; a Japanese run with
+`--lang ja` writes `docs/images/ja/`, of which README.ja.md uses `calendar.png` and `codex.png`) and the
+welcome guide's scenes (`docs/onboarding/<lang>/<scene>.png`, Obsidian's light theme, English and Japanese).
 
 ## Re-shooting the welcome guide's scenes
 

@@ -570,6 +570,11 @@ export async function agentVersion(bin: string): Promise<string | null> {
  * environment, so every later tab's commands run with the first tab's `AGENT_SESSIONS_ID`; on
  * Windows that server's install also refuses a package laid out differently from npm's (WinGet's:
  * "the CLI package does not match this platform or executable").
+ *
+ * `name` names a fresh Claude session at launch (`--name=NAME`, one argument so a name starting
+ * with `-` stays a value). Claude Code gives a Remote Control session its title once, when it
+ * creates it, from the session's name at that moment — a name typed later with `/rename` reaches
+ * Remote Control only while it is connected.
  */
 export function buildAgentArgv(
 	agent: AgentId,
@@ -578,6 +583,7 @@ export function buildAgentArgv(
 	fresh: boolean,
 	opencodeLaunch?: OpencodeLaunch,
 	codexNoDaemon = false,
+	name?: string,
 ): string[] {
 	if (agent === "codex") {
 		const own = codexNoDaemon ? [bin, "--no-daemon"] : [bin];
@@ -592,7 +598,10 @@ export function buildAgentArgv(
 		}
 		return [bin, ...tail];
 	}
-	return fresh ? [bin, "--session-id", id] : [bin, "--resume", id];
+	if (!fresh) {
+		return [bin, "--resume", id];
+	}
+	return name ? [bin, "--session-id", id, `--name=${name}`] : [bin, "--session-id", id];
 }
 
 /** Whether `codex --help` lists `--no-daemon` (Codex builds before the shared app-server lack it and

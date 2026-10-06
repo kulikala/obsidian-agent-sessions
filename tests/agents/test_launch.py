@@ -10,9 +10,13 @@ class TestBuildArgv(unittest.TestCase):
     def test_claude_gets_its_id_name_and_remote_control_as_flags(self):
         self.assertEqual(launch.build_argv('claude', '/c', 'ID'), ['/c', '--session-id', 'ID'])
         self.assertEqual(launch.build_argv('claude', '/c', 'ID', name='N', remote_control=True),
-                         ['/c', '--session-id', 'ID', '--name', 'N', '--remote-control=N'])
+                         ['/c', '--session-id', 'ID', '--name=N', '--remote-control=N'])
         self.assertEqual(launch.build_argv('claude', '/c', 'ID', remote_control=True),
                          ['/c', '--session-id', 'ID', '--remote-control'])
+
+    def test_a_name_starting_with_a_dash_stays_the_value_of_name(self):
+        self.assertEqual(launch.build_argv('claude', '/c', 'ID', name='-x: y'),
+                         ['/c', '--session-id', 'ID', '--name=-x: y'])
 
     def test_a_first_message_goes_after_a_double_dash_so_it_is_never_read_as_a_flag(self):
         self.assertEqual(launch.build_argv('claude', '/c', 'ID', prompt='-x hi'),

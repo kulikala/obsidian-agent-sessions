@@ -32,7 +32,7 @@ sid=""; name=""; rc=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --session-id) sid="$2"; shift ;;
-    --name) name="$2"; shift ;;
+    --name=*) name="${1#--name=}" ;;
     --remote-control=*) rc="${1#--remote-control=}" ;;
     --remote-control) rc="-" ;;
   esac
@@ -140,7 +140,7 @@ class TestClaude(NewTestCase):
         self.assertEqual(result['remote_control'], 'https://claude.ai/code/session_x')
         sid = result['id']
         self.assertEqual(self.recorded('argv').split('\n')[:-1],
-                         ['--session-id', sid, '--name', 'Fix login', '--remote-control=Fix login'])
+                         ['--session-id', sid, '--name=Fix login', '--remote-control=Fix login'])
         # Registered for Obsidian's list, under the id Claude was told to use.
         self.assertEqual(store.load(self.store_path).sessions[sid], {'agent': 'claude', 'cwd': self.work})
 

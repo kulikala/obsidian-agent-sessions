@@ -148,11 +148,13 @@ def build_argv(agent: str, bin_path: str, session_id: str, name: Optional[str] =
                remote_control: bool = False, prompt: Optional[str] = None,
                ollama_bin: Optional[str] = None, ollama_model: str = '',
                codex_no_daemon: bool = False) -> List[str]:
-    """argv for a fresh session. Claude Code takes its id (`--session-id`), name (`--name`) and Remote
-    Control (`--remote-control[=name]`) as flags; Codex and OpenCode decide their own ids and take no
-    name at launch. `prompt` is the session's first message. OpenCode set to start through ollama
-    goes through `ollama launch opencode --model <M> -y --`. `codex_no_daemon` (`codex_no_daemon()`)
-    starts Codex with `--no-daemon` (see `buildAgentArgv` in backend.ts)."""
+    """argv for a fresh session. Claude Code takes its id (`--session-id`), name (`--name=name`, one
+    argument so a name starting with `-` stays a value) and Remote Control (`--remote-control[=name]`)
+    as flags; Remote Control titles the session with that name when it creates it. Codex and
+    OpenCode decide their own ids and take no name at launch. `prompt` is the session's first
+    message. OpenCode set to start through ollama goes through `ollama launch opencode --model <M>
+    -y --`. `codex_no_daemon` (`codex_no_daemon()`) starts Codex with `--no-daemon` (see
+    `buildAgentArgv` in backend.ts)."""
     if agent == 'codex':
         own = [bin_path, '--no-daemon'] if codex_no_daemon else [bin_path]
         return own + (['--', prompt] if prompt else [])
@@ -163,7 +165,7 @@ def build_argv(agent: str, bin_path: str, session_id: str, name: Optional[str] =
         return [bin_path] + tail
     argv = [bin_path, '--session-id', session_id]
     if name:
-        argv += ['--name', name]
+        argv.append('--name=' + name)
     if remote_control:
         argv.append('--remote-control=' + name if name else '--remote-control')
     if prompt:
