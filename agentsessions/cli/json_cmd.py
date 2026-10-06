@@ -163,5 +163,52 @@ def main(args: List[str]) -> int:
         _print(json_output.ppid_output(pids))
         return 0
 
+    if sub == 'efficiency':
+        return _efficiency(rest)
+
     sys.stderr.write(i18n.t('cmd.json_unknown_subcommand', sub=sub) + '\n')
     return 2
+
+
+def _efficiency(opts: List[str]) -> int:
+    """`json efficiency [--agent A]... [--threshold P] [--budget W] [--from ISO --to ISO]
+    [--max-sessions N] [--no-excerpts]`."""
+    agent_names: List[str] = []
+    kw = {}
+    from_ts = to_ts = None
+    i = 0
+    while i < len(opts):
+        opt = opts[i]
+        if opt == '--no-excerpts':
+            kw['excerpts'] = False
+            i += 1
+            continue
+        if opt not in ('--agent', '--threshold', '--budget', '--from', '--to', '--max-sessions') \
+                or i + 1 >= len(opts):
+            sys.stderr.write(i18n.t('cmd.json_unknown_option', option=opt) + '\n')
+            return 2
+        value = opts[i + 1]
+        try:
+            if opt == '--agent':
+                agent_names.append(value)
+            elif opt == '--threshold':
+                kw['threshold'] = float(value)
+            elif opt == '--budget':
+                kw['budget'] = float(value)
+            elif opt == '--max-sessions':
+                kw['max_sessions'] = int(value)
+            elif opt == '--from':
+                from_ts = _parse_iso(value)
+            else:
+                to_ts = _parse_iso(value)
+        except ValueError:
+            sys.stderr.write(i18n.t('cmd.json_bad_value', option=opt, value=value) + '\n')
+            return 2
+        i += 2
+    if (from_ts is None) != (to_ts is None):
+        sys.stderr.write(i18n.t('cmd.json_efficiency_usage') + '\n')
+        return 2
+    if from_ts is not None:
+        kw['explicit'] = (from_ts, to_ts)
+    _print(json_output.efficiency_output(agent_names or None, **kw))
+    return 0

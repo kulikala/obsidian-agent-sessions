@@ -1,0 +1,191 @@
+import contextlib
+import glob
+import io
+import json
+import os
+import shutil
+import tempfile
+import unittest
+from unittest import mock
+
+from agentsessions import config
+from agentsessions.cli import json_cmd, json_output
+from agentsessions.efficiency import cache, report
+from tests.efficiency import builder as b
+from tests.efficiency import scenario as sc
+
+DAY = sc.DAY
+
+
+def _call(ts, w):
+    return {'ts': ts, 'in': w, 'cr': 0, 'cw': 0, 'cw1h': 0, 'out': 0}
+
+
+class RangeRuleTest(unittest.TestCase):
+    NOW = 1_000_000_000.0
+
+    def windows(self, five=None, seven=None, five_ex=False, seven_ex=False):
+        return {'five_hour': {'start': self.NOW - 3 * 3600, 'used_percentage': five, 'exhausted': five_ex},
+                'seven_day': {'start': self.NOW - 4 * DAY, 'used_percentage': seven, 'exhausted': seven_ex}}
+
+    def test_five_hour_first(self):
+        r = report.choose_range(self.NOW, self.windows(86, 95), [], 80, 1e7)
+        self.assertEqual((r['rule'], r['start'], r['end'], r['used_percentage']),
+                         ('five_hour', self.NOW - 3 * 3600, self.NOW, 86))
+
+    def test_seven_day_next(self):
+        r = report.choose_range(self.NOW, self.windows(10, 90), [], 80, 1e7)
+        self.assertEqual((r['rule'], r['start']), ('seven_day', self.NOW - 4 * DAY))
+
+    def test_exhausted_counts_even_without_a_percentage(self):
+        r = report.choose_range(self.NOW, self.windows(None, None, five_ex=True), [], 80, 1e7)
+        self.assertEqual((r['rule'], r['exhausted']), ('five_hour', True))
+        r = report.choose_range(self.NOW, self.windows(None, None, seven_ex=True), [], 80, 1e7)
+        self.assertEqual(r['rule'], 'seven_day')
+
+    def test_unknown_percentage_falls_to_the_budget(self):
+        calls = [_call(self.NOW - i * 3600, 1_000_000) for i in range(10)]
+        r = report.choose_range(self.NOW, self.windows(None, None), calls, 80, 3_000_000)
+        self.assertEqual(r['rule'], 'budget')
+        self.assertEqual(r['start'], self.NOW - 2 * 3600)      # the call that reaches the budget
+
+    def test_budget_stops_at_seven_days(self):
+        calls = [_call(self.NOW - i * DAY, 1000) for i in range(10)]
+        r = report.choose_range(self.NOW, {}, calls, 80, 1e9)
+        self.assertEqual(r['start'], self.NOW - 7 * DAY)
+        r = report.choose_range(self.NOW, {}, [], 80, 1e9)
+        self.assertEqual(r['start'], self.NOW - 7 * DAY)
+
+
+class OutputTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.projects = os.path.join(self.tmp, 'projects')
+        self.runtime = os.path.join(self.tmp, 'runtime')
+        status = os.path.join(self.runtime, 'status')
+        os.makedirs(status)
+        patches = [
+            mock.patch.object(config, 'PROJECTS_DIR', self.projects),
+            mock.patch.object(config, 'RUNTIME_DIR', self.runtime),
+            mock.patch.object(config, 'STATUS_DIR', status),
+            mock.patch.object(config, 'STATS_CACHE_PATH', os.path.join(self.runtime, 'stats-cache.json')),
+            mock.patch.object(config, 'CACHE_PATH', os.path.join(self.runtime, 'scan-cache.json')),
+            mock.patch.object(config, 'VAULT', b.CWD),
+            mock.patch.dict(os.environ, {'AGENT_SESSIONS_AGENTS': 'claude'}),
+        ]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        self.uuids = sc.history(self.projects, 'en', heavy=True)
+        self.age()
+
+    def age(self):
+        """Give every transcript an mtime well before `sc.NOW`, outside the racy window."""
+        for path in glob.glob(os.path.join(self.projects, '**', '*.jsonl'), recursive=True):
+            os.utime(path, (sc.NOW - 60, sc.NOW - 60))
+
+    def run_cli(self, *args):
+        out = io.StringIO()
+        with mock.patch('time.time', return_value=sc.NOW), contextlib.redirect_stdout(out):
+            code = json_cmd.main(['efficiency'] + list(args))
+        self.assertEqual(code, 0)
+        text = out.getvalue()
+        self.assertEqual(text.count('\n'), 1)
+        return json.loads(text)
+
+    def claude(self, *args):
+        return self.run_cli('--agent', 'claude', *args)['agents']['claude']
+
+    def test_shape(self):
+        c = self.claude()
+        self.assertEqual(set(c), {'range', 'totals', 'providers', 'sessions', 'breakdown', 'tasks', 'hits',
+                                  'excerpts', 'baselines', 'limits', 'summary'})
+        self.assertEqual(c['range']['rule'], 'budget')
+        self.assertEqual(c['providers'][0]['provider'], 'anthropic')
+        self.assertEqual(c['baselines']['disabled'], [])
+        self.assertFalse(c['limits']['truncated'])
+        e16 = [h for h in c['hits'] if h['detector'] == 'E16']
+        self.assertEqual(len(e16), 1)
+        self.assertNotIn('E16', [x['cause'] for x in c['breakdown']])
+        self.assertEqual(c['excerpts'][0]['task'], e16[0]['task'])     # needs_llm tasks first
+
+    def test_excerpt_prompts_come_from_the_transcript(self):
+        c = self.claude()
+        ex = c['excerpts'][0]
+        self.assertEqual(ex['prompts'][0]['text'], b.text_of('en', sc.LONG)[:600])
+        self.assertTrue(all(p['ref'].startswith(ex['task'] + '.p') for p in ex['prompts']))
+        sizes = report.sent_size(c['summary'], c['excerpts'])
+        self.assertLessEqual(sizes, 60_000)
+        self.assertEqual(self.claude('--no-excerpts')['excerpts'], [])
+
+    def test_cache_has_no_conversation_text_and_is_reused(self):
+        self.claude()
+        files = glob.glob(os.path.join(self.runtime, 'efficiency', 'cache', '*.json'))
+        self.assertTrue(files)
+        blob = ''.join(open(f, encoding='utf-8').read() for f in files)
+        for fragment in (b.FILLER['en'][:30], b.FILLER['en'][-30:].strip(), b.SHORT['en'], 'still working'):
+            self.assertNotIn(fragment, blob)
+        again = self.claude()
+        self.assertEqual(again['limits']['parsed_bytes'], 0)
+        self.assertEqual(again['limits']['cache_hits'], len(files))
+
+    def test_grown_or_other_version_is_read_again_and_gone_is_removed(self):
+        self.claude()
+        path = os.path.join(b.project_dir(self.projects), sc.SCENARIO + '.jsonl')
+        t = b.Transcript(sc.SCENARIO, sc.NOW - 600)
+        t.prompt('one more')
+        t.call()
+        with open(path, 'a', encoding='utf-8') as f:
+            for rec in t.lines:
+                f.write(json.dumps(rec) + '\n')
+        self.age()
+        c = self.claude()
+        self.assertEqual(c['limits']['parsed_bytes'], os.path.getsize(path))
+        with mock.patch.object(cache, 'EFFICIENCY_VERSION', cache.EFFICIENCY_VERSION + 1):
+            self.assertGreater(self.claude()['limits']['parsed_bytes'], os.path.getsize(path))
+        gone = os.path.join(b.project_dir(self.projects), b.session_uuid(100) + '.jsonl')
+        entry = cache.entry_path(gone)
+        self.assertTrue(os.path.exists(entry))
+        os.unlink(gone)
+        self.claude()
+        self.assertFalse(os.path.exists(entry))
+
+    def test_two_ranges_agree(self):
+        wide = self.claude('--from', '2026-09-08T00:00:00Z', '--to', '2026-09-21T12:00:00Z')
+        narrow = self.claude('--from', '2026-09-18T00:00:00Z', '--to', '2026-09-20T23:00:00Z')
+        self.assertEqual(wide['range']['rule'], 'explicit')
+        self.assertEqual(wide['baselines'], narrow['baselines'])
+        lo, hi = narrow['range']['start'], narrow['range']['end']
+        # `tasks` lists the 20 largest, so the wide range shows fewer of the shared ones.
+        shape = lambda c: {t['id']: (t['turns'], t['corrections'], t['all_calls'])
+                           for t in c['tasks'] if lo <= t['first_ts'] and t['last_ts'] <= hi}
+        shared = shape(wide)
+        self.assertTrue(shared)
+        self.assertEqual(shared, {k: v for k, v in shape(narrow).items() if k in shared})
+        hit_ids = lambda c: sorted(h['id'] for h in c['hits'] if h['ts'] and lo <= h['ts'] <= hi)
+        self.assertTrue(hit_ids(narrow))
+        self.assertEqual(hit_ids(wide), hit_ids(narrow))
+
+    def test_max_sessions(self):
+        c = self.claude('--max-sessions', '5')
+        self.assertEqual(c['limits']['truncated'], True)
+        self.assertEqual(c['limits']['reason'], 'max_sessions')
+        self.assertEqual(c['limits']['sessions_read'], 5)
+
+    def test_bad_options(self):
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            self.assertEqual(json_cmd.main(['efficiency', '--from', '2026-01-01']), 2)
+            self.assertEqual(json_cmd.main(['efficiency', '--budget', 'lots']), 2)
+            self.assertEqual(json_cmd.main(['efficiency', '--bogus']), 2)
+
+    def test_other_agents_are_left_out(self):
+        with mock.patch.dict(os.environ, {'AGENT_SESSIONS_AGENTS': 'claude,codex'}), \
+                mock.patch('time.time', return_value=sc.NOW):
+            out = json_output.efficiency_output(['codex'])
+        self.assertEqual(out, {'version': 1, 'agents': {}})
+
+
+if __name__ == '__main__':
+    unittest.main()

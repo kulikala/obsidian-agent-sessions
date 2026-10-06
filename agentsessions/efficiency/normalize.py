@@ -18,6 +18,7 @@ The only strings matched are record formats Claude Code itself writes
 `<system-reminder>` family that `detail.clean_text` drops) -- never words a person typed.
 """
 
+import functools
 import hashlib
 import json
 import os
@@ -52,7 +53,7 @@ def est_tokens(text: str) -> float:
     everything else at 1.5 (so a CJK prompt isn't measured as 3x shorter than it is)."""
     if not text:
         return 0.0
-    ascii_chars = sum(1 for ch in text if ord(ch) < 128)
+    ascii_chars = len(text.encode('ascii', 'ignore'))
     return ascii_chars / 4 + (len(text) - ascii_chars) / 1.5
 
 
@@ -90,6 +91,7 @@ def rel_path(path: Optional[str], cwd: Optional[str]) -> Optional[str]:
         return path.replace(os.sep, '/')
 
 
+@functools.lru_cache(maxsize=65536)
 def abs_path(rel: Optional[str], cwd: Optional[str]) -> Optional[str]:
     if not rel:
         return None
@@ -386,10 +388,12 @@ def _call_dict(call: _Call) -> dict:
     cc = u.get('cache_creation')
     cw1h = min(_int(cc.get('ephemeral_1h_input_tokens')), cw) if isinstance(cc, dict) else 0
     unc = _int(u.get('input_tokens'))
+    details = u.get('output_tokens_details')
     cr = _int(u.get('cache_read_input_tokens'))
     return {
         'id': call.id, 'ts': call.ts, 'model': call.model, 'effort': call.effort,
         'in': unc, 'cr': cr, 'cw': cw, 'cw1h': cw1h, 'out': _int(u.get('output_tokens')),
+        'th': _int(details.get('thinking_tokens')) if isinstance(details, dict) else 0,
         'ctx': unc + cr + cw, 'vis': round(call.visible), 'tools': call.tools,
         'edits': call.edits, 'text_off': call.text_off, 'off': call.first_off,
     }
