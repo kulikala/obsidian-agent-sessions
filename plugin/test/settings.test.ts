@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	agentConfigDue,
 	submitKeyOptionLabel,
 	agentsWithLimits,
 	asAgentId,
@@ -41,6 +42,7 @@ describe("DEFAULT_SETTINGS", () => {
 			activityHiddenAgents: [],
 			activityDetailWidth: 38,
 			agentSkillsStamp: "",
+			agentConfigApplied: [],
 			onboardingShownVersion: "",
 			onboardingOnUpdate: true,
 			onboardingProgress: null,
@@ -259,6 +261,39 @@ describe("mergeSettings (onboarding)", () => {
 		expect(mergeSettings({ onboardingImages: true }).onboardingImages).toBe(true);
 		expect(mergeSettings({ onboardingImages: "no" }).onboardingImages).toBe(true);
 		expect(mergeSettings({}).onboardingImages).toBe(true);
+	});
+});
+
+describe("mergeSettings (agentConfigApplied)", () => {
+	it("keeps only known agent ids and defaults to none", () => {
+		expect(mergeSettings({ agentConfigApplied: ["codex", "bogus", 3, "opencode"] }).agentConfigApplied).toEqual(["codex", "opencode"]);
+		expect(mergeSettings({ agentConfigApplied: "codex" }).agentConfigApplied).toEqual([]);
+		expect(mergeSettings({}).agentConfigApplied).toEqual([]);
+	});
+});
+
+describe("agentConfigDue", () => {
+	const agents = (codex: boolean, opencode: boolean) => ({
+		claude: { enabled: true },
+		codex: { enabled: codex },
+		opencode: { enabled: opencode },
+	});
+
+	it("lists an enabled agent whose config was never set up", () => {
+		expect(agentConfigDue({ agents: agents(true, true), agentConfigApplied: [] }, true)).toEqual(["codex", "opencode"]);
+	});
+
+	it("leaves out an agent already set up once, so a removed status line isn't added back", () => {
+		expect(agentConfigDue({ agents: agents(true, true), agentConfigApplied: ["codex"] }, true)).toEqual(["opencode"]);
+		expect(agentConfigDue({ agents: agents(true, true), agentConfigApplied: ["codex", "opencode"] }, true)).toEqual([]);
+	});
+
+	it("leaves out a disabled agent", () => {
+		expect(agentConfigDue({ agents: agents(false, false), agentConfigApplied: [] }, true)).toEqual([]);
+	});
+
+	it("waits for the program before OpenCode's status plugin, but not for Codex's config.toml", () => {
+		expect(agentConfigDue({ agents: agents(true, true), agentConfigApplied: [] }, false)).toEqual(["codex"]);
 	});
 });
 

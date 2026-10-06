@@ -85,6 +85,19 @@ export function agentsWithLimits(agents: Record<AgentId, { enabled: boolean }>):
 	return enabled.filter((id) => !AGENTS_WITHOUT_LIMITS.includes(id));
 }
 
+/** The agents whose config files are due their one-time setup on load (`agentConfigApplied`):
+ * enabled, never set up, and — for OpenCode, whose status plugin the program writes — only once
+ * the program is installed. Codex's `config.toml` is written by the plugin itself. */
+export function agentConfigDue(
+	settings: { agents: Record<AgentId, { enabled: boolean }>; agentConfigApplied: readonly AgentId[] },
+	programInstalled: boolean
+): AgentId[] {
+	return (["codex", "opencode"] as const).filter(
+		(id) =>
+			settings.agents[id].enabled && !settings.agentConfigApplied.includes(id) && (id === "codex" || programInstalled)
+	);
+}
+
 /** Narrows a `Row`/tab's `agent` (`string`, since it round-trips through JSON with no runtime
  * validation) to a known `AgentId`, falling back to `claude` for anything else — a future/unknown
  * agent id degrades to the original single-agent behavior rather than failing to launch at all. */
@@ -206,6 +219,11 @@ export interface AgentSessionsSettings {
 	/** What the agent skill in the vault was last written for (`skillsStamp`); empty = never. Not
 	 * shown in the settings tab. */
 	agentSkillsStamp: string;
+	/** The agents whose config files the plugin has set up at least once: Codex's `config.toml`
+	 * (the `status_line` default and the keymap), OpenCode's status plugin and `tui.json`. An
+	 * enabled agent missing here gets them on the next load (`agentConfigDue`); one listed here is
+	 * left alone, so a `status_line` the user took out stays out. Not shown in the settings tab. */
+	agentConfigApplied: AgentId[];
 	/** The plugin version the welcome guide was last shown for; empty = never shown. Not shown in the settings tab. */
 	onboardingShownVersion: string;
 	/** Whether the welcome guide is shown again after an update. */
@@ -242,6 +260,7 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	activityHiddenAgents: [],
 	activityDetailWidth: 38,
 	agentSkillsStamp: "",
+	agentConfigApplied: [],
 	onboardingShownVersion: "",
 	onboardingOnUpdate: true,
 	onboardingProgress: null,
@@ -338,6 +357,11 @@ export function mergeSettings(data: unknown, isMac = true): AgentSessionsSetting
 	delete saved.installAgentSkills;
 	if (typeof saved.agentSkillsStamp !== "string") {
 		delete saved.agentSkillsStamp;
+	}
+	if (Array.isArray(saved.agentConfigApplied)) {
+		saved.agentConfigApplied = AGENT_IDS.filter((id) => (saved.agentConfigApplied as unknown[]).includes(id));
+	} else {
+		delete saved.agentConfigApplied;
 	}
 	if (typeof saved.onboardingShownVersion !== "string") {
 		delete saved.onboardingShownVersion;

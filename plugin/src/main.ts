@@ -99,6 +99,7 @@ import { renameRoute, sessionAgentOf } from "./sessions/rename";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./sessions/open-session";
 import {
 	AGENT_IDS,
+	agentConfigDue,
 	AgentSessionsSettings,
 	type OrganizeModel,
 	asAgentId,
@@ -314,9 +315,11 @@ export default class AgentSessionsPlugin extends Plugin {
 		// or the user wrote it by hand), bring the plugin's setting in line with it (without
 		// writing to keybindings.json itself).
 		await this.syncSubmitKeyFromKeybindings();
-		// OpenCode's plugin files follow the program (content only rewritten when it differs), then
-		// its tui.json carries the editor key and — once its file exists — the status line's entry.
-		void this.refreshOpencodeFiles();
+		// An enabled agent whose config files were never set up (first-run detection just enabled it,
+		// or it was enabled before the plugin did this) gets them once. Then OpenCode's plugin files
+		// follow the program (content only rewritten when it differs), and its tui.json carries the
+		// editor key and — once its file exists — the status line's entry.
+		void this.applyAgentConfigOnce().then(() => this.refreshOpencodeFiles());
 		this.syncUiState();
 		this.syncVaultState();
 
@@ -658,6 +661,36 @@ export default class AgentSessionsPlugin extends Plugin {
 		const result = applyCodexConfig(this.codexConfigPath(), submitKey, editorKey, { statusLine: enabled });
 		// Taking the lines away from a Codex nobody uses is silent about a file it can't parse.
 		return enabled ? result : { status: result.status };
+	}
+
+	/**
+	 * The one-time setup of an enabled agent's config files (`agentConfigDue`): Codex's
+	 * `config.toml` (`syncCodexConfig` — the `status_line` default and the keymap) and OpenCode's
+	 * status plugin and `tui.json`. Each agent is recorded in `agentConfigApplied` once its files
+	 * are in place, so a later load leaves them alone (a `status_line` the user took out stays
+	 * out). Installing the program and switching an agent on do the same and record it too.
+	 */
+	private async applyAgentConfigOnce(): Promise<void> {
+		for (const id of agentConfigDue(this.settings, existsSync(this.agentSessionsPath()))) {
+			if (id === "codex") {
+				const result = this.syncCodexConfig();
+				this.noticeConfigResult(result, "notice.codexConfigWritten");
+				if (result.status !== "failed") {
+					await this.markAgentConfigApplied("codex");
+				}
+			} else if (await this.installOpencodePlugin({ notify: true })) {
+				await this.markAgentConfigApplied("opencode");
+			}
+		}
+	}
+
+	/** Records that `id`'s config files have been set up (`agentConfigApplied`). */
+	private async markAgentConfigApplied(id: AgentId): Promise<void> {
+		if (this.settings.agentConfigApplied.includes(id)) {
+			return;
+		}
+		this.settings.agentConfigApplied = [...this.settings.agentConfigApplied, id];
+		await this.saveSettings();
 	}
 
 	/** Shows the notice for a config sync result (a warning wins over "written"). */
@@ -1006,10 +1039,20 @@ export default class AgentSessionsPlugin extends Plugin {
 		if (this.settings.agents.claude.enabled) {
 			await runProgram(launcher, ["setup", "--command", hookLauncher(dir, homedir())]);
 		}
+		if (this.settings.agents.codex.enabled) {
+			// The `status_line` default and the keymap in Codex's config.toml come with the install.
+			const result = this.syncCodexConfig();
+			this.noticeConfigResult(result, "notice.codexConfigWritten");
+			if (result.status !== "failed") {
+				await this.markAgentConfigApplied("codex");
+			}
+		}
 		if (this.settings.agents.opencode.enabled) {
 			// Reports its own outcome (a `Notice`) and never throws: a plugin folder that can't be
 			// written must not fail the rest of the install.
-			await this.installOpencodePlugin({ notify: true, program: launcher });
+			if (await this.installOpencodePlugin({ notify: true, program: launcher })) {
+				await this.markAgentConfigApplied("opencode");
+			}
 			this.syncOpencodeTui();
 		}
 		await this.installAgentSkills({ notify: true, force: true });
@@ -1152,7 +1195,11 @@ export default class AgentSessionsPlugin extends Plugin {
 		// status_line default when it's enabled, the key lines taken away
 		// again when it's disabled.
 		if (id === "codex") {
-			this.noticeConfigResult(this.syncCodexConfig(), "notice.codexConfigWritten");
+			const result = this.syncCodexConfig();
+			this.noticeConfigResult(result, "notice.codexConfigWritten");
+			if (value && result.status !== "failed") {
+				await this.markAgentConfigApplied("codex");
+			}
 		}
 		// OpenCode's status comes from a plugin file the program installs into
 		// OpenCode's own config folder — put it there right when it's enabled,
@@ -1161,7 +1208,12 @@ export default class AgentSessionsPlugin extends Plugin {
 		if (id === "opencode") {
 			// Its tui.json keybinds and status line entry follow the same switch, once the
 			// files are in place (or gone).
-			void this.installOpencodePlugin({ mode: value ? "install" : "remove", notify: true }).then(() => this.syncOpencodeTui());
+			void this.installOpencodePlugin({ mode: value ? "install" : "remove", notify: true }).then(async (status) => {
+				if (value && status) {
+					await this.markAgentConfigApplied("opencode");
+				}
+				this.syncOpencodeTui();
+			});
 		}
 		// The skill follows the enabled agents (a disabled agent's copy goes).
 		void this.installAgentSkills({ notify: true });
