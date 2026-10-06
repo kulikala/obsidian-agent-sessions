@@ -169,6 +169,16 @@ export type OrganizeModel = "sonnet" | "haiku";
 
 export const ORGANIZE_MODELS: readonly OrganizeModel[] = ["sonnet", "haiku"];
 
+/** The model token efficiency asks Claude Code for: Sonnet by default, Opus when asked. */
+export type EfficiencyModel = "sonnet" | "opus";
+
+export const EFFICIENCY_MODELS: readonly EfficiencyModel[] = ["sonnet", "opus"];
+
+/** The ranges token efficiency's settings accept: the usage share (%) at which a window becomes
+ * the range, and the budget (weighted tokens) otherwise. */
+export const EFFICIENCY_THRESHOLD_RANGE = { min: 50, max: 95 } as const;
+export const EFFICIENCY_BUDGET_RANGE = { min: 1_000_000, max: 100_000_000 } as const;
+
 /** How far apart (minutes) two turns may be and still join into one block in the activity calendar. */
 export const ACTIVITY_GAPS = [30, 60, 120] as const;
 export type ActivityGap = (typeof ACTIVITY_GAPS)[number];
@@ -208,6 +218,12 @@ export interface AgentSessionsSettings {
 	managerStatusFilter: ManagerStatusFilter;
 	/** The model for name and category suggestions with Claude Code (Codex and OpenCode use their own default). */
 	organizeModel: OrganizeModel;
+	/** Token efficiency: a usage limit window at or above this share (%) becomes the range. */
+	efficiencyThreshold: number;
+	/** Token efficiency: otherwise, the newest calls up to this many weighted tokens. */
+	efficiencyBudget: number;
+	/** Token efficiency: the Claude Code model that analyses the excerpts. */
+	efficiencyModel: EfficiencyModel;
 	/** The activity calendar's period mode. Default `session`. */
 	activityMode: ActivityMode;
 	/** The activity calendar's join gap (minutes). Default 30. */
@@ -255,6 +271,9 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	managerAnalysisFolded: defaultAnalysisFolded(),
 	managerStatusFilter: "all",
 	organizeModel: "sonnet",
+	efficiencyThreshold: 80,
+	efficiencyBudget: 10_000_000,
+	efficiencyModel: "sonnet",
 	activityMode: "session",
 	activityGapMinutes: 30,
 	activityHiddenAgents: [],
@@ -327,6 +346,10 @@ function mergeAnalysisFolded(data: unknown): Record<AgentId, boolean> {
  * saved data (a fresh install) — a `fontFamily` that was ever saved is never overwritten just
  * because the platform changed.
  */
+function inRange(value: unknown, range: { min: number; max: number }): boolean {
+	return typeof value === "number" && Number.isFinite(value) && value >= range.min && value <= range.max;
+}
+
 export function mergeSettings(data: unknown, isMac = true): AgentSessionsSettings {
 	const saved = (typeof data === "object" && data !== null ? { ...(data as Record<string, unknown>) } : {}) as Record<
 		string,
@@ -341,6 +364,15 @@ export function mergeSettings(data: unknown, isMac = true): AgentSessionsSetting
 	}
 	if (!ORGANIZE_MODELS.includes(saved.organizeModel as OrganizeModel)) {
 		delete saved.organizeModel;
+	}
+	if (!inRange(saved.efficiencyThreshold, EFFICIENCY_THRESHOLD_RANGE)) {
+		delete saved.efficiencyThreshold;
+	}
+	if (!inRange(saved.efficiencyBudget, EFFICIENCY_BUDGET_RANGE)) {
+		delete saved.efficiencyBudget;
+	}
+	if (!EFFICIENCY_MODELS.includes(saved.efficiencyModel as EfficiencyModel)) {
+		delete saved.efficiencyModel;
 	}
 	if (!ACTIVITY_MODES.includes(saved.activityMode as ActivityMode)) {
 		delete saved.activityMode;

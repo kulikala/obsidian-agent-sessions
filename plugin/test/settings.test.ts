@@ -37,6 +37,9 @@ describe("DEFAULT_SETTINGS", () => {
 			managerAnalysisFolded: { claude: false, codex: false, opencode: false },
 			managerStatusFilter: "all",
 			organizeModel: "sonnet",
+			efficiencyThreshold: 80,
+			efficiencyBudget: 10_000_000,
+			efficiencyModel: "sonnet",
 			activityMode: "session",
 			activityGapMinutes: 30,
 			activityHiddenAgents: [],
@@ -81,6 +84,21 @@ describe("mergeSettings", () => {
 
 	it("keeps a managerStatusFilter value that's a registered filter", () => {
 		expect(mergeSettings({ managerStatusFilter: "running" }).managerStatusFilter).toBe("running");
+	});
+
+	it("keeps token efficiency settings in range and drops the rest", () => {
+		const ok = mergeSettings({ efficiencyThreshold: 90, efficiencyBudget: 5_000_000, efficiencyModel: "opus" });
+		expect([ok.efficiencyThreshold, ok.efficiencyBudget, ok.efficiencyModel]).toEqual([90, 5_000_000, "opus"]);
+		for (const bad of [
+			{ efficiencyThreshold: 49, efficiencyBudget: 999_999, efficiencyModel: "haiku" },
+			{ efficiencyThreshold: 96, efficiencyBudget: 100_000_001, efficiencyModel: 3 },
+			{ efficiencyThreshold: "80", efficiencyBudget: Number.NaN, efficiencyModel: null },
+		]) {
+			const s = mergeSettings(bad);
+			expect([s.efficiencyThreshold, s.efficiencyBudget, s.efficiencyModel]).toEqual([80, 10_000_000, "sonnet"]);
+		}
+		const edges = mergeSettings({ efficiencyThreshold: 50, efficiencyBudget: 100_000_000 });
+		expect([edges.efficiencyThreshold, edges.efficiencyBudget]).toEqual([50, 100_000_000]);
 	});
 
 	it("keeps a known organizeModel and drops an unknown one", () => {

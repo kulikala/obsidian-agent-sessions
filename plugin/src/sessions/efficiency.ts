@@ -12,6 +12,7 @@ import { getLang, t, type MessageKey } from "../i18n";
 import { en } from "../i18n/locales/en";
 import { formatDateTimeShort } from "../i18n/datetime";
 import { formatCost, formatK } from "../usage/usage";
+import { addUsage, type HeadlessUsage } from "./organize-agent";
 
 // ---- `json efficiency` -------------------------------------------------------------------
 
@@ -746,4 +747,44 @@ export function fixPrompt(finding: Finding, evidence: string[]): string | null {
 /** The request template for a clearer prompt (E16, E17), copied with "Copy template". */
 export function requestTemplate(): string {
 	return t("efficiency.card.template");
+}
+
+// ---- One analysis, with its single retry -------------------------------------------------------
+
+export interface AnalysisOutcome {
+	/** The merged findings, or `null` when even the retry's reply couldn't be read. */
+	result: MergeResult | null;
+	usage: HeadlessUsage | null;
+	/** Why the first reply was rejected, when there was a retry. */
+	retried: string | null;
+}
+
+/**
+ * Asks once; when the reply isn't the JSON object asked for, asks once more with the error
+ * (`retryPrompt`); when that one can't be read either, the result is `null` (the dialog keeps the
+ * statistics' findings). Usage of both runs is added up. Errors of `ask` itself propagate.
+ */
+export async function runAnalysis(
+	prompt: string,
+	block: Pick<EffAgent, "hits" | "excerpts" | "summary">,
+	ask: (prompt: string) => Promise<{ text: string; usage: HeadlessUsage | null }>
+): Promise<AnalysisOutcome> {
+	const first = await ask(prompt);
+	try {
+		return { result: mergeReply(first.text, block), usage: first.usage, retried: null };
+	} catch (err) {
+		if (!(err instanceof ReplyShapeError)) {
+			throw err;
+		}
+		const second = await ask(retryPrompt(prompt, err.message));
+		const usage = addUsage(first.usage, second.usage);
+		try {
+			return { result: mergeReply(second.text, block), usage, retried: err.message };
+		} catch (again) {
+			if (!(again instanceof ReplyShapeError)) {
+				throw again;
+			}
+			return { result: null, usage, retried: err.message };
+		}
+	}
 }

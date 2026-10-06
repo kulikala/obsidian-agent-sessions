@@ -107,6 +107,9 @@ import {
 	agentConfigDue,
 	AgentSessionsSettings,
 	type OrganizeModel,
+	type EfficiencyModel,
+	EFFICIENCY_BUDGET_RANGE,
+	EFFICIENCY_THRESHOLD_RANGE,
 	asAgentId,
 	DEFAULT_SETTINGS,
 	EDITOR_KEYS,
@@ -141,6 +144,7 @@ import {
 	type AgentSkillsStatus,
 } from "./backend/agent-skills";
 import { agentLaunchFor, writeUiState } from "./backend/ui-state";
+import { EfficiencyModal } from "./ui/efficiency-modal";
 import { InstallBackendModal } from "./ui/install-modal";
 import { OnboardingModal } from "./ui/onboarding-modal";
 import { OnboardingCoachWindow } from "./ui/onboarding-coach";
@@ -514,6 +518,12 @@ export default class AgentSessionsPlugin extends Plugin {
 				}
 				return true;
 			},
+		});
+
+		this.addCommand({
+			id: "analyze-token-efficiency",
+			name: t("action.analyzeEfficiency"),
+			callback: () => new EfficiencyModal(this).open(),
 		});
 
 		this.addCommand({
@@ -3068,6 +3078,59 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 									.setValue(this.plugin.settings.organizeModel)
 									.onChange(async (value) => {
 										this.plugin.settings.organizeModel = value as OrganizeModel;
+										await this.plugin.saveSettings();
+									})
+							);
+						},
+					},
+				],
+			},
+			{
+				heading: t("settings.efficiency.heading"),
+				rows: [
+					{
+						name: t("settings.efficiencyThreshold.name"),
+						desc: t("settings.efficiencyThreshold.desc"),
+						render: (setting) => {
+							setting.addText((text) =>
+								text.setValue(String(this.plugin.settings.efficiencyThreshold)).onChange(async (value) => {
+									const n = Number(value);
+									if (Number.isFinite(n) && n >= EFFICIENCY_THRESHOLD_RANGE.min && n <= EFFICIENCY_THRESHOLD_RANGE.max) {
+										this.plugin.settings.efficiencyThreshold = n;
+										await this.plugin.saveSettings();
+									}
+								})
+							);
+						},
+					},
+					{
+						name: t("settings.efficiencyBudget.name"),
+						desc: t("settings.efficiencyBudget.desc"),
+						render: (setting) => {
+							setting.addText((text) =>
+								text.setValue(String(this.plugin.settings.efficiencyBudget)).onChange(async (value) => {
+									const n = Number(value.replace(/[,_\s]/g, ""));
+									if (Number.isFinite(n) && n >= EFFICIENCY_BUDGET_RANGE.min && n <= EFFICIENCY_BUDGET_RANGE.max) {
+										this.plugin.settings.efficiencyBudget = n;
+										await this.plugin.saveSettings();
+									}
+								})
+							);
+						},
+					},
+					{
+						name: t("settings.efficiencyModel.name"),
+						desc: t("settings.efficiencyModel.desc"),
+						render: (setting) => {
+							setting.addDropdown((dropdown) =>
+								dropdown
+									.addOptions({
+										sonnet: t("settings.efficiencyModel.sonnet"),
+										opus: t("settings.efficiencyModel.opus"),
+									})
+									.setValue(this.plugin.settings.efficiencyModel)
+									.onChange(async (value) => {
+										this.plugin.settings.efficiencyModel = value as EfficiencyModel;
 										await this.plugin.saveSettings();
 									})
 							);

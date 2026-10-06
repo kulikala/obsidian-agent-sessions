@@ -171,6 +171,25 @@ export async function detail(agentSessionsPath: string, vaultPath: string, id: s
 	return runJson(agentSessionsPath, vaultPath, ["detail", id]) as Promise<Detail>;
 }
 
+/** `json efficiency`'s arguments: the agent, the window threshold (%) and the budget (weighted
+ * tokens). */
+export interface EfficiencyArgs {
+	agent: string;
+	threshold: number;
+	budget: number;
+}
+
+/** `json efficiency`: statistics, hits and masked excerpts (`sessions/efficiency.ts`'s `EffOutput`).
+ * Reading a cold week of transcripts can take a minute and the output can pass 1 MiB. */
+export async function efficiency(agentSessionsPath: string, vaultPath: string, args: EfficiencyArgs): Promise<unknown> {
+	return runJson(
+		agentSessionsPath,
+		vaultPath,
+		["efficiency", "--agent", args.agent, "--threshold", String(args.threshold), "--budget", String(args.budget)],
+		{ timeoutMs: 180_000, maxBuffer: 16 * 1024 * 1024 }
+	);
+}
+
 /** `json usage ID [--from ISO] [--to ISO]`. `from`/`to` are ISO 8601 (UTC). */
 export async function usage(
 	agentSessionsPath: string,

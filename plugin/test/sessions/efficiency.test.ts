@@ -289,3 +289,18 @@ describe("rangeLine", () => {
 		expect(ja).toContain("7 日枠（上限に到達）");
 	});
 });
+
+describe("token efficiency strings", () => {
+	it("every efficiency key exists in both languages and none recommends /clear", async () => {
+		const { en } = await import("../../src/i18n/locales/en");
+		const { ja } = await import("../../src/i18n/locales/ja");
+		const keys = Object.keys(en).filter((k) => k.startsWith("efficiency.") || k.startsWith("settings.efficiency") || k === "action.analyzeEfficiency");
+		expect(keys.length).toBeGreaterThan(100);
+		for (const key of keys) {
+			expect(ja[key as keyof typeof ja], key).toBeTruthy();
+			for (const value of [en[key as keyof typeof en], ja[key as keyof typeof ja] as string]) {
+				expect(value, key).not.toMatch(/\/clear/);
+			}
+		}
+	});
+});
