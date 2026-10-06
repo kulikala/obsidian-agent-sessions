@@ -1,7 +1,7 @@
 // Smoke test, the half that runs inside Obsidian. Evaluated in the renderer over CDP
 // (`Runtime.evaluate`, awaitPromise) by `run.mjs`; it defines
 //
-//     globalThis.__agentSessionsSmoke = { run(opts), verify(opts), sweep() }
+//     globalThis.__agentSessionsSmoke = { run(opts), verify(opts), sweep(), startEnv(plugin) }
 //
 //   run({ mode: "cleanup" | "keep", workDir })  -> { steps, kept }
 //   verify({ id, marker })                      -> { steps }
@@ -35,6 +35,27 @@
 	const REQUEST_TIMEOUT_MS = 15000;
 
 	const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+	/** The environment the fake agent starts with: Obsidian's, the plugin's built-in editor variables
+	 * (`editorEnv`, async: on Windows it names the shim without spaces) and the vault. Throws when
+	 * `VISUAL` is missing, so the start step fails rather than the editor step later. */
+	async function startEnv(plugin) {
+		const env = {};
+		for (const [k, v] of Object.entries(process.env)) {
+			if (typeof v === "string") {
+				env[k] = v;
+			}
+		}
+		const editor = await plugin.editorEnv("claude", env);
+		if (!editor || typeof editor.VISUAL !== "string" || !editor.VISUAL) {
+			throw new Error("the plugin's editorEnv gave no VISUAL");
+		}
+		Object.assign(env, editor, { AGENT_SESSIONS_VAULT: plugin.vaultPath() });
+		if (IS_WINDOWS) {
+			env.PYTHONUTF8 = "1";
+		}
+		return env;
+	}
 
 	async function waitFor(fn, timeoutMs, intervalMs = 150) {
 		const until = Date.now() + timeoutMs;
@@ -534,16 +555,7 @@
 					ctx.marker = `こんにちは ${id}`;
 					const cwd = smokeWorkCwd(plugin);
 					fs.mkdirSync(cwd, { recursive: true });
-					const env = {};
-					for (const [k, v] of Object.entries(process.env)) {
-						if (typeof v === "string") {
-							env[k] = v;
-						}
-					}
-					Object.assign(env, plugin.editorEnv("claude"), { AGENT_SESSIONS_VAULT: plugin.vaultPath() });
-					if (IS_WINDOWS) {
-						env.PYTHONUTF8 = "1";
-					}
+					const env = await startEnv(plugin);
 					const client = ctx.client;
 					const res = await client.request("start", {
 						id,
@@ -1042,5 +1054,5 @@
 		});
 	}
 
-	globalThis.__agentSessionsSmoke = { run, verify, sweep };
+	globalThis.__agentSessionsSmoke = { run, verify, sweep, startEnv };
 })();
