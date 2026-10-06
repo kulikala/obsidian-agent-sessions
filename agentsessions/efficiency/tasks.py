@@ -66,7 +66,10 @@ def assemble(main: dict, subs: List[dict]) -> dict:
     results: List[dict] = []
     edits: List[dict] = []
     chains = [main] + list(subs)
+    compactions: Dict[str, List[float]] = {}
     for rec in chains:
+        compactions[rec['chain']] = sorted(e['ts'] for e in rec.get('events', [])
+                                           if e['k'] == 'compaction' and e['ts'] is not None)
         cwd = rec.get('cwd') or main.get('cwd')
         for c in rec.get('calls', []):
             item = dict(c, chain=rec['chain'], chain_kind=rec['kind'], cwd=cwd)
@@ -84,6 +87,7 @@ def assemble(main: dict, subs: List[dict]) -> dict:
         'main': main, 'subs': list(subs), 'calls': calls, 'results': results, 'edits': edits,
         'prompts': sorted(main.get('prompts', []), key=lambda p: (p['ts'] is None, p['ts'] or 0)),
         'events': sorted(main.get('events', []), key=lambda e: (e['ts'] is None, e['ts'] or 0)),
+        'compactions': compactions,
         'team': any(r['kind'] == 'teammate' for r in subs)
                 or any(e['k'] == 'team_start' for e in main.get('events', [])),
     }
@@ -338,14 +342,17 @@ def task_record(session: dict, group: List[dict], base: dict, rng: Tuple[float, 
 
 
 def session_tasks(session: dict, base: dict, rng: Tuple[float, float],
-                  turns: Optional[List[dict]] = None) -> List[dict]:
-    """Every task of `session` that has a prompt or a call inside `rng`, oldest first."""
+                  turns: Optional[List[dict]] = None, everything: bool = False) -> List[dict]:
+    """The tasks of `session` that have a prompt or a call inside `rng`, oldest first, each
+    with `in_range`. `everything=True` returns the tasks outside `rng` too (detectors that
+    look at a whole session, such as E03, need them)."""
     if turns is None:
         turns = turns_of(session)
     mark_rework(turns, base)
     out = []
     for group in split_tasks(session, turns):
         rec = task_record(session, group, base, rng)
-        if rec['_ranged'] or any(in_range(p['ts'], rng) for p in rec['prompts']):
+        rec['in_range'] = bool(rec['_ranged']) or any(in_range(p['ts'], rng) for p in rec['prompts'])
+        if rec['in_range'] or everything:
             out.append(rec)
     return out

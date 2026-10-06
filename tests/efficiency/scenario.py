@@ -31,8 +31,9 @@ def baseline_sessions(root: str, lang: str, count: int = 70, prompts_each: int =
         t.write(os.path.join(b.project_dir(root), sid + '.jsonl'))
 
 
-def scenario(root: str, lang: str, start: float = NOW - 2 * DAY) -> Dict[str, str]:
-    """The scenario session; returns the uuids of its prompts by turn letter."""
+def scenario(root: str, lang: str, start: float = NOW - 2 * DAY, heavy: bool = False) -> Dict[str, str]:
+    """The scenario session; returns the uuids of its prompts by turn letter. `heavy` adds
+    calls to the second task so it also meets E16's call condition."""
     long_text = b.text_of(lang, LONG)
     short = b.SHORT[lang]
     t = b.Transcript(SCENARIO, start)
@@ -59,6 +60,8 @@ def scenario(root: str, lang: str, start: float = NOW - 2 * DAY) -> Dict[str, st
     t.interrupt()
     p['H'] = t.prompt(long_text, after=60)              # rule 3: after an interruption
     t.read('/work/vault/src/d.py')
+    for _ in range(20 if heavy else 0):
+        t.call(text='still working', after=5)
     p['I'] = t.prompt(long_text, after=2 * 3600)        # long gap, but c.py again: same task
     t.read('/work/vault/src/c.py')
     # Task 3
@@ -69,6 +72,6 @@ def scenario(root: str, lang: str, start: float = NOW - 2 * DAY) -> Dict[str, st
     return p
 
 
-def history(root: str, lang: str = 'en', baseline_count: int = 70) -> Dict[str, str]:
+def history(root: str, lang: str = 'en', baseline_count: int = 70, heavy: bool = False) -> Dict[str, str]:
     baseline_sessions(root, lang, count=baseline_count)
-    return scenario(root, lang)
+    return scenario(root, lang, heavy=heavy)

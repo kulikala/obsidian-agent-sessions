@@ -97,7 +97,7 @@ class Transcript:
         self.wait(after)
         self._n += 1
         msg_id = msg_id or 'msg_%s_%s_%d' % (self.session[:8], self.agent_id or 'm', self._n)
-        write = ctx if fresh else write
+        write = ctx - 3 if fresh else write
         usage = {'input_tokens': 3, 'cache_creation_input_tokens': write,
                  'cache_read_input_tokens': max(ctx - write - 3, 0), 'output_tokens': output,
                  'cache_creation': {'ephemeral_1h_input_tokens': write if self.ttl_1h else 0,
