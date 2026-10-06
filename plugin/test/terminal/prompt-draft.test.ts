@@ -34,6 +34,13 @@ describe("promptHasDraft", () => {
 		expect(promptHasDraft([line(RULE), line("❯ "), line(RULE), line("  status text")])).toBe(false);
 	});
 
+	it("does not take Claude Code's queued-messages hint for a draft", () => {
+		expect(promptHasDraft([line(RULE), line("❯ Press up to edit queued messages"), line(RULE)])).toBe(false);
+		expect(promptHasDraft([line(RULE), line("❯ Press up to edit"), line("  queued messages"), line(RULE)])).toBe(false);
+		expect(promptHasDraft([line(RULE), line("❯ [Press up to edit queued messages]"), line(RULE)])).toBe(false);
+		expect(promptHasDraft([line(RULE), line("❯ Press up to edit queued messages please"), line(RULE)])).toBe(true);
+	});
+
 	it("uses the last prompt line on the screen (earlier ones are history)", () => {
 		expect(promptHasDraft([line("❯ old instruction"), line("answer"), line(RULE), line("❯ "), line(RULE)])).toBe(false);
 	});
