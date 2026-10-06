@@ -195,7 +195,7 @@ def _is_usage_limit_error(payload: dict) -> bool:
 
 def _bucket_rollout(path: str) -> Tuple[Dict[int, dict], List[Tuple[float, Optional[str]]]]:
     """`{bucket_start: {calls, input, output, cache_read, cache_create, cost,
-    unknown_cost}}` for one rollout, from scratch (no incremental cache -- see
+    unknown_cost, unpriced_calls}}` for one rollout (`cost` is the priced calls only), from scratch (no incremental cache -- see
     module docstring). Mirrors `agents.codex.usage.collect`'s delta-from-running-total
     logic, but bucketed by each `token_count` event's own timestamp rather than
     grouped into turns -- `json stats` needs to place usage precisely against
@@ -254,7 +254,7 @@ def _bucket_rollout(path: str) -> Tuple[Dict[int, dict], List[Tuple[float, Optio
         if ts is None:
             continue
 
-        bucket = buckets.setdefault(_bucket_key(ts), dict(_empty_totals(), unknown_cost=False))
+        bucket = buckets.setdefault(_bucket_key(ts), dict(_empty_totals(), unknown_cost=False, unpriced_calls=0))
         bucket['calls'] += 1
         bucket['input'] += delta['input_tokens']
         bucket['cache_read'] += delta['cached_input_tokens']
@@ -268,7 +268,8 @@ def _bucket_rollout(path: str) -> Tuple[Dict[int, dict], List[Tuple[float, Optio
         cost = pricing.cost(usage_like, current_model, agent='codex')
         if cost is None:
             bucket['unknown_cost'] = True
-        elif not bucket['unknown_cost']:
+            bucket['unpriced_calls'] += 1
+        else:
             bucket['cost'] += cost
     return buckets, hits
 
@@ -283,23 +284,20 @@ def _rejection_key(defs: List[dict]) -> Optional[str]:
 
 
 def _window_totals(per_file: List[Tuple[str, Dict[int, dict]]], start: float, end: float) -> Tuple[dict, Dict[str, dict]]:
-    total = dict(_empty_totals(), unknown_cost=False)
+    total = dict(_empty_totals(), unknown_cost=False, unpriced_calls=0)
     sessions: Dict[str, dict] = {}
     for sid, buckets in per_file:
         for bucket_start, b in buckets.items():
             if bucket_start < start or bucket_start >= end:
                 continue
-            s = sessions.setdefault(sid, dict(_empty_totals(), unknown_cost=False))
-            for key in ('calls', 'input', 'output', 'cache_read', 'cache_create'):
+            s = sessions.setdefault(sid, dict(_empty_totals(), unknown_cost=False, unpriced_calls=0))
+            for key in ('calls', 'input', 'output', 'cache_read', 'cache_create', 'unpriced_calls', 'cost'):
                 v = b.get(key, 0)
                 s[key] += v
                 total[key] += v
             if b.get('unknown_cost'):
                 s['unknown_cost'] = True
                 total['unknown_cost'] = True
-            else:
-                s['cost'] += b.get('cost', 0.0)
-                total['cost'] += b.get('cost', 0.0)
     sessions = {sid: s for sid, s in sessions.items() if s['calls'] > 0}
     return total, sessions
 

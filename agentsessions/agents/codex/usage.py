@@ -48,10 +48,11 @@ class _Turn:
     cache_read: int = 0
     output: int = 0
     thinking: int = 0
-    cost: Optional[float] = 0.0
+    cost: float = 0.0              # the priced calls only
     tools: Dict[str, int] = field(default_factory=dict)
     estimated: bool = False
     unknown_cost: bool = False
+    unpriced_calls: int = 0        # calls whose model has no price; left out of `cost`
     last_ts: Optional[float] = None
     context_last: int = 0
     models: Dict[str, int] = field(default_factory=dict)
@@ -62,9 +63,10 @@ class _Turn:
             'index': self.index, 'ts': self.ts, 'prompt': self.prompt,
             'calls': self.calls, 'input': self.input, 'cache_create': self.cache_create,
             'cache_read': self.cache_read, 'output': self.output, 'thinking': self.thinking,
-            'cost': None if self.unknown_cost else self.cost,
+            'cost': self.cost,
             'tools': dict(self.tools), 'estimated': self.estimated,
             'unknown_cost': self.unknown_cost,
+            'unpriced_calls': self.unpriced_calls,
             'last_ts': self.last_ts, 'context_last': self.context_last,
             'models': dict(self.models), 'before_first': self.before_first,
         }
@@ -149,8 +151,9 @@ def collect(path: str) -> List[dict]:
         call_cost = pricing.cost(usage_like, current_model, agent='codex')
         if call_cost is None:
             target.unknown_cost = True
-        elif not target.unknown_cost:
-            target.cost = (target.cost or 0.0) + call_cost
+            target.unpriced_calls += 1
+        else:
+            target.cost += call_cost
 
         call_ts = rollout.parse_ts(rec.get('timestamp'))
         if call_ts is not None:
@@ -166,9 +169,10 @@ def collect(path: str) -> List[dict]:
 def summarize(turns: List[dict], from_ts: Optional[float] = None,
               to_ts: Optional[float] = None) -> dict:
     """Same contract as `usage.turns.summarize`, with one addition:
-    `total['unknown_cost']` is `True` if any included turn has `cost: null` (an
-    unpriced model) -- `total['cost']` in that case is the sum of only the turns
-    whose cost *is* known, i.e. a floor, not the true total. A consumer that shows
+    `total['unknown_cost']` is `True` if any included turn has unpriced calls (an
+    unpriced model) -- `total['cost']` in that case is the sum of only the calls
+    whose cost *is* known, i.e. a floor, not the true total, and
+    `total['unpriced_calls']` says how many calls it leaves out. A consumer that shows
     `total['cost']` should also show `unknown_cost` so that floor doesn't read as
     exact."""
     def _in_range(t: dict) -> bool:

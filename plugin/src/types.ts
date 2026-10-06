@@ -118,9 +118,15 @@ export interface UsageTurn {
 	cache_read: number;
 	output: number;
 	thinking: number;
+	/** The priced calls only (an older helper sends `null` for a turn with any unpriced call). */
 	cost: number;
 	tools: Record<string, number>;
 	estimated: boolean;
+	/** Calls with no price (a Codex model missing from the price list, an OpenCode reply with no
+	 * recorded cost), left out of `cost`. Absent from an older helper and from Claude Code. */
+	unpriced_calls?: number;
+	/** True when any call has no price (Codex, OpenCode). */
+	unknown_cost?: boolean;
 	last_ts: number | null;
 	context_last: number;
 	models: Record<string, number>;
@@ -137,6 +143,9 @@ export interface UsageTotal {
 	cost: number;
 	tools: Record<string, number>;
 	estimated: boolean;
+	/** See `UsageTurn.unpriced_calls`. */
+	unpriced_calls?: number;
+	unknown_cost?: boolean;
 	duration: number | null;
 	first_ts: number | null;
 	last_ts: number | null;
@@ -163,6 +172,8 @@ export interface StatsUsage {
 	cache_create: number;
 	cost: number;
 	unknown_cost: boolean;
+	/** Calls left out of `cost` because they have no price (Codex only; absent for Claude). */
+	unpriced_calls?: number;
 }
 
 /** One window (5-hour, 7-day, or any other length an agent reports) from `json stats`.

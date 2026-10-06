@@ -57,6 +57,7 @@ class Turn:
             'cost': self.cost,
             'tools': dict(self.tools),
             'estimated': self.estimated,
+            'unpriced_calls': 0,   # every Claude model has a price (an unknown one is `estimated`)
             'last_ts': self.last_ts,
             'context_last': self.context_last,
             'models': dict(self.models),
@@ -173,12 +174,14 @@ def summarize(turns: List[dict], from_ts: Optional[float] = None,
     are summed. A turn with no `ts` (the `before_first` turn) is excluded from the
     total whenever a range is given.
 
-    `total` also carries `cost`, `tools` (totals per name), `duration` (seconds from
+    `total` also carries `unpriced_calls` (calls with no price, whose cost is left out of
+    `cost`; always 0 for Claude), `cost`, `tools` (totals per name), `duration` (seconds from
     the first human instruction's ts to the last assistant line's ts), `first_ts`,
     `last_ts`, `context_last` (the last call's `input + cache_read + cache_create`
     within the range), and `estimated` (true if any turn in the range is `estimated`).
     """
-    total = {'calls': 0, 'input': 0, 'cache_create': 0, 'cache_read': 0, 'output': 0, 'thinking': 0}
+    total = {'calls': 0, 'input': 0, 'cache_create': 0, 'cache_read': 0, 'output': 0, 'thinking': 0,
+             'unpriced_calls': 0}
     cost = 0.0
     tools: Dict[str, int] = {}
     estimated = False

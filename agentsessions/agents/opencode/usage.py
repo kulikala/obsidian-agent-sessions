@@ -25,7 +25,7 @@ def _int(v) -> int:
 def _new_turn(ts: Optional[float], prompt: str, before_first: bool = False) -> dict:
     return {'index': -1, 'ts': ts, 'prompt': prompt, 'calls': 0, 'input': 0, 'cache_create': 0,
             'cache_read': 0, 'output': 0, 'thinking': 0, 'cost': 0.0, 'tools': {},
-            'estimated': False, 'unknown_cost': False, 'last_ts': None, 'context_last': 0,
+            'estimated': False, 'unknown_cost': False, 'unpriced_calls': 0, 'last_ts': None, 'context_last': 0,
             'models': {}, 'before_first': before_first}
 
 
@@ -85,6 +85,7 @@ def collect(session_id: str, path: Optional[str] = None) -> List[dict]:
             target['cost'] += float(cost)
         else:
             target['unknown_cost'] = True
+            target['unpriced_calls'] += 1
         model = _db.model_of_message(data)
         if model:
             target['models'][model] = target['models'].get(model, 0) + 1
@@ -100,8 +101,6 @@ def collect(session_id: str, path: Optional[str] = None) -> List[dict]:
     ordered = ([before] if before is not None else []) + turns
     for i, t in enumerate(ordered):
         t['index'] = i
-        if t['unknown_cost']:
-            t['cost'] = None
     return ordered
 
 
@@ -113,7 +112,7 @@ def collect_for(path: str) -> List[dict]:
 def summarize(turns: List[dict], from_ts: Optional[float] = None,
               to_ts: Optional[float] = None) -> dict:
     """Same contract as `agents.codex.usage.summarize` (`total['unknown_cost']`
-    is true when any included turn's cost is `null`)."""
+    is true when any included turn has a reply without a recorded cost)."""
     def _in_range(t: dict) -> bool:
         ts = t.get('ts')
         if from_ts is not None and (ts is None or ts < from_ts):

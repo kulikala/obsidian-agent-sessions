@@ -239,7 +239,10 @@ class TestTokenAggregation(unittest.TestCase):
                                                   'resets_at': now + 1000}}),
         ])
         out = stats.compute(now=now, home=self.home)
-        self.assertTrue(out['windows']['five_hour']['total']['unknown_cost'])
+        five = out['windows']['five_hour']
+        self.assertTrue(five['total']['unknown_cost'])
+        self.assertEqual((five['total']['unpriced_calls'], five['total']['cost']), (1, 0.0))
+        self.assertEqual(five['sessions'][ID1]['unpriced_calls'], 1)
 
     def test_sessions_outside_both_windows_are_excluded(self):
         now = 1_700_100_000.0

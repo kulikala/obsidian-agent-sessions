@@ -367,8 +367,8 @@ describe("categoryTotals", () => {
 		const totals = categoryTotals(rows, stats, "7d");
 		const rim = totals.find((c) => c.key === "RIM");
 		const zero = totals.find((c) => c.key === "ZERO");
-		expect(rim).toEqual({ key: "RIM", label: "RIM", cost: 3, count: 2 });
-		expect(zero).toEqual({ key: "ZERO", label: "ZERO", cost: 5, count: 1 });
+		expect(rim).toMatchObject({ key: "RIM", label: "RIM", cost: 3, count: 2 });
+		expect(zero).toMatchObject({ key: "ZERO", label: "ZERO", cost: 5, count: 1 });
 	});
 
 	it("groups a name without a group and a missing name together into 'other'", () => {
@@ -376,7 +376,7 @@ describe("categoryTotals", () => {
 		setLang("ja");
 		const rows: Row[] = [row({ id: "1", name: "Name without a category" }), row({ id: "2", name: null })];
 		const totals = categoryTotals(rows, null, "5h");
-		expect(totals).toEqual([{ key: OTHER_GROUP, label: "その他", cost: 0, count: 2 }]);
+		expect(totals).toMatchObject([{ key: OTHER_GROUP, label: "その他", cost: 0, count: 2 }]);
 	});
 
 	it("doesn't count archived sessions or unnamed child sessions", () => {
@@ -386,12 +386,12 @@ describe("categoryTotals", () => {
 			row({ id: "3", name: "RIM: Still active" }),
 		];
 		const totals = categoryTotals(rows, null, "5h");
-		expect(totals).toEqual([{ key: "RIM", label: "RIM", cost: 0, count: 1 }]);
+		expect(totals).toMatchObject([{ key: "RIM", label: "RIM", cost: 0, count: 1 }]);
 	});
 
 	it("cost is 0 when the window has no usage", () => {
 		const rows: Row[] = [row({ id: "1", name: "RIM: Meeting notes" })];
-		expect(categoryTotals(rows, null, "5h")).toEqual([{ key: "RIM", label: "RIM", cost: 0, count: 1 }]);
+		expect(categoryTotals(rows, null, "5h")).toMatchObject([{ key: "RIM", label: "RIM", cost: 0, count: 1 }]);
 	});
 
 	it("attributes a mixed-agent row list's costs to each row's own agent", () => {
@@ -407,7 +407,7 @@ describe("categoryTotals", () => {
 			},
 		};
 		const totals = categoryTotals(rows, stats, "7d");
-		expect(totals).toEqual([{ key: "RIM", label: "RIM", cost: 9, count: 2 }]);
+		expect(totals).toMatchObject([{ key: "RIM", label: "RIM", cost: 9, count: 2 }]);
 	});
 });
 
@@ -417,18 +417,18 @@ describe("categoryTotalsForWindow (against one already-resolved window directly,
 	it("sums cost per category from the given window, same as categoryTotals but window-first", () => {
 		const rows: Row[] = [row({ id: "1", name: "RIM: A" }), row({ id: "2", name: "RIM: B" })];
 		const w = statsWindow({ sessions: { "1": usage(2), "2": usage(3) } });
-		expect(categoryTotalsForWindow(rows, w)).toEqual([{ key: "RIM", label: "RIM", cost: 5, count: 2 }]);
+		expect(categoryTotalsForWindow(rows, w)).toMatchObject([{ key: "RIM", label: "RIM", cost: 5, count: 2 }]);
 	});
 
 	it("cost is 0 for every category when the window is null (not fetched yet)", () => {
 		const rows: Row[] = [row({ id: "1", name: "RIM: A" })];
-		expect(categoryTotalsForWindow(rows, null)).toEqual([{ key: "RIM", label: "RIM", cost: 0, count: 1 }]);
+		expect(categoryTotalsForWindow(rows, null)).toMatchObject([{ key: "RIM", label: "RIM", cost: 0, count: 1 }]);
 	});
 });
 
 describe("topCategoryTotals", () => {
-	function total(key: string, cost: number): CategoryTotal {
-		return { key, label: key, cost, count: 1 };
+	function total(key: string, cost: number, unpriced_calls = 0): CategoryTotal {
+		return { key, label: key, cost, count: 1, calls: 1 + unpriced_calls, unpriced_calls, unknown_cost: unpriced_calls > 0 };
 	}
 
 	it("excludes categories with 0 cost", () => {
@@ -443,6 +443,25 @@ describe("topCategoryTotals", () => {
 
 	it("returns an empty array when everything is 0", () => {
 		expect(topCategoryTotals([total("A", 0), total("B", 0)], 8)).toEqual([]);
+	});
+
+	it("keeps a category whose only usage has no price, so its cost doesn't vanish as if unused", () => {
+		expect(topCategoryTotals([total("A", 0), total("CODEX", 0, 3)], 8)).toEqual([total("CODEX", 0, 3)]);
+	});
+});
+
+describe("categoryTotals with calls that have no price", () => {
+	it("sums calls and unpriced calls, and marks the category", () => {
+		const w = statsWindow({
+			sessions: {
+				"1": { ...usage(2), calls: 4, unpriced_calls: 1, unknown_cost: true },
+				"2": { ...usage(3), calls: 2 },
+			},
+		});
+		const rows = [row({ id: "1", name: "RIM: a" }), row({ id: "2", name: "RIM: b" })];
+		expect(categoryTotalsForWindow(rows, w)).toEqual([
+			{ key: "RIM", label: "RIM", cost: 5, count: 2, calls: 6, unpriced_calls: 1, unknown_cost: true },
+		]);
 	});
 });
 

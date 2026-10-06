@@ -532,22 +532,35 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"usage.card.tokens": "トークン",
 	"usage.card.outputSub": "出力 {output}",
 	"usage.card.turns": "ターン数",
-	"usage.card.duration": "期間",
+	"usage.card.duration": "所要時間",
+	"usage.card.unpriced": "価格不明 {count} 件",
+	"usage.duration": "{h}時間{m}分",
 	"usage.chart.input": "入力",
-	"usage.chart.uncached": "非キャッシュ",
-	"usage.chart.cacheRead": "cache 読出",
-	"usage.chart.cacheCreate": "cache 作成",
+	"usage.chart.uncached": "キャッシュなし",
+	"usage.chart.cacheRead": "キャッシュ読み込み",
+	"usage.chart.cacheCreate": "キャッシュ書き込み",
 	"usage.chart.output": "出力",
+	"usage.chart.response": "応答",
+	"usage.chart.thinking": "思考",
 	"usage.chart.toolsTitle": "ツール使用",
 	"usage.chart.toolsEmpty": "ツール使用なし",
+
+	// ---- A cost that leaves out replies without a price (usage/usage.ts's costView) ----
+	"cost.unpriced.some":
+		"{calls} 件の応答のうち {count} 件は価格が分かりません（価格表にないモデル、またはコストの記録がない応答）。この金額は残りの応答の分だけです",
+	"cost.unpriced.someUncounted":
+		"価格が分からない応答があります（価格表にないモデル、またはコストの記録がない応答）。この金額は残りの応答の分だけです",
+	"cost.unpriced.all": "どの応答も価格が分かりません（価格表にないモデル、またはコストの記録がない応答）",
 
 	// ---- Markdown copy (usage/usage.ts's toMarkdown) ----
 	"usage.md.title": "# セッション解析結果（#{lo}〜#{hi}）",
 	"usage.md.cost": "- コスト: {cost}{estimated}",
 	"usage.md.estimatedSuffix": "（概算）",
+	"usage.md.unpricedSuffix": "（価格不明の応答 {count} 件を除く）",
+	"usage.md.unpricedSuffixUncounted": "（価格不明の応答を除く）",
 	"usage.md.tokens": "- トークン: 入力 {input}・出力 {output}",
 	"usage.md.turns": "- ターン数: {count}",
-	"usage.md.duration": "- 期間: {duration}",
+	"usage.md.duration": "- 所要時間: {duration}",
 	"usage.md.tableHeader": "| # | 時刻 | 指示 | 入力 | 出力 | コスト |",
 
 	// ---- terminal/keybindings.ts ----

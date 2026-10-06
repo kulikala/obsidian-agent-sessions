@@ -19,6 +19,8 @@ function emptyTotal(): UsageTotal {
 		cost: 0,
 		tools: {},
 		estimated: false,
+		unpriced_calls: 0,
+		unknown_cost: false,
 		duration: null,
 		first_ts: null,
 		last_ts: null,
@@ -28,7 +30,7 @@ function emptyTotal(): UsageTotal {
 
 /**
  * Sums the turns whose `index` falls within `from`–`to` (inclusive; can be passed in either
- * order). Besides `cost` and `tools` (summed per name), `duration` is the span from the
+ * order). Besides `cost`, `unpriced_calls` and `tools` (summed per name), `duration` is the span from the
  * earliest turn's `ts` (start) to the latest counted assistant row's `last_ts` within the range
  * (`null` unless both are available).
  */
@@ -43,7 +45,12 @@ export function sumRange(turns: UsageTurn[], from: number, to: number): UsageTot
 		for (const key of TOTAL_KEYS) {
 			total[key] += turn[key];
 		}
-		total.cost += turn.cost;
+		// `?? 0`: an older helper sends `null` for a turn with an unpriced call.
+		total.cost += turn.cost ?? 0;
+		total.unpriced_calls = (total.unpriced_calls ?? 0) + (turn.unpriced_calls ?? 0);
+		if (turn.unknown_cost) {
+			total.unknown_cost = true;
+		}
 		for (const [name, count] of Object.entries(turn.tools)) {
 			total.tools[name] = (total.tools[name] ?? 0) + count;
 		}
@@ -104,7 +111,7 @@ export function formatCost(n: number): string {
 	return `$${new Intl.NumberFormat(getLang(), { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n)}`;
 }
 
-/** Formats `duration` (seconds) as `h m`. `null` shows as "—". */
+/** Formats `duration` (seconds) as hours and minutes ("2h 5m", "2時間5分"). `null` shows as "—". */
 export function formatDuration(seconds: number | null): string {
 	if (seconds === null || !Number.isFinite(seconds) || seconds < 0) {
 		return "—";
@@ -112,7 +119,35 @@ export function formatDuration(seconds: number | null): string {
 	const totalMinutes = Math.round(seconds / 60);
 	const h = Math.floor(totalMinutes / 60);
 	const m = totalMinutes % 60;
-	return `${h}h ${m}m`;
+	return t("usage.duration", { h, m });
+}
+
+/** A cost as shown, and why it isn't the whole cost (`null` when it is). */
+export interface CostView {
+	text: string;
+	note: string | null;
+}
+
+/**
+ * How to show a cost that can leave out calls with no price (a Codex model missing from the
+ * price list, an OpenCode reply with no recorded cost): the priced part with a "+" ("at least"),
+ * or "—" when no call is priced, each with a note saying how many are left out. A cost with
+ * nothing left out is plain `formatCost`. Works for a turn, a range total, or a `json stats`
+ * entry. An older helper gives no count (only `unknown_cost`, and `null` for a turn's cost).
+ */
+export function costView(c: { cost: number | null; calls: number; unpriced_calls?: number; unknown_cost?: boolean }): CostView {
+	const unpriced = c.unpriced_calls ?? 0;
+	if (unpriced === 0 && !c.unknown_cost) {
+		return { text: formatCost(c.cost ?? 0), note: null };
+	}
+	if (unpriced > 0 && unpriced >= c.calls) {
+		return { text: "—", note: t("cost.unpriced.all") };
+	}
+	const note =
+		unpriced > 0
+			? t("cost.unpriced.some", { count: formatNumber(unpriced), calls: formatNumber(c.calls) })
+			: t("cost.unpriced.someUncounted");
+	return { text: c.cost === null ? "—" : `${formatCost(c.cost)}+`, note };
 }
 
 /** Locale-short date + time — ja "2026/09/25 14:05", en "9/25/26, 2:05 PM" (year omitted
@@ -201,9 +236,15 @@ export function toMarkdown(turns: UsageTurn[], from: number, to: number, total: 
 	const lines: string[] = [];
 	lines.push(t("usage.md.title", { lo, hi }));
 	lines.push("");
-	lines.push(
-		t("usage.md.cost", { cost: formatCost(total.cost), estimated: total.estimated ? t("usage.md.estimatedSuffix") : "" })
-	);
+	const unpriced = total.unpriced_calls ?? 0;
+	const notes =
+		(total.estimated ? t("usage.md.estimatedSuffix") : "") +
+		(unpriced > 0
+			? t("usage.md.unpricedSuffix", { count: formatNumber(unpriced) })
+			: total.unknown_cost
+				? t("usage.md.unpricedSuffixUncounted")
+				: "");
+	lines.push(t("usage.md.cost", { cost: costView(total).text, estimated: notes }));
 	lines.push(t("usage.md.tokens", { input: formatK(inputTotal), output: formatK(total.output) }));
 	lines.push(t("usage.md.turns", { count: rows.length }));
 	lines.push(t("usage.md.duration", { duration: formatDuration(total.duration) }));
@@ -214,7 +255,7 @@ export function toMarkdown(turns: UsageTurn[], from: number, to: number, total: 
 		const input = t.input + t.cache_read + t.cache_create;
 		lines.push(
 			`| ${t.index} | ${formatEpoch(t.ts)} | ${escapeCell(promptOrBeforeFirst(t))} | ${formatK(input)} | ` +
-				`${formatK(t.output)} | ${formatCost(t.cost)} |`
+				`${formatK(t.output)} | ${costView(t).text} |`
 		);
 	}
 	return lines.join("\n");

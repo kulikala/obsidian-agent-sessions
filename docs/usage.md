@@ -213,13 +213,13 @@ Shows what one session used: cost, tokens, tools and time, for the whole session
 | **Tokens** | input tokens, with output below |
 | **Turns** | number of turns |
 | **Duration** | first prompt to last reply |
-| **Input** | uncached, cache read, cache create |
-| **Output** | output, and the part spent thinking |
+| **Input** | uncached, cache read, cache write |
+| **Output** | response and thinking |
 | **Tool use** | calls per tool, top 12 |
 
 - A turn is one prompt you sent and everything the agent did until the next one. The table lists each turn's time, prompt (its first 60 characters), input, output and cost. Usage before the first prompt is a row of its own, **(Before first prompt)**, and counts as a turn.
 - Input counts every token the model read: new (uncached) tokens, tokens read from the prompt cache, and tokens written to it. The cache read is usually most of it.
-- Claude Code and Codex costs are calculated from the token counts and each model's price; OpenCode's are the cost OpenCode records. **estimated** under the cost means a Claude model in the range has no price in the plugin's list, so it was priced like Claude Opus 5. A Codex model not in that list, or an OpenCode reply without a recorded cost, counts as $0.00 and is not marked.
+- Claude Code and Codex costs are calculated from the token counts and each model's price; OpenCode's are the cost OpenCode records. **estimated** under the cost means a Claude model in the range has no price in the plugin's list, so it was priced like Claude Opus 5. A reply with no price at all (a Codex model not in that list, or an OpenCode reply without a recorded cost) is left out of the cost, which then reads like `$1.20+`, or `—` when no reply has a price. **N without a price** under the cost card, and the tooltip on any cost marked this way, say how many replies are left out. The Session manager's costs and the details pane mark them the same way.
 - The numbers come from the agent's own files, read once when the dialog opens. Open it again to update them.
 
 To look at part of a session:

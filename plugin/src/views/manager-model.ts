@@ -8,7 +8,7 @@ import { formatTimeShort, formatWeekdayTimeShort } from "../i18n/datetime";
 import { listedInManager } from "../sessions/listing";
 import { statusGroup, type ManagerStatusFilter, type TerminalStatus } from "../sessions/terminal-status";
 import { OTHER_GROUP, splitName, type ManagerTree } from "../sessions/tree";
-import type { StatsResult, StatsWindow, StatsWindows } from "../types";
+import type { StatsResult, StatsUsage, StatsWindow, StatsWindows } from "../types";
 
 /** A special group key that's never foldable (the archive heading). */
 export const ARCHIVED_GROUP = "__archived__";
@@ -114,8 +114,12 @@ export type SortKey = "updated" | "5h" | "7d";
 
 /** `id`'s cost within `window`. `null` if there's no usage in the window. */
 export function sessionCost(window: StatsWindow | null | undefined, id: string): number | null {
-	const entry = window?.sessions[id];
-	return entry ? entry.cost : null;
+	return sessionUsage(window, id)?.cost ?? null;
+}
+
+/** `id`'s usage entry within `window` (cost, calls, calls without a price). `null` if there's no usage in the window. */
+export function sessionUsage(window: StatsWindow | null | undefined, id: string): StatsUsage | null {
+	return window?.sessions[id] ?? null;
 }
 
 const WINDOW_KEY: Record<"5h" | "7d", string> = { "5h": "five_hour", "7d": "seven_day" };
@@ -206,7 +210,12 @@ export function windowsForAgent(stats: StatsResult | null, agent: string): Stats
 /** `row`'s cost within `window`, from its own agent's windows in `stats` (`windowsForAgent`) —
  * so a mixed-agent row list still attributes each row's cost to the right agent's data. */
 export function sessionCostForRow(stats: StatsResult | null, row: Row, window: "5h" | "7d"): number | null {
-	return sessionCost(windowOf(windowsForAgent(stats, row.agent), window), row.id);
+	return sessionUsageForRow(stats, row, window)?.cost ?? null;
+}
+
+/** `sessionUsage` for `row`, from its own agent's windows (see `sessionCostForRow`). */
+export function sessionUsageForRow(stats: StatsResult | null, row: Row, window: "5h" | "7d"): StatsUsage | null {
+	return sessionUsage(windowOf(windowsForAgent(stats, row.agent), window), row.id);
 }
 
 /**
@@ -274,15 +283,20 @@ export interface CategoryTotal {
 	key: string;
 	/** The string shown on screen (this is where "Other" gets localized). */
 	label: string;
+	/** The priced calls only, like `StatsUsage.cost`. */
 	cost: number;
 	count: number;
+	/** Summed from the sessions' `StatsUsage`, so `costView` can tell when `cost` leaves calls out. */
+	calls: number;
+	unpriced_calls: number;
+	unknown_cost: boolean;
 }
 
 /**
  * Total cost and session count within `window`, per category (a group name, or "Other" if none).
  * Counts only the sessions the manager lists (`listedInManager`: no archived or unnamed child ones).
  */
-function categoryTotalsWith(rows: Row[], costOf: (row: Row) => number | null): CategoryTotal[] {
+function categoryTotalsWith(rows: Row[], usageOf: (row: Row) => StatsUsage | null): CategoryTotal[] {
 	const buckets = new Map<string, CategoryTotal>();
 	for (const row of rows) {
 		if (!listedInManager(row)) {
@@ -290,16 +304,20 @@ function categoryTotalsWith(rows: Row[], costOf: (row: Row) => number | null): C
 		}
 		const key = categoryKeyOf(row);
 		const label = key === OTHER_GROUP ? t("category.other") : key;
-		const bucket = buckets.get(key) ?? { key, label, cost: 0, count: 0 };
-		bucket.cost += costOf(row) ?? 0;
+		const bucket = buckets.get(key) ?? { key, label, cost: 0, count: 0, calls: 0, unpriced_calls: 0, unknown_cost: false };
+		const usage = usageOf(row);
+		bucket.cost += usage?.cost ?? 0;
 		bucket.count += 1;
+		bucket.calls += usage?.calls ?? 0;
+		bucket.unpriced_calls += usage?.unpriced_calls ?? 0;
+		bucket.unknown_cost ||= !!usage?.unknown_cost;
 		buckets.set(key, bucket);
 	}
 	return [...buckets.values()];
 }
 
 export function categoryTotals(rows: Row[], stats: StatsResult | null, window: "5h" | "7d"): CategoryTotal[] {
-	return categoryTotalsWith(rows, (row) => sessionCostForRow(stats, row, window));
+	return categoryTotalsWith(rows, (row) => sessionUsageForRow(stats, row, window));
 }
 
 /**
@@ -309,16 +327,16 @@ export function categoryTotals(rows: Row[], stats: StatsResult | null, window: "
  * `rows` to the one agent `window` belongs to (`sessionCost` doesn't care whose window it is).
  */
 export function categoryTotalsForWindow(rows: Row[], window: StatsWindow | null): CategoryTotal[] {
-	return categoryTotalsWith(rows, (row) => sessionCost(window, row.id));
+	return categoryTotalsWith(rows, (row) => sessionUsage(window, row.id));
 }
 
 /**
- * The top `n` entries for the per-category bar: categories with 0 cost (no usage in that
- * window) are excluded — the bar doesn't call out "inactive in the 7-day window". The rest are sorted by cost, descending.
+ * The top `n` entries for the per-category bar: categories with 0 cost and nothing left
+ * unpriced (no usage in that window) are excluded — the bar doesn't call out "inactive in the 7-day window". The rest are sorted by cost, descending.
  */
 export function topCategoryTotals(totals: CategoryTotal[], n: number): CategoryTotal[] {
 	return totals
-		.filter((c) => c.cost > 0)
+		.filter((c) => c.cost > 0 || c.unpriced_calls > 0 || c.unknown_cost)
 		.sort((a, b) => b.cost - a.cost)
 		.slice(0, n);
 }

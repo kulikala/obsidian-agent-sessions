@@ -4,12 +4,12 @@
 // the start row, the second is the end row, and clicking the start row again clears the
 // selection (back to "whole"). Cards, bars, and the legend reflect the selected range.
 
-import { App, Modal, Notice } from "obsidian";
+import { App, Modal, Notice, setTooltip } from "obsidian";
 import { usage } from "../backend/backend";
 import { t } from "../i18n";
 import {
+	costView,
 	effectiveRange,
-	formatCost,
 	formatDuration,
 	formatEpoch,
 	formatK,
@@ -128,7 +128,11 @@ export class UsageModal extends Modal {
 				cls: "agent-sessions-usage-num",
 			});
 			row.createEl("td", { text: formatK(turn.output), cls: "agent-sessions-usage-num" });
-			row.createEl("td", { text: formatCost(turn.cost), cls: "agent-sessions-usage-num" });
+			const cost = costView(turn);
+			const costTd = row.createEl("td", { text: cost.text, cls: "agent-sessions-usage-num" });
+			if (cost.note) {
+				setTooltip(costTd, cost.note);
+			}
 			row.addEventListener("click", () => {
 				this.turnSelection = nextSelection(this.turnSelection, turn.index);
 				this.renderSelection();
@@ -170,12 +174,13 @@ export class UsageModal extends Modal {
 		}
 
 		this.cardsEl.empty();
-		this.renderCard(
-			this.cardsEl,
-			t("usage.col.cost"),
-			formatCost(total.cost),
-			total.estimated ? t("usage.card.estimated") : undefined
-		);
+		const cost = costView(total);
+		const unpriced = total.unpriced_calls ?? 0;
+		const costSubs = [
+			total.estimated ? t("usage.card.estimated") : null,
+			unpriced > 0 ? t("usage.card.unpriced", { count: formatK(unpriced) }) : null,
+		].filter((s): s is string => s !== null);
+		this.renderCard(this.cardsEl, t("usage.col.cost"), cost.text, costSubs.join(" · ") || undefined, cost.note);
 		this.renderCard(
 			this.cardsEl,
 			t("usage.card.tokens"),
@@ -192,8 +197,8 @@ export class UsageModal extends Modal {
 		]);
 		const thinking = Math.min(total.thinking, total.output);
 		this.renderBar(this.outputChartEl, t("usage.chart.output"), [
-			{ label: t("usage.chart.output"), value: Math.max(0, total.output - thinking), cls: "output" },
-			{ label: "thinking", value: thinking, cls: "thinking" },
+			{ label: t("usage.chart.response"), value: Math.max(0, total.output - thinking), cls: "output" },
+			{ label: t("usage.chart.thinking"), value: thinking, cls: "thinking" },
 		]);
 		this.renderTools(this.toolsChartEl, total.tools);
 
@@ -204,8 +209,11 @@ export class UsageModal extends Modal {
 		});
 	}
 
-	private renderCard(container: HTMLElement, label: string, value: string, sub?: string): void {
+	private renderCard(container: HTMLElement, label: string, value: string, sub?: string, tooltip?: string | null): void {
 		const card = container.createDiv({ cls: "agent-sessions-usage-card" });
+		if (tooltip) {
+			setTooltip(card, tooltip);
+		}
 		card.createDiv({ cls: "agent-sessions-usage-card-value", text: value });
 		card.createDiv({ cls: "agent-sessions-usage-card-label", text: label });
 		if (sub) {

@@ -25,7 +25,7 @@ import { loadStore } from "../sessions/store";
 import { sessionDisplayName } from "../sessions/name";
 import { buildManagerTree } from "../sessions/tree";
 import type { StatsResult, StatsWindow } from "../types";
-import { formatK, formatNumber } from "../usage/usage";
+import { costView, formatK, formatNumber } from "../usage/usage";
 import { formatCost, type DetailContext } from "./detail";
 import { renderDetail } from "./detail-render";
 import { formatCountdown, realWindows } from "./limits";
@@ -43,7 +43,7 @@ import {
 	matchesStatusFilter,
 	moveSelection,
 	orderedWindows,
-	sessionCostForRow,
+	sessionUsageForRow,
 	shortModelName,
 	sortRows,
 	topCategoryTotals,
@@ -577,7 +577,13 @@ export class ManagerView extends ItemView {
 
 		const summary = w ? windowSummary(w) : null;
 		const metrics = card.createDiv({ cls: "agent-sessions-manager-stats-metrics" });
-		this.renderMetric(metrics, t("stats.metric.cost"), w ? formatCost(w.total.cost) : "—", t("stats.metric.costTip"));
+		const cost = w ? costView(w.total) : null;
+		this.renderMetric(
+			metrics,
+			t("stats.metric.cost"),
+			cost ? cost.text : "—",
+			cost?.note ? `${t("stats.metric.costTip")}\n${cost.note}` : t("stats.metric.costTip")
+		);
 		this.renderMetric(
 			metrics,
 			t("stats.metric.tokens"),
@@ -740,10 +746,14 @@ export class ManagerView extends ItemView {
 		}
 		fill.style.width = `${barPct}%`;
 		const share = windowCost > 0 ? Math.round((entry.cost / windowCost) * 100) : 0;
-		item.createDiv({
+		const cost = costView(entry);
+		const value = item.createDiv({
 			cls: "agent-sessions-manager-category-bar-value",
-			text: t("stats.categoryBar.itemCost", { cost: formatCost(entry.cost), share }),
+			text: t("stats.categoryBar.itemCost", { cost: cost.text, share }),
 		});
+		if (cost.note) {
+			setTooltip(value, cost.note);
+		}
 		this.registerDomEvent(item, "click", (evt) => {
 			// Keep this from also triggering the analysis area's click-to-refresh.
 			evt.stopPropagation();
@@ -1043,14 +1053,19 @@ export class ManagerView extends ItemView {
 	}
 
 	/** One 5h/7d column cell: blank if that session had no usage within the window. Looks up
-	 * `row`'s own agent's windows (`sessionCostForRow`) — a mixed-agent table still attributes
-	 * each row's cost to the right agent's data. */
+	 * `row`'s own agent's windows (`sessionUsageForRow`) — a mixed-agent table still attributes
+	 * each row's cost to the right agent's data. A cost that leaves out unpriced calls reads
+	 * "$x+" or "—", with the reason in the tooltip (`costView`). */
 	private renderCostCell(tr: HTMLTableRowElement, cls: string, row: Row, key: "5h" | "7d"): void {
-		const cost = sessionCostForRow(this.statsResult, row, key);
-		tr.createEl("td", {
+		const usage = sessionUsageForRow(this.statsResult, row, key);
+		const cost = usage ? costView(usage) : null;
+		const td = tr.createEl("td", {
 			cls: `${cls} agent-sessions-manager-col-num`,
-			text: cost != null ? formatCost(cost) : "",
+			text: cost ? cost.text : "",
 		});
+		if (cost?.note) {
+			setTooltip(td, cost.note);
+		}
 	}
 
 	/** One model/effort column cell: shows the short form (`short`), with the full value in the
@@ -1072,10 +1087,14 @@ export class ManagerView extends ItemView {
 	/** One 5h/7d column cell on a group heading row: that category's total, blank if there is none. */
 	private renderGroupCostCell(tr: HTMLTableRowElement, cls: string, window: "5h" | "7d", key: string): void {
 		const entry = this.categoryTotalsByWindow[window].get(key);
-		tr.createEl("td", {
+		const cost = entry && (entry.cost > 0 || entry.unpriced_calls > 0 || entry.unknown_cost) ? costView(entry) : null;
+		const td = tr.createEl("td", {
 			cls: `${cls} agent-sessions-manager-col-num`,
-			text: entry && entry.cost > 0 ? formatCost(entry.cost) : "",
+			text: cost ? cost.text : "",
 		});
+		if (cost?.note) {
+			setTooltip(td, cost.note);
+		}
 	}
 
 	private toggleFold(group: Extract<ManagerRow, { kind: "group" }>): void {

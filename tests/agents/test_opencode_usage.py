@@ -61,10 +61,22 @@ class TestUsage(OpencodeCase):
             f.user(S1, 'q', 1_000)
             f.assistant(S1, 'a', 2_000, tokens=tokens(5, 1), cost=None)
         turns = self._turns()
-        self.assertIsNone(turns[0]['cost'])
+        self.assertEqual((turns[0]['cost'], turns[0]['unpriced_calls']), (0.0, 1))
         summary = opencode.summarize_usage(turns)
         self.assertTrue(summary['total']['unknown_cost'])
+        self.assertEqual(summary['total']['unpriced_calls'], 1)
         self.assertEqual(summary['total']['input'], 5)
+
+    def test_replies_with_a_cost_still_count_next_to_one_without(self):
+        path = make_db(self.tmp)
+        with Fixture(path) as f:
+            f.session(S1)
+            f.user(S1, 'q', 1_000)
+            f.assistant(S1, '', 2_000, tokens=tokens(5, 1), cost=0.25, finish='tool-calls')
+            f.assistant(S1, 'a', 3_000, tokens=tokens(5, 1), cost=None)
+        turn = self._turns()[0]
+        self.assertEqual((turn['calls'], turn['unpriced_calls']), (2, 1))
+        self.assertEqual(turn['cost'], 0.25)
 
     def test_summarize_shape_matches_codex(self):
         path = make_db(self.tmp)

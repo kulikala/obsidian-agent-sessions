@@ -17,7 +17,14 @@ def gather(row: Dict[str, Any]) -> Dict[str, Any]:
     usage = json_output.usage_output(row['id'])['total']
     return {'session': row, 'detail': json_output.detail_output(row['id']),
             'usage': {k: usage.get(k) for k in ('calls', 'input', 'output', 'cache_read', 'cache_create',
-                                                'cost', 'duration', 'context_last', 'estimated', 'tools')}}
+                                                'cost', 'duration', 'context_last', 'estimated', 'unpriced_calls',
+                                                'tools')}}
+
+
+def _unpriced(u: Dict[str, Any]) -> str:
+    """' (+N calls without a price)' when the cost leaves some calls out, else ''."""
+    n = u.get('unpriced_calls') or 0
+    return ' (+%d call%s without a price)' % (n, '' if n == 1 else 's') if n else ''
 
 
 def render(info: Dict[str, Any]) -> str:
@@ -30,7 +37,7 @@ def render(info: Dict[str, Any]) -> str:
              'Last activity: %s' % _when(r['last_activity']),
              'Usage: %s calls, input %s, output %s, cache read %s, cache write %s, cost $%.2f%s' % (
                  u['calls'], u['input'], u['output'], u['cache_read'], u['cache_create'], u['cost'] or 0.0,
-                 ' (estimated)' if u.get('estimated') else '')]
+                 (' (estimated)' if u.get('estimated') else '') + _unpriced(u))]
     if d.get('model'):
         lines.append('Model: %s%s' % (d['model'], ' (%s)' % d['effort'] if d.get('effort') else ''))
     if u.get('tools'):

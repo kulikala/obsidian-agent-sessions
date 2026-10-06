@@ -11,6 +11,7 @@ from agentsessions import config
 from agentsessions.cli import json_output, listing
 from agentsessions.cli import sessions as cmd_sessions
 from agentsessions.cli import show as cmd_show
+from agentsessions.cli import show as cmd_show
 from agentsessions.cli import stats as cmd_stats
 
 NOW = 1_000_000.0
@@ -311,6 +312,14 @@ class TestRuntimeDirOverride(unittest.TestCase):
             cwd=root, env=dict(os.environ, AGENT_SESSIONS_RUNTIME_DIR='/tmp/x-rt'), capture_output=True, text=True)
         self.assertEqual(out.stdout.split(), ['/tmp/x-rt', '/tmp/x-rt/daemon.sock', '/tmp/x-rt/ui.json'])
         self.assertTrue(config.RUNTIME_DIR)
+
+
+class TestShowUnpriced(unittest.TestCase):
+    def test_says_how_many_calls_the_cost_leaves_out(self):
+        self.assertEqual(cmd_show._unpriced({'unpriced_calls': 0}), '')
+        self.assertEqual(cmd_show._unpriced({}), '')
+        self.assertEqual(cmd_show._unpriced({'unpriced_calls': 1}), ' (+1 call without a price)')
+        self.assertEqual(cmd_show._unpriced({'unpriced_calls': 3}), ' (+3 calls without a price)')
 
 
 if __name__ == '__main__':

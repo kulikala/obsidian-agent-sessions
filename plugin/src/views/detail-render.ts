@@ -9,14 +9,14 @@ import { setIcon, setTooltip } from "obsidian";
 import { renderCategoryChip } from "../ui/chip";
 import type { StatusInfo } from "../sessions/statusline";
 import type { Detail } from "../types";
-import { formatK } from "../usage/usage";
+import { costView, formatK } from "../usage/usage";
 import { shortModelName } from "./manager-model";
 import { AGENT_NAME_KEY } from "./rows";
 import { AGENT_ICON_ID } from "../ui/icons";
 import { t } from "../i18n";
 import type { Row } from "../sessions/index";
 import type { UsageTotal } from "../types";
-import { categoryAndLabel, formatCost, totalTokens, type DetailContext } from "./detail";
+import { categoryAndLabel, totalTokens, type DetailContext } from "./detail";
 
 const USAGE_TTL_MS = 60000;
 const usageCache = new Map<string, { at: number; total: UsageTotal | null }>();
@@ -192,7 +192,11 @@ export function renderDetail(container: HTMLElement, ctx: DetailContext | null):
 			return;
 		}
 		tokens.valueEl.setText(total ? formatK(totalTokens(total)) : "—");
-		cost.valueEl.setText(total ? formatCost(total.cost) : "—");
+		const view = total ? costView(total) : null;
+		cost.valueEl.setText(view ? view.text : "—");
+		if (view?.note) {
+			setTooltip(cost.valueEl, view.note);
+		}
 	};
 
 	const cached = cachedTotal(row.id);

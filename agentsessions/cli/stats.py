@@ -36,9 +36,12 @@ def render(data: Dict[str, Any], now: float) -> str:
                 at = w.get('exhausted_at')
                 usage += ' (used up at %s)' % datetime.fromtimestamp(at).astimezone().strftime('%a %H:%M') if at else ' (used up)'
             total = w.get('total') or {}
-            lines.append('  %s window: %s%s; %d calls, %d tokens, cost $%.2f across %d sessions' % (
+            unpriced = total.get('unpriced_calls') or 0
+            lines.append('  %s window: %s%s; %d calls, %d tokens, cost $%.2f%s across %d sessions' % (
                 label, usage, resets,
-                total.get('calls') or 0, _tokens(total), total.get('cost') or 0.0, len(w.get('sessions') or [])))
+                total.get('calls') or 0, _tokens(total), total.get('cost') or 0.0,
+                ' (+%d call%s without a price)' % (unpriced, '' if unpriced == 1 else 's') if unpriced else '',
+                len(w.get('sessions') or [])))
     return '\n'.join(lines) + '\n' if lines else 'no usage windows (no enabled agent reports them)\n'
 
 

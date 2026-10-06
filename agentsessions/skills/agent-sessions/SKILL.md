@@ -45,7 +45,7 @@ delegate work, or because it looks useful.
 "{{LAUNCHER}}" show '<id, id prefix or name>'
 ```
 
-Give the numbers as printed; costs are estimates.{{if windows}} "usage unknown" means the agent reported no percentage for that window. `--json` gives the raw values.{{endif}}
+Give the numbers as printed; costs are estimates, and "(+N calls without a price)" means the cost leaves those calls out.{{if windows}} "usage unknown" means the agent reported no percentage for that window. `--json` gives the raw values.{{endif}}
 {{if opencode&windows}}
 OpenCode has no usage windows: `stats` does not list it, and `show` gives its tokens and cost.
 {{endif}}

@@ -2,6 +2,7 @@ import tempfile
 import unittest
 
 from agentsessions.agents.codex import usage
+from agentsessions.usage import pricing
 from tests.agents.codex_helpers import (
     assistant_message, event, event_user_message, rollout_path, session_meta,
     token_count, turn_context, user_message, write_rollout,
@@ -149,7 +150,37 @@ class TestCodexUsage(unittest.TestCase):
         ])
         turns = usage.collect(p)
         self.assertTrue(turns[0]['unknown_cost'])
-        self.assertIsNone(turns[0]['cost'])
+        self.assertEqual(turns[0]['unpriced_calls'], 1)
+        self.assertEqual(turns[0]['cost'], 0.0)
+
+    def test_turn_with_priced_and_unpriced_calls_keeps_the_priced_part(self):
+        p = rollout_path(self.home, ID1)
+        write_rollout(p, [
+            session_meta(ID1, '/work/one'),
+            turn_context(model='gpt-5.6-terra'),
+            task_started('2026-09-24T01:30:30Z'),
+            event_user_message('prompt', '2026-09-24T01:30:31Z'),
+            token_count({'input_tokens': 1000, 'cached_input_tokens': 0,
+                         'cache_write_input_tokens': 0, 'output_tokens': 50,
+                         'reasoning_output_tokens': 0}, '2026-09-24T01:30:32Z'),
+            turn_context(model='unpriced-model'),
+            token_count({'input_tokens': 2000, 'cached_input_tokens': 0,
+                         'cache_write_input_tokens': 0, 'output_tokens': 100,
+                         'reasoning_output_tokens': 0}, '2026-09-24T01:30:40Z'),
+            turn_context(model='gpt-5.6-terra'),
+            token_count({'input_tokens': 3000, 'cached_input_tokens': 0,
+                         'cache_write_input_tokens': 0, 'output_tokens': 150,
+                         'reasoning_output_tokens': 0}, '2026-09-24T01:30:50Z'),
+        ])
+        turn = usage.collect(p)[0]
+        self.assertEqual((turn['calls'], turn['unpriced_calls']), (3, 1))
+        self.assertTrue(turn['unknown_cost'])
+        # The priced calls before and after the unpriced one both count (deltas: 1000/50 each).
+        one_call = pricing.cost({'input_tokens': 1000, 'output_tokens': 50}, 'gpt-5.6-terra', agent='codex')
+        self.assertAlmostEqual(turn['cost'], 2 * one_call)
+        total = usage.summarize([turn])['total']
+        self.assertEqual(total['unpriced_calls'], 1)
+        self.assertAlmostEqual(total['cost'], 2 * one_call)
 
     def test_usage_before_first_task_started_is_rolled_into_before_first_turn(self):
         p = rollout_path(self.home, ID1)

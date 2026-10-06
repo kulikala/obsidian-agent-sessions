@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { setLang } from "../../src/i18n";
 import {
+	costView,
 	effectiveRange,
 	formatCost,
 	formatDuration,
@@ -206,6 +207,59 @@ describe("formatNumber (comma-grouped thousands for a raw, non-abbreviated count
 	});
 });
 
+describe("costView (a cost that may leave out calls with no price)", () => {
+	afterEach(() => setLang("en"));
+
+	it("is plain formatCost when every call is priced", () => {
+		expect(costView({ cost: 1.5, calls: 3 })).toEqual({ text: "$1.50", note: null });
+		expect(costView({ cost: 1.5, calls: 3, unpriced_calls: 0, unknown_cost: false })).toEqual({ text: "$1.50", note: null });
+	});
+
+	it("shows the priced part with + and says how many calls it leaves out", () => {
+		const v = costView({ cost: 1.5, calls: 4, unpriced_calls: 1, unknown_cost: true });
+		expect(v.text).toBe("$1.50+");
+		expect(v.note).toBe(
+			"1 of 4 replies have no price (a model missing from the price list, or no cost recorded), so this counts only the others"
+		);
+	});
+
+	it("shows — when no call is priced", () => {
+		const v = costView({ cost: 0, calls: 2, unpriced_calls: 2, unknown_cost: true });
+		expect(v.text).toBe("—");
+		expect(v.note).toContain("No reply here has a price");
+	});
+
+	it("an older helper (unknown_cost without a count) still gets the mark, and — for a null turn cost", () => {
+		expect(costView({ cost: 2, calls: 3, unknown_cost: true }).text).toBe("$2.00+");
+		expect(costView({ cost: null, calls: 3, unknown_cost: true })).toEqual({
+			text: "—",
+			note: "Some replies have no price (a model missing from the price list, or no cost recorded), so this counts only the others",
+		});
+	});
+
+	it("is in the display language", () => {
+		setLang("ja");
+		expect(costView({ cost: 1.5, calls: 4, unpriced_calls: 1, unknown_cost: true }).note).toBe(
+			"4 件の応答のうち 1 件は価格が分かりません（価格表にないモデル、またはコストの記録がない応答）。この金額は残りの応答の分だけです"
+		);
+	});
+});
+
+describe("sumRange with calls that have no price", () => {
+	it("sums unpriced_calls, keeps unknown_cost, and treats an older helper's null turn cost as 0", () => {
+		const turns: UsageTurn[] = [
+			turn({ index: 0, calls: 2, cost: 1, unpriced_calls: 1, unknown_cost: true }),
+			turn({ index: 1, calls: 1, cost: null as unknown as number, unknown_cost: true }),
+			turn({ index: 2, calls: 3, cost: 2 }),
+		];
+		const total = sumRange(turns, 0, 2);
+		expect(total.cost).toBe(3);
+		expect(total.unpriced_calls).toBe(1);
+		expect(total.unknown_cost).toBe(true);
+		expect(sumRange(turns, 2, 2).unknown_cost).toBe(false);
+	});
+});
+
 describe("formatDuration (h m notation)", () => {
 	it("converts seconds to h m", () => {
 		expect(formatDuration(300)).toBe("0h 5m");
@@ -216,6 +270,13 @@ describe("formatDuration (h m notation)", () => {
 	it("shows the em dash for null or negative values", () => {
 		expect(formatDuration(null)).toBe("—");
 		expect(formatDuration(-1)).toBe("—");
+	});
+
+	it("is in the display language", () => {
+		setLang("ja");
+		expect(formatDuration(7500)).toBe("2時間5分");
+		setLang("en");
+		expect(formatDuration(7500)).toBe("2h 5m");
 	});
 });
 
@@ -333,12 +394,20 @@ describe("toMarkdown (for copying)", () => {
 
 		expect(md).toContain("# セッション解析結果（#1〜#2）");
 		expect(md).toContain(`- コスト: ${formatCost(total.cost)}`);
-		expect(md).toContain(`- 期間: ${formatDuration(total.duration)}`);
+		expect(md).toContain(`- 所要時間: ${formatDuration(total.duration)}`);
 		expect(md).toContain("| # | 時刻 | 指示 | 入力 | 出力 | コスト |");
 		expect(md).not.toMatch(/^\| 0 \|/m);
 		expect(md).toMatch(/^\| 1 \|/m);
 		expect(md).toMatch(/^\| 2 \|/m);
 		expect(md).not.toContain("(before start)");
+	});
+
+	it("marks a cost that leaves out unpriced replies, in the header and the row", () => {
+		const turns = [turn({ ...TURNS[1], calls: 3, cost: 0.5, unpriced_calls: 1, unknown_cost: true })];
+		const total = sumRange(turns, 1, 1);
+		const md = toMarkdown(turns, 1, 1, total);
+		expect(md).toContain("- コスト: $0.50+（価格不明の応答 1 件を除く）");
+		expect(md).toMatch(/\| \$0\.50\+ \|$/m);
 	});
 
 	it("marks estimated totals with the estimated suffix", () => {

@@ -532,18 +532,31 @@ export const en = {
 	"usage.card.outputSub": "output {output}",
 	"usage.card.turns": "Turns",
 	"usage.card.duration": "Duration",
+	"usage.card.unpriced": "{count} without a price",
+	"usage.duration": "{h}h {m}m",
 	"usage.chart.input": "Input",
 	"usage.chart.uncached": "uncached",
 	"usage.chart.cacheRead": "cache read",
-	"usage.chart.cacheCreate": "cache create",
+	"usage.chart.cacheCreate": "cache write",
 	"usage.chart.output": "Output",
+	"usage.chart.response": "response",
+	"usage.chart.thinking": "thinking",
 	"usage.chart.toolsTitle": "Tool use",
 	"usage.chart.toolsEmpty": "No tool use",
+
+	// ---- A cost that leaves out replies without a price (usage/usage.ts's costView) ----
+	"cost.unpriced.some":
+		"{count} of {calls} replies have no price (a model missing from the price list, or no cost recorded), so this counts only the others",
+	"cost.unpriced.someUncounted":
+		"Some replies have no price (a model missing from the price list, or no cost recorded), so this counts only the others",
+	"cost.unpriced.all": "No reply here has a price (a model missing from the price list, or no cost recorded)",
 
 	// ---- Markdown copy (usage/usage.ts's toMarkdown) ----
 	"usage.md.title": "# Session analytics (#{lo}–#{hi})",
 	"usage.md.cost": "- Cost: {cost}{estimated}",
 	"usage.md.estimatedSuffix": " (estimated)",
+	"usage.md.unpricedSuffix": " (excluding {count} replies without a price)",
+	"usage.md.unpricedSuffixUncounted": " (excluding replies without a price)",
 	"usage.md.tokens": "- Tokens: input {input}, output {output}",
 	"usage.md.turns": "- Turns: {count}",
 	"usage.md.duration": "- Duration: {duration}",
