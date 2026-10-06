@@ -127,11 +127,12 @@ def scan_output(only: Optional[List[str]] = None) -> dict:
 
 def activity_output(from_ts: float, to_ts: float, gap: float = activity.DEFAULT_GAP_SECONDS,
                     now: Optional[float] = None, raw: bool = False) -> dict:
-    """`{"sessions": [{id, agent, name, label, category, child, spans}]}` for the sessions
+    """`{"sessions": [{id, agent, name, label, category, child, first, spans}]}` for the sessions
     that were active inside `[from_ts, to_ts)`. `spans` are blocks `{start, end, final, turns}`
     (epoch seconds): each turn (from a prompt to the agent's last record before the next one) and,
     for Claude Code, each run of the session's sub-agents, with those less than `gap` apart
-    joined, clipped to the range (see `sessions/activity.py`). Names come
+    joined, clipped to the range (see `sessions/activity.py`); `first` is the session's earliest
+    activity, in range or not. Names come
     from the shared scan cache and each transcript's turns from `activity-cache.json`, keyed by
     path, size, mtime and algorithm version, so only changed transcripts are parsed again; a
     transcript last written before `from_ts` can't hold activity in range and is never opened.
@@ -166,8 +167,11 @@ def activity_output(from_ts: float, to_ts: float, gap: float = activity.DEFAULT_
                     turns = turns + _cached_file_turns(ac, sub, now, lambda a=adapter, p=sub: a.activity_extra_turns(p))
             turns = activity.extend_if_live(turns, now)
             d = _session_dict(s)
+            # `first`: the session's earliest activity anywhere, not just in range, so a reader
+            # can order sessions the same way in every period.
             meta = {'id': d['id'], 'agent': d['agent'], 'name': d['name'], 'label': d['label'],
-                    'category': d['group'], 'child': d['child']}
+                    'category': d['group'], 'child': d['child'],
+                    'first': min((t[0] for t in turns), default=None)}
             if raw:
                 turn_list, runs = activity.raw_runs(turns, from_ts, to_ts)
                 if runs:

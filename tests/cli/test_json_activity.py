@@ -102,6 +102,8 @@ class TestActivityOutput(unittest.TestCase):
         self.assertEqual(x['agent'], 'codex')
         self.assertEqual(pairs(x), [[epoch('03:00:05'), epoch('03:21:00')]])
         self.assertEqual([t['prompt'] for t in x['spans'][0]['turns']], ['codex prompt', 'and again'])
+        self.assertEqual([by[i]['first'] for i in (CLAUDE_ID, CODEX_ID, OC_ID)],
+                         [epoch('01:00:00'), epoch('03:00:05'), epoch('04:00:00')])
         o = by[OC_ID]
         self.assertEqual(o['agent'], 'opencode')
         self.assertEqual(pairs(o), [[epoch('04:00:00'), epoch('04:25:00')]])
@@ -111,6 +113,11 @@ class TestActivityOutput(unittest.TestCase):
         out = jsonout.activity_output(epoch('01:10:00'), epoch('01:15:00'), 1800)
         self.assertEqual(pairs(self.by_id(out)[CLAUDE_ID]), [[epoch('01:10:00'), epoch('01:15:00')]])
         self.assertEqual(set(self.by_id(out)), {CLAUDE_ID})
+
+    def test_first_is_the_earliest_activity_even_outside_the_range(self):
+        for raw in (False, True):
+            out = jsonout.activity_output(epoch('02:00:00'), epoch('23:59:59'), raw=raw)
+            self.assertEqual(self.by_id(out)[CLAUDE_ID]['first'], epoch('01:00:00'))
 
     def test_range_without_activity_is_empty(self):
         out = jsonout.activity_output(epoch('06:00:00'), epoch('07:00:00'))
@@ -136,6 +143,7 @@ class TestActivityOutput(unittest.TestCase):
         out = jsonout.activity_output(epoch('00:00:00'), epoch('23:59:59'), raw=True)
         c = self.by_id(out)[CLAUDE_ID]
         self.assertNotIn('spans', c)
+        self.assertEqual(c['first'], epoch('01:00:00'))
         self.assertEqual([(t['prompt'], t['kind']) for t in c['turns']], [('hello', 'prompt'), ('more', 'prompt'), ('again', 'prompt')])
         # each turn is its own run: the 01:00 and 01:20 turns are not joined, and nothing is stretched
         self.assertEqual([[r['start'], r['end']] for r in c['runs']], [
