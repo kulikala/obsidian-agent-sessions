@@ -4,8 +4,9 @@
 // (`~/.claude/sessions/<pid>.json`) and its transcript under an id of its own. The tab's id then
 // never shows up in the ledger. These pure functions decide which ledger entry is the continuation
 // of which tab; `main.ts` links the two (`sessions.json`'s `daemon` field, the same link a Codex
-// thread gets) and swaps the tab over to the real id. No `obsidian` here, so it is tested in plain
-// Node (test/sessions/successor.test.ts).
+// thread gets) and swaps the tab over to the real id. `/clear` changes the id without a new
+// process: the ledger record of the tab's own pid names the new id (`planInPlace`). No `obsidian`
+// here, so it is tested in plain Node (test/sessions/successor.test.ts).
 
 /** How long after a tab's session began a restarted process may still be taken for it. */
 export const SUCCESSOR_WINDOW_MS = 2 * 60_000;
@@ -106,6 +107,27 @@ export function planSuccessors(args: {
 		}
 		if (tab !== undefined) {
 			taken.add(tab.id);
+			links.push({ tabId: tab.id, successorId: c.id });
+		}
+	}
+	return links;
+}
+
+/**
+ * Claude Code's `/clear` keeps the process and starts a new session id in it: the ledger record
+ * of the tab's own process (`pid` = the daemon child) then names an id the tab doesn't have. Each
+ * such tab is linked to that id, unless another tab or daemon session holds it (`heldElsewhere`).
+ * Whether it was `/clear` (and not, say, `/resume`) is the `SessionEnd` hook's to say.
+ */
+export function planInPlace(
+	tabs: readonly SuccessorTab[],
+	candidates: readonly SuccessorCandidate[],
+	heldElsewhere: (id: string, tab: SuccessorTab) => boolean
+): SuccessorLink[] {
+	const links: SuccessorLink[] = [];
+	for (const tab of tabs) {
+		const c = tab.daemonPid === null ? undefined : candidates.find((c) => c.pid === tab.daemonPid);
+		if (c !== undefined && c.id !== tab.id && !heldElsewhere(c.id, tab)) {
 			links.push({ tabId: tab.id, successorId: c.id });
 		}
 	}

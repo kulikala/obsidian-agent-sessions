@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	normalizeFolder,
+	planInPlace,
 	planSuccessors,
 	possibleSuccessors,
 	SUCCESSOR_WINDOW_MS,
@@ -97,5 +98,23 @@ describe("planSuccessors", () => {
 		expect(planSuccessors({ tabs: [tabs[1]], candidates, owned: (id) => id === "first", parents: null })).toEqual([
 			{ tabId: "b", successorId: "second" },
 		]);
+	});
+});
+
+describe("planInPlace (/clear)", () => {
+	it("links a tab to the id its own process's ledger record now names", () => {
+		expect(planInPlace([tab("old")], [cand("new", { pid: 100 })], none)).toEqual([{ tabId: "old", successorId: "new" }]);
+	});
+
+	it("ignores other processes, the tab's own id, a tab without a pid, and an id held elsewhere", () => {
+		expect(planInPlace([tab("old")], [cand("other")], none)).toEqual([]);
+		expect(planInPlace([tab("old")], [cand("old", { pid: 100 })], none)).toEqual([]);
+		expect(planInPlace([tab("old", { daemonPid: null })], [cand("new", { pid: 100 })], none)).toEqual([]);
+		expect(planInPlace([tab("old")], [cand("new", { pid: 100 })], (id) => id === "new")).toEqual([]);
+	});
+
+	it("does not depend on when the process started (a /clear long after the tab began)", () => {
+		const late = cand("new", { pid: 100, startedAt: T0 - 3_600_000 });
+		expect(planInPlace([tab("old")], [late], none)).toEqual([{ tabId: "old", successorId: "new" }]);
 	});
 });

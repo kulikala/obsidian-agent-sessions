@@ -387,22 +387,36 @@ export class SessionIndex extends EventEmitter {
 			return;
 		}
 		const ids = new Set<string>();
+		const cleared: string[] = [];
 		for (const line of text.split("\n")) {
 			if (!line.trim()) {
 				continue;
 			}
 			try {
-				const event = JSON.parse(line) as { session_id?: string };
+				const event = JSON.parse(line) as { session_id?: string; event?: string; reason?: string };
 				if (event.session_id) {
 					ids.add(event.session_id);
+					if (event.event === "SessionEnd" && event.reason === "clear") {
+						cleared.push(event.session_id);
+					}
 				}
 			} catch {
 				// Ignore malformed lines.
 			}
 		}
+		for (const id of cleared) {
+			this.emit("cleared", id);
+		}
 		if (ids.size > 0) {
 			void this.rescan([...ids]);
 		}
+	}
+
+	/** Notified with the id of a Claude session that `/clear` ended (its `SessionEnd` hook with
+	 * `reason: "clear"`). The process goes on under a new id (`main.ts`'s `linkSuccessors`). */
+	onCleared(cb: (id: string) => void): () => void {
+		this.on("cleared", cb);
+		return () => this.off("cleared", cb);
 	}
 
 	/**

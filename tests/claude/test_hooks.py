@@ -47,6 +47,21 @@ class TestRecordHook(unittest.TestCase):
         self.assertIn('ts', lines[0])
         self.assertIsInstance(lines[0]['ts'], float)
 
+    def test_records_reason_and_source(self):
+        hooks.record_hook(json.dumps({
+            'session_id': 'old', 'hook_event_name': 'SessionEnd', 'reason': 'clear',
+        }).encode('utf-8'))
+        hooks.record_hook(json.dumps({
+            'session_id': 'new', 'hook_event_name': 'SessionStart', 'source': 'clear',
+        }).encode('utf-8'))
+        hooks.record_hook(json.dumps({'session_id': 'x', 'hook_event_name': 'Stop'}).encode('utf-8'))
+        lines = self._lines()
+        self.assertEqual(lines[0]['reason'], 'clear')
+        self.assertNotIn('source', lines[0])
+        self.assertEqual(lines[1]['source'], 'clear')
+        self.assertNotIn('reason', lines[2])
+        self.assertNotIn('source', lines[2])
+
     def test_multiple_calls_append_multiple_lines(self):
         raw = json.dumps({'session_id': 'a', 'hook_event_name': 'SessionEnd'}).encode('utf-8')
         hooks.record_hook(raw)

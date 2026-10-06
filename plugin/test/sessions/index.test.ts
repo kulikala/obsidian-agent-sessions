@@ -391,6 +391,31 @@ describe("SessionIndex", () => {
 		expect([row?.status, row?.waitingFor, row?.pid]).toEqual(["waiting", "permission", process.pid]);
 	});
 
+	it("reports a session /clear ended from events.log, and rescans every id it names", async () => {
+		const log = join(dir, "events.log");
+		const before = JSON.stringify({ event: "SessionEnd", session_id: "before", reason: "clear" }) + "\n";
+		writeFileSync(log, before);
+		const index = new SessionIndex(deps);
+		const cleared: string[] = [];
+		index.onCleared((id) => cleared.push(id));
+		const rescanned: (string[] | undefined)[] = [];
+		scanImpl = async (only) => {
+			rescanned.push(only);
+			return { sessions: [], store: { folded: [], archived: [], pendingRenames: {}, sessions: {} } };
+		};
+		const lines = [
+			{ event: "SessionEnd", session_id: "old", reason: "clear" },
+			{ event: "SessionStart", session_id: "new", source: "clear" },
+			{ event: "SessionEnd", session_id: "quit", reason: "prompt_input_exit" },
+			{ event: "Stop", session_id: "new" },
+		];
+		writeFileSync(log, before + lines.map((l) => JSON.stringify(l)).join("\n") + "\n");
+		index.checkEventsLog();
+		expect(cleared).toEqual(["old"]);
+		await Promise.resolve();
+		expect(rescanned[0]?.sort()).toEqual(["new", "old", "quit"]);
+	});
+
 	describe("waitForName (explicitly polled because /rename never goes busy and never hits events.log)", () => {
 		it("returns true without calling rescan when the name already matches", async () => {
 			scanImpl = async () => ({

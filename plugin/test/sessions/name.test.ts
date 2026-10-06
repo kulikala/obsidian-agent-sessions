@@ -3,6 +3,7 @@ import { setLang } from "../../src/i18n";
 import {
 	applyChipEditResult,
 	categorizableLabel,
+	clearedName,
 	composeName,
 	filterCategories,
 	listCategories,
@@ -236,5 +237,32 @@ describe("sessionDisplayName (name → label → agent-name fallback, never the 
 		expect(sessionDisplayName({ name: null, label: `${id} was mentioned`, agent: "claude", id })).toBe(
 			`${id} was mentioned`
 		);
+	});
+});
+
+describe("clearedName", () => {
+	const none = new Set<string>();
+
+	it("adds 2 to a name without a number", () => {
+		expect(clearedName("Probe", none)).toBe("Probe 2");
+	});
+
+	it("counts on from a number the name already ends in", () => {
+		expect(clearedName("Probe 2", none)).toBe("Probe 3");
+		expect(clearedName("Probe 9", none)).toBe("Probe 10");
+	});
+
+	it("keeps the category prefix", () => {
+		expect(clearedName("Work: Probe", none)).toBe("Work: Probe 2");
+		expect(clearedName("Work: Probe 2", none)).toBe("Work: Probe 3");
+	});
+
+	it("skips numbers other sessions already have", () => {
+		expect(clearedName("Probe", new Set(["Probe", "Probe 2", "Probe 3"]))).toBe("Probe 4");
+		expect(clearedName("Probe 2", new Set(["Probe 3"]))).toBe("Probe 4");
+	});
+
+	it("needs a space before the number", () => {
+		expect(clearedName("Probe2", none)).toBe("Probe2 2");
 	});
 });

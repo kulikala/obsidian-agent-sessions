@@ -39,7 +39,7 @@ import {
 	setAgentEnv,
 	withBinDirOnPath,
 } from "./backend/backend";
-import { planSuccessors, possibleSuccessors, type SuccessorCandidate, type SuccessorTab } from "./sessions/successor";
+import { planInPlace, planSuccessors, possibleSuccessors, type SuccessorCandidate, type SuccessorTab } from "./sessions/successor";
 import {
 	chooseInstallDir,
 	findInstalled,
@@ -92,7 +92,7 @@ import { buildAtToken, selectionLineRange } from "./terminal/links";
 import { ConfirmModal, NewSessionModal } from "./ui/modals";
 import { AGENT_ICON_ID } from "./ui/icons";
 import { registerAgentIcons } from "./ui/register-icons";
-import { sessionDisplayName } from "./sessions/name";
+import { clearedName, sessionDisplayName } from "./sessions/name";
 import { restartDecision, type RestartDecision } from "./sessions/restart";
 import { resolveRowStatus } from "./sessions/terminal-status";
 import { createNameRoute, renameRoute, sessionAgentOf } from "./sessions/rename";
@@ -187,6 +187,9 @@ const DRAFT_POLL_MS = 150;
 const DIALOG_WAIT_MS = 3000;
 /** Upper bound while waiting for `registry`'s state. */
 const WAIT_IDLE_MS = 60000;
+/** How long a `/clear` the `SessionEnd` hook reported and a tab that moved to a new id in its own
+ * process wait for each other (`matchClear`). */
+const CLEAR_MATCH_MS = 60000;
 /** How long a new, named Codex tab waits for its composer to be on screen and empty before giving
  * up on the `/rename` at start (the check after the link still runs), and how often it looks. */
 const WAIT_CODEX_COMPOSER_MS = 120000;
@@ -292,6 +295,10 @@ export default class AgentSessionsPlugin extends Plugin {
 	/** The daemon's session list as of the last live refresh that reached it. */
 	private daemonSessions: DaemonSession[] = [];
 	private linkingSuccessors = false;
+	/** Ids `/clear` ended (`SessionIndex.onCleared`) → when it was reported. */
+	private clearedIds = new Map<string, number>();
+	/** Tabs whose process went on under a new id (`planInPlace`): the old id → the new one, and when. */
+	private movedInPlace = new Map<string, { id: string; at: number }>();
 	/** Sessions started headless (in the background). Excluded from `notifyIdle`. */
 	private headless = new Set<string>();
 	/** Whether Claude Code's `tui` is `fullscreen` (re-read at startup and on every `settings-changed`). */
@@ -395,6 +402,12 @@ export default class AgentSessionsPlugin extends Plugin {
 			})
 		);
 		this.register(this.index.registry.onChange(() => void this.linkSuccessors()));
+		this.register(
+			this.index.onCleared((id) => {
+				this.clearedIds.set(id, Date.now());
+				this.matchClear(id);
+			})
+		);
 
 		// Remember the last-frontmost Markdown view (the target for `@` insertion).
 		this.registerEvent(
@@ -1849,7 +1862,8 @@ export default class AgentSessionsPlugin extends Plugin {
 		const views = new Map<string, TerminalView>();
 		const tabs: SuccessorTab[] = [];
 		for (const view of this.terminalViews()) {
-			const daemon = running.get(view.daemonSessionId);
+			// A linked tab's daemon session is listed under the id it was linked to.
+			const daemon = running.get(view.daemonSessionId) ?? running.get(view.sessionId);
 			if (view.sessionAgent !== "claude" || !daemon || registry.get(view.sessionId) !== null || views.has(view.sessionId)) {
 				continue;
 			}
@@ -1860,8 +1874,29 @@ export default class AgentSessionsPlugin extends Plugin {
 			return;
 		}
 		const candidates: SuccessorCandidate[] = [...registry.all()].map(([id, e]) => ({ id, pid: e.pid, cwd: e.cwd, startedAt: e.startedAt }));
+		// `/clear`: the tab's own process now runs under another id. No alias: the old id stays a
+		// session of its own (its row and transcript), and must not take the new one's status.
+		const heldElsewhere = (id: string, tab: SuccessorTab) =>
+			this.terminalViews().some((v) => v.sessionId !== tab.id && (v.sessionId === id || v.daemonSessionId === id)) ||
+			(running.has(id) && running.get(id)?.pid !== tab.daemonPid);
+		const movedTabs = new Set<string>();
+		for (const link of planInPlace(tabs, candidates, heldElsewhere)) {
+			const view = views.get(link.tabId);
+			if (!view || view.sessionId !== link.tabId) {
+				continue;
+			}
+			movedTabs.add(link.tabId);
+			this.linkAgentSession("claude", link.successorId, view.getCwd() || this.vaultPath(), view.daemonSessionId);
+			this.relinkTerminalViews(link.tabId, link.successorId);
+			this.movedInPlace.set(link.tabId, { id: link.successorId, at: Date.now() });
+			this.matchClear(link.tabId);
+		}
+		const waiting = tabs.filter((tab) => !movedTabs.has(tab.id));
+		if (waiting.length === 0) {
+			return;
+		}
 		const owned = (id: string) => this.knowsSession(id) || running.has(id);
-		const possible = possibleSuccessors(tabs, candidates, owned);
+		const possible = possibleSuccessors(waiting, candidates, owned);
 		if (possible.length === 0) {
 			return;
 		}
@@ -1872,7 +1907,7 @@ export default class AgentSessionsPlugin extends Plugin {
 				this.vaultPath(),
 				possible.map((c) => c.pid)
 			).catch(() => null);
-			for (const link of planSuccessors({ tabs, candidates, owned, parents })) {
+			for (const link of planSuccessors({ tabs: waiting, candidates, owned, parents })) {
 				const view = views.get(link.tabId);
 				if (!view || view.sessionId !== link.tabId) {
 					continue;
@@ -1885,6 +1920,63 @@ export default class AgentSessionsPlugin extends Plugin {
 		} finally {
 			this.linkingSuccessors = false;
 		}
+	}
+
+	/**
+	 * Pairs a `/clear` the `SessionEnd` hook reported for `oldId` with the tab that moved from
+	 * `oldId` to a new id in its own process (`linkSuccessors`), whichever came first, and hands
+	 * the pair to `finishClear`. Either half left unpaired for `CLEAR_MATCH_MS` is dropped: a
+	 * `/clear` outside the plugin's tabs, or a tab that moved for another reason (`/resume`).
+	 */
+	private matchClear(oldId: string): void {
+		const now = Date.now();
+		for (const [id, at] of this.clearedIds) {
+			if (now - at > CLEAR_MATCH_MS) {
+				this.clearedIds.delete(id);
+			}
+		}
+		for (const [id, moved] of this.movedInPlace) {
+			if (now - moved.at > CLEAR_MATCH_MS) {
+				this.movedInPlace.delete(id);
+			}
+		}
+		const moved = this.movedInPlace.get(oldId);
+		if (!moved || !this.clearedIds.has(oldId)) {
+			return;
+		}
+		this.clearedIds.delete(oldId);
+		this.movedInPlace.delete(oldId);
+		void this.finishClear(oldId, moved.id).catch((err) => {
+			new Notice(t("notice.renameFailed", { error: messageOf(err) }));
+		});
+	}
+
+	/**
+	 * After `/clear` in a tab: the session it ended (`oldId`) is archived, and the one it started
+	 * (`newId`, which Claude Code gives the same name) is renamed `<name> 2` — or the next number
+	 * (`clearedName`) — with `/rename`, so Claude Code and Remote Control have it too. An unnamed
+	 * session stays unnamed; its old part is archived all the same.
+	 */
+	private async finishClear(oldId: string, newId: string): Promise<void> {
+		await this.index.rescan([oldId, newId]);
+		const old = this.index.sessions.get(oldId);
+		if (old) {
+			this.archive(oldId, sessionDisplayName(old), old.agent);
+		}
+		const name = old?.name ?? this.pendingNames.get(newId);
+		if (!name) {
+			return;
+		}
+		const taken = new Set<string>();
+		for (const row of this.index.sessions.values()) {
+			if (row.name) {
+				taken.add(row.name);
+			}
+		}
+		if (!(await this.index.registry.waitFor(newId, "idle", WAIT_IDLE_MS))) {
+			return;
+		}
+		await this.renameSession(newId, clearedName(name, taken));
 	}
 
 	/** The id a tab started under `id` now runs as, when the agent restarted itself (`linkSuccessors`);

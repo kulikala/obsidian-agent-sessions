@@ -10,8 +10,9 @@ from ..sessions import live
 
 
 def record_hook(raw: bytes) -> None:
-    """Appends one line to `EVENTS_LOG` from the raw bytes read on stdin, and also
-    updates the just-compacted marker (see `_update_compacted`).
+    """Appends one line to `EVENTS_LOG` from the raw bytes read on stdin (the event, the
+    session id, the transcript path, the time, and `reason`/`source` when the event has one),
+    and also updates the just-compacted marker (see `_update_compacted`).
 
     Never raises, no matter what goes wrong reading or writing (so this never blocks the
     hook). If one of the two fails, the other is still attempted.
@@ -29,6 +30,11 @@ def record_hook(raw: bytes) -> None:
             'transcript_path': data.get('transcript_path'),
             'ts': time.time(),
         }
+        # Why a session ended or began (`SessionEnd`'s `reason`, `SessionStart`'s `source`):
+        # `reason == 'clear'` is how the plugin tells `/clear` from other id changes.
+        for key in ('reason', 'source'):
+            if isinstance(data.get(key), str):
+                entry[key] = data[key]
         os.makedirs(os.path.dirname(config.EVENTS_LOG), exist_ok=True)
         with open(config.EVENTS_LOG, 'a', encoding='utf-8') as f:
             f.write(json.dumps(entry, ensure_ascii=False) + '\n')

@@ -168,3 +168,18 @@ export function categorizableLabel(row: { name: string | null; label: string | n
 	}
 	return row.label ?? "";
 }
+
+/**
+ * The name for the session `/clear` started out of a session named `name`: `name 2`, or, when
+ * `name` already ends in a number, that number plus one (`Foo 2` → `Foo 3`). A number some other
+ * session already has (`taken`) is skipped. A category prefix stays as it is (`Cat: Foo 2`).
+ */
+export function clearedName(name: string, taken: ReadonlySet<string>): string {
+	const counted = /^(.*\S) (\d+)$/.exec(name);
+	const base = counted ? counted[1] : name;
+	let n = counted ? Number(counted[2]) + 1 : 2;
+	while (taken.has(`${base} ${n}`)) {
+		n++;
+	}
+	return `${base} ${n}`;
+}
