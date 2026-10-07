@@ -20,21 +20,26 @@ export interface ScanSession {
 	 * effort columns). */
 	model?: string;
 	effort?: string;
-	/** Claude Code's `/goal` (`sessions/goal.ts`); `null` without one, after `/goal clear`, and for
-	 * other agents. Absent from an older CLI's output. */
+	/** The session's `/goal` (`sessions/goal.ts`), from Claude Code or Codex; `null` without one,
+	 * after `/goal clear`, and for OpenCode. Absent from an older CLI's output. */
 	goal?: SessionGoal | null;
 	/** Claude only, additive: present while the transcript's last compaction hasn't been answered
 	 * by the model (`sessions/compacted.ts`'s `isCompacted`). */
 	after_compact?: AfterCompact;
 }
 
-/** A session's `/goal`, from the latest `goal_status` line of its transcript. Times are epoch seconds. */
+/**
+ * A session's `/goal`. Claude Code's comes from the latest `goal_status` line of its transcript,
+ * Codex's from its `thread_goals` table. Times are epoch seconds.
+ */
 export interface SessionGoal {
 	condition: string;
-	/** The evaluator found the condition met (Claude Code then removes the goal). */
+	/** The evaluator found the condition met (Claude Code then removes the goal); Codex: `complete`. */
 	met: boolean;
-	/** The evaluator judged the condition impossible (also removes the goal). */
+	/** The evaluator judged the condition impossible (also removes the goal); Codex: any stopped status. */
 	failed?: boolean;
+	/** Codex only: its own status, which tells its stopped statuses apart. */
+	status?: CodexGoalStatus;
 	/** The evaluator's latest explanation; `null` before its first run. */
 	reason: string | null;
 	/** When the goal was set. */
@@ -42,6 +47,8 @@ export interface SessionGoal {
 	/** When its latest status was written. */
 	updated: number | null;
 }
+
+export type CodexGoalStatus = "active" | "paused" | "blocked" | "usage_limited" | "budget_limited" | "complete";
 
 /** What has followed the last compaction (`agentsessions/sessions/scan.py`'s `read_after_compact`):
  * `"clean"` — only local commands; `"input"` — a prompt with no reply yet. */

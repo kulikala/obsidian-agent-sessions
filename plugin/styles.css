@@ -1227,6 +1227,10 @@
 	border-left-color: var(--color-green, #2e9e5b);
 }
 
+.agent-sessions-detail-goal.is-paused {
+	border-left-color: var(--text-muted);
+}
+
 .agent-sessions-detail-goal.is-failed {
 	border-left-color: var(--background-modifier-border);
 }
@@ -1607,7 +1611,7 @@
    tab header, never in place of the state mark. Purple while active — a colour no state uses — and
    breathing slowly (opacity) only while the session is running (`is-live`), so it reads as "this
    work has a target" without competing with the state mark's spin or pulse. Green and still once
-   the evaluator found it met; faint once it judged it unreachable. */
+   the evaluator found it met; muted and still while paused; faint once it judged it unreachable. */
 @keyframes agent-sessions-goal-breathe {
 	0%,
 	100% {
@@ -1638,6 +1642,10 @@
 
 .agent-sessions-goal-active.is-live {
 	animation: agent-sessions-goal-breathe 2.4s ease-in-out infinite;
+}
+
+.agent-sessions-goal-paused {
+	color: var(--text-muted);
 }
 
 .agent-sessions-goal-met {

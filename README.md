@@ -30,7 +30,7 @@ Each session is the agent's command-line program in an Obsidian tab, with your s
 
 ### Switch between sessions in the side panel
 
-Open tabs, running sessions without a tab, and recent ones, each with an icon for its state, plus one for a Claude Code `/goal` while it is active and once it is met, until your next prompt. Click one to bring its tab to the front or open it again; an ended session resumes its conversation. Sessions keep running when you close the tab or quit Obsidian. [More](docs/usage.md#switch-between-sessions)
+Open tabs, running sessions without a tab, and recent ones, each with an icon for its state, plus one for a Claude Code or Codex `/goal` while it is active and once it is met, until your next prompt. Click one to bring its tab to the front or open it again; an ended session resumes its conversation. Sessions keep running when you close the tab or quit Obsidian. [More](docs/usage.md#switch-between-sessions)
 
 ![The side panel: open tabs, running and recent sessions with state icons and categories, and the Needs input and Needs review counts at the top](docs/onboarding/en/side-panel.png)
 

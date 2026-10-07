@@ -1,15 +1,20 @@
-// A Claude Code session's `/goal`, as pure functions: which state it is in, its mark's icon, CSS
-// class and tooltip. The goal itself comes from `json scan` (`ScanSession.goal`, read from the
-// transcript's `goal_status` lines — `agentsessions/sessions/scan.py`'s `apply_goal_status`). The
-// mark sits next to the session's state mark (it never replaces it): rows in the side panel and
+// A Claude Code or Codex session's `/goal`, as pure functions: which state it is in, its mark's
+// icon, CSS class and tooltip. The goal itself comes from `json scan` (`ScanSession.goal`: for
+// Claude Code, read from the transcript's `goal_status` lines — `agentsessions/sessions/scan.py`'s
+// `apply_goal_status`; for Codex, from its `thread_goals` table — `agentsessions/agents/codex/
+// goals.py`). The mark sits next to the session's state mark (it never replaces it): rows in the side panel and
 // the Session Manager, the terminal tab's header, and the detail pane.
 
 import { t, type MessageKey } from "../i18n";
-import type { SessionGoal } from "../types";
+import type { CodexGoalStatus, SessionGoal } from "../types";
 import type { TerminalStatus } from "./terminal-status";
 
-/** `active` until the evaluator finds the condition met (`met`) or impossible (`failed`). */
-export type GoalState = "active" | "met" | "failed";
+/**
+ * `active` until the evaluator finds the condition met (`met`) or impossible (`failed`). A Codex
+ * goal the user paused is `paused` (resumable, not a failure); one Codex stopped on its own
+ * (stalled, out of budget or usage) is `failed`.
+ */
+export type GoalState = "active" | "paused" | "met" | "failed";
 
 export function goalState(goal: SessionGoal | null | undefined): GoalState | null {
 	if (!goal) {
@@ -18,20 +23,37 @@ export function goalState(goal: SessionGoal | null | undefined): GoalState | nul
 	if (goal.failed) {
 		return "failed";
 	}
+	if (goal.status === "paused") {
+		return "paused";
+	}
 	return goal.met ? "met" : "active";
 }
 
 export const GOAL_ICON: Record<GoalState, string> = {
 	active: "target",
+	paused: "circle-pause",
 	met: "trophy",
 	failed: "flag-off",
 };
 
 export const GOAL_LABEL_KEY: Record<GoalState, MessageKey> = {
 	active: "goal.active",
+	paused: "goal.paused",
 	met: "goal.met",
 	failed: "goal.failed",
 };
+
+/** Codex's stopped statuses, each with its own label in place of `goal.failed`. */
+const CODEX_STOPPED_LABEL_KEY: Partial<Record<CodexGoalStatus, MessageKey>> = {
+	blocked: "goal.blocked",
+	usage_limited: "goal.usageLimited",
+	budget_limited: "goal.budgetLimited",
+};
+
+/** The goal's label: its state's, or for a stopped Codex goal, the reason it stopped. */
+export function goalLabelKey(goal: SessionGoal, state: GoalState): MessageKey {
+	return (state === "failed" && goal.status && CODEX_STOPPED_LABEL_KEY[goal.status]) || GOAL_LABEL_KEY[state];
+}
 
 /** Statuses during which an active goal is being worked on right now — the only time its mark moves. */
 const LIVE_STATUSES: ReadonlySet<TerminalStatus> = new Set(["connecting", "working", "running-shell"]);
@@ -62,7 +84,7 @@ export function truncateText(text: string, max: number): string {
  */
 export function goalTooltip(goal: SessionGoal): string {
 	const state = goalState(goal) ?? "active";
-	const lines = [t(GOAL_LABEL_KEY[state]), truncateText(goal.condition.trim(), GOAL_TOOLTIP_CONDITION_CHARS)];
+	const lines = [t(goalLabelKey(goal, state)), truncateText(goal.condition.trim(), GOAL_TOOLTIP_CONDITION_CHARS)];
 	if (goal.reason) {
 		lines.push(`${t("goal.reason")}: ${truncateText(goal.reason.trim(), GOAL_TOOLTIP_REASON_CHARS)}`);
 	}
@@ -71,17 +93,17 @@ export function goalTooltip(goal: SessionGoal): string {
 
 /**
  * Whether a registry transition should rescan the session to pick up a goal change sooner than
- * the periodic scan would. Claude Code writes the goal line before the turn it starts (`busy`:
- * worth a look while no goal is active) and the evaluator's verdict before the turn ends (`idle`:
- * worth a look while one is). A verdict mark (met or failed) goes away with the next human prompt,
- * so a turn that begins (`busy`) or ends (`idle`) with one showing is worth a look too.
- * `/goal clear` starts no turn; the periodic scan catches it.
+ * the periodic scan would. Claude Code and Codex record a new goal before the turn it starts
+ * (`busy`: worth a look while no goal is active) and its verdict before the turn ends (`idle`:
+ * worth a look while one is). A met mark (and Claude Code's failed one) goes away with the next
+ * human prompt, so a turn that begins (`busy`) or ends (`idle`) with one showing is worth a look
+ * too. `/goal clear` (and Codex's `/goal pause`) starts no turn; the periodic scan catches it.
  */
 export function goalNeedsRescan(
 	transition: "busy" | "idle",
 	row: { agent: string; goal?: SessionGoal | null } | undefined
 ): boolean {
-	if (!row || row.agent !== "claude") {
+	if (!row || (row.agent !== "claude" && row.agent !== "codex")) {
 		return false;
 	}
 	const state = goalState(row.goal);

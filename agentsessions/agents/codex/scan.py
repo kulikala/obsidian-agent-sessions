@@ -15,6 +15,7 @@ import time
 from typing import Dict, List, Optional
 
 from ...sessions.model import Session
+from . import goals as _goals
 from . import names as _names
 from . import rollout
 from .rollout import Head, RACY_WINDOW
@@ -34,7 +35,9 @@ from .rollout import Head, RACY_WINDOW
 # an old entry has neither key, which the cache-hit branch below would
 # otherwise read back as (None, None) forever, indistinguishable from a
 # rollout that genuinely has no turn_context.
-SCAN_SCHEMA_VERSION = 4
+# 5: the cache entry also carries last_prompt (rollout.read_last_user_prompt), and
+# INJECTED_PREFIXES also filters Codex's goal-continuation and turn-aborted messages.
+SCAN_SCHEMA_VERSION = 5
 
 
 def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
@@ -57,10 +60,14 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
     still a real rollout the user ran. It's included with `name=None`,
     `first_prompt=''`, which `cli/json_output._session_dict` already renders as
     an untitled row (falling back to the id's first 8 characters), landing in
-    "Other" like any other nameless session."""
+    "Other" like any other nameless session.
+
+    Each session's `/goal` comes from `goals_1.sqlite` (`goals.lookup_thread_goals`), read on
+    every scan rather than cached, since a goal changes without the rollout changing. A completed
+    goal is shown until the user's next typed prompt (`goals.shown_goal`)."""
     home = home if home is not None else rollout.codex_home()
     now = time.time()
-    heads: Dict[str, tuple] = {}   # sid -> (Head, last_activity, model, effort, path)
+    heads: Dict[str, tuple] = {}   # sid -> (Head, last_activity, model, effort, last_prompt, mtime, path)
     for p in paths:
         sid = rollout.session_id_of(p)
         if not sid:
@@ -77,10 +84,12 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
                 last_activity = cached.get('last_activity')
                 model = cached.get('model')
                 effort = cached.get('effort')
+                last_prompt = cached.get('last_prompt')
             else:
                 last_activity = rollout.read_last_activity(p)
                 h = rollout.read_head(p)
                 model, effort = rollout.read_last_turn_context(p)
+                last_prompt = rollout.read_last_user_prompt(p)
                 if cache is not None:
                     cache[p] = {
                         'mtime': st.st_mtime,
@@ -90,20 +99,23 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
                         'last_activity': last_activity,
                         'model': model,
                         'effort': effort,
+                        'last_prompt': last_prompt,
                     }
         except OSError:
             continue
-        heads[sid] = (h, last_activity, model, effort, st.st_mtime, p)
+        heads[sid] = (h, last_activity, model, effort, last_prompt, st.st_mtime, p)
 
     thread_info = _names.lookup_thread_info(home, list(heads.keys()))
+    goals = _goals.lookup_thread_goals(home, list(heads.keys()))
 
     out: Dict[str, Session] = {}
-    for sid, (h, last_activity, model, effort, file_mtime, p) in heads.items():
+    for sid, (h, last_activity, model, effort, last_prompt, file_mtime, p) in heads.items():
         info = thread_info.get(sid)
         name = info.name if info else None
         first_prompt = (info.title if info and info.title else None) or h.prompt
         mtime = last_activity or file_mtime
         out[sid] = Session(id=sid, name=name, cwd=h.cwd, mtime=mtime, path=p,
                             first_prompt=first_prompt, child=h.child, agent='codex',
-                            model=model, effort=effort)
+                            model=model, effort=effort,
+                            goal=_goals.shown_goal(goals.get(sid), last_prompt))
     return out
