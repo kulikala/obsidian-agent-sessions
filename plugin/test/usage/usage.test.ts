@@ -219,7 +219,7 @@ describe("costView (a cost that may leave out calls with no price)", () => {
 		const v = costView({ cost: 1.5, calls: 4, unpriced_calls: 1, unknown_cost: true });
 		expect(v.text).toBe("$1.50+");
 		expect(v.note).toBe(
-			"1 of 4 replies have no price (a model missing from the price list, or no cost recorded), so this counts only the others"
+			"1 of 4 replies has no price (a model missing from the price list, or no cost recorded), so this counts only the others"
 		);
 	});
 
