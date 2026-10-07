@@ -267,6 +267,21 @@ export async function resolve(
 }
 
 /**
+ * `json moved AGENT --pid PID --since EPOCH`: the session a linked Codex or OpenCode tab's process
+ * started at or after `since` (`/new`; Codex also `/clear`) that nothing is linked to yet, as
+ * `{thread, transcript}` (both `null` while there is none). See `sessions/agent-new.ts`.
+ */
+export async function moved(
+	agentSessionsPath: string,
+	vaultPath: string,
+	agent: AgentId,
+	pid: number,
+	since: number
+): Promise<ResolveResult> {
+	return runJson(agentSessionsPath, vaultPath, ["moved", agent, "--pid", String(pid), "--since", String(since)]) as Promise<ResolveResult>;
+}
+
+/**
  * `json ppid PID…`: each running pid's parent pid, as `{"<pid>": <ppid>}` (a pid that isn't
  * running is left out). `null` when the process table can't be read — callers then go without it.
  */

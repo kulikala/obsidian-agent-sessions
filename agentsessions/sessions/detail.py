@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import List, Optional
 
-from .scan import TAIL_CHUNK, iter_tail_lines
+from .scan import TAIL_CHUNK, TAIL_LIMIT, _iso_ts, _text_of, iter_tail_lines
 
 DETAIL_LIMIT = 1 << 25          # max bytes to scan backward from the end (32 MiB, enough to reach the most recent instruction even in a long transcript)
 MAX_CHARS = 1200                # max characters passed to the panel per entry
@@ -71,6 +71,30 @@ def is_human_prompt(rec: dict, raw: str) -> bool:
     if head.startswith('<'):
         return False
     return not head.startswith(NOT_HUMAN_PREFIXES)
+
+
+def read_last_human_prompt_ts(path: str, chunk: int = TAIL_CHUNK, limit: int = TAIL_LIMIT) -> Optional[float]:
+    """Epoch seconds of the last prompt a human typed, walking backward from the end of the
+    transcript; None if there is none in the tail. Teammate and subagent messages, task
+    notifications, meta lines, compaction summaries, local slash commands, tool results and
+    sidechains are not human prompts."""
+    for line in iter_tail_lines(path, chunk, limit):
+        if b'"type":"user"' not in line:
+            continue
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(d, dict) or d.get('type') != 'user' or d.get('isSidechain') \
+                or d.get('isMeta') or d.get('isCompactSummary'):
+            continue
+        raw = _text_of((d.get('message') or {}).get('content'))
+        if not raw.strip() or '<command-name>' in raw or not is_human_prompt(d, raw):
+            continue
+        ts = _iso_ts(d.get('timestamp'))
+        if ts is not None:
+            return ts
+    return None
 
 
 def _texts_and_tools(content):

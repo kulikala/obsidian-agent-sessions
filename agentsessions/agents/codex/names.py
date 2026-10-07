@@ -87,7 +87,7 @@ def _connect(path: str) -> Tuple[Optional[sqlite3.Connection], Optional[str]]:
 
     tmpdir = tempfile.mkdtemp(prefix='agent-sessions-codex-db-')
     try:
-        dst = os.path.join(tmpdir, DB_FILENAME)
+        dst = os.path.join(tmpdir, os.path.basename(path))
         shutil.copyfile(path, dst)
         for suffix in ('-wal', '-shm'):
             src = path + suffix

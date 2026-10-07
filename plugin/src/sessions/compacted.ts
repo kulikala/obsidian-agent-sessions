@@ -71,7 +71,7 @@ export class CompactedTracker extends EventEmitter {
 		this.emit("change");
 	}
 
-	/** Starts `fs.watch` (200ms debounce). Returns a function to stop it. The folder is created
+	/** Starts `fs.watch` (200ms debounce) and re-reads the folder once. Returns a function to stop it. The folder is created
 	 * first: on a fresh install the hook hasn't written it yet, and a watch on a missing folder fails
 	 * for good. */
 	watch(): () => void {
@@ -79,6 +79,10 @@ export class CompactedTracker extends EventEmitter {
 			try {
 				fs.mkdirSync(this.dir, { recursive: true });
 				this.watcher = fs.watch(this.dir, () => this.scheduleRefresh());
+				// A native watch (FSEvents on macOS) starts listening a moment after `fs.watch`
+				// returns, so a file written in that gap raises no event, and one written between the
+				// constructor's read and now is not in `ids`. One re-read after the debounce closes both.
+				this.scheduleRefresh();
 			} catch {
 				this.watcher = null;
 			}

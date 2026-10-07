@@ -65,8 +65,8 @@ def _session_dict(s: Session) -> dict:
         'last_activity': s.mtime,
         'child': s.child,
         'transcript': s.path,
-        # Claude Code's `/goal` -- `{condition, met, reason, since, updated}` (+ `failed`), or
-        # null (none, cleared, or an agent without goals).
+        # The `/goal` -- `{condition, met, reason, since, updated}` (+ `failed`; Codex adds its own
+        # `status`), or null (none, cleared, or an agent without goals).
         'goal': s.goal,
     }
     # additive, Codex and OpenCode only for now -- Claude Code's model/effort come from
@@ -413,6 +413,24 @@ def resolve_output(agent: str, pid: int, since: float, cwd: str) -> dict:
                        if isinstance(v, dict) and v.get('agent') == agent}
     resolver = codex_agent.resolve if agent == 'codex' else opencode_agent.resolve
     thread, transcript = resolver.resolve(pid, since, cwd, already_linked=already_linked)
+    return {'thread': thread, 'transcript': transcript}
+
+
+def moved_output(agent: str, pid: int, since: float) -> dict:
+    """Backs `json moved <agent> --pid --since`: `{"thread": <id>|null, "transcript": <path>|null}`,
+    the session a linked Codex or OpenCode tab's process (`pid`) started at or after `since` with
+    `/new` (Codex also `/clear`) and that nothing is linked to yet -- see
+    `agents.codex.resolve.new_thread` and `agents.opencode.resolve.new_session`. `null`/`null` for
+    any other agent, and while there is none."""
+    if agent not in ('codex', 'opencode'):
+        return {'thread': None, 'transcript': None}
+    st = store.load(path=config.STORE_PATH)
+    already_linked = {sid for sid, v in st.sessions.items()
+                      if isinstance(v, dict) and v.get('agent') == agent}
+    if agent == 'codex':
+        thread, transcript = codex_agent.resolve.new_thread(pid, since, already_linked=already_linked)
+    else:
+        thread, transcript = opencode_agent.resolve.new_session(pid, since, already_linked=already_linked)
     return {'thread': thread, 'transcript': transcript}
 
 

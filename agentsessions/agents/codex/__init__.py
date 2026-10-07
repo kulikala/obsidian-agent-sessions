@@ -6,8 +6,8 @@ Same uniform surface as `agents.claude` (`list_transcripts`, `scan`,
 `find_transcript`, `read_detail_for`, `live_sessions`, `collect_usage`), so
 `agentsessions/cli/json_output.py` can loop over `agentsessions.agents.enabled_agents()`
 without an agent-specific branch. Everything here only ever *reads*
-`CODEX_HOME` -- no file under it is written, and the one thing that touches its
-sqlite database (`names.lookup_thread_info`) opens it `mode=ro` -- so this adapter can
+`CODEX_HOME` -- no file under it is written, and the two things that touch its
+sqlite databases (`names.lookup_thread_info`, `goals.lookup_thread_goals`) open them `mode=ro` -- so this adapter can
 run safely alongside a live `codex` process without disturbing it.
 """
 from typing import Dict, List, Optional

@@ -68,13 +68,36 @@ export function resolveLang(setting: LanguageSetting, obsidianLang: string | nul
 	return matched?.code ?? DEFAULT_LANG;
 }
 
-/** The string for `key`. If `vars` is given, replaces `{name}` placeholders (names not in `vars` are left as-is). */
+/** The number a placeholder's value stands for: a number as-is, or a string such as "1,234"
+ * (callers pass counts through `formatNumber`) with its grouping separators removed. `NaN` when
+ * it isn't a count. */
+function countOf(value: string | number): number {
+	return typeof value === "number" ? value : Number(value.replace(/,/g, ""));
+}
+
+/**
+ * The string for `key`. If `vars` is given, replaces `{name}` placeholders (names not in `vars`
+ * are left as-is).
+ *
+ * `{name|one|other}` picks a word form by the count `name` holds, using the current language's
+ * plural rules (`Intl.PluralRules`): `one` when the rule's category is "one", `other` otherwise.
+ * It is written next to the plain `{name}` that prints the number, e.g.
+ * `"{count} {count|reply|replies}"`. A language that doesn't inflect (Japanese) just doesn't use it.
+ */
 export function t(key: MessageKey, vars?: Record<string, string | number>): string {
 	const template = messagesByLang.get(currentLang)?.[key] ?? en[key];
 	if (!vars) {
 		return template;
 	}
-	return template.replace(/\{(\w+)\}/g, (whole, name: string) => (name in vars ? String(vars[name]) : whole));
+	return template
+		.replace(/\{(\w+)\|([^|{}]*)\|([^|{}]*)\}/g, (whole, name: string, one: string, other: string) => {
+			if (!(name in vars)) {
+				return whole;
+			}
+			const count = countOf(vars[name]);
+			return Number.isNaN(count) || new Intl.PluralRules(currentLang).select(count) !== "one" ? other : one;
+		})
+		.replace(/\{(\w+)\}/g, (whole, name: string) => (name in vars ? String(vars[name]) : whole));
 }
 
 /** The settings tab's language dropdown: "Auto" (translated, since "auto" isn't itself a

@@ -63,6 +63,7 @@ Each session is one Obsidian tab running the agent in a terminal.
 - **Paths in the output** that point inside the vault become links.
 - **A notice** tells you when a session in another tab finishes or needs an answer.
 - **`/clear` in a Claude Code tab** starts a new session in the same tab. The tab follows the new session, the cleared one goes to the Archive, and a named session's new part is named with the next number: `Work: Report` becomes `Work: Report 2`, then `Work: Report 3`. Only a final 2 to 99 counts up: `Plan 2026` becomes `Plan 2026 2`. An unnamed session stays unnamed. `/resume` typed in the tab also moves the tab to that session, without archiving or renaming.
+- **`/new` in a Codex or OpenCode tab** (in Codex also `/clear`) works the same way once the new session has its first message: the tab follows it, the earlier one goes to the Archive, and a named session's new part gets the next number. Switching to another session in those tabs (`/resume`, the session list) and `/fork` are not followed: the tab stays on the session it had.
 
 The tab header has these buttons:
 
@@ -133,16 +134,20 @@ The tab, the side panel and the Session manager show the same icon, color and mo
 - A small icon next to the state shows the agent (Claude Code, Codex or OpenCode), in one color like the rest of the UI.
 - States are grouped into **Needs input**, **Needs review**, **Running**, **Done**, plus **Archived**. The side panel shows the Needs input and Needs review counts, and the Session manager filters by these groups.
 
-A Claude Code session with a `/goal` gets one more icon after its name, in the tab, the side panel and the Session manager. It sits beside the state icon and does not replace it:
+A Claude Code or Codex session with a `/goal` gets one more icon after its name, in the tab, the side panel and the Session manager. It sits beside the state icon and does not replace it:
 
 | Goal | Icon | Means |
 |---|---|---|
 | **Goal active** | purple target, breathing slowly while the session works | `/goal` is set and not met yet |
-| **Goal met** | green trophy | Claude Code's evaluator found the condition met |
-| **Goal judged unreachable** | grey crossed-out flag | the evaluator judged the condition impossible |
+| **Goal met** | green trophy | Claude Code's evaluator found the condition met, or Codex marked the goal complete; until your next prompt |
+| **Goal judged unreachable** | grey crossed-out flag | Claude Code's evaluator judged the condition impossible, until your next prompt |
+| **Goal paused** | grey pause sign | you paused the Codex goal (`/goal pause`); `/goal resume` picks it up again |
+| **Goal stalled**, **Goal stopped at the usage limit**, **Goal stopped at its token budget** | grey crossed-out flag | Codex stopped working on the goal; `/goal resume` picks it up again |
 
-- Hover the icon to see the condition and the evaluator's latest reason. The details pane shows both in full (click to expand), with when the goal was set.
+- Hover the icon to see the condition and, for Claude Code, the evaluator's latest reason. The details pane shows both in full (click to expand), with when the goal was set.
 - `/goal clear` removes the icon. A new `/goal` replaces the old one.
+- A paused or stopped Codex goal stays until it is resumed, cleared or replaced.
+- OpenCode has no `/goal`.
 
 ## Built-in editor
 

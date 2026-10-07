@@ -483,6 +483,10 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"goal.active": "ゴール進行中",
 	"goal.met": "ゴール達成",
 	"goal.failed": "ゴール到達不能と判定",
+	"goal.paused": "ゴール一時停止中",
+	"goal.blocked": "ゴール停滞",
+	"goal.usageLimited": "利用上限でゴール停止",
+	"goal.budgetLimited": "トークン予算でゴール停止",
 	"goal.reason": "判定",
 	"goal.since": "{time} に設定",
 

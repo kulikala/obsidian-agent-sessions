@@ -8,7 +8,7 @@ import sys
 import tempfile
 import unittest
 
-from agentsessions import paths
+from agentsessions import paths, procs
 from agentsessions.agents.codex import resolve as codex_resolve
 from agentsessions.agents.opencode import db as opencode_db
 from agentsessions.agents.opencode import live as opencode_live
@@ -28,6 +28,14 @@ class WindowsAgentsTest(unittest.TestCase):
         tree = dict(codex_resolve._ps_tree())
         self.assertIn(os.getpid(), tree)
         self.assertIn(os.getpid(), codex_resolve.child_pids(tree[os.getpid()], list(tree.items())))
+
+    def test_restart_manager_names_the_process_holding_a_file(self) -> None:
+        path = os.path.join(self.tmp.name, 'open.jsonl')
+        with open(path, 'w') as held:
+            held.write('x')
+            held.flush()
+            self.assertIn(os.getpid(), procs.file_users(path) or [])
+        self.assertNotIn(os.getpid(), procs.file_users(path) or [])
 
     def test_no_opencode_is_not_an_error(self) -> None:
         self.assertIsInstance(opencode_live._opencode_pids(), list)

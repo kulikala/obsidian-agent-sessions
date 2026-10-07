@@ -30,6 +30,7 @@ import {
 	detectAgents,
 	live,
 	loginEnv,
+	moved,
 	resolve,
 	resolveAgentBinary,
 	resetLoginEnvCache,
@@ -45,6 +46,7 @@ import {
 import { launchStart, rememberAgent, type NewSessionOptions } from "./sessions/new-session";
 import { runtimeDir } from "./backend/paths";
 import { planInPlace, planSuccessors, possibleSuccessors, type SuccessorCandidate, type SuccessorTab } from "./sessions/successor";
+import { newSince, tabsToAsk, unknownOpencode, type AgentNewTab } from "./sessions/agent-new";
 import {
 	chooseInstallDir,
 	findInstalled,
@@ -311,6 +313,18 @@ export default class AgentSessionsPlugin extends Plugin {
 	private clearedIds = new Map<string, number>();
 	/** Tabs whose process went on under a new id (`planInPlace`): the old id → the new one, and when. */
 	private movedInPlace = new Map<string, { id: string; at: number }>();
+	/** When a Codex/OpenCode tab took its current id (`resolveAgentSession`, `followAgentNew`), by that id. */
+	private agentLinkedAt = new Map<string, number>();
+	/** When `followAgentNew` last asked about a Codex/OpenCode tab, by the tab's id. */
+	private agentNewAskedAt = new Map<string, number>();
+	/** Codex tabs whose turn ended since `followAgentNew` last looked (`refreshTerminalStatus`). */
+	private agentNewDue = new Set<string>();
+	/** Codex tabs last seen working, so that the end of a turn can be told. */
+	private codexWorking = new Set<string>();
+	/** OpenCode sessions in the ledger that no tab or link knew, as of `followAgentNew`'s last look. */
+	private unknownOpencodeIds = new Set<string>();
+	private followingNew = false;
+	private followNewAgain = false;
 	/** Sessions started headless (in the background). Excluded from `notifyIdle`. */
 	private headless = new Set<string>();
 	/** Whether Claude Code's `tui` is `fullscreen` (re-read at startup and on every `settings-changed`). */
@@ -411,9 +425,15 @@ export default class AgentSessionsPlugin extends Plugin {
 				this.daemonSessions = sessions;
 				this.adoptOrphanSessions(sessions);
 				void this.linkSuccessors();
+				void this.followAgentNew();
 			})
 		);
-		this.register(this.index.registry.onChange(() => void this.linkSuccessors()));
+		this.register(
+			this.index.registry.onChange(() => {
+				void this.linkSuccessors();
+				void this.followAgentNew();
+			})
+		);
 		this.register(
 			this.index.onCleared((id) => {
 				this.clearedIds.set(id, Date.now());
@@ -1667,21 +1687,8 @@ export default class AgentSessionsPlugin extends Plugin {
 			if (named()) {
 				return;
 			}
-			// Codex reports no status of its own to the registry; its tab does (the title's spinner,
-			// `titleStatus`). Waits for the turn to end and the composer to be empty.
-			const view = this.findTerminalView(id);
-			if (view) {
-				const settled = (): boolean => {
-					const status = this.terminalStatuses.get(id);
-					return status !== "working" && status !== "asking" && status !== "connecting" && view.promptHasDraft() === false;
-				};
-				const deadline = Date.now() + WAIT_CODEX_COMPOSER_MS;
-				while (!settled() && Date.now() < deadline) {
-					await sleep(CODEX_COMPOSER_POLL_MS);
-				}
-				if (!settled()) {
-					return;
-				}
+			if (!(await this.waitCodexSettled(id))) {
+				return;
 			}
 			await this.index.rescan([id]);
 			if (this.codexCreateNames.get(id) !== name || named()) {
@@ -1696,6 +1703,27 @@ export default class AgentSessionsPlugin extends Plugin {
 				this.codexCreateNames.delete(id);
 			}
 		}
+	}
+
+	/**
+	 * Waits until the Codex tab of `id` has ended its turn and its composer is empty. Codex reports
+	 * no status of its own to the registry; its tab does (the title's spinner, `titleStatus`).
+	 * `false` when that takes longer than `WAIT_CODEX_COMPOSER_MS`; `true` at once without a tab.
+	 */
+	private async waitCodexSettled(id: string): Promise<boolean> {
+		const view = this.findTerminalView(id);
+		if (!view) {
+			return true;
+		}
+		const settled = (): boolean => {
+			const status = this.terminalStatuses.get(id);
+			return status !== "working" && status !== "asking" && status !== "connecting" && view.promptHasDraft() === false;
+		};
+		const deadline = Date.now() + WAIT_CODEX_COMPOSER_MS;
+		while (!settled() && Date.now() < deadline) {
+			await sleep(CODEX_COMPOSER_POLL_MS);
+		}
+		return settled();
 	}
 
 	/**
@@ -1818,6 +1846,7 @@ export default class AgentSessionsPlugin extends Plugin {
 					);
 					if (thread) {
 						this.linkAgentSession(agent, thread, cwd, placeholderId);
+						this.agentLinkedAt.set(thread, Date.now());
 						this.relinkTerminalViews(placeholderId, thread);
 						void this.confirmCodexName(placeholderId, thread);
 						return;
@@ -1955,6 +1984,115 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
+	 * Codex's `/new` and `/clear`, and OpenCode's `/new`, in a tab linked to its real session id
+	 * (`sessions/agent-new.ts`): asks `json moved` about the tabs worth asking (`tabsToAsk`). For a
+	 * tab whose process started a session of its own since the tab took its current id, links that
+	 * session to the tab's daemon session (`linkNewSession`), moves the tab over
+	 * (`relinkTerminalViews`) and hands both ids to `finishClear`, which archives the old session and
+	 * gives the new one the next number of its name. Runs one at a time; a call that comes in
+	 * meanwhile runs it once more afterwards.
+	 */
+	private async followAgentNew(): Promise<void> {
+		if (!this.backendAvailable()) {
+			return;
+		}
+		if (this.followingNew) {
+			this.followNewAgain = true;
+			return;
+		}
+		const running = new Map(this.daemonSessions.filter((s) => s.exited === null).map((s) => [s.id, s]));
+		const views = new Map<string, TerminalView>();
+		const tabs: AgentNewTab[] = [];
+		for (const view of this.terminalViews()) {
+			const agent = view.sessionAgent;
+			if (
+				(agent !== "codex" && agent !== "opencode") ||
+				views.has(view.sessionId) ||
+				this.unresolvedIds.has(view.sessionId) ||
+				this.unresolvedIds.has(view.daemonSessionId)
+			) {
+				continue;
+			}
+			// `json live` lists a linked tab's daemon session under the id it is linked to.
+			const daemon = running.get(view.sessionId) ?? running.get(view.daemonSessionId);
+			if (!daemon?.pid) {
+				continue;
+			}
+			views.set(view.sessionId, view);
+			tabs.push({ id: view.sessionId, agent, pid: daemon.pid, startedAt: daemon.startedAt * 1000, linkedAt: this.agentLinkedAt.get(view.sessionId) });
+		}
+		let newOpencode = false;
+		if (tabs.some((tab) => tab.agent === "opencode")) {
+			let stored = new Set<string>();
+			try {
+				stored = new Set(Object.keys(loadStore(this.storePath()).sessions));
+			} catch {
+				// Unreadable for now: every OpenCode session counts as unknown this once.
+			}
+			const unknown = unknownOpencode(this.index.registry.all().keys(), (id) => this.knowsSession(id) || stored.has(id));
+			newOpencode = unknown.some((id) => !this.unknownOpencodeIds.has(id));
+			this.unknownOpencodeIds = new Set(unknown);
+		}
+		const now = Date.now();
+		const ask = tabsToAsk(tabs, { due: this.agentNewDue, newOpencode, askedAt: this.agentNewAskedAt, now });
+		this.agentNewDue.clear();
+		if (ask.length === 0) {
+			return;
+		}
+		this.followingNew = true;
+		try {
+			for (const tab of ask) {
+				this.agentNewAskedAt.set(tab.id, now);
+				const { thread } = await moved(this.agentSessionsPath(), this.vaultPath(), tab.agent, tab.pid, newSince(tab)).catch(() => ({
+					thread: null,
+					transcript: null,
+				}));
+				const view = views.get(tab.id);
+				if (!thread || !view || view.sessionId !== tab.id || this.knowsSession(thread)) {
+					continue;
+				}
+				this.linkNewSession(tab.agent, thread, view.getCwd() || this.vaultPath(), view.daemonSessionId);
+				this.relinkTerminalViews(tab.id, thread);
+				this.agentLinkedAt.delete(tab.id);
+				this.agentLinkedAt.set(thread, Date.now());
+				this.agentNewAskedAt.delete(tab.id);
+				void this.finishClear(tab.id, thread, tab.agent).catch((err) => {
+					new Notice(t("notice.renameFailed", { error: messageOf(err) }));
+				});
+			}
+		} finally {
+			this.followingNew = false;
+		}
+		if (this.followNewAgain) {
+			this.followNewAgain = false;
+			void this.followAgentNew();
+		}
+	}
+
+	/**
+	 * Links a session that `/new` started in a tab's process (`followAgentNew`) to the tab's daemon
+	 * session: `sessions[id] = {agent, cwd, daemon}`, and no other entry claims that daemon session
+	 * any more. Unlike `linkAgentSession` it leaves the earlier session's entry, and the name in it,
+	 * as they are: that session stays one of its own.
+	 */
+	private linkNewSession(agent: AgentId, id: string, cwd: string, daemonId: string): void {
+		try {
+			updateStore(this.storePath(), (store) => {
+				for (const entry of Object.values(store.sessions)) {
+					if (entry.daemon === daemonId) {
+						delete entry.daemon;
+					}
+				}
+				store.sessions[id] = { agent, cwd, daemon: daemonId };
+			});
+			this.index.refreshStore();
+			void this.index.rescan();
+		} catch (err) {
+			this.notifyLockError(err);
+		}
+	}
+
+	/**
 	 * Pairs a `/clear` the `SessionEnd` hook reported for `oldId` with the tab that moved from
 	 * `oldId` to a new id in its own process (`linkSuccessors`), whichever came first, and hands
 	 * the pair to `finishClear`. Either half left unpaired for `CLEAR_MATCH_MS` is dropped: a
@@ -1984,12 +2122,14 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/**
-	 * After `/clear` in a tab: the session it ended (`oldId`) is archived, and the one it started
-	 * (`newId`, which Claude Code gives the same name) is renamed `<name> 2` — or the next number
-	 * (`clearedName`) — with `/rename`, so Claude Code and Remote Control have it too. An unnamed
-	 * session stays unnamed; its old part is archived all the same.
+	 * After `/clear` in a tab (Codex: `/new` or `/clear`; OpenCode: `/new`): the session it ended
+	 * (`oldId`) is archived, and the one it started (`newId`, which Claude Code gives the same name)
+	 * is renamed `<name> 2` — or the next number (`clearedName`) — the way `renameSession` names
+	 * that agent's sessions: `/rename` for Claude Code (so Remote Control has it too) once it is
+	 * idle and for Codex once its turn has ended, `sessions.json` for OpenCode. An unnamed session
+	 * stays unnamed; its old part is archived all the same.
 	 */
-	private async finishClear(oldId: string, newId: string): Promise<void> {
+	private async finishClear(oldId: string, newId: string, agent: AgentId = "claude"): Promise<void> {
 		await this.index.rescan([oldId, newId]);
 		const old = this.index.sessions.get(oldId);
 		if (old) {
@@ -2005,7 +2145,13 @@ export default class AgentSessionsPlugin extends Plugin {
 				taken.add(row.name);
 			}
 		}
-		if (!(await this.index.registry.waitFor(newId, "idle", WAIT_IDLE_MS))) {
+		const ready =
+			agent === "claude"
+				? await this.index.registry.waitFor(newId, "idle", WAIT_IDLE_MS)
+				: agent === "codex"
+					? await this.waitCodexSettled(newId)
+					: true;
+		if (!ready) {
 			return;
 		}
 		await this.renameSession(newId, clearedName(name, taken));
@@ -2641,6 +2787,13 @@ export default class AgentSessionsPlugin extends Plugin {
 			this.terminalStatuses.set(id, combined);
 		} else {
 			this.terminalStatuses.delete(id);
+		}
+		// The end of a Codex turn: the first message after `/new` has written the new rollout.
+		if (combined === "working" && this.findTerminalView(id)?.sessionAgent === "codex") {
+			this.codexWorking.add(id);
+		} else if (this.codexWorking.delete(id) && combined) {
+			this.agentNewDue.add(id);
+			void this.followAgentNew();
 		}
 		this.events.trigger("terminal-status", id);
 	}

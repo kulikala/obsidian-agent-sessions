@@ -19,8 +19,8 @@ class Session:
     # cli/json_output.py's _session_dict for why scan rows never carry them for claude).
     model: Optional[str] = None
     effort: Optional[str] = None
-    # Claude Code only: the session's `/goal` (`sessions/scan.py`'s `apply_goal_status`), None
-    # when it has none or it was cleared.
+    # The session's `/goal` -- Claude Code's from `sessions/scan.py`'s `apply_goal_status`, Codex's
+    # from `agents/codex/goals.py` -- None when it has none or it was cleared.
     goal: Optional[dict] = None
     # Claude Code only (sessions/scan.py's `read_after_compact`): `'clean'` while nothing but
     # local commands has followed the last compaction, `'input'` once a prompt has been sent

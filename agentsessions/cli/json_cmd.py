@@ -111,9 +111,10 @@ def main(args: List[str]) -> int:
         _print(json_output.stats_output())
         return 0
 
-    if sub == 'resolve':
+    if sub in ('resolve', 'moved'):
+        usage = 'cmd.json_%s_usage' % sub
         if not rest:
-            sys.stderr.write(i18n.t('cmd.json_resolve_usage') + '\n')
+            sys.stderr.write(i18n.t(usage) + '\n')
             return 2
         agent, opts = rest[0], rest[1:]
         pid, since, cwd = None, None, None
@@ -143,8 +144,14 @@ def main(args: List[str]) -> int:
             else:
                 sys.stderr.write(i18n.t('cmd.json_unknown_option', option=opt) + '\n')
                 return 2
+        if sub == 'moved':
+            if pid is None or since is None or cwd is not None:
+                sys.stderr.write(i18n.t(usage) + '\n')
+                return 2
+            _print(json_output.moved_output(agent, pid, since))
+            return 0
         if pid is None or since is None or cwd is None:
-            sys.stderr.write(i18n.t('cmd.json_resolve_usage') + '\n')
+            sys.stderr.write(i18n.t(usage) + '\n')
             return 2
         _print(json_output.resolve_output(agent, pid, since, cwd))
         return 0
