@@ -416,6 +416,24 @@ def resolve_output(agent: str, pid: int, since: float, cwd: str) -> dict:
     return {'thread': thread, 'transcript': transcript}
 
 
+def moved_output(agent: str, pid: int, since: float) -> dict:
+    """Backs `json moved <agent> --pid --since`: `{"thread": <id>|null, "transcript": <path>|null}`,
+    the session a linked Codex or OpenCode tab's process (`pid`) started at or after `since` with
+    `/new` (Codex also `/clear`) and that nothing is linked to yet -- see
+    `agents.codex.resolve.new_thread` and `agents.opencode.resolve.new_session`. `null`/`null` for
+    any other agent, and while there is none."""
+    if agent not in ('codex', 'opencode'):
+        return {'thread': None, 'transcript': None}
+    st = store.load(path=config.STORE_PATH)
+    already_linked = {sid for sid, v in st.sessions.items()
+                      if isinstance(v, dict) and v.get('agent') == agent}
+    if agent == 'codex':
+        thread, transcript = codex_agent.resolve.new_thread(pid, since, already_linked=already_linked)
+    else:
+        thread, transcript = opencode_agent.resolve.new_session(pid, since, already_linked=already_linked)
+    return {'thread': thread, 'transcript': transcript}
+
+
 def ppid_output(pids: List[int]) -> dict:
     """Backs `json ppid <pid>...`: `{"parents": {"<pid>": <ppid>}}` for every pid in the process table
     (a pid that isn't running is left out). `{"parents": null}` when the table can't be read -- the

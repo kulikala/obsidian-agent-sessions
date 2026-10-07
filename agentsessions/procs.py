@@ -11,7 +11,7 @@ import os
 import shutil
 import subprocess
 import sys
-from typing import Dict, Optional
+from typing import Dict, List, Optional
 
 IS_WINDOWS = sys.platform == 'win32'
 
@@ -41,6 +41,17 @@ if IS_WINDOWS:
     _k32.CreateToolhelp32Snapshot.restype = w.HANDLE
     _k32.Process32FirstW.argtypes = [w.HANDLE, ctypes.POINTER(_PROCESSENTRY32W)]
     _k32.Process32NextW.argtypes = [w.HANDLE, ctypes.POINTER(_PROCESSENTRY32W)]
+
+    class _RM_UNIQUE_PROCESS(ctypes.Structure):
+        _fields_ = [('dwProcessId', w.DWORD), ('ProcessStartTime', w.FILETIME)]
+
+    class _RM_PROCESS_INFO(ctypes.Structure):
+        _fields_ = [('Process', _RM_UNIQUE_PROCESS), ('strAppName', w.WCHAR * 256),
+                    ('strServiceShortName', w.WCHAR * 64), ('ApplicationType', ctypes.c_int),
+                    ('AppStatus', w.ULONG), ('TSSessionId', w.DWORD), ('bRestartable', w.BOOL)]
+
+    _CCH_RM_SESSION_KEY = 32
+    _ERROR_MORE_DATA = 234
 
 
 def pid_alive(pid: int) -> bool:
@@ -125,3 +136,36 @@ def _windows_snapshot(parents: bool):
         return table
     finally:
         _k32.CloseHandle(snap)
+
+
+def file_users(path: str) -> Optional[List[int]]:
+    """Windows only: the pids of the processes that have `path` open, from the Restart Manager (the
+    API behind "file in use" prompts; it needs no elevation for the user's own processes). `None`
+    on other platforms or when it can't be asked -- open files are `lsof`'s or `/proc`'s there."""
+    if not IS_WINDOWS:
+        return None
+    try:
+        rm = ctypes.WinDLL('rstrtmgr')  # type: ignore[attr-defined]
+    except OSError:
+        return None
+    handle = w.DWORD()
+    key = ctypes.create_unicode_buffer(_CCH_RM_SESSION_KEY + 1)
+    if rm.RmStartSession(ctypes.byref(handle), 0, key) != 0:
+        return None
+    try:
+        files = (w.LPCWSTR * 1)(path)
+        if rm.RmRegisterResources(handle, 1, files, 0, None, 0, None) != 0:
+            return None
+        needed, count, reason = w.UINT(0), w.UINT(0), w.DWORD()
+        rc = rm.RmGetList(handle, ctypes.byref(needed), ctypes.byref(count), None, ctypes.byref(reason))
+        if rc == 0:
+            return []
+        if rc != _ERROR_MORE_DATA:
+            return None
+        infos = (_RM_PROCESS_INFO * needed.value)()
+        count = w.UINT(needed.value)
+        if rm.RmGetList(handle, ctypes.byref(needed), ctypes.byref(count), infos, ctypes.byref(reason)) != 0:
+            return None
+        return [int(infos[i].Process.dwProcessId) for i in range(count.value)]
+    finally:
+        rm.RmEndSession(handle)
