@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { allLangs, getLang, languageOptions, resolveLang, setLang, t } from "../../src/i18n";
+import { allLangs, getLang, languageOptions, resolveLang, setLang, t, type MessageKey } from "../../src/i18n";
+import { en } from "../../src/i18n/locales/en";
 
 // This file intentionally switches languages. Reset back to English (the
 // default, set in test/setup.ts) so it doesn't leak into other tests.
@@ -82,5 +83,52 @@ describe("allLangs / languageOptions", () => {
 		expect(languageOptions().ja).toBe("日本語");
 		// ...but "auto"'s label does.
 		expect(languageOptions().auto).toBe("Auto");
+	});
+});
+
+describe("t (plural forms)", () => {
+	it("chooses the singular form for 1 and the plural otherwise", () => {
+		setLang("en");
+		expect(t("organize.logRead", { count: 1 })).toBe("Read 1 session");
+		expect(t("organize.logRead", { count: 0 })).toBe("Read 0 sessions");
+		expect(t("organize.logRead", { count: 5 })).toBe("Read 5 sessions");
+	});
+
+	it("reads the count from a formatted string", () => {
+		setLang("en");
+		expect(t("efficiency.total.calls", { count: "1" })).toBe("1 call");
+		expect(t("efficiency.total.calls", { count: "1,234" })).toBe("1,234 calls");
+	});
+
+	it("agrees the verb and handles several counts in one string", () => {
+		setLang("en");
+		expect(t("usage.md.unpricedSuffix", { count: "1" })).toBe(" (excluding 1 reply without a price)");
+		expect(t("usage.md.unpricedSuffix", { count: "3" })).toBe(" (excluding 3 replies without a price)");
+		expect(t("cost.unpriced.some", { count: "1", calls: "5" })).toMatch(/^1 of 5 replies has no price/);
+		expect(t("cost.unpriced.some", { count: "2", calls: "5" })).toMatch(/^2 of 5 replies have no price/);
+		expect(t("efficiency.detector.E16.cause", { corrections: 1, calls: 1, ratio: "2.0" })).toBe(
+			"This task had 1 rework turn and 1 call, about 2.0 times your usual per turn."
+		);
+	});
+
+	it("leaves the form untouched when the name is missing or isn't a count", () => {
+		setLang("en");
+		expect(t("organize.logRead", {})).toBe("Read {count} {count|session|sessions}");
+		expect(t("organize.logRead", { count: "many" })).toBe("Read many sessions");
+	});
+
+	it("doesn't affect Japanese, which has no plural forms", () => {
+		setLang("ja");
+		expect(t("organize.logRead", { count: 1 })).not.toMatch(/\{\w+\|/);
+	});
+
+	it("keeps every word form well-formed in every locale", () => {
+		for (const lang of allLangs()) {
+			setLang(lang);
+			for (const key of Object.keys(en) as MessageKey[]) {
+				const out = t(key, new Proxy({}, { has: () => true, get: () => 1 }) as Record<string, number>);
+				expect(out).not.toMatch(/\{\w+\|/);
+			}
+		}
 	});
 });
