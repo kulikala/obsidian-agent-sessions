@@ -103,7 +103,7 @@ export class EfficiencyModal extends Modal {
 
 	onOpen(): void {
 		this.modalEl.addClass("agent-sessions-efficiency");
-		this.setTitle(t("efficiency.title"));
+		this.setTitle(t("action.analyzeEfficiency"));
 		this.contentEl.createDiv({ cls: "agent-sessions-efficiency-intro", text: t("efficiency.intro") });
 		this.bodyEl = this.contentEl.createDiv({ cls: "agent-sessions-efficiency-body" });
 		void this.loadStats();

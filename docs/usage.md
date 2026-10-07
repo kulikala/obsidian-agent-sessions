@@ -307,7 +307,7 @@ Shows when each agent was working. Open it from the Session manager toolbar, the
 
 Shows where your recent tokens could be saved, why they were spent, and what to change, from your local records.
 
-1. In the Session manager, open the ⋯ menu and choose **Analyze token efficiency**, or run **Analyze token efficiency** from the command palette.
+1. Open the ⋯ menu of the side panel or the Session manager and choose **Analyze token efficiency**, or run **Analyze token efficiency** from the command palette.
 2. The dialog reads the records on this machine (nothing is sent) and shows the range, the totals, where the tokens went, and the findings the statistics found on their own (marked **From the statistics**).
 3. Codex and OpenCode have a pane per provider their conversations used (tabs at the top). To have the agent look into causes and remedies, read its pane (where the excerpts go, how much, and the window's usage), open **Show what is sent** if you like, and press **Analyze**. **Cancel** stops it; the statistics' findings stay.
 4. On a finding that a file or setting can fix, press **Ask an agent to fix**, check or edit the request, and press **Start**.

@@ -60,7 +60,7 @@ In the same menu, **Compact session** sends `/compact`, and **Restart session** 
 
 ### Where tokens could be saved
 
-**Analyze token efficiency**, in the Session manager's ⋯ menu, finds where recent tokens went and what would save them: large tool outputs read again, conversations that carry earlier work along, caches that expired, files read at the start of every session. Each finding shows its evidence, cost and remedy, and a finding a file can fix can be handed to an agent, which starts in plan mode and shows the change before writing it. Statistics stay on this machine; see [What Token efficiency sends](#what-token-efficiency-sends). [More](docs/usage.md#token-efficiency)
+**Analyze token efficiency**, in the ⋯ menu of the side panel and the Session manager, finds where recent tokens went and what would save them: large tool outputs read again, conversations that carry earlier work along, caches that expired, files read at the start of every session. Each finding shows its evidence, cost and remedy, and a finding a file can fix can be handed to an agent, which starts in plan mode and shows the change before writing it. Statistics stay on this machine; see [What Token efficiency sends](#what-token-efficiency-sends). [More](docs/usage.md#token-efficiency)
 
 ![Analyze token efficiency for Claude Code: the range and its totals, where the tokens went, what Analyze would send, and findings with cost, evidence and remedy](docs/images/efficiency.png)
 

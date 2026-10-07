@@ -715,7 +715,6 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"efficiency.fix.prompt.newConversation": "この変更は、これから新しく始める会話から効きます（いま開いている会話には読み込まれません）。",
 	// ---- ui/efficiency-modal.ts ----
 	"action.analyzeEfficiency": "トークン効率を解析",
-	"efficiency.title": "トークン効率",
 	"efficiency.intro": "手元の記録から、直近のトークンの使い方で減らせるところを示します。「解析する」を押さない限り、何も送りません。",
 	"efficiency.reading": "記録を読んでいます… {seconds} 秒",
 	"efficiency.tab": "{agent}",

@@ -715,7 +715,6 @@ export const en = {
 	"efficiency.fix.prompt.newConversation": "This change takes effect in conversations started from now on (the conversation open now does not load it).",
 	// ---- ui/efficiency-modal.ts ----
 	"action.analyzeEfficiency": "Analyze token efficiency",
-	"efficiency.title": "Token efficiency",
 	"efficiency.intro": "Where recent token use could be reduced, from your local records. Nothing is sent unless you press Analyze.",
 	"efficiency.reading": "Reading the records… {seconds} s",
 	"efficiency.tab": "{agent}",
