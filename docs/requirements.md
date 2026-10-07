@@ -100,7 +100,7 @@ Agent CLIs other than Claude Code, Codex, and OpenCode (agy, …) are a future d
   - R-S17.18 Every failure (program missing or too old, agent unavailable, no data in range, statistics failure, model failure or time-out, usage limit with its reset time, cancel) says what happened and what to do next, and keeps the statistics' findings.
   - R-S17.19 A conversation's excerpts go only to that conversation's own agent.
   - R-S17.20 The last result per agent is saved and shown the next time the dialog opens for an overlapping range.
-  - R-S17.21 The analysing agent finds no unmasked conversation text within reach: it runs in a new empty folder that is removed afterwards, and the statistics cache holds no conversation text.
+  - R-S17.21 The analysing agent finds no unmasked conversation text within reach: it runs in an empty folder made fresh for each run and removed afterwards, and the statistics cache holds no conversation text.
   - R-S17.22 No statistic depends on the words a person wrote: the same conversation in another language gives the same tasks, hits and impact. Only record formats the agents write and the masking patterns are matched.
 
 ### R-D Persistence and restore

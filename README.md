@@ -170,7 +170,7 @@ To analyze token efficiency, it reads the same Claude Code transcripts, includin
 | a temporary file | the prompt being edited | built-in editor open |
 | `~/.agents/sessions/efficiency/cache/` | token efficiency statistics (numbers and relative paths, no conversation text) | Token efficiency opened |
 | `~/.agents/sessions/efficiency/last-claude.json`, `prev-claude.json` | the last two analyses, with masked quotes | after Analyze |
-| `~/.agents/sessions/efficiency-run/` | an empty folder per analysis | during Analyze |
+| `~/.agents/sessions/efficiency-run/current/` | the analysis's empty working folder | during Analyze |
 | `<vault>/.agents/sessions/sessions.json` | sessions started here (folder, agent), archive, category colors, folded groups | always |
 | `<vault>/.claude/skills/` | the `agent-sessions` and `agent-sessions-help` skills | Claude Code enabled |
 | `<vault>/.agents/skills/` | the same skills | Codex enabled |
@@ -195,7 +195,7 @@ For up to 30 sessions, or the one you chose, it sends the current name, the fold
 
 Opening **Analyze token efficiency** computes statistics on this machine and sends nothing. Only when you press **Analyze** in an agent's pane does the plugin run that conversation's own agent once: for Claude Code, `claude -p` with Sonnet (or Opus, in the settings), without tools, nothing saved. A conversation is never sent to another agent or provider. The pane shows where it goes and how much before you press it, and **Show what is sent** shows the exact text.
 
-It sends the range's numbers (totals, the largest tasks and the findings' figures), masked session names and folders, the sizes of the instruction files and the number of skills, and excerpts of up to 8 tasks: your prompts (up to 600 characters each), the start of the agent's replies (200 characters), and the tool calls (names, paths, the start of commands, the size of results). Tool results and file contents are not sent. Paths, URLs, e-mail addresses and anything that looks like a key or token are masked. At most 60,000 characters per analysis. The run starts in a new empty folder, which is removed when it ends. The statistics cache holds no conversation text; the last two results, with their masked quotes, stay in `~/.agents/sessions/efficiency/` until you delete them. This goes to that agent's service under your account and counts toward its usage limits.
+It sends the range's numbers (totals, the largest tasks and the findings' figures), masked session names and folders, the sizes of the instruction files and the number of skills, and excerpts of up to 8 tasks: your prompts (up to 600 characters each), the start of the agent's replies (200 characters), and the tool calls (names, paths, the start of commands, the size of results). Tool results and file contents are not sent. Paths, URLs, e-mail addresses and anything that looks like a key or token are masked. At most 60,000 characters per analysis. The run starts in an empty folder, `~/.agents/sessions/efficiency-run/current/`, made fresh for each run and removed when it ends; Claude Code keeps one empty project folder for it under `~/.claude/projects/`. The statistics cache holds no conversation text; the last two results, with their masked quotes, stay in `~/.agents/sessions/efficiency/` until you delete them. This goes to that agent's service under your account and counts toward its usage limits.
 
 **Ask an agent to fix** only starts a new session in the vault, in plan mode, with a request you can read and edit first. The plugin writes no file itself.
 

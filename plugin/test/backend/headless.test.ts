@@ -1,10 +1,10 @@
-import { chmodSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BackendError, buildAgentArgv, runJson } from "../../src/backend/backend";
 import { HeadlessError, runHeadless } from "../../src/backend/headless";
-import { inRunFolder } from "../../src/backend/run-folder";
+import { inRunFolder, RunFolderBusyError } from "../../src/backend/run-folder";
 import { addUsage, headlessArgs, headlessUsage } from "../../src/sessions/organize-agent";
 import { launchStart, rememberAgent } from "../../src/sessions/new-session";
 
@@ -168,6 +168,24 @@ describe.skipIf(IS_WINDOWS)("runHeadless and the run folder", () => {
 		expect(await pending).toBe("aborted");
 		expect(readdirSync(base)).toEqual([]);
 		expect(existsSync(base)).toBe(true);
+	});
+
+	it("the run folder has a fixed name, starts empty, refuses a second run and clears a leftover", async () => {
+		mkdirSync(join(base, "current"), { recursive: true });
+		writeFileSync(join(base, "current", "leftover.txt"), "x");
+		let release: () => void = () => undefined;
+		const first = inRunFolder(base, (cwd) => {
+			expect(cwd).toBe(join(base, "current"));
+			expect(readdirSync(cwd)).toEqual([]);
+			return new Promise<void>((done) => (release = done));
+		});
+		await expect(inRunFolder(base, async () => undefined)).rejects.toBeInstanceOf(RunFolderBusyError);
+		expect(existsSync(join(base, "current"))).toBe(true);
+		release();
+		await first;
+		expect(readdirSync(base)).toEqual([]);
+		await inRunFolder(base, async (cwd) => expect(cwd).toBe(join(base, "current")));
+		expect(readdirSync(base)).toEqual([]);
 	});
 
 	it("runJson takes a larger buffer for big outputs", async () => {
