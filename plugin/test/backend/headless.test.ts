@@ -6,7 +6,7 @@ import { BackendError, buildAgentArgv, runJson } from "../../src/backend/backend
 import { HeadlessError, runHeadless } from "../../src/backend/headless";
 import { inRunFolder, RunFolderBusyError } from "../../src/backend/run-folder";
 import { addUsage, headlessArgs, headlessUsage, usedTools } from "../../src/sessions/organize-agent";
-import { launchStart, rememberAgent } from "../../src/sessions/new-session";
+import { launchStart, opencodeReady, rememberAgent, typesFirstMessage } from "../../src/sessions/new-session";
 
 const CLAUDE_RESULT = readFileSync(join(__dirname, "../fixtures/headless/claude-result.jsonl"), "utf8");
 const IS_WINDOWS = process.platform === "win32";
@@ -142,6 +142,22 @@ describe("buildAgentArgv with a first message (same order as launch.py's build_a
 			"--resume",
 			"abc",
 		]);
+	});
+});
+
+describe("a first message typed in after start", () => {
+	it("only OpenCode on Windows, only past the length its command line takes", () => {
+		const long = "x".repeat(201);
+		expect(typesFirstMessage("opencode", long, "win32")).toBe(true);
+		expect(typesFirstMessage("opencode", "x".repeat(200), "win32")).toBe(false);
+		expect(typesFirstMessage("opencode", long, "darwin")).toBe(false);
+		expect(typesFirstMessage("codex", long, "win32")).toBe(false);
+		expect(typesFirstMessage("opencode", undefined, "win32")).toBe(false);
+	});
+
+	it("waits for OpenCode's footer", () => {
+		expect(opencodeReady("┃  Plan · gpt-oss:20b\n~/vault    12.1K  ctrl+p commands")).toBe(true);
+		expect(opencodeReady("~\\Documents\\TestVault   ⠙ Loading plugins…")).toBe(false);
 	});
 });
 

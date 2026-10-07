@@ -314,6 +314,16 @@ class OpencodeTest(_Tmp):
         finally:
             d.close()
 
+    def test_the_session_folder_is_normalized(self):
+        s = mo.Session(self.conn, 'ses_a', NOW - HOUR, cwd='/work//repo/')
+        s.prompt('go')
+        s.reply()
+        s.step(tools=[mo.Session.tool('read', {'filePath': '/work/repo/src/p.py'})])
+        s.save()
+        rec = self.read_one('ses_a')
+        self.assertEqual(rec['cwd'], os.path.normpath('/work/repo'))
+        self.assertEqual(rec['calls'][0]['tools'][0]['p'], 'src/p.py')
+
     def test_compaction_abort_and_child_sessions(self):
         s = mo.Session(self.conn, 'ses_a', NOW - HOUR)
         s.prompt('go')

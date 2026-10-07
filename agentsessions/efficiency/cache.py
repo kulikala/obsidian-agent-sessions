@@ -26,7 +26,7 @@ from ..sessions.scan import RACY_WINDOW
 from . import normalize
 
 # Bumped whenever a file record's shape or meaning changes: other versions are read again.
-EFFICIENCY_VERSION = 1
+EFFICIENCY_VERSION = 2
 MAX_RECORD_BYTES = 1 << 20
 BUCKET_SECONDS = 600
 
