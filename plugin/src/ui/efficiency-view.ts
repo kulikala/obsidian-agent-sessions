@@ -169,6 +169,11 @@ export function hasData(block: { totals: { calls: number } }): boolean {
 	return block.totals.calls > 0;
 }
 
+/** Whether pressing Analyze again may get past a failure (not when the agent can't be started). */
+export function retryHelps(failure: AnalysisFailure): boolean {
+	return failure.kind !== "agentUnavailable";
+}
+
 /** The message for a failed analysis; every one of them says the statistics' findings stay. */
 export function analysisFailureMessage(failure: AnalysisFailure, agent: string): string {
 	switch (failure.kind) {
@@ -185,4 +190,143 @@ export function analysisFailureMessage(failure: AnalysisFailure, agent: string):
 		case "llm":
 			return t("efficiency.error.llm", { error: failure.detail });
 	}
+}
+
+// ---- What the pane says (the status band, the steps, the list's heading) -----------------------
+
+/** Where the findings a pane shows come from: the statistics alone, the analysis just made, or the
+ * saved result of an earlier one. */
+export type ListSource = "stats" | "llm" | "previous";
+
+/** The source of a pane's list: the analysis after a successful one; the previous result (when
+ * there is one) while idle or after a failure; the statistics otherwise, including while
+ * analysing. */
+export function listSource(pane: PaneState, hasPrevious: boolean): ListSource {
+	if (shownFindings(pane) === "llm") {
+		return "llm";
+	}
+	return pane !== "working" && hasPrevious ? "previous" : "stats";
+}
+
+export interface ListHeading {
+	source: ListSource;
+	text: string;
+	/** The list is the statistics' while an analysis runs: dimmed and not clickable. */
+	busy: boolean;
+}
+
+/** The heading over a pane's list, which always says where the findings come from. */
+export function listHeading(
+	pane: PaneState,
+	previous: { savedAt: number } | null,
+	result: { at: number; model: string } | null
+): ListHeading {
+	const source = listSource(pane, previous !== null);
+	const date = (at: number): string => formatDateTimeShort(at, getLang());
+	if (source === "llm") {
+		return {
+			source,
+			text: result ? t("efficiency.list.result", { date: date(result.at), model: result.model }) : t("efficiency.list.resultUndated"),
+			busy: false,
+		};
+	}
+	if (source === "previous" && previous) {
+		return { source, text: t("efficiency.list.previous", { date: date(previous.savedAt) }), busy: false };
+	}
+	return { source: "stats", text: t(pane === "working" ? "efficiency.list.statsWorking" : "efficiency.list.stats"), busy: pane === "working" };
+}
+
+export type BandTone = "busy" | "info" | "done" | "error";
+
+export interface Band {
+	text: string;
+	tone: BandTone;
+	/** Show the Cancel button (an analysis is running). */
+	cancel: boolean;
+}
+
+export interface BandInput {
+	overall: OverallState;
+	/** The pane's state; absent while the statistics are read or when they failed. */
+	pane?: PaneState;
+	/** The analysing agent's name, as on the tab. */
+	agent?: string;
+	/** Seconds since reading or analysing started. */
+	seconds?: number;
+	/** Characters of the reply received so far. */
+	chars?: number;
+	/** The range has records. */
+	hasData?: boolean;
+	/** There is something to send (excerpts or hits). */
+	analysable?: boolean;
+	/** Findings the statistics found on their own. */
+	statCount?: number;
+	/** Findings in the analysis just made. */
+	resultCount?: number;
+	/** When the previous result shown was saved (seconds), or null when none is shown. */
+	previousAt?: number | null;
+	/** The analysing agent used tools. */
+	toolUsed?: boolean;
+	/** Why the last analysis (or the statistics) failed, and whether pressing Analyze may help. */
+	error?: { text: string; retry: boolean } | null;
+}
+
+/** The one line at the top of a pane: what is going on now and what to do next. */
+export function band(input: BandInput): Band {
+	const seconds = input.seconds ?? 0;
+	const plain = (text: string, tone: BandTone): Band => ({ text, tone, cancel: false });
+	if (input.overall === "stats") {
+		return { text: t("efficiency.band.reading", { seconds }), tone: "busy", cancel: false };
+	}
+	if (input.overall === "failed") {
+		return plain(input.error?.text ?? "", "error");
+	}
+	if (input.hasData === false) {
+		return plain(t("efficiency.error.noData"), "info");
+	}
+	const pane = input.pane ?? "idle";
+	const agent = input.agent ?? "";
+	if (pane === "working") {
+		const params = { agent, seconds, chars: input.chars ?? 0 };
+		return { text: t(params.chars > 0 ? "efficiency.band.workingChars" : "efficiency.band.working", params), tone: "busy", cancel: true };
+	}
+	if (input.error) {
+		// The button reads "Analyze again" once a result (this one or a saved one) is shown.
+		const button = t(typeof input.previousAt === "number" ? "efficiency.consent.again" : "efficiency.consent.send");
+		return plain(input.error.retry ? `${input.error.text} ${t("efficiency.band.retry", { button })}` : input.error.text, "error");
+	}
+	if (pane === "result") {
+		const count = input.resultCount ?? 0;
+		const done = count > 0 ? t("efficiency.band.done", { count }) : t("efficiency.band.doneNone");
+		return input.toolUsed ? plain(`${t("efficiency.toolUsed")} ${done}`, "error") : plain(done, "done");
+	}
+	if (typeof input.previousAt === "number") {
+		return plain(t("efficiency.band.previous", { date: formatDateTimeShort(input.previousAt, getLang()) }), "info");
+	}
+	if (input.analysable === false) {
+		return plain(t("efficiency.band.nothing"), "info");
+	}
+	const count = input.statCount ?? 0;
+	return plain(count > 0 ? t("efficiency.band.stats", { count }) : t("efficiency.band.statsNone"), "info");
+}
+
+/** A step's mark: finished, running now, waiting for the user, or not reached yet. */
+export type StepState = "done" | "busy" | "current" | "todo";
+
+/** The three steps -- read the records, analyse in detail, results and next steps -- and where
+ * the pane is among them. */
+export function steps(overall: OverallState, pane: PaneState | undefined, source: ListSource): [StepState, StepState, StepState] {
+	if (overall === "stats") {
+		return ["busy", "todo", "todo"];
+	}
+	if (overall === "failed") {
+		return ["current", "todo", "todo"];
+	}
+	if (pane === "working") {
+		return ["done", "busy", "todo"];
+	}
+	if (source !== "stats") {
+		return ["done", "done", "current"];
+	}
+	return ["done", "current", "todo"];
 }
