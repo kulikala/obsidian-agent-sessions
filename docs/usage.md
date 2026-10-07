@@ -138,8 +138,8 @@ A Claude Code session with a `/goal` gets one more icon after its name, in the t
 | Goal | Icon | Means |
 |---|---|---|
 | **Goal active** | purple target, breathing slowly while the session works | `/goal` is set and not met yet |
-| **Goal met** | green trophy | Claude Code's evaluator found the condition met |
-| **Goal judged unreachable** | grey crossed-out flag | the evaluator judged the condition impossible |
+| **Goal met** | green trophy | Claude Code's evaluator found the condition met, until your next prompt |
+| **Goal judged unreachable** | grey crossed-out flag | the evaluator judged the condition impossible, until your next prompt |
 
 - Hover the icon to see the condition and the evaluator's latest reason. The details pane shows both in full (click to expand), with when the goal was set.
 - `/goal clear` removes the icon. A new `/goal` replaces the old one.

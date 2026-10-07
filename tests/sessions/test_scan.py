@@ -271,6 +271,98 @@ class TestGoal(unittest.TestCase):
         self.assertIs(apply_goal_status(g, {'type': 'attachment', 'attachment': {'type': 'file'}}), g)
 
 
+T4 = '2026-10-01T00:40:00.000Z'
+
+
+def user_line(ts, content, **extra):
+    return dict({'type': 'user', 'timestamp': ts, 'message': {'role': 'user', 'content': content}}, **extra)
+
+
+class TestGoalMarkLifetime(unittest.TestCase):
+    """A met or failed goal's mark lasts until the next prompt a human typed."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.proj = os.path.join(self.tmp.name, '-Users-k-vault')
+        os.makedirs(self.proj)
+        self.path = os.path.join(self.proj, ID1 + '.jsonl')
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def goal_after(self, verdict, *after, cache=None):
+        write_jsonl(self.path, [
+            user_line(T0, 'q', cwd='/x', origin={'kind': 'human'}),
+            goal_line(T0, met=False, sentinel=True, condition='c'),
+            verdict,
+        ] + list(after))
+        return scan(list_transcripts(self.tmp.name), cache)[ID1].goal
+
+    MET = goal_line(T1, met=True, condition='c', reason='done')
+    FAILED = goal_line(T1, met=False, failed=True, condition='c', reason='impossible')
+
+    def test_teammate_message_keeps_the_mark(self):
+        g = self.goal_after(self.MET, user_line(
+            T2, 'Another Claude session sent a message: hi'),
+            user_line(T3, 'peer reply', origin={'kind': 'peer'}))
+        self.assertTrue(g['met'])
+
+    def test_human_prompt_clears_a_met_goal(self):
+        self.assertIsNone(self.goal_after(self.MET, user_line(T2, 'next', origin={'kind': 'human'})))
+
+    def test_human_prompt_without_origin_clears(self):
+        self.assertIsNone(self.goal_after(self.MET, user_line(T2, 'next task')))
+
+    def test_human_prompt_clears_a_failed_goal(self):
+        self.assertIsNone(self.goal_after(self.FAILED, user_line(T2, 'next', origin={'kind': 'human'})))
+
+    def test_prompt_before_the_verdict_does_not_clear(self):
+        write_jsonl(self.path, [
+            user_line(T0, 'q', cwd='/x', origin={'kind': 'human'}),
+            goal_line(T0, met=False, sentinel=True, condition='c'),
+            user_line(T1, 'more', origin={'kind': 'human'}),
+            goal_line(T2, met=True, condition='c', reason='done'),
+        ])
+        self.assertTrue(scan(list_transcripts(self.tmp.name))[ID1].goal['met'])
+
+    def test_non_prompts_keep_the_mark(self):
+        g = self.goal_after(
+            self.MET,
+            user_line(T2, '<command-name>/compact</command-name>', origin={'kind': 'human'}),
+            user_line(T2, '/model', isMeta=True, origin={'kind': 'human'}),
+            user_line(T2, 'summary', isCompactSummary=True),
+            user_line(T2, '<task-notification>x</task-notification>', origin={'kind': 'task-notification'}),
+            user_line(T3, '<system-reminder>r</system-reminder>'),
+            user_line(T3, [{'type': 'tool_result', 'tool_use_id': 'x', 'content': 'r'}]),
+            user_line(T3, 'sub', isSidechain=True, origin={'kind': 'human'}))
+        self.assertTrue(g['met'])
+
+    def test_new_goal_after_a_verdict_is_active(self):
+        g = self.goal_after(self.MET, user_line(T2, '/goal d', origin={'kind': 'human'}),
+                            goal_line(T3, met=False, sentinel=True, condition='d'))
+        self.assertEqual((g['condition'], g['met']), ('d', False))
+
+    def test_active_goal_is_unaffected_by_prompts(self):
+        g = self.goal_after(goal_line(T1, met=False, condition='c', reason='not yet'),
+                            user_line(T2, 'more', origin={'kind': 'human'}))
+        self.assertFalse(g['met'])
+
+    def test_cache_path_and_invalidation(self):
+        cache = {}
+        self.assertTrue(self.goal_after(self.MET)['met'])
+        self.assertTrue(scan(list_transcripts(self.tmp.name), cache)[ID1].goal['met'])
+        self.assertIn('last_human_prompt', cache[self.path])
+        # A cache hit applies the stored prompt time the same way.
+        cache[self.path]['last_human_prompt'] = 1790812800.0 + 7200
+        with mock.patch('agentsessions.sessions.scan.RACY_WINDOW', -1):
+            self.assertIsNone(scan(list_transcripts(self.tmp.name), cache)[ID1].goal)
+        # Appending a prompt changes size, so the entry is read afresh.
+        with open(self.path, 'a') as f:
+            f.write(json.dumps(user_line(T2, 'next', origin={'kind': 'human'}), separators=(',', ':')) + '\n')
+        with mock.patch('agentsessions.sessions.scan.RACY_WINDOW', -1):
+            self.assertIsNone(scan(list_transcripts(self.tmp.name), cache)[ID1].goal)
+
+
 class TestLastActivity(unittest.TestCase):
     """Last-activity time is the timestamp of the last user message or assistant
     response; status/telemetry rows and the file's own mtime aren't used for it."""
