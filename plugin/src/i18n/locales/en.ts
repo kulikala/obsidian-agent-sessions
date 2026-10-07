@@ -482,6 +482,10 @@ export const en = {
 	"goal.active": "Goal active",
 	"goal.met": "Goal met",
 	"goal.failed": "Goal judged unreachable",
+	"goal.paused": "Goal paused",
+	"goal.blocked": "Goal stalled",
+	"goal.usageLimited": "Goal stopped at the usage limit",
+	"goal.budgetLimited": "Goal stopped at its token budget",
 	"goal.reason": "Evaluator",
 	"goal.since": "Set {time}",
 

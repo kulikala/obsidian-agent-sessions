@@ -5,6 +5,7 @@ import {
 	goalMarkClass,
 	goalNeedsRescan,
 	goalState,
+	goalLabelKey,
 	goalTooltip,
 	GOAL_TOOLTIP_REASON_CHARS,
 	truncateText,
@@ -28,6 +29,12 @@ describe("goalState", () => {
 		expect(goalState(goal({ reason: "T-12 not started" }))).toBe("active");
 		expect(goalState(goal({ met: true, reason: "done" }))).toBe("met");
 		expect(goalState(goal({ failed: true, reason: "impossible" }))).toBe("failed");
+	});
+
+	it("treats a Codex goal's statuses like Claude Code's verdicts", () => {
+		expect(goalState(goal({ status: "active" }))).toBe("active");
+		expect(goalState(goal({ status: "complete", met: true }))).toBe("met");
+		expect(goalState(goal({ status: "paused", failed: true }))).toBe("failed");
 	});
 
 	it("gives each state its own icon", () => {
@@ -66,6 +73,16 @@ describe("goalTooltip", () => {
 		expect(reason.endsWith("…")).toBe(true);
 	});
 
+	it("names the reason a Codex goal stopped", () => {
+		expect(goalLabelKey(goal({ status: "paused", failed: true }), "failed")).toBe("goal.paused");
+		expect(goalLabelKey(goal({ status: "blocked", failed: true }), "failed")).toBe("goal.blocked");
+		expect(goalLabelKey(goal({ status: "usage_limited", failed: true }), "failed")).toBe("goal.usageLimited");
+		expect(goalLabelKey(goal({ status: "budget_limited", failed: true }), "failed")).toBe("goal.budgetLimited");
+		expect(goalLabelKey(goal({ failed: true }), "failed")).toBe("goal.failed");
+		expect(goalLabelKey(goal({ status: "complete", met: true }), "met")).toBe("goal.met");
+		expect(goalTooltip(goal({ status: "paused", failed: true }))).toBe("Goal paused\nFinish the plan");
+	});
+
 	it("is translated", () => {
 		setLang("ja");
 		expect(goalTooltip(goal({ met: true, reason: "完了" }))).toBe("ゴール達成\nFinish the plan\n判定: 完了");
@@ -95,8 +112,13 @@ describe("goalNeedsRescan", () => {
 		expect(goalNeedsRescan("idle", claude(goal({ met: true })))).toBe(false);
 	});
 
+	it("looks the same way for Codex", () => {
+		expect(goalNeedsRescan("busy", { agent: "codex", goal: null })).toBe(true);
+		expect(goalNeedsRescan("idle", { agent: "codex", goal: goal({ status: "active" }) })).toBe(true);
+	});
+
 	it("ignores other agents and unknown rows", () => {
-		expect(goalNeedsRescan("busy", { agent: "codex", goal: null })).toBe(false);
+		expect(goalNeedsRescan("busy", { agent: "opencode", goal: null })).toBe(false);
 		expect(goalNeedsRescan("busy", undefined)).toBe(false);
 	});
 });

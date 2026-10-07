@@ -15,6 +15,7 @@ import time
 from typing import Dict, List, Optional
 
 from ...sessions.model import Session
+from . import goals as _goals
 from . import names as _names
 from . import rollout
 from .rollout import Head, RACY_WINDOW
@@ -57,7 +58,10 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
     still a real rollout the user ran. It's included with `name=None`,
     `first_prompt=''`, which `cli/json_output._session_dict` already renders as
     an untitled row (falling back to the id's first 8 characters), landing in
-    "Other" like any other nameless session."""
+    "Other" like any other nameless session.
+
+    Each session's `/goal` comes from `goals_1.sqlite` (`goals.lookup_thread_goals`), read on
+    every scan rather than cached, since a goal changes without the rollout changing."""
     home = home if home is not None else rollout.codex_home()
     now = time.time()
     heads: Dict[str, tuple] = {}   # sid -> (Head, last_activity, model, effort, path)
@@ -96,6 +100,7 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
         heads[sid] = (h, last_activity, model, effort, st.st_mtime, p)
 
     thread_info = _names.lookup_thread_info(home, list(heads.keys()))
+    goals = _goals.lookup_thread_goals(home, list(heads.keys()))
 
     out: Dict[str, Session] = {}
     for sid, (h, last_activity, model, effort, file_mtime, p) in heads.items():
@@ -105,5 +110,5 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None,
         mtime = last_activity or file_mtime
         out[sid] = Session(id=sid, name=name, cwd=h.cwd, mtime=mtime, path=p,
                             first_prompt=first_prompt, child=h.child, agent='codex',
-                            model=model, effort=effort)
+                            model=model, effort=effort, goal=goals.get(sid))
     return out

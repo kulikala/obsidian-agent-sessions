@@ -17,7 +17,7 @@ import { t } from "../i18n";
 import type { Row } from "../sessions/index";
 import type { UsageTotal } from "../types";
 import { categoryAndLabel, totalTokens, type DetailContext } from "./detail";
-import { GOAL_LABEL_KEY, goalState } from "../sessions/goal";
+import { goalLabelKey, goalState } from "../sessions/goal";
 import type { SessionGoal } from "../types";
 import { renderGoalMark } from "./goal-render";
 import { formatTime } from "./rows";
@@ -146,7 +146,7 @@ function renderGoal(container: HTMLElement, goal: SessionGoal | null | undefined
 	const card = container.createDiv({ cls: `agent-sessions-detail-card agent-sessions-detail-goal is-${state}` });
 	const head = card.createDiv({ cls: "agent-sessions-detail-card-label agent-sessions-detail-goal-head" });
 	renderGoalMark(head, goal, null);
-	head.createSpan({ text: t(GOAL_LABEL_KEY[state]) });
+	head.createSpan({ text: t(goalLabelKey(goal, state)) });
 	if (goal.since) {
 		head.createSpan({ cls: "agent-sessions-detail-goal-since", text: t("goal.since", { time: formatTime(goal.since) }) });
 	}
