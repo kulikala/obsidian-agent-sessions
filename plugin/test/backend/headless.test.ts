@@ -160,7 +160,9 @@ describe("newSession options", () => {
 	});
 });
 
-describe.skipIf(IS_WINDOWS)("runHeadless and the run folder", () => {
+// Each test starts real node processes (the stand-in agents); on a loaded machine that start alone
+// can take seconds, which says nothing about the code under test.
+describe.skipIf(IS_WINDOWS)("runHeadless and the run folder", { timeout: 30_000 }, () => {
 	let tmp: string;
 	let base: string;
 	beforeEach(() => {

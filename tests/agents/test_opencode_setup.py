@@ -221,10 +221,13 @@ class TestSetupCommand(unittest.TestCase):
         self.assertTrue(os.path.exists(self.plugin))
 
     def test_explicit_plugin_path(self):
-        target = os.path.join(self.tmp, 'elsewhere.js')
+        # The status line goes in the folder above `plugins/`: keep it inside the scratch folder
+        # rather than the shared temp folder, where concurrent runs would overwrite each other's file.
+        target = os.path.join(self.tmp, 'custom', 'plugins', 'elsewhere.js')
         rc, _ = self._run('--opencode', '--opencode-plugin', target)
         self.assertEqual(rc, 0)
         self.assertTrue(os.path.exists(target))
+        self.assertTrue(os.path.exists(os.path.join(self.tmp, 'custom', 'agent-sessions-tui.jsx')))
 
 
 NODE = shutil.which('node')
