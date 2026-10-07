@@ -19,13 +19,13 @@ const RULE = "─";
 export const NON_DRAFT_HINTS: readonly string[] = ["Press up to edit queued messages"];
 
 /**
- * `true` if the last prompt line (`❯` for Claude Code, `›` for Codex) and the lines under it — up
- * to the closing rule, or for Codex the first blank line — have any non-blank, non-dim character
- * after the prompt and that text isn't one of `NON_DRAFT_HINTS`; `false` if they have none; `null`
- * if there's no prompt line at all (for Codex also while its `›` is dim: input is disabled), or
- * for an agent whose box isn't known (OpenCode).
+ * The text typed into the last prompt line (`❯` for Claude Code, `›` for Codex) and the lines under
+ * it — up to the closing rule, or for Codex the first blank line: every non-dim character after the
+ * prompt, spaces collapsed; `""` for an empty box or one showing only one of `NON_DRAFT_HINTS`.
+ * `null` if there's no prompt line at all (for Codex also while its `›` is dim: input is disabled),
+ * or for an agent whose box isn't known (OpenCode).
  */
-export function promptHasDraft(lines: ScreenCell[][], agent = "claude"): boolean | null {
+export function promptDraft(lines: ScreenCell[][], agent = "claude"): string | null {
 	const prompt = PROMPT[agent];
 	if (!prompt) {
 		return null;
@@ -69,5 +69,11 @@ export function promptHasDraft(lines: ScreenCell[][], agent = "claude"): boolean
 		text += " ";
 	}
 	const typed = text.replace(/\s+/g, " ").trim();
-	return typed !== "" && !NON_DRAFT_HINTS.includes(typed);
+	return NON_DRAFT_HINTS.includes(typed) ? "" : typed;
+}
+
+/** Whether the box holds a draft (`promptDraft` is not empty); `null` where `promptDraft` is. */
+export function promptHasDraft(lines: ScreenCell[][], agent = "claude"): boolean | null {
+	const draft = promptDraft(lines, agent);
+	return draft === null ? null : draft !== "";
 }

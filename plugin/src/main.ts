@@ -45,6 +45,7 @@ import {
 } from "./backend/backend";
 import { launchStart, rememberAgent, type NewSessionOptions } from "./sessions/new-session";
 import { runtimeDir } from "./backend/paths";
+import { isTypedLine, lineState } from "./terminal/line-submitted";
 import { planInPlace, planSuccessors, possibleSuccessors, type SuccessorCandidate, type SuccessorTab } from "./sessions/successor";
 import { newSince, tabsToAsk, unknownOpencode, type AgentNewTab } from "./sessions/agent-new";
 import {
@@ -206,6 +207,14 @@ const CLEAR_MATCH_MS = 60000;
  * up on the `/rename` at start (the check after the link still runs), and how often it looks. */
 const WAIT_CODEX_COMPOSER_MS = 120000;
 const CODEX_COMPOSER_POLL_MS = 300;
+/** `typeLine`: how long a pasted line gets to show in full, how often it is pasted, how long it
+ * makes sure the line was submitted, how often it looks, and how far apart it sends the submit
+ * key again. */
+const LINE_ECHO_MS = 2000;
+const LINE_ATTEMPTS = 3;
+const LINE_SUBMIT_WAIT_MS = 15000;
+const LINE_SUBMIT_POLL_MS = 100;
+const LINE_RESUBMIT_MS = 1000;
 /** How long `confirmCodexName` gives a linked Codex row to show the name before sending it again,
  * and how often it rescans that row meanwhile. */
 const CODEX_NAME_WAIT_MS = 15000;
@@ -1633,7 +1642,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * Types `/rename <name>` into a new Codex tab still under `placeholderId`, once its composer is
 	 * on screen and empty (`TerminalView.promptHasDraft() === false` — a `/rename` pasted into a
 	 * draft would join it). Codex names its thread before the first message, and holds input typed
-	 * before the thread has started until it has, so this is the earliest it can be sent. Gives up
+	 * before the thread has started until it has, so this is the earliest it can be sent. It goes
+	 * through `typeHeldLine`, so the user's keys wait until the line is submitted. Gives up
 	 * quietly when the tab closes, is linked first, or the composer stays busy past
 	 * `WAIT_CODEX_COMPOSER_MS`; `confirmCodexName` still checks the name once the tab is linked.
 	 */
@@ -1655,7 +1665,82 @@ export default class AgentSessionsPlugin extends Plugin {
 			}
 			await sleep(CODEX_COMPOSER_POLL_MS);
 		}
-		await this.sendViaView(view, `/rename ${name}`);
+		await this.typeHeldLine(view, `/rename ${name}`);
+	}
+
+	/** `typeLine` with the user's input held back meanwhile (`TerminalView.holdInput`): keys typed
+	 * into the composer before the line's submit lands would join the line (a `/rename` would take
+	 * them into the name). Other commands for the tab wait as well (`sendViaView`). */
+	private async typeHeldLine(view: TerminalView, line: string): Promise<void> {
+		await view.inputFree();
+		const release = view.holdInput();
+		try {
+			await this.typeLine(view, line);
+		} finally {
+			release();
+		}
+	}
+
+	/**
+	 * Types `line` into a Codex tab's empty composer and makes sure it, and only it, is submitted.
+	 * Codex on Windows, while it starts up, can take part of a paste or drop the submit key after
+	 * it: a partial line submitted picks whatever its slash popup shows first (`/model`), and a
+	 * line left in the composer takes the next thing typed into it. So the submit key goes only once
+	 * the composer shows exactly the line (`lineState`); a line that doesn't show in full within
+	 * `LINE_ECHO_MS` is erased and pasted again, up to `LINE_ATTEMPTS` times. After the submit key,
+	 * while the composer still holds the line, the key goes again at most once every
+	 * `LINE_RESUBMIT_MS`, until the composer is empty or `LINE_SUBMIT_WAIT_MS` has passed.
+	 */
+	private async typeLine(view: TerminalView, line: string): Promise<void> {
+		const send = (text: string) => view.sendBytes(Buffer.from(text, "utf8"));
+		let shown = false;
+		for (let attempt = 0; attempt < LINE_ATTEMPTS && !shown; attempt++) {
+			if (!(await this.waitDraft(view, (draft) => draft === "", LINE_ECHO_MS))) {
+				return;
+			}
+			// A bare command needs a trailing space to close Codex's popup (`commandChunks`).
+			send(PASTE_BEGIN + (line.includes(" ") ? line : line + " ") + PASTE_END);
+			shown = await this.waitDraft(view, (draft) => lineState(draft, line) === "resubmit", LINE_ECHO_MS);
+			if (!shown) {
+				const draft = view.promptDraft();
+				if (draft) {
+					send("\x7f".repeat(Math.max(draft.length, line.length) + 4));
+				}
+				await this.waitDraft(view, (d) => d === "", LINE_ECHO_MS);
+			}
+		}
+		if (!shown) {
+			return;
+		}
+		const submit = submitSequence(this.settings, "codex");
+		send(submit);
+		let submitted = Date.now();
+		const start = submitted;
+		while (Date.now() - start < LINE_SUBMIT_WAIT_MS && view.isAttached()) {
+			await sleep(LINE_SUBMIT_POLL_MS);
+			const state = lineState(view.promptDraft(), line);
+			if (state === "done" || state === "other") {
+				return;
+			}
+			if (state === "resubmit" && Date.now() - submitted >= LINE_RESUBMIT_MS) {
+				send(submit);
+				submitted = Date.now();
+			}
+		}
+	}
+
+	/** Polls the tab's composer (`promptDraft`) until `test` holds (`true`) or `ms` has passed (`false`). */
+	private async waitDraft(view: TerminalView, test: (draft: string | null) => boolean, ms: number): Promise<boolean> {
+		const deadline = Date.now() + ms;
+		for (;;) {
+			if (test(view.promptDraft())) {
+				return true;
+			}
+			if (Date.now() >= deadline || !view.isAttached()) {
+				return false;
+			}
+			await sleep(LINE_SUBMIT_POLL_MS);
+		}
 	}
 
 	/**
@@ -1694,7 +1779,12 @@ export default class AgentSessionsPlugin extends Plugin {
 			if (this.codexCreateNames.get(id) !== name || named()) {
 				return;
 			}
-			await this.sendCommand(id, `/rename ${name}`);
+			const view = this.findTerminalView(id);
+			if (view?.isAttached()) {
+				await this.typeHeldLine(view, `/rename ${name}`);
+			} else {
+				await this.sendCommand(id, `/rename ${name}`);
+			}
 			void this.index.waitForName(id, name);
 		} catch (err) {
 			new Notice(t("notice.renameFailed", { error: messageOf(err) }));
@@ -2427,9 +2517,16 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 	}
 
-	/** Route ①: write straight to that tab. */
-	private sendViaView(view: TerminalView, text: string): Promise<void> {
-		return this.writeCommand((data) => view.sendBytes(data), text, asAgentId(view.sessionAgent), view.promptHasDraft() === true);
+	/** Route ①: write straight to that tab, after a line the plugin is still typing there. A short,
+	 * single line for an empty Codex composer goes through `typeHeldLine`, which makes sure it is
+	 * submitted. */
+	private async sendViaView(view: TerminalView, text: string): Promise<void> {
+		await view.inputFree();
+		if (view.sessionAgent === "codex" && isTypedLine(text) && view.promptDraft() === "") {
+			await this.typeHeldLine(view, text);
+			return;
+		}
+		await this.writeCommand((data) => view.sendBytes(data), text, asAgentId(view.sessionAgent), view.promptHasDraft() === true);
 	}
 
 	/** Route ②: attach temporarily and write. */

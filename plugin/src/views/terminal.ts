@@ -22,7 +22,8 @@ import { AGENT_BIN_NAME, BackendError, loginEnv, resolveAgentBinary, withBinDirO
 import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../backend/daemon-client";
 import { t } from "../i18n";
 import { disposeTerminal } from "../terminal/dispose";
-import { promptHasDraft, type ScreenCell } from "../terminal/prompt-draft";
+import { InputHold } from "../terminal/input-hold";
+import { promptDraft, promptHasDraft, type ScreenCell } from "../terminal/prompt-draft";
 import { noteKey } from "../terminal/reload-safety";
 import { attachPlan, launchSize, NO_ROOM_ATTACH_MS } from "../terminal/pane-size";
 import {
@@ -142,6 +143,7 @@ export class TerminalView extends ItemView {
 	private waitedForRoom = false;
 
 	private client: DaemonClient | null = null;
+	private inputHold = new InputHold((bytes) => this.writePty(bytes));
 	private attaching = false;
 	private attached = false;
 	private exitReason: ExitReason | null = null;
@@ -245,9 +247,22 @@ export class TerminalView extends ItemView {
 		this.sendInput(Buffer.from(text, "utf8"));
 	}
 
-	/** Writes an already-assembled byte sequence to the PTY, called from `main.ts`'s `sendCommand`. */
+	/** Writes an already-assembled byte sequence to the PTY, called from `main.ts`'s `sendCommand`.
+	 * Not held back by `holdInput`. */
 	sendBytes(bytes: Buffer): void {
-		this.sendInput(bytes);
+		this.writePty(bytes);
+	}
+
+	/** Holds back the user's input (keys, paste, `@` insertion) until the returned release is
+	 * called, while `sendBytes` still goes through: a line the plugin is typing doesn't get the
+	 * user's keys mixed into it. */
+	holdInput(): () => void {
+		return this.inputHold.hold();
+	}
+
+	/** Resolves once no `holdInput` is in force. */
+	inputFree(): Promise<void> {
+		return this.inputHold.free();
 	}
 
 	/** The visible screen as plain text (one line per row), for matching a dialog Claude Code drew. */
@@ -268,6 +283,16 @@ export class TerminalView extends ItemView {
 	/** Whether the agent's input box on screen holds a draft (`promptHasDraft` over the visible
 	 * rows; `null` when no prompt line is visible). */
 	promptHasDraft(): boolean | null {
+		return this.promptLines((lines) => promptHasDraft(lines, this.agent));
+	}
+
+	/** The text in the agent's input box on screen (`promptDraft`; `""` when empty, `null` when no
+	 * prompt line is visible). */
+	promptDraft(): string | null {
+		return this.promptLines((lines) => promptDraft(lines, this.agent));
+	}
+
+	private promptLines<T>(read: (lines: ScreenCell[][]) => T): T {
 		const buffer = this.terminal.buffer.active;
 		const lines: ScreenCell[][] = [];
 		for (let y = buffer.baseY; y < buffer.baseY + this.terminal.rows; y++) {
@@ -281,7 +306,7 @@ export class TerminalView extends ItemView {
 			}
 			lines.push(cells);
 		}
-		return promptHasDraft(lines, this.agent);
+		return read(lines);
 	}
 
 	/** Whether this tab is attached to the daemon (the condition `main.ts`'s `sendCommand` uses to pick its first route). */
@@ -782,7 +807,12 @@ export class TerminalView extends ItemView {
 
 	// ---- Input/output -----------------------------------------------------------------
 
+	/** Input from the user, held back while `holdInput` is in force. */
 	private sendInput(bytes: Buffer): void {
+		this.inputHold.input(bytes);
+	}
+
+	private writePty(bytes: Buffer): void {
 		if (!this.client || !this.attached) {
 			return;
 		}
