@@ -205,14 +205,17 @@ class CodexDetectTest(_Tmp):
             json.dump({'models': [{'slug': s, 'visibility': v, 'priority': p} for s, v, p in cache_rows]}, f)
         block = self.run_build([r])
         pane = block['panes'][0]
-        # Sol is hidden for this account: Terra first, then the Luna models newest first, then
-        # config.toml's model.
-        self.assertEqual(pane['models'], ['gpt-5.6-terra', 'gpt-6-luna', 'gpt-5.6-luna', 'gpt-5.6-sol'])
-        self.assertEqual(pane['model'], 'gpt-5.6-terra')
+        # The newest generation first (gpt-6 lists only Luna; Sol is hidden for this account), then
+        # gpt-5.6's Terra and Luna, then config.toml's model.
+        self.assertEqual(pane['models'], ['gpt-6-luna', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.6-sol'])
+        self.assertEqual(pane['model'], 'gpt-6-luna')
         with open(os.path.join(home, 'models_cache.json'), 'w') as f:
             json.dump({'models': [{'slug': 'gpt-6-sol', 'visibility': 'list', 'priority': 2},
                                   {'slug': 'gpt-6-luna', 'visibility': 'list', 'priority': 4}]}, f)
         self.assertEqual(self.run_build([r])['panes'][0]['models'], ['gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol'])
+        self.assertEqual(sources.codex_tier_models([{'slug': s, 'priority': 0} for s in (
+            'gpt-5.6-sol', 'gpt-10-luna', 'gpt-6-terra', 'gpt-6-sol', 'gpt-reserve')]),
+            ['gpt-10-luna', 'gpt-6-sol', 'gpt-6-terra', 'gpt-5.6-sol'])
 
     def test_a_local_provider_uses_its_most_used_model(self):
         r = mc.Rollout(mc.thread_id(1), NOW - 2 * HOUR, model='gpt-oss:20b', provider='ollama')

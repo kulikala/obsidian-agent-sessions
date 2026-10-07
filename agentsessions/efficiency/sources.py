@@ -140,13 +140,22 @@ def codex_listed_models(home: str) -> Optional[List[dict]]:
             and m.get('visibility') == 'list']
 
 
+def _generation_key(generation: str) -> tuple:
+    """Sort key of a generation prefix (`gpt-6`, `gpt-5.6`): its version numbers, newest largest."""
+    return tuple(int(n) for n in re.findall(r'\d+', generation))
+
+
 def codex_tier_models(listed: List[dict]) -> List[str]:
-    """The listed Sol, Terra and Luna models, strongest tier first; within a tier the one Codex
-    ranks first (lowest `priority`, its newest)."""
+    """The listed Sol, Terra and Luna models: the newest generation first (`gpt-6` before
+    `gpt-5.6`), and within a generation Sol, then Terra, then Luna."""
+    by_generation: Dict[str, Dict[str, str]] = {}
+    for m in listed:
+        match = _TIER_RE.match(m['slug'])
+        if match:
+            by_generation.setdefault(match.group(1), {})[match.group(2)] = m['slug']
     out: List[str] = []
-    for tier in CODEX_TIERS:
-        same = [m for m in listed if (_TIER_RE.match(m['slug']) or [None, None, None])[2] == tier]
-        out += [m['slug'] for m in sorted(same, key=lambda m: (m['priority'], m['slug']))]
+    for generation in sorted(by_generation, key=lambda g: (_generation_key(g), g), reverse=True):
+        out += [by_generation[generation][t] for t in CODEX_TIERS if t in by_generation[generation]]
     return out
 
 
@@ -198,8 +207,9 @@ class CodexSource:
             return {}
 
     def analysis_models(self, provider: str, calls: List[dict]) -> List[str]:
-        """The models to try, in order. OpenAI: the strongest tier Codex lists for this account
-        (Sol, then Terra, then Luna; `models_cache.json`), then `config.toml`'s model; the plugin
+        """The models to try, in order. OpenAI: the Sol, Terra and Luna models Codex lists for this
+        account (`models_cache.json`), newest generation first and Sol, Terra, Luna within it, then
+        `config.toml`'s model; the plugin
         moves to the next one when Codex says a model isn't available. Without a model cache,
         `config.toml`'s model alone. Another provider (a local one): its most used model in the
         range."""
