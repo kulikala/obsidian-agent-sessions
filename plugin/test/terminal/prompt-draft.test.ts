@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { promptHasDraft, type ScreenCell } from "../../src/terminal/prompt-draft";
+import { promptDraft, promptHasDraft, type ScreenCell } from "../../src/terminal/prompt-draft";
 
 /** A screen line from text; characters inside `[` `]` are dim. */
 function line(text: string): ScreenCell[] {
@@ -79,3 +79,11 @@ describe("promptHasDraft (Codex)", () => {
 	});
 });
 
+
+describe("promptDraft", () => {
+	it("gives the typed text, empty for the placeholder, and null with no composer", () => {
+		expect(promptDraft([line("› /rename Race: One"), line(""), line("  [? for shortcuts]")], "codex")).toBe("/rename Race: One");
+		expect(promptDraft([line("› [Ask Codex to do anything]"), line("")], "codex")).toBe("");
+		expect(promptDraft([line("loading")], "codex")).toBeNull();
+	});
+});
