@@ -3741,56 +3741,326 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 
 /* ---- Token efficiency dialog ---- */
 
+/* Spacing follows Obsidian's 4px scale: 24px between a pane's sections, 8px inside a section,
+   16px inside a card and 12px between cards. */
 .agent-sessions-efficiency {
 	width: min(980px, 90vw);
 }
 
-.agent-sessions-efficiency-intro,
+.agent-sessions-efficiency-body {
+	min-width: 0;
+	overflow-wrap: anywhere;
+}
+
 .agent-sessions-efficiency-note,
-.agent-sessions-efficiency-reading,
-.agent-sessions-efficiency-cost {
+.agent-sessions-efficiency-cost,
+.agent-sessions-efficiency-section-desc,
+.agent-sessions-efficiency-card-effect {
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
 }
 
-.agent-sessions-efficiency-intro {
+.agent-sessions-efficiency-subhead {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+}
+
+/* Tabs: one per pane; the selected one is underlined, and a mark shows a running or finished
+   analysis. They wrap rather than scroll, so every tab stays in sight. */
+.agent-sessions-efficiency-tabs {
+	display: flex;
+	flex-wrap: wrap;
+	margin-bottom: var(--size-4-4);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.agent-sessions-efficiency-tabs > .agent-sessions-efficiency-tab {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	gap: var(--size-4-2);
+	height: auto;
+	margin-bottom: -1px;
+	padding: var(--size-4-2) var(--size-4-3);
+	border: none;
+	border-bottom: 2px solid transparent;
+	border-radius: 0;
+	background: none;
+	box-shadow: none;
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.agent-sessions-efficiency-tabs > .agent-sessions-efficiency-tab:hover {
+	color: var(--text-normal);
+	background-color: var(--background-modifier-hover);
+}
+
+.agent-sessions-efficiency-tabs > .agent-sessions-efficiency-tab.is-active {
+	border-bottom-color: var(--interactive-accent);
+	color: var(--text-normal);
+	font-weight: var(--font-semibold);
+}
+
+.agent-sessions-efficiency-tab-mark {
+	display: inline-flex;
+	align-items: center;
+}
+
+.agent-sessions-efficiency-tab-mark:empty:not(.is-working) {
+	display: none;
+}
+
+.agent-sessions-efficiency-tab-mark svg {
+	width: 14px;
+	height: 14px;
+}
+
+.agent-sessions-efficiency-tab-mark.is-working::before {
+	content: "";
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background-color: var(--interactive-accent);
+	animation: agent-sessions-pulse 1.2s ease-in-out infinite;
+}
+
+.agent-sessions-efficiency-tab-mark.is-result {
+	color: var(--color-green);
+}
+
+.agent-sessions-efficiency-tab-mark.is-failed {
+	color: var(--text-error);
+}
+
+/* A pane: the status band, the steps, then one section per step. */
+.agent-sessions-efficiency-pane {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-6);
+	min-width: 0;
+}
+
+/* The status band stays in view while the pane scrolls, so the state and Cancel are always at
+   hand. Its wrapper sticks at the modal's edge (over its 16px top padding) and spans the modal's
+   side padding, in the modal's own background, so nothing scrolling under it shows around it. */
+.agent-sessions-efficiency-band-wrap {
+	position: sticky;
+	top: calc(-1 * var(--size-4-4));
+	z-index: 1;
+	margin: 0 calc(-1 * var(--size-4-4));
+	padding: 0 var(--size-4-4) var(--size-4-2);
+	background-color: var(--modal-background, var(--background-primary));
+}
+
+.agent-sessions-efficiency-band {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	padding: var(--size-4-3) var(--size-4-4);
+	border: 1px solid var(--background-modifier-border);
+	border-left: 3px solid var(--interactive-accent);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+}
+
+.agent-sessions-efficiency-sr {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.agent-sessions-efficiency-band-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-3);
+}
+
+.agent-sessions-efficiency-band-text {
+	flex: 1;
+	min-width: 0;
+}
+
+.agent-sessions-efficiency-band-icon {
+	display: none;
+	flex: none;
+	width: 14px;
+	height: 14px;
+	border: 2px solid var(--background-modifier-border);
+	border-top-color: var(--interactive-accent);
+	border-radius: 50%;
+	animation: agent-sessions-spin 0.9s linear infinite;
+}
+
+.agent-sessions-efficiency-band.is-busy .agent-sessions-efficiency-band-icon {
+	display: block;
+}
+
+.agent-sessions-efficiency-band.is-done {
+	border-left-color: var(--color-green);
+}
+
+.agent-sessions-efficiency-band.is-error {
+	border-left-color: var(--text-error);
+	color: var(--text-error);
+}
+
+.agent-sessions-efficiency-band-cancel {
+	flex: none;
+}
+
+.agent-sessions-efficiency-band .agent-sessions-efficiency-actions {
 	margin-top: 0;
+}
+
+/* The steps: number, name and mark; the current one stands out. */
+.agent-sessions-efficiency-steps {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: var(--size-4-2);
+	margin: calc(-1 * var(--size-4-3)) 0 0;
+	padding: 0;
+	list-style: none;
+}
+
+.agent-sessions-efficiency-step {
+	display: flex;
+	align-items: flex-start;
+	gap: var(--size-4-2);
+	min-width: 0;
+	padding: var(--size-4-2);
+	border: 1px solid transparent;
+	border-radius: var(--radius-m);
+	color: var(--text-faint);
+}
+
+.agent-sessions-efficiency-step.is-clickable {
+	cursor: pointer;
+}
+
+.agent-sessions-efficiency-step.is-clickable:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.agent-sessions-efficiency-step.is-done {
+	color: var(--text-muted);
+}
+
+.agent-sessions-efficiency-step.is-current,
+.agent-sessions-efficiency-step.is-busy {
+	border-color: var(--interactive-accent);
+	color: var(--text-normal);
+}
+
+.agent-sessions-efficiency-step-num {
+	display: inline-flex;
+	flex: none;
+	align-items: center;
+	justify-content: center;
+	width: 1.6em;
+	height: 1.6em;
+	border: 1px solid currentColor;
+	border-radius: 50%;
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+}
+
+.agent-sessions-efficiency-step.is-done .agent-sessions-efficiency-step-num {
+	border-color: var(--color-green);
+	color: var(--color-green);
+}
+
+.agent-sessions-efficiency-step.is-current .agent-sessions-efficiency-step-num,
+.agent-sessions-efficiency-step.is-busy .agent-sessions-efficiency-step-num,
+.agent-sessions-efficiency-section.is-current .agent-sessions-efficiency-step-num {
+	border-color: var(--interactive-accent);
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.agent-sessions-efficiency-step.is-busy .agent-sessions-efficiency-step-num {
+	animation: agent-sessions-pulse 1.2s ease-in-out infinite;
+}
+
+.agent-sessions-efficiency-step-text {
+	min-width: 0;
+}
+
+.agent-sessions-efficiency-step-name {
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+}
+
+.agent-sessions-efficiency-step-state {
+	font-size: var(--font-ui-smaller);
+}
+
+/* A section: its numbered heading, what it does, then its content, 8px apart. */
+.agent-sessions-efficiency-section {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+	min-width: 0;
+	/* Clear of the sticky status band when scrolled to. */
+	scroll-margin-top: 6em;
+}
+
+.agent-sessions-efficiency-section-head {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-semibold);
+}
+
+.agent-sessions-efficiency-section-head .agent-sessions-efficiency-step-num {
+	color: var(--text-muted);
 }
 
 .agent-sessions-efficiency-range {
 	font-weight: var(--font-semibold);
-	margin: var(--size-4-2) 0 var(--size-4-1);
-	overflow-wrap: anywhere;
 }
 
+/* Totals: a grid of label and value, the value large. */
 .agent-sessions-efficiency-totals {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(10em, 1fr));
+	gap: var(--size-4-2);
+}
+
+.agent-sessions-efficiency-total {
+	padding: var(--size-4-2) var(--size-4-3);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+}
+
+.agent-sessions-efficiency-total-value {
+	font-size: var(--font-ui-large);
+	font-weight: var(--font-bold);
+}
+
+.agent-sessions-efficiency-total-label {
 	color: var(--text-muted);
-	font-size: var(--font-ui-small);
-	margin-bottom: var(--size-4-2);
+	font-size: var(--font-ui-smaller);
 }
 
-.agent-sessions-efficiency-status:empty {
-	display: none;
-}
-
-.agent-sessions-efficiency-status.is-error,
-.agent-sessions-efficiency-error {
-	color: var(--text-error);
-	margin: var(--size-4-2) 0;
-}
-
-.agent-sessions-efficiency-subhead {
-	margin: var(--size-4-2) 0 var(--size-4-1);
-	font-size: var(--font-ui-small);
-	font-weight: var(--font-semibold);
+.agent-sessions-efficiency-breakdown {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-1);
+	margin-top: var(--size-4-2);
 }
 
 .agent-sessions-efficiency-bar-row {
 	display: grid;
-	grid-template-columns: minmax(8em, 18em) 1fr 5em;
+	grid-template-columns: minmax(6em, 18em) minmax(0, 1fr) 4.5em;
 	align-items: center;
 	gap: var(--size-4-2);
-	font-size: var(--font-ui-smaller);
+	font-size: var(--font-ui-small);
 }
 
 .agent-sessions-efficiency-bar-label {
@@ -3816,20 +4086,42 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	color: var(--text-muted);
 }
 
+/* What Analyze sends: what you get, then label/value facts. Folded to one line once a result is
+   shown. */
 .agent-sessions-efficiency-consent,
-.agent-sessions-efficiency-working {
-	margin: var(--size-4-3) 0;
-	padding: var(--size-4-3);
+.agent-sessions-efficiency-consent-body {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+}
+
+.agent-sessions-efficiency-consent {
+	padding: var(--size-4-3) var(--size-4-4);
 	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-s);
+	border-radius: var(--radius-m);
 	background-color: var(--background-secondary);
 	font-size: var(--font-ui-small);
 }
 
-.agent-sessions-efficiency-consent > div + div {
-	margin-top: var(--size-4-1);
+.agent-sessions-efficiency-consent-body {
+	margin-top: var(--size-4-3);
 }
 
+.agent-sessions-efficiency-consent-lead {
+	font-weight: var(--font-medium);
+}
+
+.agent-sessions-efficiency-facts {
+	display: grid;
+	grid-template-columns: minmax(6em, max-content) minmax(0, 1fr);
+	gap: var(--size-4-1) var(--size-4-4);
+}
+
+.agent-sessions-efficiency-fact-label {
+	color: var(--text-muted);
+}
+
+.agent-sessions-efficiency-consent-folded > summary,
 .agent-sessions-efficiency-preview > summary,
 .agent-sessions-efficiency-logdetails > summary,
 .agent-sessions-efficiency-card-evidence > summary {
@@ -3837,20 +4129,66 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	color: var(--text-muted);
 }
 
+.agent-sessions-efficiency-consent-folded > summary {
+	color: var(--text-normal);
+}
+
 .agent-sessions-efficiency-preview pre,
-.agent-sessions-efficiency-card-remedy pre {
+.agent-sessions-efficiency-card pre {
 	max-height: 16em;
+	margin: 0;
 	overflow: auto;
 	white-space: pre-wrap;
 	overflow-wrap: anywhere;
 	font-size: var(--font-ui-smaller);
 }
 
+.agent-sessions-efficiency-logdetails {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+/* The list: a heading that says where it comes from, then the cards. Dimmed while analysing. */
+.agent-sessions-efficiency-list {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-3);
+}
+
+.agent-sessions-efficiency-list-head {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-1);
+}
+
+.agent-sessions-efficiency-list-title {
+	font-weight: var(--font-semibold);
+}
+
+.agent-sessions-efficiency-cards {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-3);
+	transition: opacity 0.2s ease;
+}
+
+.agent-sessions-efficiency-cards.is-busy {
+	opacity: 0.45;
+	pointer-events: none;
+	user-select: none;
+}
+
+/* A finding: what happened, its impact, the cause, the next step, the change, the evidence and
+   the buttons, 12px apart. */
 .agent-sessions-efficiency-card {
-	margin: var(--size-4-2) 0;
-	padding: var(--size-4-3);
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-3);
+	min-width: 0;
+	padding: var(--size-4-4);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
+	font-size: var(--font-ui-small);
 }
 
 .agent-sessions-efficiency-card-head {
@@ -3861,6 +4199,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 }
 
 .agent-sessions-efficiency-card-title {
+	font-size: var(--font-ui-medium);
 	font-weight: var(--font-semibold);
 }
 
@@ -3870,9 +4209,38 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	background-color: var(--background-modifier-hover);
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-normal);
+	white-space: nowrap;
 }
 
-.agent-sessions-efficiency-card-impact,
+.agent-sessions-efficiency-card-impact {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: var(--size-4-2);
+	margin-top: calc(-1 * var(--size-4-2));
+}
+
+.agent-sessions-efficiency-card-amount {
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-bold);
+}
+
+.agent-sessions-efficiency-card-effect {
+	margin-top: calc(-1 * var(--size-4-2));
+}
+
+.agent-sessions-efficiency-card-block {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-1);
+}
+
+.agent-sessions-efficiency-card-remedy ol {
+	margin: 0;
+	padding-left: 1.5em;
+}
+
 .agent-sessions-efficiency-hit,
 .agent-sessions-efficiency-quote,
 .agent-sessions-efficiency-targets {
@@ -3881,7 +4249,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	overflow-wrap: anywhere;
 }
 
-.agent-sessions-efficiency-card-cause {
+.agent-sessions-efficiency-card-evidence > :not(summary) {
 	margin-top: var(--size-4-1);
 }
 
@@ -3902,5 +4270,40 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 .agent-sessions-efficiency-actions {
 	display: flex;
 	justify-content: flex-end;
-	margin-top: var(--size-4-2);
+}
+
+/* Narrow (phone-width) dialogs: the steps keep only their number and name (the number's color
+   carries the mark), and the facts' labels go above their values. */
+@media (max-width: 520px) {
+	.agent-sessions-efficiency-step {
+		flex-direction: column;
+		align-items: center;
+		text-align: center;
+		gap: var(--size-4-1);
+	}
+
+	.agent-sessions-efficiency-step-state {
+		display: none;
+	}
+
+	.agent-sessions-efficiency-totals {
+		grid-template-columns: repeat(auto-fill, minmax(7em, 1fr));
+	}
+
+	.agent-sessions-efficiency-facts {
+		grid-template-columns: minmax(0, 1fr);
+	}
+
+	.agent-sessions-efficiency-fact-value + .agent-sessions-efficiency-fact-label {
+		margin-top: var(--size-4-1);
+	}
+
+	.agent-sessions-efficiency-bar-row {
+		grid-template-columns: minmax(0, 1fr) 4.5em;
+	}
+
+	.agent-sessions-efficiency-bar-row .agent-sessions-efficiency-bar {
+		grid-column: 1 / -1;
+		grid-row: 2;
+	}
 }

@@ -339,7 +339,7 @@ async function efficiencyScenes(page, box, look) {
 	await page.evaluate(`(() => {
 		const cards = [...document.querySelectorAll('.agent-sessions-efficiency-card')];
 		cards.forEach((c) => c.querySelector('.agent-sessions-efficiency-card-evidence')?.setAttribute('open', ''));
-		document.querySelector('.agent-sessions-efficiency-findings').scrollIntoView({ block: "start" });
+		document.querySelector('.agent-sessions-efficiency-list').scrollIntoView({ block: "start" });
 	})()`);
 	await capture(page, "efficiency-result", await dialogClip(page, look, ".agent-sessions-efficiency"));
 

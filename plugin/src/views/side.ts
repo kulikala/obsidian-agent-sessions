@@ -10,6 +10,7 @@ import { t } from "../i18n";
 import { VIEW_TYPE_TERMINAL } from "../sessions/open-session";
 import { TerminalView } from "./terminal";
 import { NewSessionModal } from "../ui/modals";
+import { EfficiencyModal } from "../ui/efficiency-modal";
 import { OrganizeModal } from "../ui/organize-modal";
 import type { Row } from "../sessions/index";
 import { AGENT_IDS, asAgentId } from "../settings";
@@ -224,6 +225,12 @@ export class SideView extends ItemView {
 				.setTitle(t("action.organize"))
 				.setIcon("wand-sparkles")
 				.onClick(() => new OrganizeModal(this.plugin).open())
+		);
+		menu.addItem((item) =>
+			item
+				.setTitle(t("action.analyzeEfficiency"))
+				.setIcon("gauge")
+				.onClick(() => new EfficiencyModal(this.plugin).open())
 		);
 		menu.addItem((item) =>
 			item
