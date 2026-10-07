@@ -302,7 +302,7 @@ Use a test vault. For the first-run items, a vault where the plugin was never en
 - [ ] "Analyze" shows the working line and the log; "Cancel" stops it, the statistics' findings stay, and `~/.agents/sessions/efficiency-run/` is empty afterwards.
 - [ ] After an analysis, the findings show their evidence (sessions open from "Open"), the analysis's own tokens and cost are shown, `~/.agents/sessions/efficiency-run/` is empty, and `~/.agents/sessions/efficiency/last-claude.json` exists; reopening the dialog shows "Previous analysis (…)".
 - [ ] A habit finding has no button; a correction finding has "Copy template". No text in the dialog recommends `/clear`.
-- [ ] "Ask an agent to fix" shows the agent, the session name, the files with the change kind, and the editable request. "Start" opens a new session in the vault in plan mode (`--permission-mode plan`), which shows a diff and stops without writing; the new-session dialog's default agent is unchanged.
+- [ ] "Ask an agent to fix" shows the agent, the session name, the files with the change kind, and the editable request. "Start" opens a new session in the vault in plan mode (`--permission-mode plan`), named "Token efficiency: …" (no `/rename` is typed into it). In a vault Claude Code has not been told to trust, it first asks "Yes, I trust this folder"; once trusted, the session reads the target file, shows a diff and stops without writing (do not approve; end and archive it). The new-session dialog's default agent is unchanged.
 - [ ] Settings: "Usage limit threshold" outside 50–95 and "Budget" outside 1,000,000–100,000,000 are not saved; "Model for the analysis" Opus makes the pane name opus.
 
 ### Agent skills
