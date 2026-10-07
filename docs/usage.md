@@ -309,17 +309,20 @@ Shows where your recent tokens could be saved, why they were spent, and what to 
 
 1. Open the ⋯ menu of the side panel or the Session manager and choose **Analyze token efficiency**, or run **Analyze token efficiency** from the command palette.
 2. The dialog reads the records on this machine (nothing is sent) and shows the range, the totals, where the tokens went, and the findings the statistics found on their own (marked **From the statistics**).
-3. Codex and OpenCode have a pane per provider their conversations used (tabs at the top). To have the agent look into causes and remedies, read its pane (where the excerpts go, how much, and the window's usage), open **Show what is sent** if you like, and press **Analyze**. **Cancel** stops it; the statistics' findings stay.
+3. Codex and OpenCode have a pane per provider their conversations used (tabs at the top; a dot marks a pane being analysed, a check one that is done). To have the agent look into causes and remedies, read the pane's **Analyze in detail** section (what you get, who analyses it, what is sent, the window's usage), open **Show what is sent** if you like, and press **Analyze**. **Cancel** in the status line stops it; the statistics' findings stay. When it is done, the dialog scrolls to the results.
 4. On a finding that a file or setting can fix, press **Ask an agent to fix**, check or edit the request, and press **Start**.
 
 What the dialog shows:
 
+- **The status line** at the top of each pane: what is going on now and what to do next — reading, what the statistics found, an analysis running (with its time and **Cancel**), done, or why it failed.
+- **Three steps**: **Read the records** (runs by itself, sends nothing), **Analyze in detail** (only when you press Analyze), **Results and next steps**. The current one is highlighted; click a step to jump to it.
 - **The range line**: which recent stretch was analysed. If the 5-hour or 7-day window is used at least as much as **Usage limit threshold**, that window; otherwise the newest calls up to the **Budget** in weighted tokens, and at least the last 24 hours, at most 7 days back. The line says which decided: "the last N hours, up to … weighted tokens", "the last 24 hours (at least a day; … were reached sooner)" or "the last 7 days (… not reached)". Then the session count and the tokens.
 - **Weighted tokens**: input, plus cache writes at 1.25 (five minutes) or 2 (one hour), cache reads at 0.1, and output at 5, so different usage compares on one scale.
 - **Where the tokens went**: each call counted once, under the finding that costs it the most; teammates under **Team**, the rest under **Other**.
-- **A finding**: its impact (weighted tokens, dollars when known, share of the range), the estimated saving, the confidence, the cause, the evidence (open it to see the sessions, with **Open** links, and quotes), and what to do.
+- **The list's heading** says where the findings come from: **From the statistics (before analysis)**, **Analysis result** with its time and model, or **Previous analysis**. While an analysis runs, the statistics' findings are dimmed.
+- **A finding**: what happened, its impact (weighted tokens, dollars when known, share of the range), the confidence, the estimated saving, the cause, the next step, the proposed change for a file, and the evidence (open it to see the sessions, with **Open** links, and quotes).
 - **Candidates**: mixed topics in one conversation and correction round trips are found from timing and edits only; they become findings only after **Analyze** confirms them.
-- **The analysis's cost**: shown under the findings; it counts toward that agent's usage limits.
+- **The analysis's cost**: shown under the result's heading; it counts toward that agent's usage limits. Once a result is shown, what Analyze sends folds into one line (model, time, tokens in and out), and **Analyze again** runs it once more.
 - **Previous analysis**: the last result is kept and shown when you open the dialog again for an overlapping range; **This is the same content as the previous analysis** means sending again would send the same text.
 
 What the findings ask of you:
