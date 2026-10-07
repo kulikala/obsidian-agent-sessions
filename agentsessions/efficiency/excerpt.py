@@ -124,6 +124,20 @@ def _reply_text(rec: Optional[dict]) -> str:
     return text.strip()
 
 
+class ClaudeTexts:
+    """Reads a Claude Code session's prompt, reply and command text back by byte offset. The
+    other agents have their own (`sources.py`), with the same three methods."""
+
+    def prompt(self, session: dict, off) -> str:
+        return _prompt_text(read_line(session['main']['path'], off))
+
+    def reply(self, session: dict, off) -> str:
+        return _reply_text(read_line(session['main']['path'], off))
+
+    def command(self, session: dict, tool: dict) -> Optional[str]:
+        return _command(session['main']['path'], tool)
+
+
 def _command(path: str, tool: dict) -> Optional[str]:
     if tool['k'] != 'exec' or tool.get('off') is None:
         return None
@@ -147,11 +161,11 @@ def pick_prompts(prompts: List[dict]) -> List[dict]:
     return [prompts[i] for i in sorted(keep)]
 
 
-def task_excerpt(session: dict, task: dict, mask: Masker, impact_w: float) -> dict:
-    path = session['main']['path']
+def task_excerpt(session: dict, task: dict, mask: Masker, impact_w: float, texts=None) -> dict:
+    texts = texts or ClaudeTexts()
     prompts = []
     for p in pick_prompts(task['prompts']):
-        text = mask(_prompt_text(read_line(path, p['off'])))[:PROMPT_CHARS]
+        text = mask(texts.prompt(session, p['off']))[:PROMPT_CHARS]
         prompts.append({'ref': p['ref'], 'text': text, 'rework': p['rework']})
     replies = []
     for t in task['_turns']:
@@ -159,7 +173,7 @@ def task_excerpt(session: dict, task: dict, mask: Masker, impact_w: float) -> di
         ref = next((p['ref'] for p in task['prompts'] if p['turn'] == t['idx']), None)
         if last is None or ref is None:
             continue
-        text = mask(_reply_text(read_line(path, last['text_off'])))[:REPLY_CHARS]
+        text = mask(texts.reply(session, last['text_off']))[:REPLY_CHARS]
         if text:
             replies.append({'ref': ref.replace('.p', '.r'), 'text': text})
     results = {r['tu']: r for r in session['results']}
@@ -169,14 +183,14 @@ def task_excerpt(session: dict, task: dict, mask: Masker, impact_w: float) -> di
             if len(tools) >= MAX_TOOLS:
                 break
             r = results.get(t.get('id'), {})
-            cmd = _command(path, t) if c['chain'] == 'main' else None
+            cmd = texts.command(session, t) if c['chain'] == 'main' else None
             entry = {'tool': t['n'], 'kind': t['k'], 'chain': 'main' if c['chain'] == 'main' else 'sub',
                      'path': mask.path(normalize.abs_path(t.get('p'), c.get('cwd'))) if t.get('p') else None,
                      'result_tokens': r.get('est'), 'error': bool(r.get('err'))}
             if cmd:
                 entry['cmd'] = mask(cmd)[:COMMAND_CHARS]
             tools.append(entry)
-    return {'task': task['id'], 'session': session['id'], 'provider': 'anthropic',
+    return {'task': task['id'], 'session': session['id'], 'provider': session.get('provider', 'anthropic'),
             'w': task['w'], 'calls': task['calls'], 'impact_w': round(impact_w),
             'prompts': prompts, 'replies': replies, 'tools': tools}
 
@@ -185,7 +199,7 @@ def size(items: List[dict]) -> int:
     return len(json.dumps(items, ensure_ascii=False))
 
 
-def build(analysed: List[dict], hits: List[dict], mask: Masker, limit: int = LIMIT) -> List[dict]:
+def build(analysed: List[dict], hits: List[dict], mask: Masker, limit: int = LIMIT, texts=None) -> List[dict]:
     """The excerpts of the range: tasks behind hits, `needs_llm` ones first, largest impact
     next, within `limit` characters."""
     by_task: Dict[str, dict] = {}
@@ -201,7 +215,7 @@ def build(analysed: List[dict], hits: List[dict], mask: Masker, limit: int = LIM
             if t['id'] in by_task and t['in_range']:
                 found[t['id']] = (a['session'], t)
     order = sorted(found, key=lambda tid: (not by_task[tid]['llm'], -by_task[tid]['w'], tid))[:MAX_TASKS]
-    items = [task_excerpt(found[tid][0], found[tid][1], mask, by_task[tid]['w']) for tid in order]
+    items = [task_excerpt(found[tid][0], found[tid][1], mask, by_task[tid]['w'], texts) for tid in order]
     while size(items) > limit and len(items) > 1:
         smallest = min(range(len(items)), key=lambda i: (items[i]['impact_w'], i))
         items.pop(smallest)

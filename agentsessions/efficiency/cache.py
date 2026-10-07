@@ -1,6 +1,8 @@
 """Per-transcript cache of file records (`normalize.read_file`).
 
-One file per transcript: `<runtime>/efficiency/cache/<sha1(path)>.json`, holding the
+One file per transcript: `<runtime>/efficiency/cache/<sha1(path)>.json` (Codex and OpenCode in
+`cache/codex/` and `cache/opencode/`; an OpenCode session's key is `opencode:<id>`, its "mtime"
+the session's `time_updated`), holding the
 transcript's path, size, mtime, `EFFICIENCY_VERSION` and its file record. A file record has
 no conversation text (prompts, replies, commands): lengths, times, flags, tool kinds,
 paths relative to the session's folder, hashes, and the byte offsets `excerpt.py` uses to
@@ -17,7 +19,7 @@ import hashlib
 import json
 import os
 import tempfile
-from typing import Iterable, List, Optional, Tuple
+from typing import Callable, Iterable, List, Optional, Tuple
 
 from .. import config
 from ..sessions.scan import RACY_WINDOW
@@ -29,8 +31,10 @@ MAX_RECORD_BYTES = 1 << 20
 BUCKET_SECONDS = 600
 
 
-def cache_dir() -> str:
-    return os.path.join(config.RUNTIME_DIR, 'efficiency', 'cache')
+def cache_dir(agent: str = 'claude') -> str:
+    """Claude Code's records directly in `cache/`, the other agents' in `cache/<agent>/`."""
+    base = os.path.join(config.RUNTIME_DIR, 'efficiency', 'cache')
+    return base if agent == 'claude' else os.path.join(base, agent)
 
 
 def entry_path(path: str, folder: Optional[str] = None) -> str:
@@ -48,25 +52,36 @@ class Reader:
         self.parsed_files = 0
         self.hits = 0
 
-    def record(self, path: str, session: Optional[str] = None) -> Optional[dict]:
+    def record(self, path: str, session: Optional[str] = None,
+               load: Optional[Callable[[str], dict]] = None) -> Optional[dict]:
+        """The file record of the transcript at `path`, read with `load` (Claude Code's reader
+        when left out) unless the cache holds it for the same size and mtime."""
         try:
             st = os.stat(path)
         except OSError:
             return None
-        target = entry_path(path, self.folder)
-        trust = self.now - st.st_mtime >= RACY_WINDOW
+        if load is None:
+            def load(p):
+                return normalize.read_file(p, session=session)
+        return self.keyed(path, st.st_size, st.st_mtime, lambda: load(path))
+
+    def keyed(self, key: str, size: int, mtime: float, load: Callable[[], dict]) -> dict:
+        """The record cached under `key` (a path, or `opencode:<session id>`) for `size` and
+        `mtime`, or `load()`'s, then cached."""
+        target = entry_path(key, self.folder)
+        trust = self.now - mtime >= RACY_WINDOW
         if trust:
             entry = _load(target)
-            if (entry and entry.get('version') == EFFICIENCY_VERSION and entry.get('path') == path
-                    and entry.get('size') == st.st_size and entry.get('mtime') == st.st_mtime):
+            if (entry and entry.get('version') == EFFICIENCY_VERSION and entry.get('path') == key
+                    and entry.get('size') == size and entry.get('mtime') == mtime):
                 self.hits += 1
                 return entry['record']
-        rec = normalize.read_file(path, session=session)
-        self.parsed_bytes += st.st_size
+        rec = load()
+        self.parsed_bytes += size
         self.parsed_files += 1
         rec = shrink(rec)
-        _save(target, {'version': EFFICIENCY_VERSION, 'path': path, 'size': st.st_size,
-                       'mtime': st.st_mtime, 'record': rec})
+        _save(target, {'version': EFFICIENCY_VERSION, 'path': key, 'size': size,
+                       'mtime': mtime, 'record': rec})
         return rec
 
 
@@ -126,8 +141,10 @@ def shrink(rec: dict) -> dict:
     for c in rec['calls']:
         key = int(c['ts'] // BUCKET_SECONDS) if c['ts'] is not None else None
         if current is not None and current['_bucket'] == key:
-            for k in ('in', 'cr', 'cw', 'cw1h', 'out', 'th', 'vis'):
-                current[k] += c.get(k, 0)
+            for k in ('in', 'cr', 'cw', 'cw1h', 'out', 'th', 'vis', 'rs'):
+                current[k] = current.get(k, 0) + c.get(k, 0)
+            if c.get('usd') is not None or current.get('usd') is not None:
+                current['usd'] = (current.get('usd') or 0.0) + (c.get('usd') or 0.0)
             current['ctx'] = c['ctx']
             current['tools'] += [_slim(t) for t in c['tools']]
             current['edits'] += c['edits']
@@ -144,6 +161,7 @@ def shrink(rec: dict) -> dict:
 
 def _slim(tool: dict) -> dict:
     return {k: v for k, v in tool.items() if k in ('n', 'k', 'p', 'id', 'c', 'model')}
+
 
 
 def list_sessions(projects_dir: str, min_mtime: float) -> List[Tuple[str, str, float]]:

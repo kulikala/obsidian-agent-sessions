@@ -62,6 +62,7 @@ def hit_id(detector: str, session: str, origin: str) -> str:
 def assemble(main: dict, subs: List[dict]) -> dict:
     """One session from its file records: every call and result tagged with its chain."""
     sid = main.get('session') or ''
+    agent = main.get('agent') or 'claude'
     calls: List[dict] = []
     results: List[dict] = []
     edits: List[dict] = []
@@ -72,7 +73,7 @@ def assemble(main: dict, subs: List[dict]) -> dict:
                                            if e['k'] == 'compaction' and e['ts'] is not None)
         cwd = rec.get('cwd') or main.get('cwd')
         for c in rec.get('calls', []):
-            item = dict(c, chain=rec['chain'], chain_kind=rec['kind'], cwd=cwd)
+            item = dict(c, chain=rec['chain'], chain_kind=rec['kind'], cwd=cwd, agent=agent)
             calls.append(item)
             for e in c.get('edits', []):
                 edits.append({'ts': c['ts'], 'call': c['id'], 'chain': rec['chain'],
@@ -83,7 +84,8 @@ def assemble(main: dict, subs: List[dict]) -> dict:
     edits.sort(key=lambda e: (e['ts'] is None, e['ts'] or 0))
     _mark_reverts(edits)
     return {
-        'id': sid, 'cwd': main.get('cwd'), 'version': main.get('version'),
+        'id': sid, 'agent': agent, 'provider': _main_provider(calls, agent),
+        'cwd': main.get('cwd'), 'version': main.get('version'),
         'main': main, 'subs': list(subs), 'calls': calls, 'results': results, 'edits': edits,
         'prompts': sorted(main.get('prompts', []), key=lambda p: (p['ts'] is None, p['ts'] or 0)),
         'events': sorted(main.get('events', []), key=lambda e: (e['ts'] is None, e['ts'] or 0)),
@@ -91,6 +93,21 @@ def assemble(main: dict, subs: List[dict]) -> dict:
         'team': any(r['kind'] == 'teammate' for r in subs)
                 or any(e['k'] == 'team_start' for e in main.get('events', [])),
     }
+
+
+DEFAULT_PROVIDER = {'claude': 'anthropic', 'codex': 'openai', 'opencode': 'opencode'}
+
+
+def _main_provider(calls: List[dict], agent: str) -> str:
+    """The provider the session spent the most weighted tokens with (Claude Code: anthropic)."""
+    spent: Dict[str, float] = {}
+    for c in calls:
+        p = c.get('provider')
+        if p:
+            spent[p] = spent.get(p, 0.0) + normalize.w_of(c)
+    if not spent:
+        return DEFAULT_PROVIDER.get(agent, agent)
+    return max(sorted(spent), key=lambda p: spent[p])
 
 
 def _mark_reverts(edits: List[dict]) -> None:
@@ -310,7 +327,7 @@ def task_record(session: dict, group: List[dict], base: dict, rng: Tuple[float, 
     subagents = {c['chain'] for c in all_calls if c['chain_kind'] == 'subagent'}
     rework_turns = [t for t in group if t['rework']]
     return {
-        'id': tid, 'session': session['id'], 'provider': 'anthropic',
+        'id': tid, 'session': session['id'], 'provider': session.get('provider', 'anthropic'),
         'first_ts': (p0['ts'] if p0 is not None else (all_calls[0]['ts'] if all_calls else None)),
         'last_ts': max((c['ts'] for c in all_calls if c['ts'] is not None), default=None),
         'turns': len(group), 'all_calls': len(all_calls), 'calls': len(ranged),

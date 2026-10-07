@@ -82,9 +82,17 @@ export type AnalysisFailure =
 	| { kind: "timeout" }
 	| { kind: "llm"; detail: string };
 
-/** The reset time (epoch seconds) of a usage limit Claude Code reported in its stream, or
- * `undefined` when the run did not stop on one. Reads a `rate_limit_event` whose status is
- * `rejected` (its `resetsAt`), or an error `result` saying a limit was hit. */
+const LIMIT_RE = /usage limit|hit your .*limit/i;
+
+function errorText(e: Record<string, unknown>): string {
+	const err = (e.error ?? {}) as Record<string, unknown>;
+	return [e.message, err.message].filter((x): x is string => typeof x === "string").join(" ");
+}
+
+/** The reset time (epoch seconds) of a usage limit the run reported in its stream, or `undefined`
+ * when the run did not stop on one. Claude Code: a `rate_limit_event` whose status is `rejected`
+ * (its `resetsAt`), or an error `result` saying a limit was hit. Codex: an `error` or
+ * `turn.failed` event with its usage-limit message (no reset time). */
 export function rateLimitOf(stdout: string): number | null | undefined {
 	let hit = false;
 	let resetsAt: number | null = null;
@@ -99,9 +107,30 @@ export function rateLimitOf(stdout: string): number | null | undefined {
 			}
 		} else if (e.type === "result" && e.is_error === true && typeof e.result === "string" && /hit your .*limit/i.test(e.result)) {
 			hit = true;
+		} else if ((e.type === "error" || e.type === "turn.failed") && LIMIT_RE.test(errorText(e))) {
+			// Codex `exec --json`: its own usage-limit message on an error or a failed turn.
+			hit = true;
 		}
 	}
 	return hit ? resetsAt : undefined;
+}
+
+const MODEL_UNAVAILABLE_RE =
+	/model_not_found|unsupported model|\bmodel\b[^\n]{0,120}?\b(not supported|not found|does not exist|not available|unavailable|no access|not have access|not allowed)/i;
+
+/** Whether a failed run says its model isn't available to this account (Codex's own error text,
+ * on an `error` / `turn.failed` event or stderr): the analysis then tries the next model. */
+export function modelUnavailable(err: unknown): boolean {
+	const parts = [err instanceof Error ? err.message : String(err)];
+	if (err instanceof HeadlessError) {
+		parts.push(err.stderr);
+		for (const e of parseEvents(err.stdout)) {
+			if (e.type === "error" || e.type === "turn.failed") {
+				parts.push(errorText(e));
+			}
+		}
+	}
+	return parts.some((p) => MODEL_UNAVAILABLE_RE.test(p));
 }
 
 /** What went wrong with one analysis. `aborted` is whether the user cancelled it. */

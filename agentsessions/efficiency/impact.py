@@ -1,7 +1,9 @@
 """Impact of a hit, the estimated saving, and the breakdown by main cause (D-7).
 
 `impact_w` is in weighted tokens (D-4, `normalize.w_of`); `impact_usd` is the same formula
-priced with `pricing.price_of`. Each hit also carries `_contrib` -- the weighted tokens it
+priced with `pricing.price_of` for the call's agent, or `None` when a model has no price (a Codex
+model missing from the table, every OpenCode call: OpenCode records its own cost per call, which
+`call_usd` uses, but no unit prices). Each hit also carries `_contrib` -- the weighted tokens it
 puts on each call it covers -- so the breakdown can give every call to the one cause that
 costs it the most. Hits that wait for the model (`needs_llm`) don't take part in the
 breakdown: they are only candidates until the model confirms them.
@@ -22,13 +24,35 @@ SAVING_RATE = {
 }
 
 
-def prices(model: Optional[str]) -> Dict[str, Optional[float]]:
-    return pricing.price_of(model, agent='claude')
+def prices(call: dict) -> Optional[Dict[str, Optional[float]]]:
+    """The unit prices of `call`'s model, or `None` when there are none."""
+    agent = call.get('agent') or 'claude'
+    if agent == 'opencode':
+        return None
+    p = pricing.price_of(call.get('model'), agent=agent)
+    return None if p.get('unknown') else p
 
 
-def read_usd(tokens: float, model: Optional[str]) -> float:
-    """What reading `tokens` from the cache once costs."""
-    return tokens * prices(model)['cache_read'] / MTOK
+def usd_sum(values) -> Optional[float]:
+    """The sum, or `None` when any value is unknown."""
+    total = 0.0
+    for v in values:
+        if v is None:
+            return None
+        total += v
+    return total
+
+
+def read_usd(tokens: float, call: dict) -> Optional[float]:
+    """What reading `tokens` from the cache once costs at `call`'s model."""
+    p = prices(call)
+    return tokens * p['cache_read'] / MTOK if p else None
+
+
+def write5_usd(tokens: float, call: dict) -> Optional[float]:
+    """What writing `tokens` to the cache (the 5-minute tier) costs at `call`'s model."""
+    p = prices(call)
+    return tokens * p['cache_5m'] / MTOK if p else None
 
 
 def write_w(call: dict) -> float:
@@ -37,14 +61,25 @@ def write_w(call: dict) -> float:
     return call['cw1h'] * (2.0 - P_READ) + cw5 * (1.25 - P_READ)
 
 
-def write_usd(call: dict) -> float:
-    p = prices(call.get('model'))
+def write_usd(call: dict) -> Optional[float]:
+    p = prices(call)
+    if p is None:
+        return None
     cw5 = call['cw'] - call['cw1h']
     return (call['cw1h'] * (p['cache_1h'] - p['cache_read'])
             + cw5 * (p['cache_5m'] - p['cache_read'])) / MTOK
 
 
-def call_usd(call: dict) -> float:
+def call_usd(call: dict) -> Optional[float]:
+    """The call's cost: OpenCode's own record, otherwise priced from the table (`None` for a
+    model without a price)."""
+    agent = call.get('agent') or 'claude'
+    if agent == 'opencode':
+        return call.get('usd') if isinstance(call.get('usd'), (int, float)) else None
+    if agent == 'codex':
+        usage = {'input_tokens': call['in'], 'output_tokens': call['out'],
+                 'cache_read_input_tokens': call['cr'], 'cache_creation_input_tokens': call['cw']}
+        return pricing.cost(usage, call.get('model'), agent='codex')
     usage = {'input_tokens': call['in'], 'output_tokens': call['out'],
              'cache_read_input_tokens': call['cr'], 'cache_creation_input_tokens': call['cw'],
              'cache_creation': {'ephemeral_1h_input_tokens': call['cw1h']}}

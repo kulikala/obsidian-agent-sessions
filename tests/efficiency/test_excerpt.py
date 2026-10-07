@@ -51,7 +51,7 @@ class LimitTest(unittest.TestCase):
         limit = excerpt.size(items) - 10
         orig_build = excerpt.task_excerpt
         try:
-            excerpt.task_excerpt = lambda s, t, m, w: dict(next(i for i in items if i['task'] == t['id']))
+            excerpt.task_excerpt = lambda s, t, m, w, texts=None: dict(next(i for i in items if i['task'] == t['id']))
             analysed = [{'session': {'id': 's'}, 'tasks': [{'id': i['task'], 'in_range': True} for i in items]}]
             hits = [{'task': i['task'], 'impact_w': i['impact_w'], 'needs_llm': False} for i in items]
             out = excerpt.build(analysed, hits, excerpt.Masker('/h', None), limit=limit)

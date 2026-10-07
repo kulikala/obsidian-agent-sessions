@@ -425,6 +425,8 @@ def _mark_file_mentions(rec_out: dict, texts: List[str]) -> None:
 
 def w_of(call: dict) -> float:
     """Weighted tokens of one call (D-4): cache writes at 1.25 (5 minutes) or 2.0 (1 hour),
-    cache reads at 0.1, output at 5."""
+    cache reads at 0.1, output at 5, and reasoning recorded apart from the output (`rs`,
+    OpenCode) at 5 as well."""
     cw5 = call['cw'] - call['cw1h']
-    return call['in'] + 1.25 * cw5 + 2.0 * call['cw1h'] + 0.1 * call['cr'] + 5 * call['out']
+    return (call['in'] + 1.25 * cw5 + 2.0 * call['cw1h'] + 0.1 * call['cr']
+            + 5 * (call['out'] + call.get('rs', 0)))

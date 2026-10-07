@@ -271,3 +271,17 @@ export function addUsage(a: HeadlessUsage | null, b: HeadlessUsage | null): Head
 		usd: a.usd === null && b.usd === null ? null : (a.usd ?? 0) + (b.usd ?? 0),
 	};
 }
+
+const CODEX_TOOL_ITEMS = new Set(["command_execution", "file_change", "mcp_tool_call", "web_search"]);
+
+/** Whether a finished run used tools (a run is asked to answer from the data it is given): Codex
+ * `item.*` events of a command, file change, MCP call or web search; OpenCode `tool_use` events.
+ * Claude Code's run has no tools to use. */
+export function usedTools(agent: AgentId, stdout: string): boolean {
+	return parseEvents(stdout).some((e) => {
+		if (agent === "codex") {
+			return typeof e.type === "string" && e.type.startsWith("item.") && CODEX_TOOL_ITEMS.has(asString(asRecord(e.item).type));
+		}
+		return agent === "opencode" && e.type === "tool_use";
+	});
+}

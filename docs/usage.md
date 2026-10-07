@@ -309,7 +309,7 @@ Shows where your recent tokens could be saved, why they were spent, and what to 
 
 1. In the Session manager, open the ⋯ menu and choose **Analyze token efficiency**, or run **Analyze token efficiency** from the command palette.
 2. The dialog reads the records on this machine (nothing is sent) and shows the range, the totals, where the tokens went, and the findings the statistics found on their own (marked **From the statistics**).
-3. To have the agent look into causes and remedies, read its pane (where the excerpts go, how much, and the window's usage), open **Show what is sent** if you like, and press **Analyze**. **Cancel** stops it; the statistics' findings stay.
+3. Codex and OpenCode have a pane per provider their conversations used (tabs at the top). To have the agent look into causes and remedies, read its pane (where the excerpts go, how much, and the window's usage), open **Show what is sent** if you like, and press **Analyze**. **Cancel** stops it; the statistics' findings stay.
 4. On a finding that a file or setting can fix, press **Ask an agent to fix**, check or edit the request, and press **Start**.
 
 What the dialog shows:
@@ -324,7 +324,7 @@ What the dialog shows:
 
 What the findings ask of you:
 
-- **Ask an agent to fix** starts a new session in the vault, named "Token efficiency: …", in plan mode. It shows the change as a diff and waits for your approval before writing; only the listed files may change. The change applies to conversations started afterwards.
+- **Ask an agent to fix** starts a new session in the vault, named "Token efficiency: …", in plan mode (Codex: a read-only sandbox that asks before writing; OpenCode: the plan agent — switch to build with Tab after you approve). It shows the change as a diff and waits for your approval before writing; only the listed files may change. The change applies to conversations started afterwards.
 - Advice about habits (when to start a new conversation, which model to use, how to write a request) has no button. To switch to a new conversation, open a new tab. **Copy template** copies a request outline (target, expected result, how to check, what not to touch).
 - If the records are too few (under 100 prompts in 14 days), some checks are skipped and the dialog says so.
 - What is sent, and where: see [What Token efficiency sends](../README.md#what-token-efficiency-sends).

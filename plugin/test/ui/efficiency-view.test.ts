@@ -10,6 +10,7 @@ import {
 	classifyAnalysisFailure,
 	classifyStatsFailure,
 	initialState,
+	modelUnavailable,
 	rateLimitOf,
 	shownFindings,
 	transition,
@@ -85,6 +86,27 @@ describe("failures", () => {
 		const textOnly = JSON.stringify({ type: "result", is_error: true, result: "You've hit your weekly limit" });
 		expect(classifyAnalysisFailure(new HeadlessError("x", textOnly), false)).toEqual({ kind: "rateLimit", resetsAt: null });
 		expect(rateLimitOf(CLAUDE_RESULT)).toBeUndefined();
+	});
+
+	it("tells a model this account can't use from other failures", () => {
+		const refused = JSON.stringify({ type: "error", message: "The 'gpt-6-sol' model is not supported when using Codex with a ChatGPT account." });
+		expect(modelUnavailable(new HeadlessError("codex reported an error", refused))).toBe(true);
+		expect(modelUnavailable(new HeadlessError("x", "", "Error: model_not_found"))).toBe(true);
+		const failed = JSON.stringify({ type: "turn.failed", error: { message: "stream disconnected before completion" } });
+		expect(modelUnavailable(new HeadlessError("x", failed))).toBe(false);
+		expect(modelUnavailable(new Error("timed out"))).toBe(false);
+	});
+
+	it("reads Codex's usage-limit failure", () => {
+		const failed = [
+			JSON.stringify({ type: "thread.started", thread_id: "x" }),
+			JSON.stringify({ type: "error", message: "You've hit your usage limit. Try again later." }),
+			JSON.stringify({ type: "turn.failed", error: { message: "You've hit your usage limit." } }),
+		].join("\n");
+		expect(rateLimitOf(failed)).toBeNull();
+		expect(classifyAnalysisFailure(new HeadlessError("x", failed), false)).toEqual({ kind: "rateLimit", resetsAt: null });
+		const other = JSON.stringify({ type: "turn.failed", error: { message: "stream disconnected" } });
+		expect(rateLimitOf(other)).toBeUndefined();
 	});
 });
 

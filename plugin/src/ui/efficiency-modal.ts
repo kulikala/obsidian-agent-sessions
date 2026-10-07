@@ -1,10 +1,13 @@
 // "Analyze token efficiency": runs `json efficiency` (local, nothing sent), shows the range, the
 // totals, the breakdown and the statistics' own findings, and -- only when the user presses
-// Analyze in an agent's pane -- sends that run's masked summary and excerpts to the same agent
-// (`claude -p`, in a fresh empty folder), checks the reply (`sessions/efficiency.ts`) and shows the
-// findings as cards. A `fix` card can start a session in the vault, in plan mode, with the request
-// shown and editable first. States and failures: `efficiency-view.ts`. The last result per agent
-// is saved under `<runtime>/efficiency/` and shown again next time.
+// Analyze in a pane -- sends that pane's masked summary and excerpts to the same agent and provider
+// (`claude -p`, `codex exec`, `opencode run`, in a fresh empty folder), checks the reply
+// (`sessions/efficiency.ts`) and shows the findings as cards. There is one pane per agent, and for
+// Codex and OpenCode one per provider their conversations used, so a conversation is only ever
+// analysed where it was held. A `fix` card can start a session in the vault, in plan mode (or the
+// agent's nearest), with the request shown and editable first. States and failures:
+// `efficiency-view.ts`. The last result per pane is saved under `<runtime>/efficiency/` and shown
+// again next time.
 
 import { Modal, Notice, Platform, Setting } from "obsidian";
 import type AgentSessionsPlugin from "../main";
@@ -16,29 +19,36 @@ import { getLang, t, type MessageKey } from "../i18n";
 import { formatDateTimeShort } from "../i18n/datetime";
 import { en } from "../i18n/locales/en";
 import {
+	analysisArgs,
+	analysisModels,
 	analysisPrompt,
 	candidates,
 	estimateTokens,
 	fixPrompt,
 	fixSessionName,
 	effectText,
+	paneBlock,
+	panesOf,
 	payloadOf,
 	rangeLine,
 	requestTemplate,
 	runAnalysis,
 	statFindings,
+	usageWindow,
 	type EffAgent,
 	type EffHit,
 	type EffOutput,
+	type EffPane,
 	type Finding,
 } from "../sessions/efficiency";
 import { detectorMetrics, loadResult, overlaps, payloadHash, saveResult, type SavedResult } from "../sessions/efficiency-store";
-import type { HeadlessUsage } from "../sessions/organize-agent";
+import { usedTools, type HeadlessUsage } from "../sessions/organize-agent";
 import { sessionDisplayName } from "../sessions/name";
 import { parseEnvLines, type AgentId } from "../settings";
 import { formatCost, formatK, formatNumber } from "../usage/usage";
 import {
 	analysisFailureMessage,
+	modelUnavailable,
 	classifyAnalysisFailure,
 	classifyStatsFailure,
 	hasData,
@@ -52,11 +62,17 @@ import {
 
 const ANALYSIS_TIMEOUT_MS = 300_000;
 const AGENT_NAMES: Record<string, string> = { claude: "Claude Code", codex: "Codex", opencode: "OpenCode" };
+const AGENTS: AgentId[] = ["claude", "codex", "opencode"];
 /** Detectors whose advice is a request template the user can copy. */
 const TEMPLATE_DETECTORS = new Set(["E16", "E17"]);
 
 interface Pane {
-	agent: string;
+	/** `claude`, or `<agent>-<provider>`: the dialog state, the saved result and the tab. */
+	key: string;
+	agent: AgentId;
+	info: EffPane;
+	/** The model the last analysis ran on, when Codex refused the first choice. */
+	usedModel?: string | null;
 	block: EffAgent;
 	payload: string;
 	prompt: string;
@@ -78,6 +94,7 @@ export class EfficiencyModal extends Modal {
 	private state: DialogState = initialState();
 	private panes = new Map<string, Pane>();
 	private bodyEl!: HTMLElement;
+	private tabsEl: HTMLElement | null = null;
 	private ticker: number | null = null;
 
 	constructor(private plugin: AgentSessionsPlugin) {
@@ -123,7 +140,7 @@ export class EfficiencyModal extends Modal {
 				throw new Error("not installed");
 			}
 			out = (await efficiency(this.plugin.agentSessionsPath(), this.plugin.vaultPath(), {
-				agent: "claude",
+				agents: AGENTS.filter((a) => s.agents[a]?.enabled),
 				threshold: s.efficiencyThreshold,
 				budget: s.efficiencyBudget,
 			})) as EffOutput;
@@ -135,15 +152,41 @@ export class EfficiencyModal extends Modal {
 		}
 		this.stopTicker();
 		reading.remove();
-		const agents = Object.keys(out.agents ?? {}).filter((a) => a === "claude" && s.agents[a as AgentId]?.enabled);
-		this.dispatch({ type: "statsDone", agents });
-		if (agents.length === 0) {
+		const agents = AGENTS.filter((a) => out.agents?.[a] && s.agents[a]?.enabled);
+		const panes = agents.flatMap((agent) => panesOf(agent, out.agents[agent]).map((info) => ({ agent, info })));
+		this.dispatch({ type: "statsDone", agents: panes.map((p) => p.info.key) });
+		if (panes.length === 0) {
 			this.bodyEl.createDiv({ cls: "agent-sessions-efficiency-error", text: t("efficiency.error.noData") });
 			return;
 		}
-		for (const agent of agents) {
-			this.buildPane(agent, out.agents[agent]);
+		if (panes.length > 1) {
+			this.tabsEl = this.bodyEl.createDiv({ cls: "agent-sessions-efficiency-tabs" });
 		}
+		for (const { agent, info } of panes) {
+			this.buildPane(agent, info, paneBlock(out.agents[agent], info));
+		}
+		this.selectPane(panes[0].info.key);
+	}
+
+	/** Shows one pane; the tab row (two panes or more) marks it. */
+	private selectPane(key: string): void {
+		for (const pane of this.panes.values()) {
+			pane.el.toggle(pane.key === key);
+		}
+		this.tabsEl?.querySelectorAll("button").forEach((b) => b.toggleClass("is-active", b.dataset.key === key));
+	}
+
+	private paneName(pane: Pick<Pane, "agent" | "info">): string {
+		const name = AGENT_NAMES[pane.agent] ?? pane.agent;
+		return pane.agent === "claude" || !pane.info.provider ? name : t("efficiency.tabProvider", { agent: name, provider: pane.info.provider });
+	}
+
+	/** The model the analysis uses, as shown before sending. */
+	private modelName(pane: Pane): string {
+		if (pane.agent === "claude") {
+			return this.plugin.settings.efficiencyModel;
+		}
+		return pane.usedModel ?? pane.info.model ?? t("efficiency.defaultModel");
 	}
 
 	private stopTicker(): void {
@@ -177,9 +220,14 @@ export class EfficiencyModal extends Modal {
 
 	// ---- One agent's pane ------------------------------------------------------------------
 
-	private buildPane(agent: string, block: EffAgent): void {
+	private buildPane(agent: AgentId, info: EffPane, block: EffAgent): void {
 		const el = this.bodyEl.createDiv({ cls: "agent-sessions-efficiency-pane" });
-		const name = AGENT_NAMES[agent] ?? agent;
+		const name = this.paneName({ agent, info });
+		if (this.tabsEl) {
+			const tab = this.tabsEl.createEl("button", { text: name });
+			tab.dataset.key = info.key;
+			tab.addEventListener("click", () => this.selectPane(info.key));
+		}
 		el.createDiv({ cls: "agent-sessions-efficiency-range", text: rangeLine(name, block) });
 		if (block.limits.truncated) {
 			el.createDiv({
@@ -195,7 +243,9 @@ export class EfficiencyModal extends Modal {
 		}
 		const payload = payloadOf(block);
 		const pane: Pane = {
+			key: info.key,
 			agent,
+			info,
 			block,
 			payload,
 			prompt: analysisPrompt(payload, getLang()),
@@ -212,7 +262,7 @@ export class EfficiencyModal extends Modal {
 			abort: null,
 			ticker: null,
 		};
-		this.panes.set(agent, pane);
+		this.panes.set(info.key, pane);
 		if (!hasData(block)) {
 			pane.statusEl.setText(t("efficiency.error.noData"));
 			return;
@@ -227,7 +277,7 @@ export class EfficiencyModal extends Modal {
 		pane.workingEl.toggle(false);
 		pane.findingsEl = el.createDiv({ cls: "agent-sessions-efficiency-findings" });
 		pane.costEl = el.createDiv({ cls: "agent-sessions-efficiency-cost" });
-		const saved = loadResult(efficiencyDir(), agent);
+		const saved = loadResult(efficiencyDir(), info.key);
 		if (saved && overlaps(saved, block.range)) {
 			pane.previous = saved;
 		}
@@ -284,26 +334,24 @@ export class EfficiencyModal extends Modal {
 			el.createDiv({ cls: "agent-sessions-efficiency-note", text: t("efficiency.consent.nothing") });
 			return;
 		}
-		const name = AGENT_NAMES[pane.agent] ?? pane.agent;
+		const name = this.paneName(pane);
 		const sessions = new Set(block.excerpts.map((e) => e.session)).size;
+		// A local provider's model reads it on this machine: nothing goes to a service.
 		el.createDiv({
-			text: t("efficiency.consent.body", {
+			text: t(pane.info.local ? "efficiency.consent.bodyLocalRead" : "efficiency.consent.body", {
 				agent: name,
-				model: this.plugin.settings.efficiencyModel,
+				model: this.modelName(pane),
 				sessions,
 				chars: pane.prompt.length.toLocaleString(getLang()),
 				tokens: formatK(estimateTokens(pane.prompt)),
 			}),
 		});
-		const windowKey = block.range.rule === "seven_day" ? "seven_day" : "five_hour";
-		const usage = block.range.windows?.[windowKey]?.used_percentage;
-		if (typeof usage === "number") {
-			el.createDiv({
-				text: t("efficiency.consent.usage", {
-					window: t(`efficiency.consent.window.${windowKey}` as MessageKey),
-					percent: Math.round(usage),
-				}),
-			});
+		if (pane.info.local) {
+			el.createDiv({ text: t("efficiency.consent.bodyLocal", { model: this.modelName(pane) }) });
+		}
+		const usage = usageWindow(block.range);
+		if (usage) {
+			el.createDiv({ text: t("efficiency.consent.usage", { window: usage.label, percent: Math.round(usage.percent) }) });
 		}
 		const waiting = Object.entries(candidates(block.hits)).filter(([d]) => this.hasKey(`efficiency.candidate.${d}`));
 		if (waiting.length > 0) {
@@ -319,7 +367,7 @@ export class EfficiencyModal extends Modal {
 		const details = el.createEl("details", { cls: "agent-sessions-efficiency-preview" });
 		details.createEl("summary", { text: t("efficiency.consent.preview") });
 		details.createEl("pre", { text: pane.prompt });
-		const pstate = this.state.panes[pane.agent];
+		const pstate = this.state.panes[pane.key];
 		const send = actionButton(el, t(pstate === "result" ? "efficiency.consent.again" : "efficiency.consent.send"), true);
 		send.disabled = pstate === "working";
 		send.addEventListener("click", () => void this.analyze(pane));
@@ -348,7 +396,7 @@ export class EfficiencyModal extends Modal {
 	}
 
 	private async analyze(pane: Pane): Promise<void> {
-		this.dispatch({ type: "start", agent: pane.agent });
+		this.dispatch({ type: "start", agent: pane.key });
 		const abort = new AbortController();
 		pane.abort = abort;
 		pane.statusEl.setText("");
@@ -356,7 +404,7 @@ export class EfficiencyModal extends Modal {
 		pane.logEl.empty();
 		pane.workingEl.toggle(true);
 		this.renderConsent(pane);
-		const name = AGENT_NAMES[pane.agent] ?? pane.agent;
+		const name = this.paneName(pane);
 		let received = 0;
 		const started = Date.now();
 		const tick = (): void => {
@@ -369,7 +417,7 @@ export class EfficiencyModal extends Modal {
 		cancel.addEventListener("click", () => abort.abort());
 		this.log(pane, t("efficiency.log.asked", { agent: name }));
 		try {
-			const agent = pane.agent as AgentId;
+			const agent = pane.agent;
 			const settings = this.plugin.settings.agents[agent];
 			const bin = await resolveAgentBinary(agent, settings.path, Platform.isMacOS).catch((err: Error) => {
 				// Not found on this machine: the same failure as a spawn that can't find it.
@@ -383,7 +431,13 @@ export class EfficiencyModal extends Modal {
 				},
 				bin
 			);
-			const outcome = await runAnalysis(pane.prompt, pane.block, (prompt) =>
+			let tools = false;
+			// Codex: the strongest model Codex lists first; one it refuses as unavailable gives way
+			// to the next (the choice then stays for the retry and the saved result).
+			const models = analysisModels(pane.info);
+			let current = 0;
+			pane.usedModel = null;
+			const runWith = (prompt: string, model: string | null) =>
 				inRunFolder(efficiencyRunDir(), (cwd) =>
 					runHeadless({
 						agent,
@@ -392,19 +446,39 @@ export class EfficiencyModal extends Modal {
 						cwd,
 						prompt,
 						model: this.plugin.settings.efficiencyModel,
+						extraArgs: analysisArgs({ ...pane.info, model }),
 						timeoutMs: ANALYSIS_TIMEOUT_MS,
 						signal: abort.signal,
 						onProgress: (chars) => (received = chars),
 					})
-				)
-			);
+				);
+			const outcome = await runAnalysis(pane.prompt, pane.block, async (prompt) => {
+				for (;;) {
+					try {
+						const run = await runWith(prompt, models[current]);
+						tools = tools || usedTools(agent, run.stdout);
+						return run;
+					} catch (err) {
+						if (current + 1 >= models.length || abort.signal.aborted || !modelUnavailable(err)) {
+							throw err;
+						}
+						this.log(pane, t("efficiency.log.modelUnavailable", { model: models[current] ?? "", next: models[current + 1] ?? "" }));
+						current += 1;
+						pane.usedModel = models[current];
+					}
+				}
+			});
+			if (tools) {
+				this.log(pane, t("efficiency.toolUsed"), true);
+				pane.statusEl.setText(t("efficiency.toolUsed"));
+			}
 			if (outcome.retried) {
 				this.log(pane, t("efficiency.log.retried", { error: outcome.retried }));
 			}
 			this.showCost(pane, outcome.usage);
 			if (!outcome.result) {
 				this.log(pane, t("efficiency.error.badReply"), true);
-				this.dispatch({ type: "failed", agent: pane.agent });
+				this.dispatch({ type: "failed", agent: pane.key });
 				this.setPaneError(pane, t("efficiency.error.badReply"));
 				return;
 			}
@@ -419,11 +493,11 @@ export class EfficiencyModal extends Modal {
 				})
 			);
 			pane.findings = outcome.result.findings;
-			this.dispatch({ type: "succeeded", agent: pane.agent });
+			this.dispatch({ type: "succeeded", agent: pane.key });
 			this.save(pane, outcome.result.findings, outcome.result.dismissed, outcome.usage);
 		} catch (err) {
 			const failure = classifyAnalysisFailure(err, abort.signal.aborted);
-			this.dispatch({ type: failure.kind === "cancelled" ? "cancelled" : "failed", agent: pane.agent });
+			this.dispatch({ type: failure.kind === "cancelled" ? "cancelled" : "failed", agent: pane.key });
 			this.log(pane, failure.kind === "cancelled" ? t("efficiency.log.cancelled") : t("efficiency.log.failed", { error: String((err as Error)?.message ?? err) }), failure.kind !== "cancelled");
 			this.setPaneError(pane, analysisFailureMessage(failure, name));
 		} finally {
@@ -442,7 +516,7 @@ export class EfficiencyModal extends Modal {
 	}
 
 	private showCost(pane: Pane, usage: HeadlessUsage | null): void {
-		const agent = AGENT_NAMES[pane.agent] ?? pane.agent;
+		const agent = this.paneName(pane);
 		if (!usage) {
 			pane.costEl.setText(t("efficiency.selfCostUnknown"));
 			return;
@@ -457,9 +531,9 @@ export class EfficiencyModal extends Modal {
 		try {
 			saveResult(efficiencyDir(), {
 				version: 1,
-				agent: pane.agent,
+				agent: pane.key,
 				savedAt: Date.now() / 1000,
-				model: this.plugin.settings.efficiencyModel,
+				model: this.modelName(pane),
 				range: pane.block.range,
 				totals: pane.block.totals,
 				hits: pane.block.hits,
@@ -479,7 +553,7 @@ export class EfficiencyModal extends Modal {
 	private renderFindings(pane: Pane): void {
 		const el = pane.findingsEl;
 		el.empty();
-		const pstate = this.state.panes[pane.agent] ?? "idle";
+		const pstate = this.state.panes[pane.key] ?? "idle";
 		let findings = shownFindings(pstate) === "llm" ? pane.findings : statFindings(pane.block.hits);
 		if (pstate !== "result" && pstate !== "working" && pane.previous) {
 			el.createDiv({
@@ -592,11 +666,11 @@ export class EfficiencyModal extends Modal {
 			.filter((h): h is EffHit => !!h)
 			.slice(0, 3)
 			.map((h) => this.hitLine(h, pane.block));
-		const prompt = fixPrompt(f, evidence);
+		const prompt = fixPrompt(f, evidence, pane.agent);
 		if (!prompt) {
 			return;
 		}
-		new FixConfirmModal(this.plugin, pane.agent as AgentId, f, prompt).open();
+		new FixConfirmModal(this.plugin, pane.agent, f, prompt).open();
 	}
 }
 
@@ -631,7 +705,12 @@ class FixConfirmModal extends Modal {
 		new Setting(this.contentEl)
 			.setName(t("efficiency.fix.targets"))
 			.setDesc(this.finding.remedy.targets.map((p) => `${p} (${change ? t(`efficiency.change.${change}`) : ""})`).join("\n"));
-		this.contentEl.createDiv({ cls: "agent-sessions-efficiency-note", text: t("efficiency.fix.planNote") });
+		this.contentEl.createDiv({
+			cls: "agent-sessions-efficiency-note",
+			text: t(
+				this.agent === "codex" ? "efficiency.fix.planNoteCodex" : this.agent === "opencode" ? "efficiency.fix.planNoteOpencode" : "efficiency.fix.planNote"
+			),
+		});
 		this.contentEl.createDiv({ cls: "agent-sessions-efficiency-subhead", text: t("efficiency.fix.prompt") });
 		const area = this.contentEl.createEl("textarea", { cls: "agent-sessions-efficiency-fix-prompt" });
 		area.value = this.prompt;
