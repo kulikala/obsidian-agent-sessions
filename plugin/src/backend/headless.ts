@@ -21,6 +21,7 @@ import type { AgentId } from "../settings";
 import { programInvocation } from "./windows";
 
 const TIMEOUT_MS = 180000;
+const STOP_WAIT_MS = 3000;
 
 /** What a finished run gives back: the reply, the raw stdout, and what the run cost. */
 export interface HeadlessResult {
@@ -91,14 +92,21 @@ export function runHeadless(run: HeadlessRun): Promise<HeadlessResult> {
 			run.signal?.removeEventListener("abort", onAbort);
 			fn();
 		};
-		const onAbort = (): void => {
+		// A stopped run settles once the process has exited (at most `STOP_WAIT_MS` later), so the
+		// caller's clean-up doesn't race a process still holding its working folder (Windows).
+		const stop = (reason: string): void => {
+			if (stopping) {
+				return;
+			}
+			stopping = true;
 			child.kill();
-			finish(() => reject(new HeadlessError("aborted", stdout, stderr)));
+			const fail = (): void => finish(() => reject(new HeadlessError(reason, stdout, stderr)));
+			child.once("close", fail);
+			window.setTimeout(fail, STOP_WAIT_MS);
 		};
-		const timer = window.setTimeout(() => {
-			child.kill();
-			finish(() => reject(new HeadlessError("timed out", stdout, stderr)));
-		}, run.timeoutMs ?? TIMEOUT_MS);
+		let stopping = false;
+		const onAbort = (): void => stop("aborted");
+		const timer = window.setTimeout(() => stop("timed out"), run.timeoutMs ?? TIMEOUT_MS);
 		run.signal?.addEventListener("abort", onAbort);
 		child.stdout.on("data", (chunk: Buffer) => {
 			const text = chunk.toString("utf8");
@@ -121,6 +129,9 @@ export function runHeadless(run: HeadlessRun): Promise<HeadlessResult> {
 		child.on("close", (code) => {
 			if (run.agent === "opencode") {
 				deleteOpencodeSession(run, stdout);
+			}
+			if (stopping) {
+				return;
 			}
 			finish(() => {
 				try {

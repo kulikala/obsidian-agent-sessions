@@ -522,6 +522,10 @@ export class EfficiencyModal extends Modal {
 			return;
 		}
 		const params = { input: formatK(usage.input), output: formatK(usage.output), agent };
+		if (pane.info.local) {
+			pane.costEl.setText(t("efficiency.selfCostLocal", params));
+			return;
+		}
 		pane.costEl.setText(
 			usage.usd !== null ? t("efficiency.selfCost", { ...params, usd: formatCost(usage.usd) }) : t("efficiency.selfCostNoUsd", params)
 		);

@@ -36,3 +36,19 @@ export function launchStart(opts: NewSessionOptions = {}): LaunchStart | undefin
 	}
 	return start.prompt || start.permissionMode ? start : undefined;
 }
+
+/** The longest first message OpenCode on Windows takes as `--prompt`: a longer one leaves its TUI
+ * at "Loading plugins…" / "Finishing startup…" and it exits (OpenCode 1.18 under ConPTY). */
+export const OPENCODE_WINDOWS_PROMPT_MAX = 200;
+
+/** Whether a fresh session's first message is typed into the agent once it is ready, instead of
+ * going on the command line: OpenCode on Windows, for a message over
+ * `OPENCODE_WINDOWS_PROMPT_MAX` characters. */
+export function typesFirstMessage(agent: AgentId, prompt: string | undefined, platform: string = process.platform): boolean {
+	return agent === "opencode" && platform === "win32" && !!prompt && prompt.length > OPENCODE_WINDOWS_PROMPT_MAX;
+}
+
+/** Whether OpenCode's TUI is ready for input: its footer (`ctrl+p commands`) is on screen. */
+export function opencodeReady(screen: string): boolean {
+	return /ctrl\+p commands/.test(screen);
+}

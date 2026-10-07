@@ -38,7 +38,18 @@ export async function inRunFolder<T>(base: string, fn: (dir: string) => Promise<
 		mkdirSync(dir);
 		return await fn(dir);
 	} finally {
-		rmSync(dir, { recursive: true, force: true });
+		removeRunFolder(dir);
 		busy.delete(dir);
+	}
+}
+
+/** Removes the run folder. On Windows a process that was just stopped can hold it as its working
+ * folder for a moment, so the removal is retried; if it still fails the next run clears it, and the
+ * run's own result (or error) stands. */
+function removeRunFolder(dir: string): void {
+	try {
+		rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 });
+	} catch {
+		// Cleared before the next run.
 	}
 }

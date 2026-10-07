@@ -71,7 +71,9 @@ def list_sessions(d: '_db.Db', min_updated: float) -> List[dict]:
 def read_session(d: '_db.Db', session: dict, home: Optional[str] = None) -> dict:
     """The file record of one session (see the module docstring)."""
     sid = session['id']
-    cwd = session.get('directory')
+    # OpenCode stores a Windows folder with forward slashes (`C:/Users/…`): in this system's form, so
+    # paths joined to it (the instruction file a fix targets) don't mix separators.
+    cwd = os.path.normpath(session['directory']) if session.get('directory') else None
     sub = bool(session.get('parent'))
     rec_out = {
         'path': _db.pseudo_path(sid), 'session': session.get('parent') if sub else sid,

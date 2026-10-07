@@ -43,7 +43,7 @@ import {
 	withBinDirOnPath,
 	type LaunchStart,
 } from "./backend/backend";
-import { launchStart, rememberAgent, type NewSessionOptions } from "./sessions/new-session";
+import { launchStart, opencodeReady, rememberAgent, typesFirstMessage, type NewSessionOptions } from "./sessions/new-session";
 import { runtimeDir } from "./backend/paths";
 import { isTypedLine, lineState } from "./terminal/line-submitted";
 import { planInPlace, planSuccessors, possibleSuccessors, type SuccessorCandidate, type SuccessorTab } from "./sessions/successor";
@@ -206,6 +206,7 @@ const CLEAR_MATCH_MS = 60000;
 /** How long a new, named Codex tab waits for its composer to be on screen and empty before giving
  * up on the `/rename` at start (the check after the link still runs), and how often it looks. */
 const WAIT_CODEX_COMPOSER_MS = 120000;
+const WAIT_FIRST_MESSAGE_MS = 90000;
 const CODEX_COMPOSER_POLL_MS = 300;
 /** `typeLine`: how long a pasted line gets to show in full, how often it is pasted, how long it
  * makes sure the line was submitted, how often it looks, and how far apart it sends the submit
@@ -1573,7 +1574,10 @@ export default class AgentSessionsPlugin extends Plugin {
 			void this.saveSettings();
 		}
 		const id = crypto.randomUUID();
-		const start = launchStart(opts);
+		// OpenCode on Windows can't start with a long first message on its command line: it is
+		// typed in once the TUI is ready instead (`typeFirstMessage`).
+		const typed = typesFirstMessage(agent, opts.prompt) ? opts.prompt : undefined;
+		const start = launchStart(typed ? { ...opts, prompt: undefined } : opts);
 		if (start) {
 			this.launchStarts.set(id, start);
 		}
@@ -1599,6 +1603,9 @@ export default class AgentSessionsPlugin extends Plugin {
 		const opened = this.openSession(id, { agent, cwd, fresh: true });
 		if (agent !== "claude") {
 			this.trackNewAgentSession(agent, id, cwd);
+		}
+		if (typed) {
+			void opened.then(() => this.typeFirstMessage(id, typed));
 		}
 		if (!name) {
 			return id;
@@ -1636,6 +1643,35 @@ export default class AgentSessionsPlugin extends Plugin {
 				new Notice(t("notice.renameFailed", { error: messageOf(err) }));
 			});
 		return id;
+	}
+
+	/** Types a new OpenCode tab's first message once its TUI is ready (`opencodeReady`, at most
+	 * `WAIT_FIRST_MESSAGE_MS`), pasted and submitted like a command. When it never gets ready, the
+	 * message goes to the clipboard and a notice says so. */
+	private async typeFirstMessage(id: string, text: string): Promise<void> {
+		const deadline = Date.now() + WAIT_FIRST_MESSAGE_MS;
+		for (;;) {
+			const view = this.findTerminalView(id);
+			if (!view) {
+				return;
+			}
+			if (view.isAttached() && opencodeReady(view.screenText())) {
+				break;
+			}
+			if (Date.now() > deadline) {
+				void navigator.clipboard.writeText(text).catch(() => undefined);
+				new Notice(t("notice.firstMessageCopied"));
+				return;
+			}
+			await sleep(DRAFT_POLL_MS * 4);
+		}
+		try {
+			await this.sendCommand(id, text);
+		} catch (err) {
+			void navigator.clipboard.writeText(text).catch(() => undefined);
+			new Notice(t("notice.firstMessageCopied"));
+			console.warn("agent-sessions: first message", err);
+		}
 	}
 
 	/**
