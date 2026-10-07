@@ -58,6 +58,12 @@ In the same menu, **Compact session** sends `/compact`, and **Restart session** 
 
 ![A session's menu in four groups: Rename, Move to category…, Suggest name and category…; Change model…, Compact session, Restart session; Session analytics, Copy ID; End session, Archive](docs/onboarding/en/row-menu.png)
 
+### Where tokens could be saved
+
+**Analyze token efficiency**, in the Session manager's ⋯ menu (Claude Code sessions for now), finds where recent tokens went and what would save them: large tool outputs read again, conversations that carry earlier work along, caches that expired, files read at the start of every session. Each finding shows its evidence, cost and remedy, and a finding a file can fix can be handed to an agent, which starts in plan mode and shows the change before writing it. Statistics stay on this machine; see [What Token efficiency sends](#what-token-efficiency-sends). [More](docs/usage.md#token-efficiency)
+
+![Analyze token efficiency for Claude Code: the range and its totals, where the tokens went, what Analyze would send, and findings with cost, evidence and remedy](docs/images/efficiency.png)
+
 ### Setup with the welcome guide
 
 On first install, the welcome guide checks Python and your agents, shows what the helper program will write before installing it, and walks you through your first session. [More](docs/usage.md#welcome-guide)
@@ -75,10 +81,6 @@ On first install, the welcome guide checks Python and your agents, shows what th
 The **Activity calendar** shows working time as blocks, by 7-day window, week or day. Click a block to see its prompts and open the session. [More](docs/usage.md#activity-calendar)
 
 ![The activity calendar: a week of sessions as colored blocks, one lane per agent in each day, with hours and concurrency per agent, and the details panel for one block with its prompts and Open session](docs/images/calendar.png)
-
-### Where tokens could be saved
-
-**Analyze token efficiency**, in the Session manager's ⋯ menu, finds where recent tokens went and what would save them: large tool outputs read again, conversations that carry earlier work along, caches that expired, files read at the start of every session. Each finding shows its evidence, cost and remedy, and a finding a file can fix can be handed to an agent, which starts in plan mode and shows the change before writing it. Statistics stay on this machine; see [What Token efficiency sends](#what-token-efficiency-sends). [More](docs/usage.md#token-efficiency)
 
 Two [agent skills](docs/usage.md#agent-skills) also let you ask an agent about your usage, your other sessions, or how to use the plugin. All features: [`docs/usage.md`](docs/usage.md).
 
