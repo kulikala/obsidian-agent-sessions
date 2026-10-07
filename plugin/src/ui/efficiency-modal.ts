@@ -332,8 +332,9 @@ export class EfficiencyModal extends Modal {
 		}
 		const name = this.paneName(pane);
 		const sessions = new Set(block.excerpts.map((e) => e.session)).size;
+		// A local provider's model reads it on this machine: nothing goes to a service.
 		el.createDiv({
-			text: t("efficiency.consent.body", {
+			text: t(pane.info.local ? "efficiency.consent.bodyLocalRead" : "efficiency.consent.body", {
 				agent: name,
 				model: this.modelName(pane),
 				sessions,

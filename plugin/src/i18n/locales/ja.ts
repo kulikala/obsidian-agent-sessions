@@ -726,6 +726,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"efficiency.breakdown.other": "その他",
 	"efficiency.breakdown.team": "チーム",
 	"efficiency.consent.body": "{agent}（{model}）に、{sessions} セッションの抜粋 {chars} 字（約 {tokens} トークン）を送って、原因と対策を詳しく調べます。{agent} のサービスに、あなたのアカウントで送られ、利用枠に数えられます。",
+	"efficiency.consent.bodyLocalRead": "{agent}（{model}）が、{sessions} セッションの抜粋 {chars} 字（約 {tokens} トークン）を読んで、原因と対策を詳しく調べます。",
 	"efficiency.consent.bodyLocal": "このマシンの {model} で解析します。外へは送りません。",
 	"efficiency.consent.usage": "いまの{window}の使用率は {percent}% です。",
 	"efficiency.consent.window.five_hour": " 5 時間枠",

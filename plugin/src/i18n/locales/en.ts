@@ -726,6 +726,7 @@ export const en = {
 	"efficiency.breakdown.other": "Other",
 	"efficiency.breakdown.team": "Team",
 	"efficiency.consent.body": "{agent} ({model}) will read excerpts of {sessions} sessions, {chars} characters (about {tokens} tokens), to look into causes and remedies in detail. They are sent to {agent}'s service with your account and count toward its usage limits.",
+	"efficiency.consent.bodyLocalRead": "{agent} ({model}) will read excerpts of {sessions} sessions, {chars} characters (about {tokens} tokens), to look into causes and remedies in detail.",
 	"efficiency.consent.bodyLocal": "{model} on this machine will analyse them. Nothing leaves this machine.",
 	"efficiency.consent.usage": "The {window} is {percent}% used now.",
 	"efficiency.consent.window.five_hour": "5-hour window",
