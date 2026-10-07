@@ -21,6 +21,7 @@ import { WebglAddon } from "@xterm/addon-webgl";
 import { AGENT_BIN_NAME, BackendError, loginEnv, resolveAgentBinary, withBinDirOnPath } from "../backend/backend";
 import { DaemonClient, DaemonUnavailableError, ensureDaemon } from "../backend/daemon-client";
 import { t } from "../i18n";
+import { disposeTerminal } from "../terminal/dispose";
 import { promptHasDraft, type ScreenCell } from "../terminal/prompt-draft";
 import { noteKey } from "../terminal/reload-safety";
 import { attachPlan, launchSize, NO_ROOM_ATTACH_MS } from "../terminal/pane-size";
@@ -450,7 +451,7 @@ export class TerminalView extends ItemView {
 			this.resizeTimer = null;
 		}
 		this.disconnect();
-		this.terminal.dispose();
+		disposeTerminal(this.terminal, this.opened);
 		// Recompute without this view (disappears if no other view shares the same id).
 		this.plugin.refreshTerminalStatus(this.id);
 	}
