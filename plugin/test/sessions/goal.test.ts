@@ -111,10 +111,11 @@ describe("goalNeedsRescan", () => {
 		expect(goalNeedsRescan("busy", claude(goal()))).toBe(false);
 	});
 
-	it("looks on idle while a goal is active (the evaluator may just have run)", () => {
+	it("looks on idle while a goal is showing (the evaluator may just have run, or a verdict mark may be due to go)", () => {
 		expect(goalNeedsRescan("idle", claude(goal()))).toBe(true);
+		expect(goalNeedsRescan("idle", claude(goal({ met: true })))).toBe(true);
+		expect(goalNeedsRescan("idle", claude(goal({ failed: true })))).toBe(true);
 		expect(goalNeedsRescan("idle", claude(null))).toBe(false);
-		expect(goalNeedsRescan("idle", claude(goal({ met: true })))).toBe(false);
 	});
 
 	it("looks the same way for Codex", () => {

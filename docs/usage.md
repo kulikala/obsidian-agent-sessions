@@ -138,14 +138,14 @@ A Claude Code or Codex session with a `/goal` gets one more icon after its name,
 | Goal | Icon | Means |
 |---|---|---|
 | **Goal active** | purple target, breathing slowly while the session works | `/goal` is set and not met yet |
-| **Goal met** | green trophy | Claude Code's evaluator found the condition met, or Codex marked the goal complete |
-| **Goal judged unreachable** | grey crossed-out flag | Claude Code's evaluator judged the condition impossible |
+| **Goal met** | green trophy | Claude Code's evaluator found the condition met, or Codex marked the goal complete; until your next prompt |
+| **Goal judged unreachable** | grey crossed-out flag | Claude Code's evaluator judged the condition impossible, until your next prompt |
 | **Goal paused** | grey pause sign | you paused the Codex goal (`/goal pause`); `/goal resume` picks it up again |
 | **Goal stalled**, **Goal stopped at the usage limit**, **Goal stopped at its token budget** | grey crossed-out flag | Codex stopped working on the goal; `/goal resume` picks it up again |
 
 - Hover the icon to see the condition and, for Claude Code, the evaluator's latest reason. The details pane shows both in full (click to expand), with when the goal was set.
 - `/goal clear` removes the icon. A new `/goal` replaces the old one.
-- A met Codex goal keeps its trophy until you type your next prompt in that session. A paused or stopped one stays until it is resumed, cleared or replaced.
+- A paused or stopped Codex goal stays until it is resumed, cleared or replaced.
 - OpenCode has no `/goal`.
 
 ## Built-in editor

@@ -95,8 +95,9 @@ export function goalTooltip(goal: SessionGoal): string {
  * Whether a registry transition should rescan the session to pick up a goal change sooner than
  * the periodic scan would. Claude Code and Codex record a new goal before the turn it starts
  * (`busy`: worth a look while no goal is active) and its verdict before the turn ends (`idle`:
- * worth a look while one is). `/goal clear` (and Codex's `/goal pause`) starts no turn; the
- * periodic scan catches it.
+ * worth a look while one is). A met mark (and Claude Code's failed one) goes away with the next
+ * human prompt, so a turn that begins (`busy`) or ends (`idle`) with one showing is worth a look
+ * too. `/goal clear` (and Codex's `/goal pause`) starts no turn; the periodic scan catches it.
  */
 export function goalNeedsRescan(
 	transition: "busy" | "idle",
@@ -105,6 +106,6 @@ export function goalNeedsRescan(
 	if (!row || (row.agent !== "claude" && row.agent !== "codex")) {
 		return false;
 	}
-	const active = goalState(row.goal) === "active";
-	return transition === "idle" ? active : !active;
+	const state = goalState(row.goal);
+	return transition === "idle" ? state !== null : state !== "active";
 }
