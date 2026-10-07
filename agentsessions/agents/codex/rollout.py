@@ -62,6 +62,8 @@ INJECTED_PREFIXES = (
     '<environment_context>',
     '<user_instructions>',
     '<permissions',
+    '<codex_internal_context',   # e.g. the goal's continuation prompt (`source="goal"`)
+    '<turn_aborted>',
 )
 
 
@@ -273,6 +275,47 @@ def _activity_ts(line: bytes) -> Optional[float]:
 def read_last_activity(path: str) -> Optional[float]:
     for line in iter_tail_lines(path, TAIL_CHUNK, TAIL_LIMIT):
         t = _activity_ts(line)
+        if t is not None:
+            return t
+    return None
+
+
+def _user_prompt_ts(line: bytes) -> Optional[float]:
+    """If the line is something the user typed -- `event_msg.item_completed`(UserMessage),
+    `event_msg.user_message`, or a `response_item` role=user message -- and it passes
+    `is_real_user_text`, its timestamp as epoch seconds."""
+    if b'"user' not in line and b'UserMessage' not in line:
+        return None
+    try:
+        d = json.loads(line)
+    except ValueError:
+        return None
+    if not isinstance(d, dict):
+        return None
+    payload = d.get('payload') or {}
+    if not isinstance(payload, dict):
+        return None
+    ptype = payload.get('type')
+    text = ''
+    if d.get('type') == 'event_msg' and ptype == 'item_completed':
+        item = payload.get('item') or {}
+        if isinstance(item, dict) and item.get('type') == 'UserMessage':
+            text = text_of(item.get('content'))
+    elif d.get('type') == 'event_msg' and ptype == 'user_message':
+        text = payload.get('message') if isinstance(payload.get('message'), str) else ''
+    elif d.get('type') == 'response_item' and ptype == 'message' and payload.get('role') == 'user':
+        text = text_of(payload.get('content'))
+    if not text.strip() or not is_real_user_text(text):
+        return None
+    return parse_ts(d.get('timestamp'))
+
+
+def read_last_user_prompt(path: str) -> Optional[float]:
+    """When the user last typed a prompt (`_user_prompt_ts`), from the rollout's tail; None if
+    none is found within `TAIL_LIMIT`. Codex's own goal-continuation prompts and injected context
+    don't count."""
+    for line in iter_tail_lines(path, TAIL_CHUNK, TAIL_LIMIT):
+        t = _user_prompt_ts(line)
         if t is not None:
             return t
     return None

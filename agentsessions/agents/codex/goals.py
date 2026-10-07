@@ -9,6 +9,11 @@ deletes the row. The table is the only complete record: the rollout carries a
 `thread_goal_updated` event when a goal is set, but neither the agent's own status changes nor a
 clear.
 
+A completed goal is shown from the verdict until the user's next typed prompt
+(`shown_goal`), as for Claude Code. A paused goal is the user's own choice and resumable, so it
+is its own state (`status: 'paused'`), not a failure; the other stopped statuses stay shown until
+the goal is resumed, cleared or replaced.
+
 Opened the same way as `names.lookup_thread_info` (`names._connect`: `mode=ro`, then
 `immutable`, then a private copy), never written. Any failure returns `{}` -- the session then
 simply shows no goal until the next scan.
@@ -22,19 +27,20 @@ from . import names as _names
 
 DB_FILENAME = 'goals_1.sqlite'
 
-# Statuses in which the goal is no longer being pursued, though Codex keeps it (`/goal resume`
-# picks a paused, blocked or limited goal up again).
-STOPPED_STATUSES = ('paused', 'blocked', 'usage_limited', 'budget_limited')
+# Statuses in which Codex stopped pursuing the goal on its own, though it keeps it (`/goal resume`
+# picks it up again). `paused` (the user's `/goal pause`) is not one of them.
+STOPPED_STATUSES = ('blocked', 'usage_limited', 'budget_limited')
 
 
 def goal_from_row(objective, status, created_at_ms, updated_at_ms) -> Optional[dict]:
     """One `thread_goals` row as a session goal -- the shape `sessions/scan.py`'s
     `apply_goal_status` gives a Claude Code goal: `{condition, met, reason, since, updated}`
-    (+ `failed: True` for a stopped goal), times in epoch seconds, plus Codex's own `status`.
+    (+ `failed: True` for a stopped goal), times in epoch seconds, plus Codex's own `status`
+    (the only mark of a paused goal).
     None for a row without an objective or with a status this module does not know."""
     if not isinstance(objective, str) or not objective:
         return None
-    if status != 'active' and status != 'complete' and status not in STOPPED_STATUSES:
+    if status not in ('active', 'paused', 'complete') and status not in STOPPED_STATUSES:
         return None
     since = created_at_ms / 1000 if isinstance(created_at_ms, (int, float)) else None
     updated = updated_at_ms / 1000 if isinstance(updated_at_ms, (int, float)) else since
@@ -42,6 +48,17 @@ def goal_from_row(objective, status, created_at_ms, updated_at_ms) -> Optional[d
             'since': since, 'updated': updated, 'status': status}
     if status in STOPPED_STATUSES:
         goal['failed'] = True
+    return goal
+
+
+def shown_goal(goal: Optional[dict], last_prompt: Optional[float]) -> Optional[dict]:
+    """`goal`, or None once it is complete and the user has typed a prompt after the verdict
+    (`last_prompt`, `rollout.read_last_user_prompt`, later than the goal's `updated`)."""
+    if goal is None or goal.get('status') != 'complete' or last_prompt is None:
+        return goal
+    updated = goal.get('updated')
+    if updated is not None and last_prompt > updated:
+        return None
     return goal
 
 

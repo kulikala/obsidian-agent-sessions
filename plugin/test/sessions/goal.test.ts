@@ -34,11 +34,12 @@ describe("goalState", () => {
 	it("treats a Codex goal's statuses like Claude Code's verdicts", () => {
 		expect(goalState(goal({ status: "active" }))).toBe("active");
 		expect(goalState(goal({ status: "complete", met: true }))).toBe("met");
-		expect(goalState(goal({ status: "paused", failed: true }))).toBe("failed");
+		expect(goalState(goal({ status: "paused" }))).toBe("paused");
+		expect(goalState(goal({ status: "blocked", failed: true }))).toBe("failed");
 	});
 
 	it("gives each state its own icon", () => {
-		expect(new Set(Object.values(GOAL_ICON)).size).toBe(3);
+		expect(new Set(Object.values(GOAL_ICON)).size).toBe(4);
 		expect(GOAL_ICON.active).toBe("target");
 	});
 });
@@ -52,7 +53,8 @@ describe("goalMarkClass", () => {
 		expect(goalMarkClass("active", null)).not.toContain("is-live");
 	});
 
-	it("never moves once met or failed", () => {
+	it("never moves once paused, met or failed", () => {
+		expect(goalMarkClass("paused", "working")).toBe("agent-sessions-goal-mark agent-sessions-goal-paused");
 		expect(goalMarkClass("met", "working")).toBe("agent-sessions-goal-mark agent-sessions-goal-met");
 		expect(goalMarkClass("failed", "working")).toBe("agent-sessions-goal-mark agent-sessions-goal-failed");
 	});
@@ -74,13 +76,16 @@ describe("goalTooltip", () => {
 	});
 
 	it("names the reason a Codex goal stopped", () => {
-		expect(goalLabelKey(goal({ status: "paused", failed: true }), "failed")).toBe("goal.paused");
+		expect(goalLabelKey(goal({ status: "paused" }), "paused")).toBe("goal.paused");
 		expect(goalLabelKey(goal({ status: "blocked", failed: true }), "failed")).toBe("goal.blocked");
 		expect(goalLabelKey(goal({ status: "usage_limited", failed: true }), "failed")).toBe("goal.usageLimited");
 		expect(goalLabelKey(goal({ status: "budget_limited", failed: true }), "failed")).toBe("goal.budgetLimited");
 		expect(goalLabelKey(goal({ failed: true }), "failed")).toBe("goal.failed");
 		expect(goalLabelKey(goal({ status: "complete", met: true }), "met")).toBe("goal.met");
-		expect(goalTooltip(goal({ status: "paused", failed: true }))).toBe("Goal paused\nFinish the plan");
+		expect(goalTooltip(goal({ status: "paused" }))).toBe("Goal paused\nFinish the plan");
+		expect(goalTooltip(goal({ status: "budget_limited", failed: true }))).toBe(
+			"Goal stopped at its token budget\nFinish the plan"
+		);
 	});
 
 	it("is translated", () => {

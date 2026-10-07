@@ -11,9 +11,10 @@ import type { TerminalStatus } from "./terminal-status";
 
 /**
  * `active` until the evaluator finds the condition met (`met`) or impossible (`failed`). A Codex
- * goal that stops without being met (paused, stalled, out of budget or usage) is `failed` too.
+ * goal the user paused is `paused` (resumable, not a failure); one Codex stopped on its own
+ * (stalled, out of budget or usage) is `failed`.
  */
-export type GoalState = "active" | "met" | "failed";
+export type GoalState = "active" | "paused" | "met" | "failed";
 
 export function goalState(goal: SessionGoal | null | undefined): GoalState | null {
 	if (!goal) {
@@ -22,24 +23,28 @@ export function goalState(goal: SessionGoal | null | undefined): GoalState | nul
 	if (goal.failed) {
 		return "failed";
 	}
+	if (goal.status === "paused") {
+		return "paused";
+	}
 	return goal.met ? "met" : "active";
 }
 
 export const GOAL_ICON: Record<GoalState, string> = {
 	active: "target",
+	paused: "circle-pause",
 	met: "trophy",
 	failed: "flag-off",
 };
 
 export const GOAL_LABEL_KEY: Record<GoalState, MessageKey> = {
 	active: "goal.active",
+	paused: "goal.paused",
 	met: "goal.met",
 	failed: "goal.failed",
 };
 
 /** Codex's stopped statuses, each with its own label in place of `goal.failed`. */
 const CODEX_STOPPED_LABEL_KEY: Partial<Record<CodexGoalStatus, MessageKey>> = {
-	paused: "goal.paused",
 	blocked: "goal.blocked",
 	usage_limited: "goal.usageLimited",
 	budget_limited: "goal.budgetLimited",
