@@ -11,7 +11,9 @@
 import { getLang, t, type MessageKey } from "../i18n";
 import { en } from "../i18n/locales/en";
 import { formatDateTimeShort } from "../i18n/datetime";
+import type { AgentId } from "../settings";
 import { formatCost, formatK } from "../usage/usage";
+import { windowLabel } from "../views/manager-model";
 import { addUsage, type HeadlessUsage } from "./organize-agent";
 
 // ---- `json efficiency` -------------------------------------------------------------------
@@ -54,6 +56,7 @@ export interface EffTotals {
 
 export interface EffSession {
 	id: string;
+	provider?: string;
 	name: string | null;
 	cwd: string | null;
 	folder: string | null;
@@ -99,6 +102,25 @@ export interface EffExcerpt {
 	tools: Record<string, unknown>[];
 }
 
+/** What one analysis may send: one provider's sessions of one agent (Claude Code has one pane;
+ * Codex and OpenCode one per provider their sessions used). `model` is the model the analysis
+ * asks for (`null`: the agent's default), `local` whether that provider runs on this machine. */
+export interface EffPane {
+	key: string;
+	agent: string;
+	provider: string;
+	model: string | null;
+	local: boolean;
+	sessions: number;
+	w: number;
+	totals: EffTotals;
+	breakdown: { cause: string; w: number }[];
+	/** The ids of the hits in this pane's sessions. */
+	hits: string[];
+	summary: Record<string, unknown>;
+	excerpts: EffExcerpt[];
+}
+
 export interface EffAgent {
 	range: EffRange;
 	totals: EffTotals;
@@ -110,6 +132,65 @@ export interface EffAgent {
 	baselines: { disabled: string[] } & Record<string, unknown>;
 	limits: { truncated: boolean; reason: string | null } & Record<string, unknown>;
 	summary: Record<string, unknown>;
+	panes?: EffPane[];
+}
+
+/** One pane's view of an agent's block: its sessions, hits, totals, breakdown and what it sends;
+ * the range and the baselines are the agent's. */
+export function paneBlock(block: EffAgent, pane: EffPane): EffAgent {
+	const ids = new Set(pane.hits);
+	const hits = block.hits.filter((h) => ids.has(h.id));
+	const sessions = new Set(hits.map((h) => h.session));
+	for (const e of pane.excerpts) {
+		sessions.add(e.session);
+	}
+	return {
+		...block,
+		totals: pane.totals,
+		breakdown: pane.breakdown,
+		sessions: block.sessions.filter((s) => (s.provider ? s.provider === pane.provider : sessions.has(s.id))),
+		hits,
+		excerpts: pane.excerpts,
+		summary: pane.summary,
+		panes: [pane],
+	};
+}
+
+/** The panes of an agent's block: its own `panes`, or (an older program) one made of the block. */
+export function panesOf(agent: string, block: EffAgent): EffPane[] {
+	if (block.panes && block.panes.length > 0) {
+		return block.panes;
+	}
+	return [
+		{
+			key: agent,
+			agent,
+			provider: "",
+			model: null,
+			local: false,
+			sessions: block.sessions.length,
+			w: block.totals.w,
+			totals: block.totals,
+			breakdown: block.breakdown,
+			hits: block.hits.map((h) => h.id),
+			summary: block.summary,
+			excerpts: block.excerpts,
+		},
+	];
+}
+
+/** The CLI arguments that make the analysis use the pane's provider and model: Codex `-m` (and
+ * `-c model_provider=…` for a provider other than OpenAI), OpenCode `--model provider/model`.
+ * Claude Code's model is the "Model for token efficiency" setting (`headlessArgs`). */
+export function analysisArgs(pane: Pick<EffPane, "agent" | "provider" | "model">): string[] {
+	if (pane.agent === "codex") {
+		const args = pane.model ? ["-m", pane.model] : [];
+		return pane.provider && pane.provider !== "openai" ? [...args, "-c", `model_provider="${pane.provider}"`] : args;
+	}
+	if (pane.agent === "opencode" && pane.model) {
+		return ["--model", pane.provider ? `${pane.provider}/${pane.model}` : pane.model];
+	}
+	return [];
 }
 
 export interface EffOutput {
@@ -139,7 +220,9 @@ export function rangeLine(agentName: string, block: Pick<EffAgent, "range" | "to
 	if (r.rule === "five_hour" || r.rule === "seven_day") {
 		rule = t(`efficiency.range.${r.rule}` as MessageKey, { usage: usageLabel(r), start, end });
 	} else if (r.rule.startsWith("window_")) {
-		rule = t("efficiency.range.window", { label: r.rule, usage: usageLabel(r), start, end });
+		const minutes = Number(/^window_(\d+)m$/.exec(r.rule)?.[1]);
+		const label = Number.isFinite(minutes) && minutes > 0 ? windowLabel(minutes) : r.rule;
+		rule = t("efficiency.range.window", { label, usage: usageLabel(r), start, end });
 	} else if (r.rule === "budget") {
 		const budget = formatK(r.budget ?? 0);
 		rule =
@@ -157,6 +240,26 @@ export function rangeLine(agentName: string, block: Pick<EffAgent, "range" | "to
 		sessions: t("efficiency.range.sessions", { count: block.sessions.length }),
 		tokens: t("efficiency.range.tokens", { tokens: formatK(block.totals.w) }),
 	});
+}
+
+/** The usage window to name before sending: the one the range follows, else the first one with
+ * a known percentage (5 hours, 7 days, then Codex's other lengths). `null` when none has one. */
+export function usageWindow(range: EffRange): { label: string; percent: number } | null {
+	const windows = range.windows ?? {};
+	const others = Object.keys(windows).filter((k) => k.startsWith("window_"));
+	const keys = [range.rule, "five_hour", "seven_day", ...others];
+	for (const key of keys) {
+		const percent = windows[key]?.used_percentage;
+		if (typeof percent !== "number") {
+			continue;
+		}
+		if (key === "five_hour" || key === "seven_day") {
+			return { label: t(`efficiency.consent.window.${key}` as MessageKey), percent };
+		}
+		const minutes = Number(/^window_(\d+)m$/.exec(key)?.[1]);
+		return { label: Number.isFinite(minutes) && minutes > 0 ? windowLabel(minutes) : key, percent };
+	}
+	return null;
 }
 
 // ---- What is sent ----------------------------------------------------------------------------
@@ -724,7 +827,7 @@ export function effectText(finding: Pick<Finding, "effectW" | "impactUsd" | "imp
  * for approval, the change kind's own paragraph, the prohibitions, how to undo, and that the change
  * applies to new conversations. `null` for a finding that isn't a `fix`.
  */
-export function fixPrompt(finding: Finding, evidence: string[]): string | null {
+export function fixPrompt(finding: Finding, evidence: string[], agent: AgentId = "claude"): string | null {
 	const change = finding.remedy.change;
 	if (finding.remedy.kind !== "fix" || !change || finding.remedy.targets.length === 0) {
 		return null;
@@ -756,7 +859,7 @@ export function fixPrompt(finding: Finding, evidence: string[]): string | null {
 		t("efficiency.fix.prompt.step1"),
 		t("efficiency.fix.prompt.step2", { max_lines: MAX_LINES[change] }),
 		t(`efficiency.fix.prompt.${change}`),
-		t("efficiency.fix.prompt.step3"),
+		t(agent === "codex" ? "efficiency.fix.prompt.step3Codex" : agent === "opencode" ? "efficiency.fix.prompt.step3Opencode" : "efficiency.fix.prompt.step3"),
 		"",
 		t("efficiency.fix.prompt.rules"),
 		t("efficiency.fix.prompt.rule1"),

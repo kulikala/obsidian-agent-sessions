@@ -1,4 +1,7 @@
-"""Detectors (D-6, P1 for Claude Code): E01, E02, E03, E04, E05, E08, E14, E16.
+"""Detectors (D-6, P1): E01, E02, E03, E04, E05, E08, E14, E16, for Claude Code, Codex and
+OpenCode sessions alike. Where the agents differ -- the instruction file's name, when a cache
+counts as expired (E04, not for OpenCode), how long an instruction file may be (E14) -- the
+session's `agent` decides.
 
 `run(analysed, base, rng)` takes the sessions of the range (each `{'session', 'tasks'}` from
 `tasks.assemble` / `tasks.session_tasks(..., everything=True)`) and returns hits:
@@ -14,8 +17,6 @@ from typing import Dict, List, Optional, Tuple
 
 from . import impact, normalize, tasks
 
-AGENT = 'claude'
-
 E01_MIN_TOKENS = 8000
 E01_MIN_R = 3
 E01_FIX_REPEATS = 3
@@ -29,26 +30,35 @@ E03_MIN_CARRY = 100_000
 E04_TTL_1H = 3600
 E04_TTL_5M = 300
 E04_FIX_REPEATS = 3
+# Codex (OpenAI prompt caching): a call that reads less than this share of its input from the
+# cache after a pause longer than the model's retention, following a call with more input than
+# `E04_CODEX_MIN_PREV`.
+E04_CODEX_HIT = 0.3
+E04_CODEX_MIN_PREV = 20_000
+E04_CODEX_TTL_NEW = 1800       # gpt-5.6 and later, gpt-6
+E04_CODEX_TTL_OLD = 300
 E08_FIRST_TOOLS = 15
 E08_MIN_SESSIONS = 3
 E08_MIN_TOKENS = 2000
 E14_MARGIN = 10_000
 E14_MIN_SESSIONS = 3
 E14_LONG_FIRST = 5000
-E14_MAX_LINES = 200
+E14_MAX_LINES = 200            # Claude Code's CLAUDE.md
+E14_MAX_BYTES = 20_000         # Codex's and OpenCode's AGENTS.md
 E14_MAX_SKILLS = 50
 E16_MIN_CORRECTIONS = 2
 E16_MIN_INTERRUPTS = 2
 E16_CALL_RATIO = 2.0
 
 INSTRUCTION_NAMES = ('CLAUDE.md', 'AGENTS.md')
+INSTRUCTION_FILE = {'claude': 'CLAUDE.md', 'codex': 'AGENTS.md', 'opencode': 'AGENTS.md'}
 BUILD_DIRS = ('node_modules', 'dist', 'build', 'out', '.next', 'target', '__pycache__', '.venv')
 SETTINGS = os.path.join('~', '.claude', 'settings.json')
 
 
 def _hit(detector: str, session: str, origin: str, ts: Optional[float], **kw) -> dict:
     hit = {
-        'id': tasks.hit_id(detector, session, origin), 'detector': detector, 'agent': AGENT,
+        'id': tasks.hit_id(detector, session, origin), 'detector': detector, 'agent': kw.pop('agent', None),
         'session': session, 'chain': kw.pop('chain', 'main'), 'ts': ts, 'task': kw.pop('task', None),
         'metrics': kw.pop('metrics', {}), 'impact_w': kw.pop('impact_w', 0.0),
         'impact_usd': kw.pop('impact_usd', None), 'saving_rate': 0.0,
@@ -76,8 +86,8 @@ def _chain_calls(session: dict) -> Dict[str, List[dict]]:
     return out
 
 
-def _claude_md(cwd: Optional[str]) -> List[str]:
-    return [os.path.join(cwd, 'CLAUDE.md')] if cwd else []
+def instruction_name(session: dict) -> str:
+    return INSTRUCTION_FILE.get(session.get('agent') or 'claude', 'CLAUDE.md')
 
 
 # ---- E01 -----------------------------------------------------------------------
@@ -95,7 +105,7 @@ def e01(analysed: List[dict], rng: Tuple[float, float]) -> List[dict]:
                     issuer[t['id']] = (c, t)
         by_call: Dict[str, dict] = {}
         for r in s['results']:
-            if r['est'] < E01_MIN_TOKENS or not tasks.in_range(r['ts'], rng) or r['tu'] not in issuer:
+            if r.get('pruned') or r['est'] < E01_MIN_TOKENS or not tasks.in_range(r['ts'], rng) or r['tu'] not in issuer:
                 continue
             call, tool = issuer[r['tu']]
             later = impact.calls_after(chains.get(r['chain'], []), r['ts'],
@@ -115,7 +125,7 @@ def e01(analysed: List[dict], rng: Tuple[float, float]) -> List[dict]:
                 task=_task_of(a, call),
                 metrics={'est_tokens': est, 'reads_after': len(later), 'results': entry['results']},
                 impact_w=est * len(later) * impact.P_READ,
-                impact_usd=sum(impact.read_usd(est, c.get('model')) for c in later),
+                impact_usd=impact.usd_sum(impact.read_usd(est, c) for c in later),
                 _contrib=contrib, _group=(owner, tool['n'], tool.get('c', '')), _owner=owner))
     groups: Dict[tuple, int] = {}
     for h in found:
@@ -139,9 +149,10 @@ def _e01_owner(s: dict, call: dict, tool: dict) -> Optional[str]:
             if touched:
                 path = normalize.abs_path(touched[-1]['p'], c.get('cwd') or s['cwd'])
                 break
-    owner = owner_instructions(path) if path else None
+    name = instruction_name(s)
+    owner = owner_instructions(path, name=name) if path else None
     if owner is None and s['cwd']:
-        owner = _claude_md(s['cwd'])[0]
+        owner = os.path.join(s['cwd'], name)
     return owner
 
 
@@ -176,7 +187,7 @@ def e02(analysed: List[dict], rng: Tuple[float, float]) -> List[dict]:
                          'threshold': limits.get(first['chain'], E02_FALLBACK),
                          'max_rewrites': t['max_rewrites']},
                 impact_w=sum(contrib.values()),
-                impact_usd=sum(impact.read_usd(c['ctx'] - E02_FALLBACK, c.get('model')) for c in over),
+                impact_usd=impact.usd_sum(impact.read_usd(c['ctx'] - E02_FALLBACK, c) for c in over),
                 confidence='low' if t['max_rewrites'] >= E02_REWRITES else 'medium',
                 _contrib=contrib))
     return found
@@ -211,7 +222,7 @@ def e03(analysed: List[dict], rng: Tuple[float, float]) -> List[dict]:
                 'E03', s['id'], origin, start, task=t['id'], needs_llm=True, confidence='medium',
                 metrics={'tasks': len(all_tasks), 'carry': carry, 'calls': len(main), 'position': k + 1},
                 impact_w=carry * len(main) * impact.P_READ,
-                impact_usd=sum(impact.read_usd(carry, c.get('model')) for c in main),
+                impact_usd=impact.usd_sum(impact.read_usd(carry, c) for c in main),
                 _contrib={impact.call_key(c): carry * impact.P_READ for c in main}))
     return found
 
@@ -219,7 +230,34 @@ def e03(analysed: List[dict], rng: Tuple[float, float]) -> List[dict]:
 # ---- E04 / E05 -----------------------------------------------------------------
 
 def _cache_break(prev: dict, call: dict) -> bool:
+    """Whether `call` wrote (Codex: sent uncached) most of its context again after `prev`."""
+    if call.get('agent') == 'codex':
+        return (prev['ctx'] > E04_CODEX_MIN_PREV and call['ctx'] > 0
+                and call['cr'] < E04_CODEX_HIT * call['ctx'])
     return call['cw'] >= 0.5 * call['ctx'] and call['cr'] < 0.2 * prev['ctx']
+
+
+def codex_retention(model: Optional[str]) -> int:
+    """How long OpenAI keeps a prompt cache: 30 minutes from gpt-5.6 and gpt-6 on, 5 before."""
+    m = model or ''
+    if m.startswith('gpt-5.6') or (m.startswith('gpt-') and m[4:5].isdigit() and int(m[4:5]) >= 6):
+        return E04_CODEX_TTL_NEW
+    return E04_CODEX_TTL_OLD
+
+
+def _rewrite_w(call: dict) -> float:
+    """The weighted tokens a cache break costs: Claude Code's and OpenCode's cache writes over
+    reads, Codex's uncached input over cached (0.9 of it)."""
+    if call.get('agent') == 'codex':
+        return call['in'] * (1 - impact.P_READ)
+    return impact.write_w(call)
+
+
+def _rewrite_usd(call: dict) -> Optional[float]:
+    if call.get('agent') == 'codex':
+        p = impact.prices(call)
+        return call['in'] * (p['input'] - p['cache_read']) / impact.MTOK if p else None
+    return impact.write_usd(call)
 
 
 def _compacted_between(comps: List[float], a: float, b: float) -> bool:
@@ -243,25 +281,34 @@ def e04_e05(analysed: List[dict], rng: Tuple[float, float]) -> List[dict]:
                     continue
                 if _compacted_between(comps, prev['ts'], call['ts']):
                     continue
-                w = impact.write_w(call)
+                w = _rewrite_w(call)
                 common = dict(chain=chain, task=_task_of(a, call), impact_w=w,
-                              impact_usd=impact.write_usd(call),
+                              impact_usd=_rewrite_usd(call),
                               _contrib={impact.call_key(call): w})
                 changed_model = chain == 'main' and prev.get('model') and call.get('model') \
                     and prev['model'] != call['model']
                 changed_effort = chain == 'main' and prev.get('effort') and call.get('effort') \
                     and prev['effort'] != call['effort']
-                if changed_model or changed_effort:
+                # OpenCode: the agent (build, plan, a custom one) switched in the conversation.
+                changed_agent = chain == 'main' and prev.get('mode') and call.get('mode') \
+                    and prev['mode'] != call['mode']
+                if changed_model or changed_effort or changed_agent:
+                    kind = 'model' if changed_model else 'effort' if changed_effort else 'agent'
+                    key = {'model': 'model', 'effort': 'effort', 'agent': 'mode'}[kind]
                     session_e05.append(_hit(
                         'E05', s['id'], call['id'], call['ts'],
-                        metrics={'from': prev.get('model') if changed_model else prev.get('effort'),
-                                 'to': call.get('model') if changed_model else call.get('effort'),
-                                 'kind': 'model' if changed_model else 'effort', 'cache_write': call['cw']},
+                        metrics={'from': prev.get(key), 'to': call.get(key), 'kind': kind,
+                                 'cache_write': call['cw'] or call['in']},
                         _models=(prev.get('model'), call.get('model')) if changed_model else None,
                         **common))
                     continue
+                if s.get('agent') == 'opencode':
+                    continue        # retention depends on the provider (and local models are free)
                 gap = call['ts'] - prev['ts']
-                ttl = E04_TTL_1H if prev['cw1h'] > 0 else E04_TTL_5M
+                if s.get('agent') == 'codex':
+                    ttl = codex_retention(prev.get('model'))
+                else:
+                    ttl = E04_TTL_1H if prev['cw1h'] > 0 else E04_TTL_5M
                 if gap <= ttl or chain_kinds.get(chain) == 'teammate':
                     continue
                 # A pause in which another chain of the session was working is waiting for
@@ -270,8 +317,9 @@ def e04_e05(analysed: List[dict], rng: Tuple[float, float]) -> List[dict]:
                     continue
                 e04.append(_hit(
                     'E04', s['id'], call['id'], call['ts'],
-                    metrics={'gap': round(gap), 'ttl': ttl, 'cache_write': call['cw']},
-                    _short_ttl=(chain == 'main' and ttl == E04_TTL_5M and gap <= E04_TTL_1H),
+                    metrics={'gap': round(gap), 'ttl': ttl, 'cache_write': call['cw'] or call['in']},
+                    _short_ttl=(s.get('agent', 'claude') == 'claude' and chain == 'main'
+                                and ttl == E04_TTL_5M and gap <= E04_TTL_1H),
                     **common))
         e05.extend(_merge_round_trips(session_e05))
     short = [h for h in e04 if h['_short_ttl']]
@@ -313,13 +361,14 @@ def _is_build_output(path: str) -> bool:
     return any(p in BUILD_DIRS for p in parts) or path.endswith('.min.js')
 
 
-def owner_instructions(path: str, stop: Optional[str] = None) -> Optional[str]:
-    """The instruction file that owns `path`: `CLAUDE.md` in the nearest folder above it that
-    has a `.git` or a `CLAUDE.md`. `None` when there is none (up to the file system root)."""
+def owner_instructions(path: str, name: str = 'CLAUDE.md') -> Optional[str]:
+    """The instruction file (`name`: `CLAUDE.md`, or `AGENTS.md` for Codex and OpenCode) that owns
+    `path`: `name` in the nearest folder above it that has a `.git` or a `name`. `None` when there
+    is none (up to the file system root)."""
     d = path if os.path.isdir(path) else os.path.dirname(path)
     while True:
-        if os.path.exists(os.path.join(d, '.git')) or os.path.isfile(os.path.join(d, 'CLAUDE.md')):
-            return os.path.join(d, 'CLAUDE.md')
+        if os.path.exists(os.path.join(d, '.git')) or os.path.isfile(os.path.join(d, name)):
+            return os.path.join(d, name)
         parent = os.path.dirname(d)
         if parent == d:
             return None
@@ -364,7 +413,8 @@ def e08(analysed: List[dict], rng: Tuple[float, float]) -> List[dict]:
                 est = r['est'] if r else 0
                 later = impact.calls_after(main, c['ts'], s['compactions'].get('main', []), rng[1])
                 groups.setdefault((s['cwd'], key), []).append({
-                    'session': s['id'], 'call': c, 'est': est, 'later': later, 'path': path})
+                    'session': s['id'], 'call': c, 'est': est, 'later': later, 'path': path,
+                    'name': instruction_name(s)})
     found = []
     for (cwd, key), uses in groups.items():
         sessions = {u['session'] for u in uses}
@@ -374,11 +424,11 @@ def e08(analysed: List[dict], rng: Tuple[float, float]) -> List[dict]:
         if mean < E08_MIN_TOKENS:
             continue
         w = sum(u['est'] * len(u['later']) * impact.P_READ + u['est'] * 1.25 for u in uses)
-        usd = sum(sum(impact.read_usd(u['est'], c.get('model')) for c in u['later'])
-                  + u['est'] * impact.prices(u['call'].get('model'))['cache_5m'] / impact.MTOK
-                  for u in uses)
+        usd = impact.usd_sum(
+            v for u in uses
+            for v in [impact.write5_usd(u['est'], u['call'])] + [impact.read_usd(u['est'], c) for c in u['later']])
         latest = max(uses, key=lambda u: u['call']['ts'])
-        owner = owner_instructions(latest['path'] or cwd)
+        owner = owner_instructions(latest['path'] or cwd, name=latest['name'])
         remedy = dict(remedy_kind='fix', change='add', targets=[owner]) if owner else {}
         # The file read again and again (a search: the folder it searched), named in the
         # finding and the fix request; `report` adds its masked form to `metrics`.
@@ -432,7 +482,9 @@ def e14(analysed: List[dict], rng: Tuple[float, float]) -> List[dict]:
         if prompts and prompts[0]['chars'] > E14_LONG_FIRST:
             continue
         pre = s['main'].get('preamble', {})
-        long_files = [f for f in pre.get('instr', []) if f['lines'] > E14_MAX_LINES and f.get('p')]
+        too_long = ((lambda f: f['lines'] > E14_MAX_LINES) if s.get('agent', 'claude') == 'claude'
+                    else (lambda f: f['bytes'] > E14_MAX_BYTES))
+        long_files = [f for f in pre.get('instr', []) if too_long(f) and f.get('p')]
         remedy = {}
         if long_files:
             src = normalize.abs_path(long_files[0]['p'], s['cwd'])
@@ -448,7 +500,7 @@ def e14(analysed: List[dict], rng: Tuple[float, float]) -> List[dict]:
                      'tool_search_absent': bool(pre.get('tool_search_absent')),
                      'version': s['version'], 'calls': len(row['ranged'])},
             impact_w=excess * len(row['ranged']) * impact.P_READ,
-            impact_usd=sum(impact.read_usd(excess, c.get('model')) for c in row['ranged']),
+            impact_usd=impact.usd_sum(impact.read_usd(excess, c) for c in row['ranged']),
             _contrib={impact.call_key(c): excess * impact.P_READ for c in row['ranged']},
             **remedy))
     return found
@@ -492,7 +544,7 @@ def e16(analysed: List[dict], base: dict, rng: Tuple[float, float]) -> List[dict
                          'interrupts': t['interrupts'], 'calls': t['all_calls'], 'turns': t['turns'],
                          'calls_ratio': t['calls_ratio'], 'max_rewrites': t['max_rewrites']},
                 impact_w=sum(normalize.w_of(c) for c in after),
-                impact_usd=sum(impact.call_usd(c) for c in after),
+                impact_usd=impact.usd_sum(impact.call_usd(c) for c in after),
                 _contrib={impact.call_key(c): normalize.w_of(c) for c in after}))
     return found
 
@@ -505,7 +557,9 @@ def run(analysed: List[dict], base: dict, rng: Tuple[float, float]) -> Tuple[Lis
     hits = (e01(analysed, rng) + e02(analysed, rng) + e03(analysed, rng)
             + e04_e05(analysed, rng) + e08(analysed, rng) + e14(analysed, rng)
             + e16(analysed, base, rng))
+    agents = {a['session']['id']: a['session'].get('agent') or 'claude' for a in analysed}
     for h in hits:
+        h['agent'] = agents.get(h['session'], 'claude')
         impact.finish(h)
     hits.sort(key=lambda h: (-h['impact_w'], h['id']))
     out, seen = [], set()

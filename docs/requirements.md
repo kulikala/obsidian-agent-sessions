@@ -89,7 +89,7 @@ Agent CLIs other than Claude Code, Codex, and OpenCode (agy, …) are a future d
   - R-S17.7 After an analysis, its own tokens and (when known) cost are shown.
   - R-S17.8 Each finding has evidence, cause, estimated effect and remedy, and the evidence opens the session.
   - R-S17.9 **Ask an agent to fix** starts a new session in the vault with a request shown and editable first; one finding at a time; only the files the request names by absolute path (at most two) may change.
-  - R-S17.10 The request, in the UI language, lists the files that may change, the kind of change (add, trim, move), that nothing is written before a diff is shown and approved, that removed lines appear in the diff, what must not be done, and how to undo. Claude Code starts in plan mode.
+  - R-S17.10 The request, in the UI language, lists the files that may change, the kind of change (add, trim, move), that nothing is written before a diff is shown and approved, that removed lines appear in the diff, what must not be done, and how to undo. Claude Code starts in plan mode, Codex with a read-only sandbox that asks for approval, OpenCode with its `plan` agent.
   - R-S17.11 Findings about habits (switching conversations, choosing models, writing requests) show advice only, no button.
   - R-S17.12 No text, request or model finding recommends `/clear`; switching conversations is "start a new conversation in a new tab".
   - R-S17.13 Findings about requests state what happened and what it cost, never blame, and never point out a typo on its own.
@@ -98,9 +98,10 @@ Agent CLIs other than Claude Code, Codex, and OpenCode (agy, …) are a future d
   - R-S17.16 The threshold (50–95%), the budget (1,000,000–100,000,000 weighted tokens) and the analysis model (Sonnet or Opus) are settings; out-of-range values fall back to the defaults.
   - R-S17.17 The README's Disclosures, `principles.md` 5, `design.md` and this page say what is sent, when, where, and what is kept.
   - R-S17.18 Every failure (program missing or too old, agent unavailable, no data in range, statistics failure, model failure or time-out, usage limit with its reset time, cancel) says what happened and what to do next, and keeps the statistics' findings.
-  - R-S17.19 A conversation's excerpts go only to that conversation's own agent.
-  - R-S17.20 The last result per agent is saved and shown the next time the dialog opens for an overlapping range.
+  - R-S17.19 A conversation's excerpts go only to that conversation's own agent and, for Codex and OpenCode, its own provider (a local provider's to its local model); what one pane sends names only that provider's sessions.
+  - R-S17.20 The last result per pane (agent, and provider for Codex and OpenCode) is saved and shown the next time the dialog opens for an overlapping range.
   - R-S17.21 The analysing agent finds no unmasked conversation text within reach: it runs in an empty folder made fresh for each run and removed afterwards, and the statistics cache holds no conversation text.
+  - R-S17.23 Claude Code, Codex and OpenCode conversations are analysed alike: Codex and OpenCode get a pane per provider; detectors whose signal an agent does not record (E04 for OpenCode) do not run for it.
   - R-S17.22 No statistic depends on the words a person wrote: the same conversation in another language gives the same tasks, hits and impact. Only record formats the agents write and the masking patterns are matched.
 
 ### R-D Persistence and restore

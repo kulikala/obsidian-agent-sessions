@@ -171,10 +171,10 @@ export async function detail(agentSessionsPath: string, vaultPath: string, id: s
 	return runJson(agentSessionsPath, vaultPath, ["detail", id]) as Promise<Detail>;
 }
 
-/** `json efficiency`'s arguments: the agent, the window threshold (%) and the budget (weighted
+/** `json efficiency`'s arguments: the agents, the window threshold (%) and the budget (weighted
  * tokens). */
 export interface EfficiencyArgs {
-	agent: string;
+	agents: string[];
 	threshold: number;
 	budget: number;
 }
@@ -185,7 +185,7 @@ export async function efficiency(agentSessionsPath: string, vaultPath: string, a
 	return runJson(
 		agentSessionsPath,
 		vaultPath,
-		["efficiency", "--agent", args.agent, "--threshold", String(args.threshold), "--budget", String(args.budget)],
+		["efficiency", ...args.agents.flatMap((a) => ["--agent", a]), "--threshold", String(args.threshold), "--budget", String(args.budget)],
 		{ timeoutMs: 180_000, maxBuffer: 16 * 1024 * 1024 }
 	);
 }
@@ -632,17 +632,22 @@ export function buildAgentArgv(
 ): string[] {
 	// A first message and a permission mode only apply to a fresh session.
 	const prompt = fresh && start.prompt ? start.prompt : undefined;
+	const plan = fresh && start.permissionMode === "plan";
 	if (agent === "codex") {
 		const own = codexNoDaemon ? [bin, "--no-daemon"] : [bin];
 		if (!fresh) {
 			return [...own, "resume", id];
 		}
-		return prompt ? [...own, "--", prompt] : own;
+		// Codex has no flag to start in Plan mode; a read-only sandbox that asks before anything
+		// else is its nearest: nothing is written until the user approves it.
+		const mode = plan ? ["--sandbox", "read-only", "--ask-for-approval", "on-request"] : [];
+		return prompt ? [...own, ...mode, "--", prompt] : [...own, ...mode];
 	}
 	if (agent === "opencode") {
 		// OpenCode can't be told a new session's id either (like Codex): a fresh launch takes no
-		// id flag; a resume passes `--session <id>`.
-		const tail = fresh ? (prompt ? ["--prompt", prompt] : []) : ["--session", id];
+		// id flag; a resume passes `--session <id>`. Plan mode is its built-in `plan` agent.
+		const mode = plan ? ["--agent", "plan"] : [];
+		const tail = fresh ? [...mode, ...(prompt ? ["--prompt", prompt] : [])] : ["--session", id];
 		if (opencodeLaunch) {
 			return [opencodeLaunch.ollamaBin, "launch", "opencode", "--model", opencodeLaunch.model, "-y", "--", ...tail];
 		}
@@ -658,9 +663,10 @@ export function buildAgentArgv(
 	return prompt ? [...argv, "--", prompt] : argv;
 }
 
-/** How a fresh session starts: its first message, and (Claude Code) the permission mode --
- * `plan` stops before any file is written. Same order as `launch.py`'s `build_argv`: Claude Code
- * and Codex take the message after `--`, OpenCode as `--prompt`. */
+/** How a fresh session starts: its first message, and the permission mode -- `plan` stops before
+ * any file is written (Claude Code `--permission-mode plan`, Codex a read-only sandbox that asks
+ * for approval, OpenCode its `plan` agent). The message goes in the same place as in
+ * `launch.py`'s `build_argv`: Claude Code and Codex take it after `--`, OpenCode as `--prompt`. */
 export interface LaunchStart {
 	prompt?: string;
 	permissionMode?: "plan";

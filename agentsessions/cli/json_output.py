@@ -455,14 +455,15 @@ def stats_output() -> dict:
 def efficiency_output(agent_names: Optional[List[str]] = None, threshold: float = 80.0,
                       budget: float = 10_000_000, explicit=None, max_sessions: int = 200,
                       excerpts: bool = True, now: Optional[float] = None) -> dict:
-    """`{"version": 1, "agents": {"claude": {...}}}` -- the token efficiency statistics,
-    hits and masked excerpts of each requested (and enabled) agent; see
-    `agentsessions/efficiency/report.py`. Only Claude Code is analysed for now: other
-    agents are left out of `agents`."""
-    from ..efficiency import report
+    """`{"version": 1, "agents": {"claude": {...}, "codex": {...}, "opencode": {...}}}` -- the
+    token efficiency statistics, hits and masked excerpts of each requested (and enabled) agent;
+    see `agentsessions/efficiency/report.py`."""
+    from ..efficiency import report, sources
     now = time.time() if now is None else now
     enabled = agents.enabled_agents()
     wanted = [a for a in (agent_names or enabled) if a in enabled]
+    kw = dict(vault=config.VAULT, threshold=threshold, budget=budget, explicit=explicit,
+              max_sessions=max_sessions, with_excerpts=excerpts)
     out: Dict[str, dict] = {}
     if 'claude' in wanted:
         c = cache.load(path=config.CACHE_PATH)
@@ -470,7 +471,17 @@ def efficiency_output(agent_names: Optional[List[str]] = None, threshold: float 
         names = {s.id: s.name for s in claude_agent.scan(paths, cache=c).values() if s.name}
         cache.save(c, path=config.CACHE_PATH)
         out['claude'] = report.build(
-            now, config.PROJECTS_DIR, config.STATUS_DIR, config.STATS_CACHE_PATH,
-            vault=config.VAULT, threshold=threshold, budget=budget, explicit=explicit,
-            max_sessions=max_sessions, with_excerpts=excerpts, names=names)
+            now, config.PROJECTS_DIR, config.STATUS_DIR, config.STATS_CACHE_PATH, names=names, **kw)
+    if 'codex' in wanted:
+        out['codex'] = report.build_for(now, sources.CodexSource(), names=_agent_names(codex_agent), **kw)
+    if 'opencode' in wanted:
+        out['opencode'] = report.build_for(now, sources.OpencodeSource(), names=_agent_names(opencode_agent), **kw)
     return {'version': 1, 'agents': out}
+
+
+def _agent_names(module) -> Dict[str, str]:
+    """Session names of Codex or OpenCode (best effort: none when the scan fails)."""
+    try:
+        return {s.id: s.name for s in module.scan(module.list_transcripts()).values() if s.name}
+    except Exception:
+        return {}

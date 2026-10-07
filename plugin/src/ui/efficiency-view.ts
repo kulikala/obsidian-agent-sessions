@@ -82,9 +82,17 @@ export type AnalysisFailure =
 	| { kind: "timeout" }
 	| { kind: "llm"; detail: string };
 
-/** The reset time (epoch seconds) of a usage limit Claude Code reported in its stream, or
- * `undefined` when the run did not stop on one. Reads a `rate_limit_event` whose status is
- * `rejected` (its `resetsAt`), or an error `result` saying a limit was hit. */
+const LIMIT_RE = /usage limit|hit your .*limit/i;
+
+function errorText(e: Record<string, unknown>): string {
+	const err = (e.error ?? {}) as Record<string, unknown>;
+	return [e.message, err.message].filter((x): x is string => typeof x === "string").join(" ");
+}
+
+/** The reset time (epoch seconds) of a usage limit the run reported in its stream, or `undefined`
+ * when the run did not stop on one. Claude Code: a `rate_limit_event` whose status is `rejected`
+ * (its `resetsAt`), or an error `result` saying a limit was hit. Codex: an `error` or
+ * `turn.failed` event with its usage-limit message (no reset time). */
 export function rateLimitOf(stdout: string): number | null | undefined {
 	let hit = false;
 	let resetsAt: number | null = null;
@@ -98,6 +106,9 @@ export function rateLimitOf(stdout: string): number | null | undefined {
 				}
 			}
 		} else if (e.type === "result" && e.is_error === true && typeof e.result === "string" && /hit your .*limit/i.test(e.result)) {
+			hit = true;
+		} else if ((e.type === "error" || e.type === "turn.failed") && LIMIT_RE.test(errorText(e))) {
+			// Codex `exec --json`: its own usage-limit message on an error or a failed turn.
 			hit = true;
 		}
 	}

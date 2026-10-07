@@ -108,8 +108,11 @@ class OutputTest(unittest.TestCase):
     def test_shape(self):
         c = self.claude()
         self.assertEqual(set(c), {'range', 'totals', 'providers', 'sessions', 'breakdown', 'tasks', 'hits',
-                                  'excerpts', 'baselines', 'limits', 'summary'})
+                                  'excerpts', 'baselines', 'limits', 'summary', 'panes'})
         self.assertEqual(c['range']['rule'], 'budget')
+        self.assertEqual([(p['key'], p['provider'], p['local']) for p in c['panes']], [('claude', 'anthropic', False)])
+        self.assertEqual(c['panes'][0]['summary'], c['summary'])
+        self.assertEqual(c['panes'][0]['excerpts'], c['excerpts'])
         self.assertEqual(c['providers'][0]['provider'], 'anthropic')
         self.assertEqual(c['baselines']['disabled'], [])
         self.assertFalse(c['limits']['truncated'])
@@ -202,11 +205,14 @@ class OutputTest(unittest.TestCase):
             self.assertEqual(json_cmd.main(['efficiency', '--budget', 'lots']), 2)
             self.assertEqual(json_cmd.main(['efficiency', '--bogus']), 2)
 
-    def test_other_agents_are_left_out(self):
-        with mock.patch.dict(os.environ, {'AGENT_SESSIONS_AGENTS': 'claude,codex'}), \
-                mock.patch('time.time', return_value=sc.NOW):
-            out = json_output.efficiency_output(['codex'])
-        self.assertEqual(out, {'version': 1, 'agents': {}})
+    def test_disabled_agents_are_left_out(self):
+        env = {'AGENT_SESSIONS_AGENTS': 'claude,codex', 'CODEX_HOME': os.path.join(self.tmp, 'codex'),
+               'XDG_DATA_HOME': os.path.join(self.tmp, 'xdg')}
+        with mock.patch.dict(os.environ, env), mock.patch('time.time', return_value=sc.NOW):
+            out = json_output.efficiency_output(['codex', 'opencode'])
+        self.assertEqual(list(out['agents']), ['codex'])
+        self.assertEqual(out['agents']['codex']['totals']['calls'], 0)
+        self.assertEqual(out['agents']['codex']['panes'], [])
 
 
 

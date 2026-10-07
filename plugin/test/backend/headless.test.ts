@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BackendError, buildAgentArgv, runJson } from "../../src/backend/backend";
 import { HeadlessError, runHeadless } from "../../src/backend/headless";
 import { inRunFolder, RunFolderBusyError } from "../../src/backend/run-folder";
-import { addUsage, headlessArgs, headlessUsage } from "../../src/sessions/organize-agent";
+import { addUsage, headlessArgs, headlessUsage, usedTools } from "../../src/sessions/organize-agent";
 import { launchStart, rememberAgent } from "../../src/sessions/new-session";
 
 const CLAUDE_RESULT = readFileSync(join(__dirname, "../fixtures/headless/claude-result.jsonl"), "utf8");
@@ -49,6 +49,18 @@ describe("headlessUsage", () => {
 	});
 });
 
+describe("usedTools", () => {
+	it("Codex command, file and MCP items, OpenCode tool_use events; replies alone are not tools", () => {
+		const codex = (type: string) => JSON.stringify({ type: "item.completed", item: { type, text: "x" } });
+		expect(usedTools("codex", codex("command_execution"))).toBe(true);
+		expect(usedTools("codex", codex("file_change"))).toBe(true);
+		expect(usedTools("codex", [codex("reasoning"), codex("agent_message")].join("\n"))).toBe(false);
+		expect(usedTools("opencode", JSON.stringify({ type: "tool_use", part: { tool: "read" } }))).toBe(true);
+		expect(usedTools("opencode", JSON.stringify({ type: "text", part: { text: "{}" } }))).toBe(false);
+		expect(usedTools("claude", CLAUDE_RESULT)).toBe(false);
+	});
+});
+
 describe("headlessArgs model and extra arguments", () => {
 	it("names opus for Claude Code and appends extra arguments", () => {
 		const args = headlessArgs("claude", "opus", ["--x"]);
@@ -87,6 +99,41 @@ describe("buildAgentArgv with a first message (same order as launch.py's build_a
 		expect(
 			buildAgentArgv("opencode", "/bin/oc", "abc", true, { ollamaBin: "/bin/ollama", model: "m" }, false, undefined, { prompt: "go" })
 		).toEqual(["/bin/ollama", "launch", "opencode", "--model", "m", "-y", "--", "--prompt", "go"]);
+	});
+
+	it("plan mode: Codex a read-only sandbox that asks first, OpenCode its plan agent", () => {
+		const start = { prompt: "Fix it", permissionMode: "plan" as const };
+		expect(buildAgentArgv("codex", "/bin/codex", "abc", true, undefined, true, undefined, start)).toEqual([
+			"/bin/codex",
+			"--no-daemon",
+			"--sandbox",
+			"read-only",
+			"--ask-for-approval",
+			"on-request",
+			"--",
+			"Fix it",
+		]);
+		expect(buildAgentArgv("opencode", "/bin/oc", "abc", true, undefined, false, undefined, start)).toEqual([
+			"/bin/oc",
+			"--agent",
+			"plan",
+			"--prompt",
+			"Fix it",
+		]);
+		expect(buildAgentArgv("opencode", "/bin/oc", "abc", true, { ollamaBin: "/bin/ollama", model: "m" }, false, undefined, start)).toEqual([
+			"/bin/ollama",
+			"launch",
+			"opencode",
+			"--model",
+			"m",
+			"-y",
+			"--",
+			"--agent",
+			"plan",
+			"--prompt",
+			"Fix it",
+		]);
+		expect(buildAgentArgv("codex", "/bin/codex", "abc", false, undefined, false, undefined, start)).toEqual(["/bin/codex", "resume", "abc"]);
 	});
 
 	it("a resumed session takes neither", () => {

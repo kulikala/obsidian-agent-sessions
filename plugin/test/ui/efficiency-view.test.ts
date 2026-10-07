@@ -86,6 +86,18 @@ describe("failures", () => {
 		expect(classifyAnalysisFailure(new HeadlessError("x", textOnly), false)).toEqual({ kind: "rateLimit", resetsAt: null });
 		expect(rateLimitOf(CLAUDE_RESULT)).toBeUndefined();
 	});
+
+	it("reads Codex's usage-limit failure", () => {
+		const failed = [
+			JSON.stringify({ type: "thread.started", thread_id: "x" }),
+			JSON.stringify({ type: "error", message: "You've hit your usage limit. Try again later." }),
+			JSON.stringify({ type: "turn.failed", error: { message: "You've hit your usage limit." } }),
+		].join("\n");
+		expect(rateLimitOf(failed)).toBeNull();
+		expect(classifyAnalysisFailure(new HeadlessError("x", failed), false)).toEqual({ kind: "rateLimit", resetsAt: null });
+		const other = JSON.stringify({ type: "turn.failed", error: { message: "stream disconnected" } });
+		expect(rateLimitOf(other)).toBeUndefined();
+	});
 });
 
 describe("failure messages", () => {

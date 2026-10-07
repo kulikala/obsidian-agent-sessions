@@ -1,18 +1,23 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { setLang, t } from "../../src/i18n";
 import {
+	analysisArgs,
 	analysisPrompt,
 	candidates,
 	fixPrompt,
 	mergeReply,
 	numbersIn,
+	paneBlock,
+	panesOf,
 	payloadOf,
 	rangeLine,
 	replaceUnknownNumbers,
 	retryPrompt,
 	ReplyShapeError,
 	statFindings,
+	usageWindow,
 	type EffAgent,
+	type EffPane,
 	type EffHit,
 	type Finding,
 } from "../../src/sessions/efficiency";
@@ -322,6 +327,104 @@ describe("rangeLine", () => {
 			sessions,
 		});
 		expect(ja).toContain("7 日枠（上限に到達）");
+	});
+});
+
+describe("Codex and OpenCode panes", () => {
+	const totals = (w: number) => ({ w, calls: 1 }) as EffAgent["totals"];
+	const block = {
+		range: { rule: "budget", start: 0, end: 1, used_percentage: null, exhausted: false },
+		totals: totals(300),
+		sessions: [
+			{ id: "s1", provider: "anthropic" },
+			{ id: "s2", provider: "ollama" },
+		],
+		breakdown: [],
+		tasks: [],
+		hits: [hit({ id: "h-1", detector: "E01", session: "s1" }), hit({ id: "h-2", detector: "E01", session: "s2" })],
+		excerpts: [],
+		baselines: { disabled: [] },
+		limits: { truncated: false, reason: null },
+		summary: { agent: "opencode" },
+	} as unknown as EffAgent;
+	const pane = (provider: string, ids: string[], local = false): EffPane => ({
+		key: `opencode-${provider}`,
+		agent: "opencode",
+		provider,
+		model: provider === "ollama" ? "big-local" : "claude-sonnet-5",
+		local,
+		sessions: 1,
+		w: 100,
+		totals: totals(100),
+		breakdown: [],
+		hits: ids,
+		summary: { agent: "opencode", provider },
+		excerpts: [],
+	});
+
+	it("a pane holds only its provider's sessions and hits, and what it sends", () => {
+		const local = paneBlock(block, pane("ollama", ["h-2"], true));
+		expect(local.hits.map((h) => h.id)).toEqual(["h-2"]);
+		expect(local.sessions.map((s) => s.id)).toEqual(["s2"]);
+		expect(local.summary).toEqual({ agent: "opencode", provider: "ollama" });
+		expect(local.totals.w).toBe(100);
+		expect(local.range).toBe(block.range);
+	});
+
+	it("an older program's block becomes one pane", () => {
+		const [only] = panesOf("claude", block);
+		expect([only.key, only.hits, only.summary]).toEqual(["claude", ["h-1", "h-2"], block.summary]);
+		expect(panesOf("opencode", { ...block, panes: [pane("ollama", [])] }).map((p) => p.key)).toEqual(["opencode-ollama"]);
+	});
+
+	it("names the provider and model on the command line", () => {
+		expect(analysisArgs({ agent: "opencode", provider: "ollama", model: "big-local" })).toEqual(["--model", "ollama/big-local"]);
+		expect(analysisArgs({ agent: "opencode", provider: "ollama", model: null })).toEqual([]);
+		expect(analysisArgs({ agent: "codex", provider: "openai", model: "gpt-6-luna" })).toEqual(["-m", "gpt-6-luna"]);
+		expect(analysisArgs({ agent: "codex", provider: "ollama", model: "gpt-oss:20b" })).toEqual([
+			"-m",
+			"gpt-oss:20b",
+			"-c",
+			'model_provider="ollama"',
+		]);
+		expect(analysisArgs({ agent: "claude", provider: "anthropic", model: null })).toEqual([]);
+	});
+
+	it("the usage window to name: the range's, else the first known, Codex's monthly one by its length", () => {
+		const range = {
+			rule: "budget",
+			start: 0,
+			end: 1,
+			used_percentage: null,
+			exhausted: false,
+			windows: {
+				five_hour: { used_percentage: null, end: null, exhausted: false },
+				window_43200m: { used_percentage: 13, end: null, exhausted: false },
+			},
+		};
+		expect(usageWindow(range)).toEqual({ label: "30-day window", percent: 13 });
+		expect(usageWindow({ ...range, windows: {} })).toBeNull();
+		const line = rangeLine("Codex · openai", {
+			range: { ...range, rule: "window_43200m", used_percentage: 91 },
+			totals: totals(1000),
+			sessions: [],
+		});
+		expect(line).toContain("30-day window (91% used)");
+	});
+
+	it("the fixing request says how each agent waits for approval", () => {
+		const [f] = statFindings([HITS[0]]);
+		const claude = fixPrompt(f, []) as string;
+		const codex = fixPrompt(f, [], "codex") as string;
+		const opencode = fixPrompt(f, [], "opencode") as string;
+		expect(claude).toContain(t("efficiency.fix.prompt.step3"));
+		expect(codex).toContain(t("efficiency.fix.prompt.step3Codex"));
+		expect(opencode).toContain(t("efficiency.fix.prompt.step3Opencode"));
+		expect(opencode).toContain("Tab");
+		for (const text of [codex, opencode]) {
+			expect(text).toContain(t("efficiency.fix.prompt.step2", { max_lines: 40 }));
+			expect(text).not.toMatch(/\/clear/);
+		}
 	});
 });
 
