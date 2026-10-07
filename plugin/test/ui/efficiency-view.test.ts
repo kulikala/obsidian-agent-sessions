@@ -155,9 +155,9 @@ describe("what the pane says", () => {
 
 	it("the band: reading, then what the statistics found and to press Analyze", () => {
 		setLang("en");
-		expect(band({ overall: "stats", seconds: 3 })).toEqual({ text: "Reading the records… 3 s", tone: "busy", cancel: false });
+		expect(band({ overall: "stats", seconds: 3 })).toEqual({ text: "Reading the records… 3 s", tone: "busy", announce: "Reading the records…", cancel: false });
 		const found = band({ overall: "ready", pane: "idle", statCount: 2, hasData: true, analysable: true });
-		expect(found).toEqual({ text: t("efficiency.band.stats", { count: 2 }), tone: "info", cancel: false });
+		expect(found).toEqual({ text: t("efficiency.band.stats", { count: 2 }), tone: "info", announce: found.text, cancel: false });
 		expect(found.text).toContain("2 findings");
 		expect(band({ overall: "ready", pane: "idle", statCount: 0 }).text).toBe(t("efficiency.band.statsNone"));
 		expect(band({ overall: "ready", pane: "idle", analysable: false }).text).toBe(t("efficiency.band.nothing"));
@@ -168,17 +168,25 @@ describe("what the pane says", () => {
 		setLang("en");
 		expect(band({ overall: "ready", pane: "idle", previousAt: SAVED, statCount: 3 }).text).toBe(t("efficiency.band.previous", { date: date(SAVED) }));
 		const working = band({ overall: "ready", pane: "working", agent: "Codex", seconds: 42, previousAt: SAVED });
-		expect(working).toEqual({ text: t("efficiency.band.working", { agent: "Codex", seconds: 42 }), tone: "busy", cancel: true });
+		expect(working).toMatchObject({ text: t("efficiency.band.working", { agent: "Codex", seconds: 42 }), tone: "busy", cancel: true });
 		expect(working.text).toContain("Codex is analysing… 42 s");
+		// Screen readers hear it once: the announcement has no counters, so it doesn't change as they tick.
+		expect(working.announce).toBe("Codex is analysing. Closing this dialog stops it.");
+		expect(band({ overall: "ready", pane: "working", agent: "Codex", seconds: 43, chars: 900 }).announce).toBe(working.announce);
 		expect(band({ overall: "ready", pane: "working", agent: "Codex", seconds: 5, chars: 120 }).text).toContain("120 characters received");
-		expect(band({ overall: "ready", pane: "result", resultCount: 4 })).toEqual({ text: t("efficiency.band.done", { count: 4 }), tone: "done", cancel: false });
+		expect(band({ overall: "ready", pane: "result", resultCount: 4 })).toMatchObject({ text: t("efficiency.band.done", { count: 4 }), tone: "done", cancel: false });
 		expect(band({ overall: "ready", pane: "result", resultCount: 0 }).text).toBe(t("efficiency.band.doneNone"));
 	});
 
 	it("the band: failures, a cancel and tools used are errors, with the next step", () => {
 		setLang("en");
 		const failed = band({ overall: "ready", pane: "failed", error: { text: "It failed.", retry: true } });
-		expect(failed).toEqual({ text: "It failed. The statistics' findings stay below. To try again, press Analyze.", tone: "error", cancel: false });
+		expect(failed).toEqual({
+			text: "It failed. The statistics' findings stay below. To try again, press Analyze.",
+			tone: "error",
+			announce: failed.text,
+			cancel: false,
+		});
 		// A cancelled analysis returns the pane to idle; its message stays until the next run.
 		const cancelled = band({ overall: "ready", pane: "idle", previousAt: SAVED, error: { text: "Cancelled.", retry: true } });
 		expect(cancelled.tone).toBe("error");
@@ -189,7 +197,7 @@ describe("what the pane says", () => {
 		expect(tools.text).toBe(`${t("efficiency.toolUsed")} ${t("efficiency.band.done", { count: 1 })}`);
 		// The statistics' failure is the band alone; nothing stays below it.
 		expect(band({ overall: "failed", error: { text: "No program.", retry: false } }).text).toBe("No program.");
-		expect(band({ overall: "failed", error: { text: "No program.", retry: false } })).toEqual({ text: "No program.", tone: "error", cancel: false });
+		expect(band({ overall: "failed", error: { text: "No program.", retry: false } })).toMatchObject({ text: "No program.", tone: "error", cancel: false });
 	});
 
 	it("the band in Japanese", () => {

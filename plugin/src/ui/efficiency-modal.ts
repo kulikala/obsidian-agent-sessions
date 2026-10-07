@@ -83,6 +83,8 @@ const STEP_KEYS = [
 interface BandView {
 	el: HTMLElement;
 	textEl: HTMLElement;
+	/** The live region: only what screen readers should hear, set when the state changes. */
+	liveEl: HTMLElement;
 	cancel: HTMLButtonElement;
 }
 
@@ -841,21 +843,28 @@ export class EfficiencyModal extends Modal {
 	}
 }
 
-/** The status band at the top of a pane: one line saying what is going on and what to do next,
- * announced politely to screen readers. */
+/** The status band at the top of a pane: one line saying what is going on and what to do next.
+ * Screen readers hear it once per state through a hidden live region; the visible line, whose
+ * counters tick every second, is hidden from them. Its sticky wrapper is the modal's background,
+ * so nothing scrolling under it shows around it. */
 function createBand(parent: HTMLElement): BandView {
-	const el = parent.createDiv({ cls: "agent-sessions-efficiency-band", attr: { role: "status", "aria-live": "polite" } });
+	const wrap = parent.createDiv({ cls: "agent-sessions-efficiency-band-wrap" });
+	const el = wrap.createDiv({ cls: "agent-sessions-efficiency-band" });
+	const liveEl = el.createSpan({ cls: "agent-sessions-efficiency-sr", attr: { role: "status", "aria-live": "polite" } });
 	const row = el.createDiv({ cls: "agent-sessions-efficiency-band-row" });
 	row.createSpan({ cls: "agent-sessions-efficiency-band-icon" });
-	const textEl = row.createSpan({ cls: "agent-sessions-efficiency-band-text" });
+	const textEl = row.createSpan({ cls: "agent-sessions-efficiency-band-text", attr: { "aria-hidden": "true" } });
 	const cancel = row.createEl("button", { cls: "agent-sessions-efficiency-band-cancel", text: t("efficiency.cancel") });
 	cancel.toggle(false);
-	return { el, textEl, cancel };
+	return { el, textEl, liveEl, cancel };
 }
 
 function setBand(view: BandView, b: Band): void {
 	if (view.textEl.textContent !== b.text) {
 		view.textEl.setText(b.text);
+	}
+	if (view.liveEl.textContent !== b.announce) {
+		view.liveEl.setText(b.announce);
 	}
 	for (const tone of ["busy", "info", "done", "error"]) {
 		view.el.toggleClass(`is-${tone}`, tone === b.tone);

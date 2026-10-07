@@ -241,6 +241,9 @@ export type BandTone = "busy" | "info" | "done" | "error";
 export interface Band {
 	text: string;
 	tone: BandTone;
+	/** What screen readers hear: the text without the ticking counters, so it changes only when
+	 * the state does. */
+	announce: string;
 	/** Show the Cancel button (an analysis is running). */
 	cancel: boolean;
 }
@@ -279,9 +282,9 @@ function sentences(parts: string[]): string {
 /** The one line at the top of a pane: what is going on now and what to do next. */
 export function band(input: BandInput): Band {
 	const seconds = input.seconds ?? 0;
-	const plain = (text: string, tone: BandTone): Band => ({ text, tone, cancel: false });
+	const plain = (text: string, tone: BandTone): Band => ({ text, tone, announce: text, cancel: false });
 	if (input.overall === "stats") {
-		return { text: t("efficiency.band.reading", { seconds }), tone: "busy", cancel: false };
+		return { text: t("efficiency.band.reading", { seconds }), tone: "busy", announce: t("efficiency.band.announceReading"), cancel: false };
 	}
 	if (input.overall === "failed") {
 		return plain(input.error?.text ?? "", "error");
@@ -293,7 +296,12 @@ export function band(input: BandInput): Band {
 	const agent = input.agent ?? "";
 	if (pane === "working") {
 		const params = { agent, seconds, chars: input.chars ?? 0 };
-		return { text: t(params.chars > 0 ? "efficiency.band.workingChars" : "efficiency.band.working", params), tone: "busy", cancel: true };
+		return {
+			text: t(params.chars > 0 ? "efficiency.band.workingChars" : "efficiency.band.working", params),
+			tone: "busy",
+			announce: t("efficiency.band.announceWorking", { agent }),
+			cancel: true,
+		};
 	}
 	if (input.error) {
 		// What stays below: a saved result when there is one (the button then reads "Analyze

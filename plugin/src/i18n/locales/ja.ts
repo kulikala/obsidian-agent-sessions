@@ -719,6 +719,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"efficiency.tabProvider": "{agent} · {provider}",
 	"efficiency.defaultModel": "既定のモデル",
 	"efficiency.band.reading": "記録を集計しています… {seconds} 秒",
+	"efficiency.band.announceReading": "記録を集計しています…",
+	"efficiency.band.announceWorking": "{agent} が解析しています。待つあいだ閉じると中止します。",
 	"efficiency.band.stats": "集計しました。統計から {count} 件見つかりました。原因と直し方を詳しく調べるには［解析する］を押してください。",
 	"efficiency.band.statsNone": "集計しました。統計だけでは何も見つかりませんでした。抜粋まで読んで調べるには［解析する］を押してください。",
 	"efficiency.band.nothing": "集計しました。この範囲には解析するものがありません。",

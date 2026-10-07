@@ -719,6 +719,8 @@ export const en = {
 	"efficiency.tabProvider": "{agent} · {provider}",
 	"efficiency.defaultModel": "its default model",
 	"efficiency.band.reading": "Reading the records… {seconds} s",
+	"efficiency.band.announceReading": "Reading the records…",
+	"efficiency.band.announceWorking": "{agent} is analysing. Closing this dialog stops it.",
 	"efficiency.band.stats": "Done reading. The statistics found {count} {count|finding|findings}. To look into causes and fixes in detail, press Analyze.",
 	"efficiency.band.statsNone": "Done reading. The statistics found nothing on their own. To have the agent read the excerpts as well, press Analyze.",
 	"efficiency.band.nothing": "Done reading. There is nothing to analyse in this range.",

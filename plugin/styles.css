@@ -3843,11 +3843,18 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 }
 
 /* The status band stays in view while the pane scrolls, so the state and Cancel are always at
-   hand. It sticks at the modal's edge (over its 16px top padding), so nothing shows above it. */
-.agent-sessions-efficiency-band {
+   hand. Its wrapper sticks at the modal's edge (over its 16px top padding) and spans the modal's
+   side padding, in the modal's own background, so nothing scrolling under it shows around it. */
+.agent-sessions-efficiency-band-wrap {
 	position: sticky;
 	top: calc(-1 * var(--size-4-4));
 	z-index: 1;
+	margin: 0 calc(-1 * var(--size-4-4));
+	padding: 0 var(--size-4-4) var(--size-4-2);
+	background-color: var(--modal-background, var(--background-primary));
+}
+
+.agent-sessions-efficiency-band {
 	display: flex;
 	flex-direction: column;
 	gap: var(--size-4-2);
@@ -3856,6 +3863,15 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	border-left: 3px solid var(--interactive-accent);
 	border-radius: var(--radius-m);
 	background-color: var(--background-secondary);
+}
+
+.agent-sessions-efficiency-sr {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
 }
 
 .agent-sessions-efficiency-band-row {
