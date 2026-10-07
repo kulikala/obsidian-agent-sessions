@@ -316,13 +316,15 @@ const ANALYSIS_RULES = [
 	"- use tools or read files; answer from the data given here.",
 	"",
 	"Style: say what happened and what it cost, and end with the next step.",
+	"- `title`: what happened, stated as a fact (not an instruction, not what to do). Its subject is the conversation, the session, the tool or the setting, never the person.",
+	"- `remedy.summary` and `remedy.steps`: the next step, written as an instruction to the reader, all in the same form within one finding.",
 ];
 
 const REPLY_SHAPE = [
 	"Reply with only one JSON object, nothing else, in this form:",
-	'{"findings": [{"hits": ["h-..."], "detector": "E01", "origin": "config", "title": "<= 40 characters", "cause": "<= 300 characters", ' +
+	'{"findings": [{"hits": ["h-..."], "detector": "E01", "origin": "config", "title": "<= 40 characters, what happened", "cause": "<= 300 characters", ' +
 		'"quotes": [{"ref": "t-....p2", "text": "<= 120 characters copied from that prompt or reply"}], ' +
-		'"remedy": {"kind": "fix", "change": "add", "summary": "<= 120 characters", "steps": ["..."], "targets": ["<a target of the hit>"], "draft": "<the change, for fix>"}, ' +
+		'"remedy": {"kind": "fix", "change": "add", "summary": "<= 120 characters, the next step", "steps": ["..."], "targets": ["<a target of the hit>"], "draft": "<the change, for fix>"}, ' +
 		'"confidence": "high"}], "dismissed": [{"hits": ["h-..."], "reason": "<= 120 characters"}]}',
 ];
 

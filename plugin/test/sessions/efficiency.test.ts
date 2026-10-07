@@ -214,6 +214,8 @@ describe("prompts", () => {
 		expect(prompt).toContain("only scolds");
 		expect(prompt).toContain("recommend /clear");
 		expect(prompt).toContain("start a new conversation in a new tab");
+		expect(prompt).toContain("`title`: what happened, stated as a fact (not an instruction, not what to do)");
+		expect(prompt).toContain("the next step, written as an instruction to the reader");
 		expect(retryPrompt("P", "bad JSON")).toContain("could not be used (bad JSON)");
 	});
 
