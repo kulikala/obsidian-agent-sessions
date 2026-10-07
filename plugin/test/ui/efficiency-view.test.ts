@@ -117,22 +117,14 @@ describe("failures", () => {
 });
 
 describe("failure messages", () => {
-	it("say what happened for each kind, and analysis failures keep the statistics' findings", () => {
+	it("say what happened for each kind", () => {
 		expect(statsFailureMessage("noProgram", "")).toBe(t("efficiency.error.noProgram"));
 		expect(statsFailureMessage("outdated", "")).toBe(t("efficiency.error.outdated"));
 		expect(statsFailureMessage("stats", "timed out")).toContain("timed out");
 		expect(hasData({ totals: { calls: 0 } })).toBe(false);
 		expect(t("efficiency.error.noData")).toBe("There are no records in this range.");
-		const kept = "The statistics' findings stay below.";
-		for (const failure of [
-			{ kind: "cancelled" as const },
-			{ kind: "timeout" as const },
-			{ kind: "llm" as const, detail: "exit 1" },
-			{ kind: "rateLimit" as const, resetsAt: 1_790_003_600 },
-			{ kind: "rateLimit" as const, resetsAt: null },
-		]) {
-			expect(analysisFailureMessage(failure, "Claude Code")).toContain(kept);
-		}
+		expect(analysisFailureMessage({ kind: "llm", detail: "exit 1" }, "Claude Code")).toContain("exit 1");
+		expect(analysisFailureMessage({ kind: "cancelled" }, "Claude Code")).toBe(t("efficiency.error.cancelled"));
 		expect(analysisFailureMessage({ kind: "agentUnavailable", detail: "ENOENT" }, "Claude Code")).toContain("Claude Code");
 		expect(analysisFailureMessage({ kind: "rateLimit", resetsAt: 1_790_003_600 }, "x")).toMatch(/resets .+\)/);
 	});
@@ -186,16 +178,17 @@ describe("what the pane says", () => {
 	it("the band: failures, a cancel and tools used are errors, with the next step", () => {
 		setLang("en");
 		const failed = band({ overall: "ready", pane: "failed", error: { text: "It failed.", retry: true } });
-		expect(failed).toEqual({ text: `It failed. ${t("efficiency.band.retry", { button: t("efficiency.consent.send") })}`, tone: "error", cancel: false });
-		expect(failed.text).toContain("press Analyze.");
+		expect(failed).toEqual({ text: "It failed. The statistics' findings stay below. To try again, press Analyze.", tone: "error", cancel: false });
 		// A cancelled analysis returns the pane to idle; its message stays until the next run.
 		const cancelled = band({ overall: "ready", pane: "idle", previousAt: SAVED, error: { text: "Cancelled.", retry: true } });
 		expect(cancelled.tone).toBe("error");
-		expect(cancelled.text).toContain("press Analyze again.");
-		expect(band({ overall: "ready", pane: "failed", error: { text: "Not found.", retry: false } }).text).toBe("Not found.");
+		expect(cancelled.text).toBe("Cancelled. The previous analysis stays below. To try again, press Analyze again.");
+		expect(band({ overall: "ready", pane: "failed", error: { text: "Not found.", retry: false } }).text).toBe("Not found. The statistics' findings stay below.");
 		const tools = band({ overall: "ready", pane: "result", resultCount: 1, toolUsed: true });
 		expect(tools.tone).toBe("error");
 		expect(tools.text).toBe(`${t("efficiency.toolUsed")} ${t("efficiency.band.done", { count: 1 })}`);
+		// The statistics' failure is the band alone; nothing stays below it.
+		expect(band({ overall: "failed", error: { text: "No program.", retry: false } }).text).toBe("No program.");
 		expect(band({ overall: "failed", error: { text: "No program.", retry: false } })).toEqual({ text: "No program.", tone: "error", cancel: false });
 	});
 
@@ -209,6 +202,9 @@ describe("what the pane says", () => {
 			"Claude Code が解析しています… 7 秒（ふつう 1〜3 分）。待つあいだ閉じると中止します。"
 		);
 		expect(band({ overall: "ready", pane: "result", resultCount: 5 }).text).toBe("解析が終わりました。5 件の指摘を、影響の大きい順に並べています。");
+		expect(band({ overall: "ready", pane: "failed", error: { text: t("efficiency.error.timeout"), retry: true } }).text).toBe(
+			"解析に時間がかかりすぎたため止めました。統計による指摘は下に残しています。もう一度試すには［解析する］を押してください。"
+		);
 		setLang("en");
 	});
 

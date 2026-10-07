@@ -174,7 +174,7 @@ export function retryHelps(failure: AnalysisFailure): boolean {
 	return failure.kind !== "agentUnavailable";
 }
 
-/** The message for a failed analysis; every one of them says the statistics' findings stay. */
+/** The message for a failed analysis: what went wrong (the band adds what stays shown). */
 export function analysisFailureMessage(failure: AnalysisFailure, agent: string): string {
 	switch (failure.kind) {
 		case "cancelled":
@@ -271,6 +271,11 @@ export interface BandInput {
 	error?: { text: string; retry: boolean } | null;
 }
 
+/** Sentences joined as the language joins them (a space in English, nothing in Japanese). */
+function sentences(parts: string[]): string {
+	return parts.reduce((first, next) => t("efficiency.band.then", { first, next }));
+}
+
 /** The one line at the top of a pane: what is going on now and what to do next. */
 export function band(input: BandInput): Band {
 	const seconds = input.seconds ?? 0;
@@ -291,14 +296,19 @@ export function band(input: BandInput): Band {
 		return { text: t(params.chars > 0 ? "efficiency.band.workingChars" : "efficiency.band.working", params), tone: "busy", cancel: true };
 	}
 	if (input.error) {
-		// The button reads "Analyze again" once a result (this one or a saved one) is shown.
-		const button = t(typeof input.previousAt === "number" ? "efficiency.consent.again" : "efficiency.consent.send");
-		return plain(input.error.retry ? `${input.error.text} ${t("efficiency.band.retry", { button })}` : input.error.text, "error");
+		// What stays below: a saved result when there is one (the button then reads "Analyze
+		// again"), the statistics' own findings otherwise.
+		const previous = typeof input.previousAt === "number";
+		const parts = [input.error.text, t(previous ? "efficiency.band.keptPrevious" : "efficiency.band.keptStats")];
+		if (input.error.retry) {
+			parts.push(t("efficiency.band.retry", { button: t(previous ? "efficiency.consent.again" : "efficiency.consent.send") }));
+		}
+		return plain(sentences(parts), "error");
 	}
 	if (pane === "result") {
 		const count = input.resultCount ?? 0;
 		const done = count > 0 ? t("efficiency.band.done", { count }) : t("efficiency.band.doneNone");
-		return input.toolUsed ? plain(`${t("efficiency.toolUsed")} ${done}`, "error") : plain(done, "done");
+		return input.toolUsed ? plain(sentences([t("efficiency.toolUsed"), done]), "error") : plain(done, "done");
 	}
 	if (typeof input.previousAt === "number") {
 		return plain(t("efficiency.band.previous", { date: formatDateTimeShort(input.previousAt, getLang()) }), "info");
