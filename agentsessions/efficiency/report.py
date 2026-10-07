@@ -248,6 +248,7 @@ def _block(now, src, sessions, limits, reader, vault, threshold, budget, explici
         panes.append({
             'key': src.agent if src.agent == 'claude' else '%s-%s' % (src.agent, provider),
             'agent': src.agent, 'provider': provider, 'model': prov['analysis_model'],
+            'models': prov['analysis_models'],
             'local': prov['local'], 'sessions': len(part['sessions']), 'w': part['totals']['w'],
             'totals': part['totals'], 'breakdown': part['breakdown'],
             'hits': [h['id'] for h in part['hits']],
@@ -282,7 +283,9 @@ def _providers(analysed: List[dict], rng: Tuple[float, float], src) -> List[dict
     for entry in sorted(out.values(), key=lambda e: (-e['w'], e['provider'])):
         calls = [c for c in entry.pop('_calls') if c.get('provider', entry['provider']) == entry['provider']
                  or src.agent == 'claude']
-        entry['analysis_model'] = src.analysis_model(entry['provider'], calls)
+        models = src.analysis_models(entry['provider'], calls) if hasattr(src, 'analysis_models') else []
+        entry['analysis_models'] = models or [m for m in [src.analysis_model(entry['provider'], calls)] if m]
+        entry['analysis_model'] = entry['analysis_models'][0] if entry['analysis_models'] else None
         entry['w'] = round(entry['w'])
         rows.append(entry)
     return rows

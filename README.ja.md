@@ -155,7 +155,7 @@ Obsidian とエージェントは、同じ OS で動かしてください。プ�
 
 読み取り専用で開けないデータベースは、一時フォルダに写して読み、そのあと削除します。
 
-トークン効率の解析では、同じ Claude Code の transcript、Codex の rollout、OpenCode のデータベースを読みます。Claude Code は各セッションの始まりに `CLAUDE.md`・`.claude/rules/`・auto memory の `MEMORY.md` の大きさとスキルの数を、Codex は読み込んだ `AGENTS.md` を記録しています。OpenCode については、セッションのフォルダから Git の根までの各フォルダの `AGENTS.md`（無ければ `CLAUDE.md`）と、`~/.config/opencode/AGENTS.md` の大きさを読みます。また、`$CODEX_HOME/config.toml` の最上位の `model` と `model_provider`、`~/.config/opencode/opencode.json` の各プロバイダの `baseURL`（ローカルのモデルかどうかを見分けるため）を読みます。セッションが繰り返し読むファイルの持ち主の指示ファイルを決めるため、そのファイルから上のフォルダに `.git`、`CLAUDE.md`、（Codex と OpenCode は）`AGENTS.md` があるかを確かめます。
+トークン効率の解析では、同じ Claude Code の transcript、Codex の rollout、OpenCode のデータベースを読みます。Claude Code は各セッションの始まりに `CLAUDE.md`・`.claude/rules/`・auto memory の `MEMORY.md` の大きさとスキルの数を、Codex は読み込んだ `AGENTS.md` を記録しています。OpenCode については、セッションのフォルダから Git の根までの各フォルダの `AGENTS.md`（無ければ `CLAUDE.md`）と、`~/.config/opencode/AGENTS.md` の大きさを読みます。また、`$CODEX_HOME/config.toml` の最上位の `model` と `model_provider`、`$CODEX_HOME/models_cache.json` のモデルの一覧、`~/.config/opencode/opencode.json` の各プロバイダの `baseURL`（ローカルのモデルかどうかを見分けるため）を読みます。セッションが繰り返し読むファイルの持ち主の指示ファイルを決めるため、そのファイルから上のフォルダに `.git`、`CLAUDE.md`、（Codex と OpenCode は）`AGENTS.md` があるかを確かめます。
 
 ### 書き込むファイル
 
@@ -198,7 +198,7 @@ Obsidian とエージェントは、同じ OS で動かしてください。プ�
 **トークン効率を解析** を開いただけでは、このマシンの中で統計を計算するだけで、何も送りません。欄で **解析する** を押したときだけ、その会話のエージェント自身を1回起動します。Codex と OpenCode は、会話が使ったプロバイダごとに欄が分かれます。
 
 - Claude Code：`claude -p` を Sonnet（設定で Opus）で、ツールなし・記録なしで実行します。
-- Codex：`codex exec` を読み取り専用のサンドボックスで、rollout を残さずに実行します。モデルは `config.toml` のもの（別のプロバイダなら、そこで最も多く使ったモデル）です。
+- Codex：`codex exec` を読み取り専用のサンドボックスで、rollout を残さずに実行します。モデルは、Codex があなたのアカウントに出しているモデルのうち最も強いもの（Sol、無ければ Terra、無ければ Luna。`$CODEX_HOME/models_cache.json` から。Codex が使えないと答えたら次のもの）です。ローカルのプロバイダ（Ollama、LM Studio）は、範囲の中で最も多く使ったモデルです。
 - OpenCode：`opencode run` を、そのプロバイダと、範囲の中で最も多く使ったモデルで実行し、終わったら run のセッションを消します。このマシンで動くプロバイダ（Ollama、LM Studio、`baseURL` がこのマシンのもの）は、そのローカルのモデルで解析し、外へは送りません。
 
 会話を別のエージェントや別のプロバイダへ送ることはありません。欄の統計にも、そのプロバイダのセッションだけが入ります。押す前に、送り先と量を欄に示します。**送るものを見る** で、送る文字列そのものを確かめられます。

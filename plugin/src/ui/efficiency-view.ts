@@ -115,6 +115,24 @@ export function rateLimitOf(stdout: string): number | null | undefined {
 	return hit ? resetsAt : undefined;
 }
 
+const MODEL_UNAVAILABLE_RE =
+	/model_not_found|unsupported model|\bmodel\b[^\n]{0,120}?\b(not supported|not found|does not exist|not available|unavailable|no access|not have access|not allowed)/i;
+
+/** Whether a failed run says its model isn't available to this account (Codex's own error text,
+ * on an `error` / `turn.failed` event or stderr): the analysis then tries the next model. */
+export function modelUnavailable(err: unknown): boolean {
+	const parts = [err instanceof Error ? err.message : String(err)];
+	if (err instanceof HeadlessError) {
+		parts.push(err.stderr);
+		for (const e of parseEvents(err.stdout)) {
+			if (e.type === "error" || e.type === "turn.failed") {
+				parts.push(errorText(e));
+			}
+		}
+	}
+	return parts.some((p) => MODEL_UNAVAILABLE_RE.test(p));
+}
+
 /** What went wrong with one analysis. `aborted` is whether the user cancelled it. */
 export function classifyAnalysisFailure(err: unknown, aborted: boolean): AnalysisFailure {
 	if (aborted) {

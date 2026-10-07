@@ -753,6 +753,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"efficiency.log.asked": "{agent} に頼みました…",
 	"efficiency.log.received": "{seconds} 秒で所見を {count} 件受け取りました",
 	"efficiency.log.retried": "返答を読めませんでした（{error}）。頼み直しました",
+	"efficiency.log.modelUnavailable": "{model} はこのアカウントでは使えません。{next} で試します",
 	"efficiency.log.removed": "返答から外したもの: {note}",
 	"efficiency.log.failed": "失敗: {error}",
 	"efficiency.log.cancelled": "取り消しました",

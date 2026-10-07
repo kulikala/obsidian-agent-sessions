@@ -190,8 +190,37 @@ class CodexDetectTest(_Tmp):
         r.call()
         block = self.run_build([r])
         self.assertEqual(block['range']['rule'], 'budget')
-        self.assertEqual([(p['key'], p['provider'], p['model'], p['local']) for p in block['panes']],
-                         [('codex-openai', 'openai', 'gpt-5.6-sol', False)])
+        self.assertEqual([(p['key'], p['provider'], p['model'], p['models'], p['local']) for p in block['panes']],
+                         [('codex-openai', 'openai', 'gpt-5.6-sol', ['gpt-5.6-sol'], False)])
+
+    def test_analysis_model_is_the_strongest_listed_tier(self):
+        r = mc.Rollout(mc.thread_id(1), NOW - 2 * HOUR)
+        r.turn('go')
+        r.call()
+        home = os.path.join(self.tmp, 'codex')
+        os.makedirs(home)
+        cache_rows = [('gpt-6-luna', 'list', 4), ('gpt-reserve', 'list', 4), ('gpt-6-sol', 'hide', 2),
+                      ('gpt-5.6-terra', 'list', 8), ('gpt-5.6-luna', 'list', 9)]
+        with open(os.path.join(home, 'models_cache.json'), 'w') as f:
+            json.dump({'models': [{'slug': s, 'visibility': v, 'priority': p} for s, v, p in cache_rows]}, f)
+        block = self.run_build([r])
+        pane = block['panes'][0]
+        # Sol is hidden for this account: Terra first, then the Luna models newest first, then
+        # config.toml's model.
+        self.assertEqual(pane['models'], ['gpt-5.6-terra', 'gpt-6-luna', 'gpt-5.6-luna', 'gpt-5.6-sol'])
+        self.assertEqual(pane['model'], 'gpt-5.6-terra')
+        with open(os.path.join(home, 'models_cache.json'), 'w') as f:
+            json.dump({'models': [{'slug': 'gpt-6-sol', 'visibility': 'list', 'priority': 2},
+                                  {'slug': 'gpt-6-luna', 'visibility': 'list', 'priority': 4}]}, f)
+        self.assertEqual(self.run_build([r])['panes'][0]['models'], ['gpt-6-sol', 'gpt-6-luna', 'gpt-5.6-sol'])
+
+    def test_a_local_provider_uses_its_most_used_model(self):
+        r = mc.Rollout(mc.thread_id(1), NOW - 2 * HOUR, model='gpt-oss:20b', provider='ollama')
+        r.turn('go')
+        r.call()
+        pane = self.run_build([r])['panes'][0]
+        self.assertEqual((pane['key'], pane['model'], pane['models'], pane['local']),
+                         ('codex-ollama', 'gpt-oss:20b', ['gpt-oss:20b'], True))
 
     def test_unpriced_model(self):
         r = mc.Rollout(mc.thread_id(1), NOW - 2 * HOUR, model='gpt-9-unknown')

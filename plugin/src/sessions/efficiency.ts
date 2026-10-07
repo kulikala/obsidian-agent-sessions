@@ -110,6 +110,8 @@ export interface EffPane {
 	agent: string;
 	provider: string;
 	model: string | null;
+	/** Codex: the models to try in order (strongest listed tier first); `model` is the first. */
+	models?: string[];
 	local: boolean;
 	sessions: number;
 	w: number;
@@ -177,6 +179,11 @@ export function panesOf(agent: string, block: EffAgent): EffPane[] {
 			excerpts: block.excerpts,
 		},
 	];
+}
+
+/** The models an analysis tries, in order (at least one entry; `null` for the agent's default). */
+export function analysisModels(pane: Pick<EffPane, "model" | "models">): (string | null)[] {
+	return pane.models && pane.models.length > 0 ? pane.models : [pane.model];
 }
 
 /** The CLI arguments that make the analysis use the pane's provider and model: Codex `-m` (and

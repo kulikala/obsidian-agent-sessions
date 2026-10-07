@@ -753,6 +753,7 @@ export const en = {
 	"efficiency.log.asked": "Asked {agent}…",
 	"efficiency.log.received": "Received {count} {count|finding|findings} after {seconds} s",
 	"efficiency.log.retried": "The reply could not be read ({error}); asked again",
+	"efficiency.log.modelUnavailable": "{model} is not available to this account; trying {next}",
 	"efficiency.log.removed": "Removed from the reply: {note}",
 	"efficiency.log.failed": "Failed: {error}",
 	"efficiency.log.cancelled": "Cancelled",

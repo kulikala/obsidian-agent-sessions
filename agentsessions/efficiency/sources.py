@@ -118,6 +118,38 @@ def codex_config_model(home: str) -> Tuple[Optional[str], Optional[str]]:
     return found.get('model') or None, found.get('model_provider') or None
 
 
+CODEX_TIERS = ('sol', 'terra', 'luna')
+_TIER_RE = re.compile(r'^(.+)-(%s)$' % '|'.join(CODEX_TIERS))
+
+
+def codex_listed_models(home: str) -> Optional[List[dict]]:
+    """The models Codex offers this account, from `$CODEX_HOME/models_cache.json` (what Codex itself
+    fetched for the signed-in plan): `[{slug, priority}]` of those shown in its model list, or
+    `None` when there is no readable cache."""
+    import json
+    try:
+        with open(os.path.join(home, 'models_cache.json'), 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    models = data.get('models') if isinstance(data, dict) else None
+    if not isinstance(models, list):
+        return None
+    return [{'slug': m['slug'], 'priority': m.get('priority') if isinstance(m.get('priority'), (int, float)) else 1e9}
+            for m in models if isinstance(m, dict) and isinstance(m.get('slug'), str)
+            and m.get('visibility') == 'list']
+
+
+def codex_tier_models(listed: List[dict]) -> List[str]:
+    """The listed Sol, Terra and Luna models, strongest tier first; within a tier the one Codex
+    ranks first (lowest `priority`, its newest)."""
+    out: List[str] = []
+    for tier in CODEX_TIERS:
+        same = [m for m in listed if (_TIER_RE.match(m['slug']) or [None, None, None])[2] == tier]
+        out += [m['slug'] for m in sorted(same, key=lambda m: (m['priority'], m['slug']))]
+    return out
+
+
 class CodexSource:
     agent = 'codex'
 
@@ -165,13 +197,25 @@ class CodexSource:
         except Exception:       # a rollout Codex is writing; the budget rule still applies
             return {}
 
-    def analysis_model(self, provider: str, calls: List[dict]) -> Optional[str]:
-        """`config.toml`'s model when its provider is this one (Codex's own default provider is
-        `openai`), else the provider's most used model in the range."""
+    def analysis_models(self, provider: str, calls: List[dict]) -> List[str]:
+        """The models to try, in order. OpenAI: the strongest tier Codex lists for this account
+        (Sol, then Terra, then Luna; `models_cache.json`), then `config.toml`'s model; the plugin
+        moves to the next one when Codex says a model isn't available. Without a model cache,
+        `config.toml`'s model alone. Another provider (a local one): its most used model in the
+        range."""
         model, configured = codex_config_model(self.home)
-        if model and (configured or 'openai') == provider:
-            return model
-        return most_used_model(calls)
+        if provider != 'openai':
+            used = most_used_model(calls)
+            return [used] if used else []
+        listed = codex_listed_models(self.home)
+        out = codex_tier_models(listed) if listed else []
+        if model and (configured or 'openai') == provider and model not in out:
+            out.append(model)
+        return out
+
+    def analysis_model(self, provider: str, calls: List[dict]) -> Optional[str]:
+        models = self.analysis_models(provider, calls)
+        return models[0] if models else None
 
     def is_local(self, provider: str) -> bool:
         return codex_read.is_local(provider)

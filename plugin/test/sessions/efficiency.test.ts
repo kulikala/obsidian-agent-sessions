@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { setLang, t } from "../../src/i18n";
 import {
 	analysisArgs,
+	analysisModels,
 	analysisPrompt,
 	candidates,
 	fixPrompt,
@@ -375,6 +376,12 @@ describe("Codex and OpenCode panes", () => {
 		const [only] = panesOf("claude", block);
 		expect([only.key, only.hits, only.summary]).toEqual(["claude", ["h-1", "h-2"], block.summary]);
 		expect(panesOf("opencode", { ...block, panes: [pane("ollama", [])] }).map((p) => p.key)).toEqual(["opencode-ollama"]);
+	});
+
+	it("tries the listed models in order, or the one model", () => {
+		expect(analysisModels({ model: "gpt-5.6-terra", models: ["gpt-5.6-terra", "gpt-6-luna"] })).toEqual(["gpt-5.6-terra", "gpt-6-luna"]);
+		expect(analysisModels({ model: "m" })).toEqual(["m"]);
+		expect(analysisModels({ model: null, models: [] })).toEqual([null]);
 	});
 
 	it("names the provider and model on the command line", () => {

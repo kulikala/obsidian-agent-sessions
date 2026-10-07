@@ -20,6 +20,7 @@ import { formatDateTimeShort } from "../i18n/datetime";
 import { en } from "../i18n/locales/en";
 import {
 	analysisArgs,
+	analysisModels,
 	analysisPrompt,
 	candidates,
 	estimateTokens,
@@ -47,6 +48,7 @@ import { parseEnvLines, type AgentId } from "../settings";
 import { formatCost, formatK, formatNumber } from "../usage/usage";
 import {
 	analysisFailureMessage,
+	modelUnavailable,
 	classifyAnalysisFailure,
 	classifyStatsFailure,
 	hasData,
@@ -69,6 +71,8 @@ interface Pane {
 	key: string;
 	agent: AgentId;
 	info: EffPane;
+	/** The model the last analysis ran on, when Codex refused the first choice. */
+	usedModel?: string | null;
 	block: EffAgent;
 	payload: string;
 	prompt: string;
@@ -182,7 +186,7 @@ export class EfficiencyModal extends Modal {
 		if (pane.agent === "claude") {
 			return this.plugin.settings.efficiencyModel;
 		}
-		return pane.info.model ?? t("efficiency.defaultModel");
+		return pane.usedModel ?? pane.info.model ?? t("efficiency.defaultModel");
 	}
 
 	private stopTicker(): void {
@@ -428,8 +432,13 @@ export class EfficiencyModal extends Modal {
 				bin
 			);
 			let tools = false;
-			const outcome = await runAnalysis(pane.prompt, pane.block, async (prompt) => {
-				const run = await inRunFolder(efficiencyRunDir(), (cwd) =>
+			// Codex: the strongest model Codex lists first; one it refuses as unavailable gives way
+			// to the next (the choice then stays for the retry and the saved result).
+			const models = analysisModels(pane.info);
+			let current = 0;
+			pane.usedModel = null;
+			const runWith = (prompt: string, model: string | null) =>
+				inRunFolder(efficiencyRunDir(), (cwd) =>
 					runHeadless({
 						agent,
 						bin,
@@ -437,14 +446,27 @@ export class EfficiencyModal extends Modal {
 						cwd,
 						prompt,
 						model: this.plugin.settings.efficiencyModel,
-						extraArgs: analysisArgs(pane.info),
+						extraArgs: analysisArgs({ ...pane.info, model }),
 						timeoutMs: ANALYSIS_TIMEOUT_MS,
 						signal: abort.signal,
 						onProgress: (chars) => (received = chars),
 					})
 				);
-				tools = tools || usedTools(agent, run.stdout);
-				return run;
+			const outcome = await runAnalysis(pane.prompt, pane.block, async (prompt) => {
+				for (;;) {
+					try {
+						const run = await runWith(prompt, models[current]);
+						tools = tools || usedTools(agent, run.stdout);
+						return run;
+					} catch (err) {
+						if (current + 1 >= models.length || abort.signal.aborted || !modelUnavailable(err)) {
+							throw err;
+						}
+						this.log(pane, t("efficiency.log.modelUnavailable", { model: models[current] ?? "", next: models[current + 1] ?? "" }));
+						current += 1;
+						pane.usedModel = models[current];
+					}
+				}
 			});
 			if (tools) {
 				this.log(pane, t("efficiency.toolUsed"), true);

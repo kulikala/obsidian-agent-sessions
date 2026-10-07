@@ -155,7 +155,7 @@ To list sessions and calculate usage:
 
 A database that cannot be opened read-only is copied to a temporary folder, read, and deleted.
 
-To analyze token efficiency, it reads the same Claude Code transcripts, Codex rollouts and OpenCode database. Claude Code records the sizes of `CLAUDE.md`, `.claude/rules/` and auto memory `MEMORY.md` and the number of skills at each session's start, and Codex the `AGENTS.md` it loaded; for OpenCode it reads the size of `AGENTS.md` (or `CLAUDE.md`) in the session's folder and the folders above it up to the Git root, and of `~/.config/opencode/AGENTS.md`. It also reads the top-level `model` and `model_provider` of `$CODEX_HOME/config.toml`, and the providers' `baseURL` in `~/.config/opencode/opencode.json` (to tell local models). To find the instruction file that owns a file sessions keep reading, it checks whether a `.git`, a `CLAUDE.md` or (Codex and OpenCode) an `AGENTS.md` exists in the folders above that file.
+To analyze token efficiency, it reads the same Claude Code transcripts, Codex rollouts and OpenCode database. Claude Code records the sizes of `CLAUDE.md`, `.claude/rules/` and auto memory `MEMORY.md` and the number of skills at each session's start, and Codex the `AGENTS.md` it loaded; for OpenCode it reads the size of `AGENTS.md` (or `CLAUDE.md`) in the session's folder and the folders above it up to the Git root, and of `~/.config/opencode/AGENTS.md`. It also reads the top-level `model` and `model_provider` of `$CODEX_HOME/config.toml` and the model list in `$CODEX_HOME/models_cache.json`, and the providers' `baseURL` in `~/.config/opencode/opencode.json` (to tell local models). To find the instruction file that owns a file sessions keep reading, it checks whether a `.git`, a `CLAUDE.md` or (Codex and OpenCode) an `AGENTS.md` exists in the folders above that file.
 
 ### Files it writes
 
@@ -198,7 +198,7 @@ For up to 30 sessions, or the one you chose, it sends the current name, the fold
 Opening **Analyze token efficiency** computes statistics on this machine and sends nothing. Only when you press **Analyze** in a pane does the plugin run that conversation's own agent once. Codex and OpenCode get one pane per provider their conversations used.
 
 - Claude Code: `claude -p` with Sonnet (or Opus, in the settings), without tools, nothing saved.
-- Codex: `codex exec` with a read-only sandbox and no rollout saved, with the model in `config.toml` (for another provider, its most used model).
+- Codex: `codex exec` with a read-only sandbox and no rollout saved, on the strongest model Codex lists for your account: Sol, else Terra, else Luna (from `$CODEX_HOME/models_cache.json`; when Codex refuses one, the next). A local provider (Ollama, LM Studio) uses its most used model in the range.
 - OpenCode: `opencode run` with the provider and its most used model in the range; the run's session is deleted afterwards. A provider on this machine (Ollama, LM Studio, or a `baseURL` on this machine) is analysed by its local model, so nothing leaves the machine.
 
 A conversation is never sent to another agent or provider, and a pane's statistics name only that provider's sessions. The pane shows where it goes and how much before you press it, and **Show what is sent** shows the exact text.
