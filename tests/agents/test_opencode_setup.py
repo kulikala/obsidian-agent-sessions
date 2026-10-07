@@ -307,7 +307,10 @@ if (process.argv[4] === "dump") {
         d = files['ses_a.json']
         self.assertEqual((d['status'], d['waiting_for'], d['cwd']), ('busy', '', '/work/proj'))
         self.assertIsInstance(d['pid'], int)
-        self.assertIsInstance(d['updated_at'], float)
+        # A JS number: Date.now() / 1000 is a whole number once in a thousand writes, which JSON
+        # carries as an int.
+        self.assertIsInstance(d['updated_at'], (int, float))
+        self.assertNotIsInstance(d['updated_at'], bool)
         files = self._files_after([self.status('ses_a', 'busy'), {'type': 'session.idle', 'properties': {'sessionID': 'ses_a'}}])
         self.assertEqual(files['ses_a.json']['status'], 'idle')
 

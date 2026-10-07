@@ -76,7 +76,10 @@ describe("CompactedTracker (marking a session as just-compacted with no input ye
 		const tracker = new CompactedTracker(missing, 10);
 		const stop = tracker.watch();
 		mark(missing, "a");
-		await new Promise((r) => setTimeout(r, 300));
+		// fs.watch fires late on a busy machine: wait for the change rather than a fixed time.
+		for (let i = 0; i < 60 && !tracker.has("a"); i++) {
+			await new Promise((r) => setTimeout(r, 50));
+		}
 		expect(tracker.has("a")).toBe(true);
 		stop();
 	});
