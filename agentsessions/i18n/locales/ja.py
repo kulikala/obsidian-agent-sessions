@@ -72,7 +72,7 @@ MESSAGES = {
     'cmd.already_running': 'already running: {path}',
     'cmd.cannot_start_daemon': 'cannot start daemon: {error} ({path})',
 
-    'cmd.json_usage': 'usage: agent-sessions json scan|live|detail|usage|stats|activity|resolve|ppid|efficiency ...',
+    'cmd.json_usage': 'usage: agent-sessions json scan|live|detail|usage|stats|activity|resolve|moved|ppid|efficiency ...',
     'cmd.json_id_needs_value': '--only には ID が要ります',
     'cmd.json_detail_usage': 'usage: agent-sessions json detail ID',
     'cmd.json_usage_usage': 'usage: agent-sessions json usage ID [--from ISO] [--to ISO]',
@@ -83,6 +83,7 @@ MESSAGES = {
     'cmd.json_efficiency_usage': 'usage: agent-sessions json efficiency [--agent A]... [--threshold P] [--budget W] [--from ISO --to ISO] [--max-sessions N] [--no-excerpts]',
     'cmd.json_unknown_subcommand': 'unknown json subcommand: {sub}',
     'cmd.json_resolve_usage': 'usage: agent-sessions json resolve AGENT --pid PID --since ISO_OR_EPOCH --cwd PATH',
+    'cmd.json_moved_usage': 'usage: agent-sessions json moved AGENT --pid PID --since ISO_OR_EPOCH',
     'cmd.json_ppid_usage': 'usage: agent-sessions json ppid PID...',
     'cmd.json_resolve_bad_pid': 'bad pid: {value}',
 

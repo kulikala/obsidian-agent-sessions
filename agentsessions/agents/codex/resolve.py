@@ -186,3 +186,70 @@ def resolve(pid: int, since: float, cwd: str, home: Optional[str] = None,
         candidates.append((sid, p, ts, meta_cwd, source))
     picked = pick_fallback(candidates, since, cwd, already_linked or set())
     return picked if picked else (None, None)
+
+
+# ---- A new thread in a linked tab's process ----------------------------------
+
+def _thread_start(path: str) -> Tuple[Optional[float], str, bool]:
+    """`(timestamp, source, forked)` from `path`'s `session_meta`; `(None, '', False)` without one.
+    `forked` is set for a thread `/fork` made (`payload.forked_from_id`)."""
+    for rec in rollout.iter_records(path):
+        if rec.get('type') != 'session_meta':
+            break
+        payload = rec.get('payload') or {}
+        source = payload.get('source') if isinstance(payload.get('source'), str) else ''
+        return rollout.parse_ts(rec.get('timestamp')), source, bool(payload.get('forked_from_id'))
+    return None, '', False
+
+
+def _same_file(a: str, b: str) -> bool:
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
+
+def _held_by(path: str, tree: Set[int], open_paths: List[str]) -> bool:
+    """Whether a process in `tree` has `path` open: the Restart Manager on Windows, otherwise the
+    paths `lsof`/`/proc` listed for the tree (`open_paths`)."""
+    if procs.IS_WINDOWS:
+        users = procs.file_users(path)
+        return bool(users) and any(pid in tree for pid in users)
+    return any(_same_file(path, p) for p in open_paths)
+
+
+def new_thread(pid: int, since: float, home: Optional[str] = None,
+               already_linked: Optional[Set[str]] = None) -> Tuple[Optional[str], Optional[str]]:
+    """`(thread_id, transcript_path)` of a thread that Codex at `pid` (or a descendant) started at
+    or after `since` and that no session is linked to yet, or `(None, None)`.
+
+    This is what `/new` and `/clear` leave behind in a tab that is already linked to a thread: the
+    same process keeps the earlier rollout open and opens a new one once the new thread's first
+    message is sent. The open file ties the thread to the process (`lsof` / `/proc` on Unix, the
+    Restart Manager on Windows), so another Codex in the same folder is never taken for it. A
+    thread `/resume` or the resume picker reopens began before `since`, and one `/fork` made carries
+    `forked_from_id`; neither counts. With several, the newest wins."""
+    home = home if home is not None else rollout.codex_home()
+    already_linked = already_linked or set()
+    candidates = []
+    for path in rollout.list_transcripts(home):
+        sid = rollout.session_id_of(path)
+        if not sid or sid in already_linked:
+            continue
+        try:
+            if os.path.getmtime(path) < since:
+                continue
+        except OSError:
+            continue
+        ts, source, forked = _thread_start(path)
+        if ts is None or ts < since or source != 'cli' or forked:
+            continue
+        candidates.append((ts, sid, path))
+    if not candidates:
+        return None, None
+    tree = set(child_pids(pid, _ps_tree()))
+    open_paths: List[str] = []
+    if not procs.IS_WINDOWS:
+        for p in tree:
+            open_paths.extend(path for path in _open_paths(p) if _ROLLOUT_PATH_RE.search(path))
+    for _ts, sid, path in sorted(candidates, reverse=True):
+        if _held_by(path, tree, open_paths):
+            return sid, path
+    return None, None

@@ -85,5 +85,72 @@ class TestResolve(OpencodeCase):
         self.assertEqual(got, (S1, 'opencode:' + S1))
 
 
+class TestNewSession(OpencodeCase):
+    """`/new` in a linked tab: a session the same process created after `since`."""
+
+    def setUp(self):
+        super().setUp()
+        self.status_dir = os.path.join(self.tmp, 'status')
+        os.makedirs(self.status_dir)
+        self.path = make_db(self.tmp)
+
+    def _status(self, sid, pid=None):
+        with open(os.path.join(self.status_dir, sid + '.json'), 'w') as fh:
+            json.dump({'status': 'idle', 'pid': pid or os.getpid()}, fh)
+
+    def _new(self, since=5.0, already=None, tree=None):
+        tree = [(os.getpid(), 77)] if tree is None else tree
+        with mock.patch.object(ocresolve, '_ps_tree', return_value=tree):
+            return ocresolve.new_session(77, since, already_linked=already, status_dir=self.status_dir)
+
+    def test_the_session_after_new_is_found_and_the_linked_one_is_not(self):
+        with Fixture(self.path) as f:
+            f.session(S1, directory='/work/x', created=1_000)
+            f.user(S1, 'first', 1_001)
+            f.session(S2, directory='/work/x', created=6_000)
+            f.user(S2, 'second', 6_001)
+        self._status(S1)
+        self._status(S2)
+        self.assertEqual(self._new(already={S1}), (S2, 'opencode:' + S2))
+        self.assertEqual(self._new(already={S1, S2}), (None, None))
+
+    def test_another_process_is_not_this_tab(self):
+        with Fixture(self.path) as f:
+            f.session(S2, directory='/work/x', created=6_000)
+        self._status(S2)
+        self.assertEqual(self._new(tree=[(os.getpid(), 1)]), (None, None))
+
+    def test_a_session_picked_from_the_list_began_before_since(self):
+        with Fixture(self.path) as f:
+            f.session(S2, directory='/work/x', created=4_000)
+            f.user(S2, 'older', 4_001)
+        self._status(S2)
+        self.assertEqual(self._new(), (None, None))
+
+    def test_a_fork_holds_messages_older_than_itself(self):
+        with Fixture(self.path) as f:
+            f.session(S2, directory='/work/x', created=7_000)
+            f.user(S2, 'copied', 6_500)
+        self._status(S2)
+        self.assertEqual(self._new(), (None, None))
+
+    def test_sub_agent_and_run_sessions_do_not_count(self):
+        deny_question = [{'permission': 'question', 'pattern': '*', 'action': 'deny'}]
+        with Fixture(self.path) as f:
+            f.session(S1, directory='/work/x', created=6_000, parent_id=S3)
+            f.session(S2, directory='/work/x', created=7_000, permission=deny_question)
+        self._status(S1)
+        self._status(S2)
+        self.assertEqual(self._new(), (None, None))
+
+    def test_the_newest_wins(self):
+        with Fixture(self.path) as f:
+            f.session(S1, directory='/work/x', created=6_000)
+            f.session(S2, directory='/work/x', created=8_000)
+        self._status(S1)
+        self._status(S2)
+        self.assertEqual(self._new()[0], S2)
+
+
 if __name__ == '__main__':
     unittest.main()

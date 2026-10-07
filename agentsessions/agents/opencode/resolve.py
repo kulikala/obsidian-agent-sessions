@@ -58,3 +58,45 @@ def resolve(pid: int, since: float, cwd: str, already_linked: Optional[Set[str]]
         return None, None
     finally:
         d.close()
+
+
+def new_session(pid: int, since: float, already_linked: Optional[Set[str]] = None,
+                path: Optional[str] = None, status_dir: Optional[str] = None,
+                ) -> Tuple[Optional[str], Optional[str]]:
+    """`(session_id, pseudo_path)` of a session that OpenCode at `pid` (or a descendant) created at
+    or after `since` and that no session is linked to yet, or `(None, None)`.
+
+    This is what `/new` leaves behind in a tab that is already linked to a session: the same
+    process creates the new session with its first message, and the plugin's status file for it
+    carries the process's pid, so another OpenCode in the same folder is never taken for it. A
+    session picked from `/sessions` was created before `since`; one `/fork` made holds copies of
+    earlier messages, older than the session itself; neither counts, nor do sub-agent and
+    `opencode run` sessions. With several, the newest wins."""
+    already_linked = already_linked or set()
+    tree = set(child_pids(pid, _ps_tree()))
+    ids = [sid for sid, live in _live.read_status_files(status_dir or config.OPENCODE_STATUS_DIR).items()
+           if live.pid in tree and sid not in already_linked]
+    if not ids:
+        return None, None
+    d = _db.open_db(path)
+    if d is None:
+        return None, None
+    try:
+        best: Optional[Tuple[int, str]] = None
+        for sid in ids:
+            rows = d.query('SELECT %s FROM session WHERE id = ?'
+                           % d.select_columns('session', ('time_created', 'parent_id', 'permission')), (sid,))
+            if not rows:
+                continue
+            row = rows[0]
+            created = row['time_created'] or 0
+            if created < since * 1000 or row['parent_id'] or _db.is_non_interactive(row['permission']):
+                continue
+            first = d.query('SELECT MIN(time_created) AS t FROM message WHERE session_id = ?', (sid,))
+            if first and first[0]['t'] is not None and first[0]['t'] < created:
+                continue
+            if best is None or created > best[0]:
+                best = (created, sid)
+        return (best[1], _db.pseudo_path(best[1])) if best else (None, None)
+    finally:
+        d.close()

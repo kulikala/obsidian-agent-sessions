@@ -113,5 +113,66 @@ class TestResolveEndToEnd(unittest.TestCase):
         self.assertIsNone(thread)
 
 
+class TestNewThread(unittest.TestCase):
+    """`/new` or `/clear` in a linked tab: a thread the same process started after `since`."""
+
+    SINCE = 1790213400.0   # 2026-09-24T01:30:00Z
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = self.tmp.name
+
+    def _rollout(self, thread, ts='2026-09-24T01:31:00.000Z', **meta):
+        p = rollout_path(self.home, thread, ts=ts[:19].replace(':', '-'))
+        rec = session_meta(thread, '/work/proj', ts=ts)
+        rec['payload'].update(meta)
+        write_rollout(p, [rec, user_message('hi', ts)])
+        return p
+
+    def _new(self, open_by_child, already=None):
+        """Codex at pid 77 with a child 78 that has `open_by_child` open."""
+        with mock.patch.object(procs, 'IS_WINDOWS', False), \
+                mock.patch.object(resolve, '_ps_tree', return_value=[(78, 77)]), \
+                mock.patch.object(resolve, '_open_paths', side_effect=lambda pid: open_by_child if pid == 78 else []):
+            return resolve.new_thread(77, self.SINCE, home=self.home, already_linked=already)
+
+    def test_the_new_thread_open_in_the_process_is_found(self):
+        old = self._rollout(ID1, ts='2026-09-24T01:20:00.000Z')
+        new = self._rollout(ID2)
+        self.assertEqual(self._new([old, new], already={ID1}), (ID2, new))
+
+    def test_linked_threads_and_threads_of_other_processes_do_not_count(self):
+        new = self._rollout(ID2)
+        self.assertEqual(self._new([new], already={ID2}), (None, None))
+        self.assertEqual(self._new([]), (None, None))
+
+    def test_a_resumed_thread_began_before_since(self):
+        old = self._rollout(ID1, ts='2026-09-24T01:20:00.000Z')
+        self.assertEqual(self._new([old]), (None, None))
+
+    def test_a_fork_and_a_headless_thread_do_not_count(self):
+        fork = self._rollout(ID1, forked_from_id=ID2)
+        other = self._rollout(ID2, source='exec')
+        self.assertEqual(self._new([fork, other]), (None, None))
+
+    def test_the_newest_wins(self):
+        first = self._rollout(ID1, ts='2026-09-24T01:31:00.000Z')
+        second = self._rollout(ID2, ts='2026-09-24T01:32:00.000Z')
+        self.assertEqual(self._new([first, second])[0], ID2)
+
+    def test_windows_asks_the_restart_manager_who_has_the_file_open(self):
+        new = self._rollout(ID2)
+        with mock.patch.object(procs, 'IS_WINDOWS', True), \
+                mock.patch.object(resolve, '_ps_tree', return_value=[(78, 77)]), \
+                mock.patch.object(resolve, '_open_paths', side_effect=AssertionError('not on Windows')):
+            with mock.patch.object(procs, 'file_users', return_value=[78]):
+                self.assertEqual(resolve.new_thread(77, self.SINCE, home=self.home), (ID2, new))
+            with mock.patch.object(procs, 'file_users', return_value=[5]):
+                self.assertEqual(resolve.new_thread(77, self.SINCE, home=self.home), (None, None))
+            with mock.patch.object(procs, 'file_users', return_value=None):
+                self.assertEqual(resolve.new_thread(77, self.SINCE, home=self.home), (None, None))
+
+
 if __name__ == '__main__':
     unittest.main()

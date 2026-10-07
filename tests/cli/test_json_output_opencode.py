@@ -107,6 +107,21 @@ class TestOpencodeJson(unittest.TestCase):
         self.assertEqual(jsonout.resolve_output('claude', 0, 2.0, '/work/b'),
                          {'thread': None, 'transcript': None})
 
+    def test_moved_skips_linked_sessions(self):
+        for sid in (S1, S2):
+            with open(os.path.join(self.status_dir, sid + '.json'), 'w') as f:
+                json.dump({'status': 'idle', 'pid': os.getpid()}, f)
+        with open(self.store_path, 'w') as f:
+            json.dump({'version': 1, 'folded': [], 'archived': [], 'pendingRenames': {},
+                       'sessions': {S1: {'agent': 'opencode', 'daemon': DAEMON_UUID}},
+                       'categoryColors': {}}, f)
+        with mock.patch.object(ocresolve, '_ps_tree', return_value=[(os.getpid(), 77)]):
+            self.assertEqual(jsonout.moved_output('opencode', 77, 0.5),
+                             {'thread': S2, 'transcript': 'opencode:' + S2})
+            self.assertEqual(jsonout.moved_output('opencode', 77, 3.5),
+                             {'thread': None, 'transcript': None})
+        self.assertEqual(jsonout.moved_output('claude', 77, 0.5), {'thread': None, 'transcript': None})
+
     def test_stats_omits_opencode(self):
         with mock.patch.object(jsonout.stats, 'compute', return_value={'windows': {}}):
             out = jsonout.stats_output()
