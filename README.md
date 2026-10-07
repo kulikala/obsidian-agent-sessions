@@ -198,7 +198,7 @@ For up to 30 sessions, or the one you chose, it sends the current name, the fold
 Opening **Analyze token efficiency** computes statistics on this machine and sends nothing. Only when you press **Analyze** in a pane does the plugin run that conversation's own agent once. Codex and OpenCode get one pane per provider their conversations used.
 
 - Claude Code: `claude -p` with Sonnet (or Opus, in the settings), without tools, nothing saved.
-- Codex: `codex exec` with a read-only sandbox and no rollout saved, on the strongest model Codex lists for your account: Sol, else Terra, else Luna (from `$CODEX_HOME/models_cache.json`; when Codex refuses one, the next). A local provider (Ollama, LM Studio) uses its most used model in the range.
+- Codex: `codex exec` with a read-only sandbox and no rollout saved, on a model Codex lists for your account (`$CODEX_HOME/models_cache.json`): its newest generation, and in it Sol, else Terra, else Luna; when Codex refuses one, the next tier, then the next older generation, then the model in `config.toml`. A local provider (Ollama, LM Studio) uses its most used model in the range.
 - OpenCode: `opencode run` with the provider and its most used model in the range; the run's session is deleted afterwards. A provider on this machine (Ollama, LM Studio, or a `baseURL` on this machine) is analysed by its local model, so nothing leaves the machine.
 
 A conversation is never sent to another agent or provider, and a pane's statistics name only that provider's sessions. The pane shows where it goes and how much before you press it, and **Show what is sent** shows the exact text.
