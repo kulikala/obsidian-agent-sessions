@@ -3,6 +3,7 @@ import glob
 import io
 import json
 import os
+import re
 import shutil
 import tempfile
 import unittest
@@ -166,6 +167,26 @@ class OutputTest(unittest.TestCase):
         turn = next(t for t in d['tasks'] if t['session'] == sid)['turns'][0]
         self.assertEqual(turn['prompt'], 'use key [secret] and mail [email] about …/deep/auth.ts')
         self.assertEqual(turn['reply'], 'Read https://example.com/… for [email]')
+
+    def test_digest_never_carries_the_user_name(self):
+        import getpass
+        from agentsessions.efficiency import excerpt
+        names = [n for n in excerpt.user_names(os.path.expanduser('~')) if len(n) >= 3]
+        self.assertTrue(names)
+        name = names[0]
+        sid = b.session_uuid(991)
+        t = b.Transcript(sid, sc.NOW - 3600)
+        t.prompt('copy /Users/%s/Applications/a.app to /home/%s/x and C:\\Users\\%s\\y, '
+                 'see ~/.claude/projects/-Users-%s-work/s.jsonl and /srv/%s/data' % ((name,) * 5))
+        t.read('/srv/%s/notes/today.md' % name)
+        t.call(text='Copied it into /Users/%s/Applications.' % name)
+        t.write(os.path.join(b.project_dir(self.projects), sid + '.jsonl'))
+        self.age()
+        blob = json.dumps(self.claude()['panes'][0]['digest'], ensure_ascii=False)
+        self.assertNotIn(os.path.expanduser('~'), blob)
+        for n in names:
+            self.assertNotRegex(blob, '(?i)[/\\\\-]%s(?![A-Za-z0-9])' % re.escape(n))
+        self.assertIn('~/Applications/a.app', blob)
 
     def test_digest_savings_per_check(self):
         d = self.claude()['panes'][0]['digest']

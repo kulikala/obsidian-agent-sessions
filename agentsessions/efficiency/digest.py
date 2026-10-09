@@ -243,8 +243,9 @@ def build(analysed: List[dict], hits: List[dict], mask: Masker, names: Dict[str,
             })
     rows.sort(key=lambda r: (r['ts'] is None, r['ts'] or 0, r['id']))
     hints = [{'id': h['id'], 'detector': h['detector'], 'session': h['session'], 'task': h['task'],
-              'metrics': {k: v for k, v in h['metrics'].items() if not isinstance(v, (list, dict))},
-              'targets': h.get('shown_targets', [])} for h in hits[:MAX_HINTS]]
+              'metrics': {k: mask(v) if isinstance(v, str) else v for k, v in h['metrics'].items()
+                          if not isinstance(v, (list, dict))},
+              'targets': [mask.users(t) for t in h.get('shown_targets', [])]} for h in hits[:MAX_HINTS]]
     return {
         'agent': agent,
         'context': dict(context or {}, instructions=sorted(instr.values(), key=lambda x: x['file']),

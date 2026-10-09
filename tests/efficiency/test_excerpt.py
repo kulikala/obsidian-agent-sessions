@@ -28,7 +28,7 @@ class MaskTest(unittest.TestCase):
         self.assertEqual(self.mask('in /home/pat/other/proj/x.py'), 'in …/proj/x.py')
         self.assertEqual(self.mask('~/code/repo/main.go'), '…/repo/main.go')
         self.assertEqual(self.mask('run /compact now'), 'run /compact now')
-        self.assertEqual(self.mask('C:\\Users\\pat\\proj\\a.txt'), '…/proj/a.txt')
+        self.assertEqual(self.mask('C:\\Users\\pat\\proj\\a.txt'), '~\\proj\\a.txt')
         self.assertEqual(self.mask('home is /home/pat'), 'home is ~')
 
     def test_folder(self):
@@ -39,6 +39,57 @@ class MaskTest(unittest.TestCase):
     def test_words_are_untouched(self):
         for text in ('修正してください', 'Arréglalo, por favor', 'fix the token count'):
             self.assertEqual(self.mask(text), text)
+
+
+class UserNameTest(unittest.TestCase):
+    """The home folder and the user name, in every form, never reach a model."""
+
+    def setUp(self):
+        self.mask = excerpt.Masker(home='/Users/alex', vault='/Users/alex/vault', users=['alex', 'sam'])
+
+    def test_home_folders_of_every_system(self):
+        cases = {
+            'open /Users/alex/Applications now': 'open ~/Applications now',
+            'in /home/alex/src/app/main.py': 'in …/app/main.py',
+            'C:\\Users\\alex\\Desktop': '~\\Desktop',
+            'C:/Users/Alex/Desktop': '~/Desktop',
+            'd:\\users\\ALEX': '~',
+            'see /mnt/c/Users/alex/notes.txt': 'see ~/notes.txt',
+            'the folder ~/projects/x': 'the folder ~/projects/x',
+            'the folder ~/projects/x/y.md': 'the folder …/x/y.md',
+            '/Users/sam/Documents': '~/Documents',
+        }
+        for text, want in cases.items():
+            got = self.mask(text)
+            self.assertEqual(got, want, text)
+            self.assertNotRegex(got.lower(), 'alex|/sam')
+
+    def test_claude_project_folder_names(self):
+        self.assertEqual(self.mask('-Users-alex-Library-Mobile-Documents'), '-~-Library-Mobile-Documents')
+        self.assertEqual(self.mask('C--Users-alex-work'), '-~-work')
+        self.assertNotIn('alex', self.mask('~/.claude/projects/-Users-alex-work-repo/a.jsonl'))
+
+    def test_the_name_alone_between_separators(self):
+        self.assertEqual(self.mask('backup at /srv/alex/data'), 'backup at /srv/[user]/data')
+        self.assertEqual(self.mask('the share \\\\nas\\alex\\docs'), 'the share \\\\nas\\[user]\\docs')
+        self.assertEqual(self.mask.path('/var/lib/alex'), '…/lib/[user]')
+        self.assertEqual(self.mask.folder('/Users/alex'), '~')
+        self.assertEqual(self.mask.folder('/srv/alex'), '[user]')
+        self.assertEqual(self.mask.path('/Users/alex/vault/alex/a.md'), '[user]/a.md')
+
+    def test_what_is_not_a_user_name_is_left(self):
+        for text in ('alex wrote this', 'the alex-tools repo', 'src/alexX/a.py',
+                     'Users/alexx/a', 'a/sam.md', 'the /Users folder', '修正してください'):
+            self.assertEqual(self.mask(text), text, text)
+        # Two letters: only the home folder forms, never alone.
+        short = excerpt.Masker(home='/Users/jo', users=['jo'])
+        self.assertEqual(short('/Users/jo/x and /srv/jo/y'), '~/x and …/jo/y')
+
+    def test_user_names_come_from_the_login_and_the_home_folder(self):
+        names = excerpt.user_names('/home/pat')
+        self.assertIn('pat', names)
+        import getpass
+        self.assertIn(getpass.getuser(), names)
 
 
 if __name__ == '__main__':
