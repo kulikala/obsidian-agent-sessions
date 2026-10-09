@@ -198,11 +198,11 @@ export class SideView extends ItemView {
 		this.render();
 	}
 
-	/** A switch: off, starting (pulsing), listening (on), down (on, in the warning colour). A click
+	/** "rc" and a switch: off, starting (pulsing), listening (on), down (on, in the warning colour). A click
 	 * starts, wakes or stops the server; a right-click opens its terminal. */
 	private buildRcToggle(container: HTMLElement): HTMLElement {
 		const el = container.createDiv({ cls: "agent-sessions-rc-toggle clickable-icon", attr: { role: "switch", tabindex: "0" } });
-		setIcon(el.createSpan({ cls: "agent-sessions-rc-icon" }), "radio-tower");
+		el.createSpan({ cls: "agent-sessions-rc-label", text: "rc" });
 		el.createSpan({ cls: "agent-sessions-rc-track" }).createSpan({ cls: "agent-sessions-rc-knob" });
 		this.registerDomEvent(el, "click", () => void this.plugin.rcServer.click());
 		this.registerDomEvent(el, "keydown", (evt) => {
