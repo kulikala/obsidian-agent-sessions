@@ -11,18 +11,21 @@ import {
 	classifyAnalysisFailure,
 	classifyStatsFailure,
 	compactNumber,
-	doneCount,
 	elapsedText,
+	estimateText,
+	finishedRows,
 	hasData,
 	idleRows,
 	initialState,
 	metaLine,
 	modelUnavailable,
+	progressText,
 	rateLimitOf,
 	resultHeading,
+	rowSaving,
 	rowsToSave,
+	runningRows,
 	savedRows,
-	setRow,
 	spanLabel,
 	stateLabel,
 	statsFailureMessage,
@@ -31,9 +34,9 @@ import {
 	targetLine,
 	tokensText,
 	transition,
-	waitingRows,
 	type DialogState,
 } from "../../src/ui/efficiency-view";
+import { CHECKS, UnreadableReplyError, type CheckId, type Merged } from "../../src/sessions/efficiency-checks";
 
 const CLAUDE_RESULT = readFileSync(join(__dirname, "../fixtures/headless/claude-result.jsonl"), "utf8");
 
@@ -46,6 +49,7 @@ function ready(withResult: string[] = []): DialogState {
 function finding(check: string, savingW: number): Finding {
 	return {
 		check,
+		tasks: ["t-1"],
 		hits: ["h-1"],
 		title: "T",
 		observed: "O",
@@ -60,8 +64,11 @@ function finding(check: string, savingW: number): Finding {
 		impactW: savingW * 2,
 		impactUsd: null,
 		savingW,
-		fromStats: false,
 	};
+}
+
+function merged(issues: Partial<Record<CheckId, Finding[]>>): Merged {
+	return Object.fromEntries(CHECKS.map((c) => [c.id, issues[c.id] ?? []])) as Merged;
 }
 
 describe("dialog states", () => {
@@ -95,44 +102,71 @@ describe("dialog states", () => {
 	});
 });
 
-describe("the eight rows", () => {
-	it("start not analysed, wait in turn, and settle one by one", () => {
-		expect(idleRows().map((r) => r.state)).toEqual(Array(8).fill("idle"));
-		let rows = waitingRows();
-		rows = setRow(rows, 0, "issue", finding("rework", 450_000));
-		rows = setRow(rows, 1, "ok");
-		rows = setRow(rows, 2, "na");
-		rows = setRow(rows, 3, "running");
-		expect(rows.map((r) => r.state)).toEqual(["issue", "ok", "na", "running", "waiting", "waiting", "waiting", "waiting"]);
-		expect(doneCount(rows)).toBe(3);
-		expect(setRow(rows, 1, "ok", finding("x", 1))[1].finding).toBeNull();
+describe("the nine rows", () => {
+	it("start not analysed; while analysing, the not-applicable ones settle at once and the rest wait for the replies", () => {
+		expect(idleRows().map((r) => r.state)).toEqual(Array(9).fill("idle"));
+		const na = new Set<CheckId>(["cacheRebuild"]);
+		expect(runningRows(na).map((r) => r.state)).toEqual(["running", "running", "running", "running", "running", "na", "running", "running", "running"]);
 	});
 
-	it("add up the issues and their savings", () => {
-		let rows = waitingRows();
-		rows = setRow(rows, 0, "issue", finding("rework", 450_000));
-		rows = setRow(rows, 4, "issue", finding("largeOutput", 400_000));
-		rows = setRow(rows, 5, "issue", finding("cacheRebuild", 350_000));
-		expect(summarize(rows)).toEqual({ issues: 3, savingW: 1_200_000 });
-		expect(summaryText(rows)).toBe("Found waste in 3 of 8 areas. Fixing it could save up to about 1.2M tokens.");
-		expect(summaryText(setRow(waitingRows(), 0, "issue", finding("rework", 1000)))).toBe(
-			"Found waste in 1 of 8 areas. Fixing it could save up to about 1K tokens."
+	it("with several requests, a check found in a part read so far shows at once", () => {
+		const rows = runningRows(new Set(), merged({ rework: [finding("rework", 10)], found: [finding("found", 5)] }));
+		expect(rows.map((r) => r.state)).toEqual(["issue", "running", "running", "running", "running", "running", "running", "running", "issue"]);
+	});
+
+	it("finish: an issue where one was found, no issues elsewhere, not applicable as before", () => {
+		const rows = finishedRows(new Set<CheckId>(["startupSize"]), merged({ largeOutput: [finding("largeOutput", 400_000)] }));
+		expect(rows.map((r) => r.state)).toEqual(["ok", "ok", "ok", "ok", "issue", "ok", "ok", "na", "ok"]);
+		expect(rows[4].findings).toHaveLength(1);
+	});
+
+	it("add up the issues and their savings; the agent's own issues count as one area", () => {
+		const rows = finishedRows(
+			new Set(),
+			merged({
+				rework: [finding("rework", 450_000)],
+				largeOutput: [finding("largeOutput", 400_000)],
+				found: [finding("found", 200_000), finding("found", 150_000)],
+			})
 		);
-		expect(summaryText(waitingRows().map((r) => ({ ...r, state: "ok" })))).toBe(t("efficiency.result.none"));
+		expect(rowSaving(rows[8])).toBe(350_000);
+		expect(summarize(rows)).toEqual({ issues: 3, savingW: 1_200_000 });
+		expect(summaryText(rows)).toBe("Found waste in 3 of 9 areas. Fixing it could save up to about 1.2M tokens.");
+		expect(summaryText(finishedRows(new Set(), merged({ rework: [finding("rework", 1000)] })))).toBe(
+			"Found waste in 1 of 9 areas. Fixing it could save up to about 1K tokens."
+		);
+		expect(summaryText(finishedRows(new Set(), merged({})))).toBe(t("efficiency.result.none"));
 		setLang("ja");
 		expect(summaryText(rows)).toBe("3 つの観点で無駄が見つかりました。直すと、最大で約 120 万トークン減らせる見込みです。");
 	});
 
 	it("round-trip through a saved result, in the checks' order", () => {
-		let rows = waitingRows();
-		rows = setRow(rows, 0, "issue", finding("rework", 10));
-		rows = rows.map((r, i) => (i === 0 ? r : { ...r, state: i === 7 ? "na" : "ok" }));
+		const rows = finishedRows(new Set<CheckId>(["startupSize"]), merged({ rework: [finding("rework", 10)], found: [finding("found", 1), finding("found", 2)] }));
 		const saved = rowsToSave(rows);
-		expect(saved.map((c) => c.state)).toEqual(["issue", "ok", "ok", "ok", "ok", "ok", "ok", "na"]);
+		expect(saved.map((c) => c.state)).toEqual(["issue", "ok", "ok", "ok", "ok", "ok", "ok", "na", "issue"]);
 		expect(savedRows([...saved].reverse())).toEqual(rows);
-		// A check the saved result doesn't have, and an issue without its finding.
-		const partial = savedRows([{ check: "rework", state: "issue", finding: null }]);
-		expect(partial.map((r) => r.state)).toEqual(["ok", "na", "na", "na", "na", "na", "na", "na"]);
+		// A check the saved result doesn't have, and an issue without its findings.
+		const partial = savedRows([{ check: "rework", state: "issue", findings: [] }]);
+		expect(partial.map((r) => r.state)).toEqual(["ok", "na", "na", "na", "na", "na", "na", "na", "na"]);
+	});
+});
+
+describe("progress", () => {
+	it("one request: all nine at once; several: the parts read", () => {
+		expect(progressText(0, 1)).toBe("Checking all 9 areas");
+		expect(progressText(2, 5)).toBe("Read 2 of 5 parts");
+		setLang("ja");
+		expect(progressText(0, 1)).toBe("9 つの観点を判定しています");
+		expect(progressText(2, 5)).toBe("5 回のうち 2 回を読み終えました");
+	});
+
+	it("the estimate grows with the requests", () => {
+		expect(estimateText(1)).toBe("Takes about 1–3 minutes");
+		expect(estimateText(3)).toBe("Takes about 3–9 minutes");
+		expect(elapsedText(72, 3)).toBe("1 min 12 s elapsed (about 3–9 min)");
+		setLang("ja");
+		expect(estimateText(1)).toBe("目安 1〜3 分");
+		expect(elapsedText(72, 2)).toBe("経過 1 分 12 秒（目安 2〜6 分）");
 	});
 });
 
@@ -174,6 +208,8 @@ describe("words", () => {
 	it("each check's name and description, and each state, in both languages", () => {
 		expect(checkName("rework")).toBe("Redoing the same fix");
 		expect(checkDesc("startupSize")).toBe("Do instruction files or unused skills make every start large?");
+		expect(checkName("found")).toBe("Found by the agent");
+		expect(checkDesc("found")).toBe("Waste that fits none of the 8 areas above");
 		expect(["idle", "waiting", "running", "ok", "issue", "na"].map((s) => stateLabel(s as "ok"))).toEqual([
 			"Not analyzed",
 			"Queued",
@@ -184,6 +220,8 @@ describe("words", () => {
 		]);
 		setLang("ja");
 		expect(checkName("mixedTasks")).toBe("1 つの会話に複数の作業");
+		expect(checkName("found")).toBe("エージェントが見つけた観点");
+		expect(checkDesc("found")).toBe("上の 8 つに当てはまらない無駄");
 		expect(stateLabel("na")).toBe("対象外");
 	});
 
@@ -195,13 +233,13 @@ describe("words", () => {
 		expect(spanLabel(week, true)).toBe("Last 7 days");
 		expect(spanLabel({ start: 0, end: 600 })).toBe("last 1 hour");
 		expect(targetLine(week, 42, 28_600_000)).toBe("Covers 42 sessions from the last 7 days (28.6M tokens).");
-		expect(elapsedText(72)).toBe("1 min 12 s elapsed (about 1–3 min)");
-		expect(elapsedText(9)).toBe("9 s elapsed (about 1–3 min)");
+		expect(elapsedText(72, 1)).toBe("1 min 12 s elapsed (about 1–3 min)");
+		expect(elapsedText(9, 1)).toBe("9 s elapsed (about 1–3 min)");
 		expect(metaLine(["a", null, "b"])).toBe("a · b");
 		expect(resultHeading(1_790_000_000, 1_790_000_000)).toMatch(/^Analysis from .+/);
 		setLang("ja");
 		expect(targetLine(week, 42, 28_600_000)).toBe("直近 7 日の 42 セッション（計 2,860 万トークン）を調べます。");
-		expect(elapsedText(72)).toBe("経過 1 分 12 秒（目安 1〜3 分）");
+		expect(elapsedText(72, 1)).toBe("経過 1 分 12 秒（目安 1〜3 分）");
 		expect(metaLine([spanLabel(week, true), "42 セッション"])).toBe("直近 7 日・42 セッション");
 		expect(resultHeading(1_790_000_000, 1_790_000_000)).toMatch(/ の解析結果$/);
 	});
@@ -221,6 +259,9 @@ describe("failures", () => {
 		expect(classifyAnalysisFailure(new HeadlessError("timed out"), false)).toEqual({ kind: "timeout" });
 		expect(classifyAnalysisFailure(new HeadlessError("model not found"), false)).toEqual({ kind: "llm", detail: "model not found" });
 		expect(classifyAnalysisFailure(new Error("spawn /x/claude ENOENT"), false).kind).toBe("agentUnavailable");
+		const unreadable = classifyAnalysisFailure(new UnreadableReplyError("the reply could not be read"), false);
+		expect(unreadable).toEqual({ kind: "unreadable" });
+		expect(analysisFailureMessage(unreadable, "Claude Code")).toBe("Claude Code's reply could not be read, even when asked again.");
 		expect(classifyAnalysisFailure(new HeadlessError("boom", CLAUDE_RESULT), false)).toEqual({ kind: "llm", detail: "boom" });
 	});
 

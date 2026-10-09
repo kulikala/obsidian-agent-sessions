@@ -2,22 +2,22 @@
 // the one before it moved to `prev-<pane>.json` on every save. Kept until the user deletes it, to
 // show again next time and, later, to compare against. A file that can't be read or has another
 // shape (including a result saved in an earlier format) is ignored. Holds no conversation text
-// beyond the masked quotes the findings cite.
+// beyond the findings' masked quotes.
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { EffHit, EffRange, EffTotals, Finding } from "./efficiency";
 import type { HeadlessUsage } from "./organize-agent";
 
-export const RESULT_VERSION = 2;
+export const RESULT_VERSION = 3;
 
-/** One check's result: no issues, an issue (its finding), or not applicable. */
+/** One check's result: no issues, issues (its findings), or not applicable. */
 export type CheckResultState = "ok" | "issue" | "na";
 
 export interface SavedCheck {
 	check: string;
 	state: CheckResultState;
-	finding: Finding | null;
+	findings: Finding[];
 }
 
 export interface SavedResult {
@@ -33,12 +33,14 @@ export interface SavedResult {
 	/** Their ids, to count the sessions started since. */
 	sessionIds: string[];
 	checks: SavedCheck[];
-	/** The hits the findings cite (for their evidence). */
+	/** The hits of the findings' tasks (for the request that asks an agent to fix one). */
 	hits: EffHit[];
+	/** The session of each task a finding cites (where its quotes come from). */
+	taskSessions: Record<string, string>;
 	/** What the analysis itself used, all its requests added up. */
 	selfCost: HeadlessUsage | null;
-	/** What was sent: estimated tokens, and how many sessions' excerpts. */
-	sent: { tokens: number; sessions: number };
+	/** What was sent: estimated tokens, how many sessions' tasks, and in how many requests. */
+	sent: { tokens: number; sessions: number; requests: number };
 	/** Per detector: hits and their impact, the numbers a later analysis compares with. */
 	metrics: Record<string, { hits: number; impact_w: number }>;
 }
@@ -83,8 +85,11 @@ function read(path: string, agent: string): SavedResult | null {
 			!data.range ||
 			!data.totals ||
 			!Array.isArray(data.checks) ||
-			!data.checks.every((c) => c && typeof c.check === "string" && (c.state === "ok" || c.state === "issue" || c.state === "na")) ||
+			!data.checks.every(
+				(c) => c && typeof c.check === "string" && (c.state === "ok" || c.state === "issue" || c.state === "na") && Array.isArray(c.findings)
+			) ||
 			!Array.isArray(data.hits) ||
+			!data.taskSessions ||
 			!Array.isArray(data.sessionIds)
 		) {
 			return null;

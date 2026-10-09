@@ -1,13 +1,15 @@
-// "Analyze token efficiency": runs `json efficiency` (local, nothing sent), then shows one pane per
-// agent -- and, for Codex and OpenCode, one per provider their conversations used, so a
-// conversation is only ever analysed where it was held. Every pane lists the same eight checks
-// (`sessions/efficiency-checks.ts`) and shows one of three screens:
+// "Analyze token efficiency": runs `json efficiency` (local, nothing sent), then shows one tab per
+// agent, for the provider its conversations used most, so a conversation is only ever analysed
+// where it was held. Every pane lists the same nine checks (`sessions/efficiency-checks.ts`) and
+// shows one of three screens:
 //
 // - empty: what the checks look at, the range covered, Analyze, and a folded "Details" saying what
-//   would be sent, how much, to which model and against which usage limit;
-// - analyzing: the checks settle one after another -- those the statistics settle on their own at
-//   once, the others one request each to the same agent and provider (`claude -p`, `codex exec`,
-//   `opencode run`, in a fresh empty folder) -- with a progress bar and Stop;
+//   would be sent, how much, in how many requests, to which model and against which usage limit;
+// - analyzing: the pane's digest goes to the same agent and provider (`claude -p`, `codex exec`,
+//   `opencode run`, in a fresh empty folder) in one request that judges all nine checks, or, when
+//   it is too large for one, in several requests by period, one after another; the rows fill in
+//   when the replies are read (with several requests, a check turns to "Issue found" as soon as
+//   one part finds it), with a progress bar and Stop;
 // - result: the date, a one-line summary, and the rows; a row with an issue opens to the next
 //   step, what happened, its cause, quotes and an action (copy a request template, or start an
 //   agent in the vault, in plan mode or its nearest, with the request shown and editable first).
@@ -41,8 +43,20 @@ import {
 	type EffPane,
 	type Finding,
 } from "../sessions/efficiency";
-import { allowedActions, checkPayload, checkPrompt, planChecks, runCheck, type CheckPlan } from "../sessions/efficiency-checks";
-import { detectorMetrics, loadResult, overlaps, saveResult, type SavedResult } from "../sessions/efficiency-store";
+import {
+	mergeOutcomes,
+	notApplicable,
+	planRequests,
+	readContext,
+	requestSetup,
+	runPart,
+	type CheckId,
+	type Plan,
+	type PartOutcome,
+	type ReadContext,
+	type RequestSetup,
+} from "../sessions/efficiency-checks";
+import { detectorMetrics, loadResult, overlaps, RESULT_VERSION, saveResult, type SavedResult } from "../sessions/efficiency-store";
 import { addUsage, type HeadlessUsage } from "../sessions/organize-agent";
 import { sessionDisplayName } from "../sessions/name";
 import { splitName } from "../sessions/tree";
@@ -56,17 +70,20 @@ import {
 	classifyAnalysisFailure,
 	classifyStatsFailure,
 	compactNumber,
-	doneCount,
 	elapsedText,
+	estimateText,
+	finishedRows,
 	hasData,
 	idleRows,
 	initialState,
 	metaLine,
 	modelUnavailable,
+	progressText,
 	resultHeading,
+	rowSaving,
 	rowsToSave,
+	runningRows,
 	savedRows,
-	setRow,
 	spanLabel,
 	stateLabel,
 	statsFailureMessage,
@@ -74,13 +91,19 @@ import {
 	targetLine,
 	tokensText,
 	transition,
-	waitingRows,
 	type DialogEvent,
 	type DialogState,
 	type Row,
 } from "./efficiency-view";
 
 const ANALYSIS_TIMEOUT_MS = 300_000;
+
+/** "About 18,000 tokens (from 12 conversations)", with the number of requests when there are
+ * several. */
+function amountText(sent: { tokens: number; sessions: number; requests: number }): string {
+	const vars = { tokens: tokensText(sent.tokens), sessions: sent.sessions, requests: sent.requests };
+	return t(sent.requests > 1 ? "efficiency.details.amountParts" : "efficiency.details.amountValue", vars);
+}
 const AGENT_NAMES: Record<string, string> = { claude: "Claude Code", codex: "Codex", opencode: "OpenCode" };
 const AGENTS: AgentId[] = ["claude", "codex", "opencode"];
 const CLS = "agent-sessions-efficiency";
@@ -88,6 +111,8 @@ const CLS = "agent-sessions-efficiency";
 /** An analysis running in a pane. */
 interface Run {
 	rows: Row[];
+	/** Requests answered so far. */
+	done: number;
 	started: number;
 	abort: AbortController;
 	usage: HeadlessUsage | null;
@@ -102,9 +127,14 @@ interface Pane {
 	agent: AgentId;
 	info: EffPane;
 	block: EffAgent;
-	plans: CheckPlan[];
-	/** What an analysis would send: estimated tokens and sessions. */
-	sent: { tokens: number; sessions: number };
+	/** The checks with nothing to judge in this range. */
+	na: Set<CheckId>;
+	/** What an analysis sends (none without a digest). */
+	setup: RequestSetup | null;
+	plan: Plan | null;
+	ctx: ReadContext | null;
+	/** What an analysis would send: estimated tokens, sessions and requests. */
+	sent: { tokens: number; sessions: number; requests: number };
 	/** The model the last analysis ran on, when Codex refused the first choice. */
 	usedModel: string | null;
 	el: HTMLElement;
@@ -233,15 +263,24 @@ export class EfficiencyModal extends Modal {
 			tab.createSpan({ cls: `${CLS}-tab-mark` });
 			tab.addEventListener("click", () => this.selectPane(info.key));
 		}
-		const plans = planChecks(block);
+		const digest = info.digest;
+		const setup = digest ? requestSetup(digest, block.totals, block.hits, getLang()) : null;
+		const plan = setup ? planRequests(setup) : null;
 		const saved = loadResult(efficiencyDir(), info.key);
 		const pane: Pane = {
 			key: info.key,
 			agent,
 			info,
 			block,
-			plans,
-			sent: this.sentEstimate(block, plans),
+			na: setup ? setup.na : notApplicable(undefined, block.totals),
+			setup,
+			plan,
+			ctx: setup ? readContext(setup, block.hits) : null,
+			sent: {
+				tokens: plan ? plan.parts.reduce((n, p) => n + estimateTokens(p.prompt), 0) : 0,
+				sessions: plan?.sessions ?? 0,
+				requests: plan?.parts.length ?? 0,
+			},
 			usedModel: null,
 			el,
 			tab,
@@ -251,25 +290,6 @@ export class EfficiencyModal extends Modal {
 			open: new Set(),
 		};
 		this.panes.set(info.key, pane);
-	}
-
-	/** What an analysis would send: the requests of the checks that need the model. */
-	private sentEstimate(block: EffAgent, plans: CheckPlan[]): { tokens: number; sessions: number } {
-		let tokens = 0;
-		const sessions = new Set<string>();
-		for (const plan of plans) {
-			if (plan.outcome !== "model") {
-				continue;
-			}
-			const payload = checkPayload(block, plan);
-			tokens += estimateTokens(checkPrompt(payload, allowedActions(plan), getLang()));
-			for (const e of block.excerpts) {
-				if (payload.hits.some((h) => h.task === e.task)) {
-					sessions.add(e.session);
-				}
-			}
-		}
-		return { tokens, sessions: sessions.size };
 	}
 
 	private selectPane(key: string): void {
@@ -342,7 +362,7 @@ export class EfficiencyModal extends Modal {
 		}
 		const go = pane.el.createDiv({ cls: `${CLS}-go` });
 		go.createEl("button", { cls: "mod-cta", text: t("efficiency.analyze") }).addEventListener("click", () => void this.analyze(pane));
-		go.createDiv({ cls: `${CLS}-sub`, text: t("efficiency.estimate") });
+		go.createDiv({ cls: `${CLS}-sub`, text: estimateText(pane.sent.requests) });
 		this.disclosure(pane, "details", t("efficiency.details"), t("efficiency.details.sub"), (body) => {
 			body.createDiv({ text: t("efficiency.details.lead") });
 			const local = pane.info.local;
@@ -352,12 +372,7 @@ export class EfficiencyModal extends Modal {
 				kv.createEl("dd", { text: value });
 			};
 			item(t(local ? "efficiency.details.whatLocal" : "efficiency.details.what"), t("efficiency.details.whatValue"));
-			item(
-				t("efficiency.details.amount"),
-				pane.sent.tokens > 0
-					? t("efficiency.details.amountValue", { tokens: tokensText(pane.sent.tokens), sessions: pane.sent.sessions })
-					: t("efficiency.details.amountNone")
-			);
+			item(t("efficiency.details.amount"), amountText(pane.sent));
 			const agent = this.agentName(pane);
 			item(
 				t("efficiency.details.model"),
@@ -372,9 +387,10 @@ export class EfficiencyModal extends Modal {
 						? t("efficiency.details.limitPercent", { agent, window: usage.label, percent: Math.round(usage.percent) })
 						: t("efficiency.details.limitValue", { agent })
 			);
-			const prompts = pane.plans
-				.filter((plan) => plan.outcome === "model")
-				.map((plan) => checkPrompt(checkPayload(block, plan), allowedActions(plan), getLang()));
+			if (pane.plan && pane.plan.omitted > 0) {
+				body.createDiv({ cls: `${CLS}-sub`, text: t("efficiency.details.omitted", { count: pane.plan.omitted, requests: pane.plan.parts.length }) });
+			}
+			const prompts = pane.plan?.parts.map((part) => part.prompt) ?? [];
 			if (prompts.length > 0) {
 				const preview = body.createEl("details", { cls: `${CLS}-preview` });
 				preview.createEl("summary", { text: t("efficiency.details.preview") });
@@ -392,16 +408,20 @@ export class EfficiencyModal extends Modal {
 			t("efficiency.analyzing.heading"),
 			metaLine([spanLabel(block.range, true), t("efficiency.meta.sessions", { count: block.sessions.length }), this.modelName(pane)])
 		);
-		const done = doneCount(run.rows);
+		const requests = Math.max(1, pane.sent.requests);
 		const prog = pane.el.createDiv({ cls: `${CLS}-prog` });
 		const bar = prog.createDiv({
 			cls: `${CLS}-progress`,
-			attr: { role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(run.rows.length), "aria-valuenow": String(done) },
+			attr: { role: "progressbar", "aria-valuemin": "0", "aria-valuemax": String(requests), "aria-valuenow": String(run.done) },
 		});
-		bar.createEl("i").style.width = `${(done / run.rows.length) * 100}%`;
+		bar.toggleClass("is-indeterminate", requests === 1);
+		const fill = bar.createEl("i");
+		if (requests > 1) {
+			fill.style.width = `${(run.done / requests) * 100}%`;
+		}
 		const meta = prog.createDiv({ cls: `${CLS}-prog-meta ${CLS}-sub` });
-		meta.createSpan({ text: t("efficiency.progress", { done }), attr: { role: "status" } });
-		run.elapsedEl = meta.createSpan({ text: elapsedText((Date.now() - run.started) / 1000) });
+		meta.createSpan({ text: progressText(run.done, requests), attr: { role: "status" } });
+		run.elapsedEl = meta.createSpan({ text: elapsedText((Date.now() - run.started) / 1000, requests) });
 		this.renderRows(pane, run.rows, "analyzing");
 		const foot = pane.el.createDiv({ cls: `${CLS}-foot` });
 		foot.createDiv({ cls: `${CLS}-sub`, text: t("efficiency.analyzing.note") });
@@ -453,12 +473,7 @@ export class EfficiencyModal extends Modal {
 			tile(formatNumber(tot.calls), t("efficiency.basis.calls"));
 			const kv = body.createEl("dl", { cls: `${CLS}-kv` });
 			kv.createEl("dt", { text: t(pane.info.local ? "efficiency.basis.sentLocal" : "efficiency.basis.sent") });
-			kv.createEl("dd", {
-				text:
-					saved.sent.tokens > 0
-						? t("efficiency.details.amountValue", { tokens: tokensText(saved.sent.tokens), sessions: saved.sent.sessions })
-						: t("efficiency.details.amountNone"),
-			});
+			kv.createEl("dd", { text: amountText(saved.sent) });
 			kv.createEl("dt", { text: t("efficiency.basis.model") });
 			kv.createEl("dd", {
 				text: pane.info.local
@@ -492,20 +507,29 @@ export class EfficiencyModal extends Modal {
 
 	// ---- Rows ------------------------------------------------------------------------------------
 
-	/** The eight rows. On the result screen a row with an issue is a button that opens its finding. */
+	/** The nine rows. On the result screen a row with an issue is a button that opens its findings. */
 	private renderRows(pane: Pane, rows: Row[], screen: "empty" | "analyzing" | "result", saved?: SavedResult): void {
 		const list = pane.el.createDiv({ cls: `${CLS}-points` });
 		rows.forEach((row) => {
 			const item = list.createDiv({ cls: `${CLS}-pt is-${row.state}` });
-			const finding = row.state === "issue" ? row.finding : null;
-			const openable = screen === "result" && finding !== null && saved !== undefined;
+			const findings = row.state === "issue" ? row.findings : [];
+			const openable = screen === "result" && findings.length > 0 && saved !== undefined;
 			const isOpen = openable && pane.open.has(`row:${row.check}`);
 			item.toggleClass("is-open", isOpen);
 			const head = openable ? item.createEl("button", { cls: `${CLS}-pt-row`, attr: { type: "button", "aria-expanded": String(isOpen), "data-open-key": `row:${row.check}` } }) : item.createDiv({ cls: `${CLS}-pt-row` });
 			const text = head.createSpan({ cls: `${CLS}-pt-text` });
 			text.createSpan({ cls: `${CLS}-pt-name`, text: checkName(row.check) });
+			const titles = findings.map((f) => f.title).filter((x) => x);
 			const desc =
-				screen === "empty" ? checkDesc(row.check) : row.state === "running" ? t("efficiency.reading") : screen === "result" && finding ? finding.title : "";
+				screen === "empty"
+					? checkDesc(row.check)
+					: row.state === "running"
+						? t("efficiency.reading")
+						: findings.length > 0
+							? titles.length > 0
+								? metaLine(titles)
+								: checkDesc(row.check)
+							: "";
 			if (desc) {
 				text.createSpan({ cls: `${CLS}-pt-desc`, text: desc });
 			}
@@ -517,12 +541,13 @@ export class EfficiencyModal extends Modal {
 				setIcon(mark, row.state === "ok" ? "check" : "alert-circle");
 			}
 			st.createSpan({ cls: `${CLS}-st-label`, text: stateLabel(row.state) });
-			if (finding) {
+			const saving = rowSaving(row);
+			if (findings.length > 0 && saving > 0) {
 				const amt = st.createSpan({ cls: `${CLS}-st-amt` });
-				amt.createSpan({ cls: `${CLS}-st-amt-long`, text: t("efficiency.saving", { tokens: tokensText(finding.savingW) }) });
-				amt.createSpan({ cls: `${CLS}-st-amt-short`, text: t("efficiency.savingShort", { n: compactNumber(finding.savingW) }) });
+				amt.createSpan({ cls: `${CLS}-st-amt-long`, text: t("efficiency.saving", { tokens: tokensText(saving) }) });
+				amt.createSpan({ cls: `${CLS}-st-amt-short`, text: t("efficiency.savingShort", { n: compactNumber(saving) }) });
 			}
-			if (!openable || !finding || !saved) {
+			if (!openable || !saved) {
 				return;
 			}
 			const act = st.createSpan({ cls: `${CLS}-st-act` });
@@ -532,7 +557,18 @@ export class EfficiencyModal extends Modal {
 				this.toggleOpen(pane, `row:${row.check}`);
 			});
 			if (isOpen) {
-				this.renderFinding(item.createDiv({ cls: `${CLS}-pt-body` }), pane, finding, saved);
+				const body = item.createDiv({ cls: `${CLS}-pt-body` });
+				for (const f of findings) {
+					const box = findings.length > 1 ? body.createDiv({ cls: `${CLS}-finding` }) : body;
+					if (findings.length > 1) {
+						const title = box.createDiv({ cls: `${CLS}-finding-title` });
+						title.createEl("b", { text: f.title || checkName(row.check) });
+						if (f.savingW > 0) {
+							title.createSpan({ cls: `${CLS}-sub`, text: t("efficiency.saving", { tokens: tokensText(f.savingW) }) });
+						}
+					}
+					this.renderFinding(box, pane, f, saved);
+				}
 			}
 		});
 	}
@@ -561,11 +597,10 @@ export class EfficiencyModal extends Modal {
 			kv.createEl("dd", { text: t(`efficiency.cause.${f.cause}` as MessageKey) });
 		}
 		const hits = new Map(saved.hits.map((h) => [h.id, h]));
-		const sessionOfTask = new Map(saved.hits.filter((h) => h.task).map((h) => [h.task as string, h.session]));
 		for (const q of f.quotes) {
 			const quote = body.createDiv({ cls: `${CLS}-quote` });
 			quote.createEl("blockquote", { text: t("efficiency.quote", { text: q.text }) });
-			const session = sessionOfTask.get(taskOfRef(q.ref));
+			const session = saved.taskSessions[taskOfRef(q.ref)];
 			if (session) {
 				this.renderQuoteSource(quote.createDiv({ cls: `${CLS}-quote-source` }), session, pane.block);
 			}
@@ -624,39 +659,43 @@ export class EfficiencyModal extends Modal {
 	// ---- Analysis --------------------------------------------------------------------------------
 
 	private async analyze(pane: Pane): Promise<void> {
-		if (pane.run) {
+		const { plan, setup, ctx } = pane;
+		if (pane.run || !plan || !setup || !ctx || plan.parts.length === 0) {
 			return;
 		}
-		const run: Run = { rows: waitingRows(), started: Date.now(), abort: new AbortController(), usage: null, ticker: null, elapsedEl: null };
+		const run: Run = {
+			rows: runningRows(pane.na),
+			done: 0,
+			started: Date.now(),
+			abort: new AbortController(),
+			usage: null,
+			ticker: null,
+			elapsedEl: null,
+		};
 		pane.run = run;
 		pane.error = null;
 		pane.open.clear();
 		this.dispatch({ type: "start", agent: pane.key });
 		this.render(pane);
-		run.ticker = window.setInterval(() => run.elapsedEl?.setText(elapsedText((Date.now() - run.started) / 1000)), 1000);
-		const update = (rows: Row[]): void => {
-			run.rows = rows;
-			if (this.state.panes[pane.key] === "analyzing") {
-				this.render(pane);
-			}
-		};
+		run.ticker = window.setInterval(() => run.elapsedEl?.setText(elapsedText((Date.now() - run.started) / 1000, plan.parts.length)), 1000);
 		try {
 			const ask = await this.asker(pane, run.abort.signal);
-			for (const [i, plan] of pane.plans.entries()) {
+			const outcomes: PartOutcome[] = [];
+			for (const part of plan.parts) {
 				if (run.abort.signal.aborted) {
 					throw new Error("aborted");
 				}
-				if (plan.outcome !== "model") {
-					update(setRow(run.rows, i, plan.outcome));
-					continue;
-				}
-				update(setRow(run.rows, i, "running"));
-				const payload = checkPayload(pane.block, plan);
-				const actions = allowedActions(plan);
-				const outcome = await runCheck(checkPrompt(payload, actions, getLang()), payload, actions, ask);
+				const outcome = await runPart(part, setup, ctx, ask);
 				run.usage = addUsage(run.usage, outcome.usage);
-				update(setRow(run.rows, i, outcome.finding ? "issue" : "ok", outcome.finding));
+				outcomes.push(outcome);
+				run.done = outcomes.length;
+				// With several requests, a check found in a part shows as soon as it is read.
+				run.rows = runningRows(pane.na, mergeOutcomes(outcomes, ctx));
+				if (this.state.panes[pane.key] === "analyzing") {
+					this.render(pane);
+				}
 			}
+			run.rows = finishedRows(pane.na, mergeOutcomes(outcomes, ctx));
 			pane.saved = this.save(pane, run);
 			this.dispatch({ type: "finished", agent: pane.key });
 		} catch (err) {
@@ -722,9 +761,17 @@ export class EfficiencyModal extends Modal {
 	/** Saves a finished analysis as the pane's last result (and keeps it shown even when the file
 	 * can't be written). */
 	private save(pane: Pane, run: Run): SavedResult {
-		const cited = new Set(run.rows.flatMap((r) => r.finding?.hits ?? []));
+		const findings = run.rows.flatMap((r) => r.findings);
+		const cited = new Set(findings.flatMap((f) => f.hits));
+		const taskSessions: Record<string, string> = {};
+		for (const id of findings.flatMap((f) => f.tasks)) {
+			const session = pane.ctx?.tasks.get(id)?.session;
+			if (session) {
+				taskSessions[id] = session;
+			}
+		}
 		const result: SavedResult = {
-			version: 2,
+			version: RESULT_VERSION,
 			agent: pane.key,
 			savedAt: Date.now() / 1000,
 			model: this.modelName(pane),
@@ -734,6 +781,7 @@ export class EfficiencyModal extends Modal {
 			sessionIds: pane.block.sessions.map((s) => s.id),
 			checks: rowsToSave(run.rows),
 			hits: pane.block.hits.filter((h) => cited.has(h.id)),
+			taskSessions,
 			selfCost: run.usage,
 			sent: pane.sent,
 			metrics: detectorMetrics(pane.block.hits),

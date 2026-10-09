@@ -6,7 +6,7 @@ import { detectorMetrics, loadPrevious, loadResult, overlaps, saveResult, type S
 
 function result(savedAt: number): SavedResult {
 	return {
-		version: 2,
+		version: 3,
 		agent: "claude",
 		savedAt,
 		model: "sonnet",
@@ -15,12 +15,13 @@ function result(savedAt: number): SavedResult {
 		sessions: 1,
 		sessionIds: ["s1"],
 		checks: [
-			{ check: "rework", state: "ok", finding: null },
-			{ check: "firstRequest", state: "na", finding: null },
+			{ check: "rework", state: "ok", findings: [] },
+			{ check: "firstRequest", state: "na", findings: [] },
 		],
 		hits: [],
+		taskSessions: {},
 		selfCost: { input: 1, output: 2, usd: 0.01 },
-		sent: { tokens: 4000, sessions: 2 },
+		sent: { tokens: 4000, sessions: 2, requests: 1 },
 		metrics: {},
 	};
 }
@@ -50,7 +51,13 @@ describe("saved results", () => {
 		expect(loadResult(dir, "claude")).toBeNull();
 	});
 
-	it("treats a result saved in the earlier format (findings, no checks) as no result", () => {
+	it("treats a result saved in an earlier format as no result", () => {
+		const v2 = { ...result(1), version: 2, checks: [{ check: "rework", state: "ok", finding: null }] };
+		writeFileSync(join(dir, "last-claude.json"), JSON.stringify(v2));
+		expect(loadResult(dir, "claude")).toBeNull();
+	});
+
+	it("treats a result saved in the first format (findings, no checks) as no result", () => {
 		const old = { ...result(1), version: 1, findings: [], dismissed: [], payloadHash: "x" } as Partial<SavedResult>;
 		delete old.checks;
 		writeFileSync(join(dir, "last-claude.json"), JSON.stringify(old));

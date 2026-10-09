@@ -1,4 +1,4 @@
-// The token efficiency dialog's pure part: its states, the eight check rows, what each failure
+// The token efficiency dialog's pure part: its states, the nine check rows, what each failure
 // means, and the lines the screens show. The dialog reads the records first (`stats`, then
 // `ready` or `failed`); after that each pane shows one of three screens: `empty` (not analysed
 // yet), `analyzing`, or `result` (the analysis just made, or the saved one -- the same screen).
@@ -9,7 +9,7 @@ import { HeadlessError } from "../backend/headless";
 import { getLang, t, type MessageKey } from "../i18n";
 import { formatDateTimeShort } from "../i18n/datetime";
 import type { EffRange, Finding } from "../sessions/efficiency";
-import { CHECKS, type CheckId } from "../sessions/efficiency-checks";
+import { CHECKS, UnreadableReplyError, type CheckId, type Merged } from "../sessions/efficiency-checks";
 import type { SavedCheck } from "../sessions/efficiency-store";
 import { parseEvents } from "../sessions/organize-agent";
 
@@ -63,7 +63,7 @@ export function transition(state: DialogState, event: DialogEvent): DialogState 
 	return next === screen ? state : { ...state, panes: { ...state.panes, [event.agent]: next } };
 }
 
-// ---- The eight rows ------------------------------------------------------------------------------
+// ---- The nine rows ------------------------------------------------------------------------------
 
 /** A row's state: not analysed, waiting for its turn, being analysed, no issues, an issue, or not
  * applicable. */
@@ -72,22 +72,37 @@ export type CheckState = "idle" | "waiting" | "running" | "ok" | "issue" | "na";
 export interface Row {
 	check: CheckId;
 	state: CheckState;
-	finding: Finding | null;
+	/** Its issues: one for checks 1-8, up to three for the last one; empty unless `issue`. */
+	findings: Finding[];
 }
 
 /** The rows before any analysis: every check not analysed. */
 export function idleRows(): Row[] {
-	return CHECKS.map((c) => ({ check: c.id, state: "idle", finding: null }));
+	return CHECKS.map((c) => ({ check: c.id, state: "idle", findings: [] }));
 }
 
-/** The rows as an analysis starts: every check waiting its turn. */
-export function waitingRows(): Row[] {
-	return CHECKS.map((c) => ({ check: c.id, state: "waiting", finding: null }));
+/** The rows while an analysis runs: the checks with nothing to judge are not applicable at once,
+ * the others are being analysed; `merged` (the parts read so far) turns the checks with an issue
+ * already to `issue`. */
+export function runningRows(na: Set<CheckId>, merged?: Partial<Merged>): Row[] {
+	return CHECKS.map((c) => {
+		if (na.has(c.id)) {
+			return { check: c.id, state: "na", findings: [] };
+		}
+		const findings = merged?.[c.id] ?? [];
+		return { check: c.id, state: findings.length > 0 ? "issue" : "running", findings };
+	});
 }
 
-/** `rows` with row `index` replaced. */
-export function setRow(rows: Row[], index: number, state: CheckState, finding: Finding | null = null): Row[] {
-	return rows.map((r, i) => (i === index ? { ...r, state, finding: state === "issue" ? finding : null } : r));
+/** The rows of a finished analysis. */
+export function finishedRows(na: Set<CheckId>, merged: Merged): Row[] {
+	return CHECKS.map((c) => {
+		if (na.has(c.id)) {
+			return { check: c.id, state: "na", findings: [] };
+		}
+		const findings = merged[c.id] ?? [];
+		return { check: c.id, state: findings.length > 0 ? "issue" : "ok", findings };
+	});
 }
 
 /** Whether a row has its answer. */
@@ -95,38 +110,39 @@ export function isSettled(state: CheckState): boolean {
 	return state === "ok" || state === "issue" || state === "na";
 }
 
-/** How many checks have their answer. */
-export function doneCount(rows: Row[]): number {
-	return rows.filter((r) => isSettled(r.state)).length;
-}
-
 /** The rows of a saved result, in the checks' order (a check it doesn't have: not applicable). */
 export function savedRows(checks: SavedCheck[]): Row[] {
 	return CHECKS.map((c) => {
 		const saved = checks.find((x) => x.check === c.id);
 		if (!saved) {
-			return { check: c.id, state: "na" as CheckState, finding: null };
+			return { check: c.id, state: "na" as CheckState, findings: [] };
 		}
-		return { check: c.id, state: saved.state === "issue" && !saved.finding ? "ok" : saved.state, finding: saved.state === "issue" ? saved.finding : null };
+		const findings = saved.state === "issue" ? saved.findings : [];
+		return { check: c.id, state: saved.state === "issue" && findings.length === 0 ? "ok" : saved.state, findings };
 	});
 }
 
 /** What a finished analysis saves of its rows. */
 export function rowsToSave(rows: Row[]): SavedCheck[] {
-	return rows.map((r) => ({ check: r.check, state: r.state === "issue" ? "issue" : r.state === "na" ? "na" : "ok", finding: r.finding }));
+	return rows.map((r) => ({ check: r.check, state: r.state === "issue" ? "issue" : r.state === "na" ? "na" : "ok", findings: r.findings }));
 }
 
-/** The issues, and the tokens fixing all of them could save at most. */
+/** The checks with an issue, and the tokens fixing all of them could save at most. */
 export function summarize(rows: Row[]): { issues: number; savingW: number } {
 	let issues = 0;
 	let savingW = 0;
 	for (const r of rows) {
-		if (r.state === "issue" && r.finding) {
+		if (r.state === "issue" && r.findings.length > 0) {
 			issues += 1;
-			savingW += r.finding.savingW;
+			savingW += r.findings.reduce((n, f) => n + f.savingW, 0);
 		}
 	}
 	return { issues, savingW };
+}
+
+/** A row's saving: its issues' added up. */
+export function rowSaving(row: Row): number {
+	return row.findings.reduce((n, f) => n + f.savingW, 0);
 }
 
 // ---- Words -------------------------------------------------------------------------------------
@@ -199,11 +215,28 @@ export function resultHeading(at: number, now = Date.now() / 1000): string {
 	return t("efficiency.result.heading", { date: formatDateTimeShort(at, getLang(), now) });
 }
 
-/** "1 min 12 s elapsed · about 1–3 min". */
-export function elapsedText(seconds: number): string {
+/** The minutes an analysis of `requests` requests takes, about: one to three each. */
+export function estimateMinutes(requests: number): { min: number; max: number } {
+	const n = Math.max(1, requests);
+	return { min: n, max: 3 * n };
+}
+
+/** "Takes about 1–3 minutes". */
+export function estimateText(requests: number): string {
+	return t("efficiency.estimate", estimateMinutes(requests));
+}
+
+/** "1 min 12 s elapsed (about 1–3 min)". */
+export function elapsedText(seconds: number, requests: number): string {
 	const s = Math.max(0, Math.floor(seconds));
 	const time = s >= 60 ? t("efficiency.elapsed.minutes", { m: Math.floor(s / 60), s: s % 60 }) : t("efficiency.elapsed.seconds", { s });
-	return t("efficiency.elapsed", { time });
+	return t("efficiency.elapsed", { time, ...estimateMinutes(requests) });
+}
+
+/** The line under the progress bar: "Checking all 9 areas" for one request, "Read 2 of 5 parts"
+ * for several. */
+export function progressText(done: number, requests: number): string {
+	return requests > 1 ? t("efficiency.progress.parts", { done, count: requests }) : t("efficiency.progress.single");
 }
 
 /** Parts of a meta line, joined as the language joins them. */
@@ -227,6 +260,7 @@ export function classifyStatsFailure(err: unknown, programExists: boolean): Stat
 
 export type AnalysisFailure =
 	| { kind: "cancelled" }
+	| { kind: "unreadable" }
 	| { kind: "agentUnavailable"; detail: string }
 	| { kind: "rateLimit"; resetsAt: number | null }
 	| { kind: "timeout" }
@@ -302,6 +336,9 @@ export function classifyAnalysisFailure(err: unknown, aborted: boolean): Analysi
 	if (message === "timed out") {
 		return { kind: "timeout" };
 	}
+	if (err instanceof UnreadableReplyError) {
+		return { kind: "unreadable" };
+	}
 	return { kind: "llm", detail: message };
 }
 
@@ -332,6 +369,8 @@ export function analysisFailureMessage(failure: AnalysisFailure, agent: string):
 				: t("efficiency.error.rateLimitUnknown");
 		case "timeout":
 			return t("efficiency.error.timeout");
+		case "unreadable":
+			return t("efficiency.error.unreadable", { agent });
 		case "llm":
 			return t("efficiency.error.llm", { error: failure.detail });
 	}

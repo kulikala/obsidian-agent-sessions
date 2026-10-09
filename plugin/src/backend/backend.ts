@@ -179,7 +179,7 @@ export interface EfficiencyArgs {
 	budget: number;
 }
 
-/** `json efficiency`: statistics, hits and masked excerpts (`sessions/efficiency.ts`'s `EffOutput`).
+/** `json efficiency`: statistics, hits and the masked digest (`sessions/efficiency.ts`'s `EffOutput`).
  * Reading a cold week of transcripts can take a minute and the output can pass 1 MiB. */
 export async function efficiency(agentSessionsPath: string, vaultPath: string, args: EfficiencyArgs): Promise<unknown> {
 	return runJson(

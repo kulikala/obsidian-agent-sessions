@@ -1,7 +1,7 @@
 // The empty folder a token efficiency analysis runs in: `<runtime>/efficiency-run/current`,
 // created empty right before each run and removed when the run ends however it ends (success,
 // failure, timeout or cancel). Nothing is written into it -- the prompt goes in on stdin -- so the
-// agent that reads the excerpts finds no other conversation text next to it. The name is fixed
+// agent that reads the digest finds no other conversation text next to it. The name is fixed
 // because Claude Code keeps an (empty) project folder per working folder: one fixed folder means
 // one such folder, not one per run.
 
