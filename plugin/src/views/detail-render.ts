@@ -8,6 +8,7 @@
 import { setIcon, setTooltip } from "obsidian";
 import { renderCategoryChip } from "../ui/chip";
 import type { StatusInfo } from "../sessions/statusline";
+import type { TerminalStatus } from "../sessions/terminal-status";
 import type { Detail } from "../types";
 import { costView, formatK } from "../usage/usage";
 import { shortModelName } from "./manager-model";
@@ -21,6 +22,7 @@ import { goalLabelKey, goalState } from "../sessions/goal";
 import type { SessionGoal } from "../types";
 import { renderGoalMark } from "./goal-render";
 import { formatTime } from "./rows";
+import { attentionInfos, stateInfo } from "../sessions/state-info";
 
 const USAGE_TTL_MS = 60000;
 const usageCache = new Map<string, { at: number; total: UsageTotal | null }>();
@@ -122,6 +124,26 @@ function renderBadges(
 	dot.toggleClass("is-connected", !!rc);
 }
 
+/**
+ * The session's state — the row mark's icon and color, its name, and a sentence on what it means —
+ * followed by each attention kind that applies (the kinds the side panel's badge counts).
+ */
+function renderState(container: HTMLElement, row: Row, status: TerminalStatus): void {
+	const wrap = container.createDiv({ cls: "agent-sessions-detail-state" });
+	const item = (icon: string, cls: string, label: string, desc: string, extra?: string) => {
+		const el = wrap.createDiv({ cls: `agent-sessions-detail-state-item${extra ? ` ${extra}` : ""}` });
+		const mark = el.createSpan({ cls: `agent-sessions-detail-state-mark ${cls}` });
+		setIcon(mark, icon);
+		el.createSpan({ cls: "agent-sessions-detail-state-label", text: label });
+		el.createDiv({ cls: "agent-sessions-detail-state-desc", text: desc });
+	};
+	const state = stateInfo(status, row.archived);
+	item(state.icon, state.cls, t(state.labelKey), t(state.descKey));
+	for (const att of attentionInfos(status, row.archived)) {
+		item(att.icon, att.cls, t(att.labelKey), t(att.descKey), "is-attention");
+	}
+}
+
 /** A card that collapses/expands on click (`-webkit-line-clamp: 6`). */
 function renderCard(container: HTMLElement, label: string, value: string | null | undefined): void {
 	const card = container.createDiv({ cls: "agent-sessions-detail-card" });
@@ -185,7 +207,7 @@ export function renderDetail(container: HTMLElement, ctx: DetailContext | null):
 	if (!ctx) {
 		return;
 	}
-	const { row, detail, statusInfo, rc } = ctx;
+	const { row, detail, statusInfo, rc, status } = ctx;
 	container.dataset.rowId = row.id;
 
 	const { category, label } = categoryAndLabel(row);
@@ -195,6 +217,7 @@ export function renderDetail(container: HTMLElement, ctx: DetailContext | null):
 	}
 	container.createEl("h4", { cls: "agent-sessions-detail-name", text: label });
 	renderBadges(container, row, statusInfo, detail, rc);
+	renderState(container, row, status);
 
 	const statsRow = container.createDiv({ cls: "agent-sessions-detail-stats" });
 	renderDonut(statsRow, statusInfo?.ctxPercent ?? null);

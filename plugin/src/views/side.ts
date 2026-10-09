@@ -27,6 +27,7 @@ import {
 import { renderRow } from "./rows-render";
 import { computeSideList, leafIdsOf } from "./side-list";
 import type { DetailContext } from "./detail";
+import { resolveRowStatus } from "../sessions/terminal-status";
 import { renderDetail } from "./detail-render";
 import { LimitsView } from "./limits-render";
 
@@ -590,6 +591,7 @@ export class SideView extends ItemView {
 			row,
 			detail,
 			statusInfo: this.plugin.index.statusline.get(id),
+			status: resolveRowStatus(this.plugin, row),
 			rc: this.plugin.index.registry.get(id)?.rc ?? null,
 			fetchUsage: () => usage(this.plugin.agentSessionsPath(), this.plugin.vaultPath(), id),
 			categoryColorIndex: (category) => this.plugin.index.categoryColorIndex(category),

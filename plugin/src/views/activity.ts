@@ -46,6 +46,7 @@ import {
 import { ActivityLoader, type FetchMode } from "./activity-data";
 import { renderDetail } from "./detail-render";
 import type { DetailContext } from "./detail";
+import { resolveRowStatus } from "../sessions/terminal-status";
 import { AGENT_ICON, AGENT_NAME_KEY } from "./rows";
 import { renderAgentMark } from "./rows-render";
 
@@ -868,6 +869,7 @@ export class ActivityView extends ItemView {
 			row,
 			detail,
 			statusInfo: this.plugin.index.statusline.get(id),
+			status: resolveRowStatus(this.plugin, row),
 			rc: this.plugin.index.registry.get(id)?.rc ?? null,
 			fetchUsage: () => usage(this.plugin.agentSessionsPath(), this.plugin.vaultPath(), id),
 			categoryColorIndex: (category) => this.plugin.index.categoryColorIndex(category),

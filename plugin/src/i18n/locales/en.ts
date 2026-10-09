@@ -524,6 +524,23 @@ export const en = {
 	"status.group.done": "Done",
 	"status.group.archived": "Archived",
 
+	// ---- Detail pane: what each state and attention kind means (sessions/state-info.ts) ----
+	"detail.state.connecting": "Starting up or attaching to the session. It is ready in a moment.",
+	"detail.state.working": "The agent is working on your last instruction. Wait, or open the tab to follow along.",
+	"detail.state.runningShell": "The agent is running a command and continues on its own when it finishes.",
+	"detail.state.asking": "The agent is asking a question or requesting permission and cannot go on until you answer.",
+	"detail.state.waiting": "The agent finished its turn and is waiting for your next instruction.",
+	"detail.state.compacted": "The conversation was just compacted and its context reset. Send your next instruction when ready.",
+	"detail.state.editing": "The built-in editor is open on this session. Close it to return to the agent.",
+	"detail.state.idle": "The session is connected and ready for your next instruction.",
+	"detail.state.detached": "The session is not running right now. Click the row to open a tab and resume it.",
+	"detail.state.exited": "The agent has ended. Click the row to open its tab and check the result or resume.",
+	"detail.state.error": "The session could not start, or the daemon could not be reached. Click the row to see the details.",
+	"detail.state.archived": "This session is archived and hidden from the active list. Unarchive it from the row menu to bring it back.",
+	"detail.attention.needsInput": "This session is waiting for your answer. Open it and respond so the agent can continue.",
+	"detail.attention.needsReview": "The agent finished while you were elsewhere. Open the tab to read the result.",
+	"detail.attention.compacted": "The context was just reset. Open the tab to check, then send your next instruction.",
+
 	// ---- Session analytics modal (usage/usage-modal.ts) ----
 	"usage.title": "Session analytics",
 	"usage.loading": "Loading…",

@@ -45,6 +45,9 @@ const onboarding = process.argv.includes("--onboarding");
 const efficiencyOnly = process.argv.includes("--efficiency");
 // `--dialogs` shoots the per-session dialogs opened from a row's menu, in the dark and the light theme.
 const dialogsOnly = process.argv.includes("--dialogs");
+// `--detail-state` shoots only the side panel's detail pane for one session per state (add `--light` for the light theme).
+const detailStateOnly = process.argv.includes("--detail-state");
+const lightTheme = process.argv.includes("--light");
 // `--out DIR` writes the README set's images there (DIR/<lang>/ for a language other than English).
 const outArg = process.argv.indexOf("--out");
 const README_OUT = outArg >= 0 ? resolve(process.argv[outArg + 1]) : OUT_DIR;
@@ -388,6 +391,28 @@ async function efficiencyScenes(page, box, look) {
 	await page.evaluate(`[...document.querySelectorAll('.agent-sessions-efficiency-card button')].find((b) => b.textContent.includes(${JSON.stringify(fix)})).click()`);
 	await page.waitFor(`document.querySelector('.agent-sessions-efficiency-fix textarea')`, { what: "the fix confirmation" });
 	await capture(page, "efficiency-fix", await dialogClip(page, look, ".agent-sessions-efficiency-fix"));
+}
+
+/** The detail pane of one session per state the sandbox shows, framed to the pane. */
+async function detailStateScenes(page, box, look) {
+	console.log("Scenes:");
+	await clearNotices(page);
+	const states = await page.evaluate(`(() => {
+		const seen = {};
+		for (const row of document.querySelectorAll('.agent-sessions-row')) {
+			const mark = row.querySelector('.agent-sessions-row-mark');
+			const cls = [...(mark?.classList ?? [])].find((c) => c.startsWith('agent-sessions-status-'));
+			if (cls && !seen[cls]) seen[cls] = row.dataset.sessionId;
+		}
+		return seen;
+	})()`);
+	for (const [cls, id] of Object.entries(states)) {
+		const state = cls.replace("agent-sessions-status-", "");
+		await page.hover(`.agent-sessions-row[data-session-id=${JSON.stringify(id)}]`);
+		await page.waitFor(`document.querySelector('.agent-sessions-detail')?.dataset.rowId === ${JSON.stringify(id)}`, { what: `the ${state} detail` });
+		await sleep(400);
+		await capture(page, `detail-${state}`, await unionOf(page, [".agent-sessions-detail"]));
+	}
 }
 
 /**
@@ -750,7 +775,7 @@ async function run() {
 					}
 					continue;
 				}
-				await withObsidian({ lang, light: false, window: WINDOW, scale: 2, imageBase }, efficiencyOnly ? efficiencyScenes : readmeScenes);
+				await withObsidian({ lang, light: lightTheme, window: WINDOW, scale: 2, imageBase }, detailStateOnly ? detailStateScenes : efficiencyOnly ? efficiencyScenes : readmeScenes);
 			}
 		} finally {
 			server.close();
