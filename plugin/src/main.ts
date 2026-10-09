@@ -101,6 +101,8 @@ import { ConfirmModal, NewSessionModal } from "./ui/modals";
 import { AGENT_ICON_ID } from "./ui/icons";
 import { registerAgentIcons } from "./ui/register-icons";
 import { clearedName, sessionDisplayName } from "./sessions/name";
+import { dialogHeaderSpec } from "./ui/dialog-header";
+import type { SessionTarget } from "./ui/dialog-header-model";
 import { restartDecision, type RestartDecision } from "./sessions/restart";
 import { resolveRowStatus } from "./sessions/terminal-status";
 import { createNameRoute, renameRoute, sessionAgentOf } from "./sessions/rename";
@@ -2730,7 +2732,8 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	/** End session: confirm → `kill`, addressed by the daemon's own id (`daemonIdFor` — a linked
 	 * Codex session's row id isn't one the daemon knows). */
-	endSession(id: string): void {
+	endSession(id: string, target: SessionTarget | null = this.index.sessions.get(id) ?? null): void {
+		const header = dialogHeaderSpec(this, "action.endSession", target);
 		new ConfirmModal(this.app, t("confirm.endSession.message"), t("action.endSession"), () => {
 			void (async () => {
 				let client: DaemonClient | null = null;
@@ -2750,7 +2753,7 @@ export default class AgentSessionsPlugin extends Plugin {
 					client?.close();
 				}
 			})();
-		}).open();
+		}, header).open();
 	}
 
 	/** Whether "Restart session" is available for the row, and whether to confirm first
@@ -2778,7 +2781,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		}
 		const run = () => void this.doRestart(row);
 		if (decision.needsConfirm) {
-			new ConfirmModal(this.app, t("confirm.restartSession.message"), t("action.restartSession"), run).open();
+			new ConfirmModal(this.app, t("confirm.restartSession.message"), t("action.restartSession"), run, dialogHeaderSpec(this, "action.restartSession", row)).open();
 		} else {
 			run();
 		}
@@ -2840,8 +2843,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	/** Opens the session analytics modal. */
 	showUsage(id: string): void {
 		const row = this.index.sessions.get(id);
-		const name = sessionDisplayName({ name: row?.name, label: row?.label, agent: row?.agent ?? "claude", id });
-		new UsageModal(this.app, this.agentSessionsPath(), this.vaultPath(), id, name).open();
+		const target = row ?? { id, agent: "claude", name: null, label: null };
+		new UsageModal(this.app, this.agentSessionsPath(), this.vaultPath(), id, dialogHeaderSpec(this, "usage.title", target)).open();
 	}
 
 	archive(id: string, name: string, agent: string): void {

@@ -3,6 +3,8 @@
 import { App, Modal, Setting, setIcon } from "obsidian";
 import type AgentSessionsPlugin from "../main";
 import { renderCategoryChip } from "./chip";
+import { dialogHeaderSpec, renderDialogHeader, type DialogHeaderSpec } from "./dialog-header";
+import type { SessionTarget } from "./dialog-header-model";
 import { AGENT_ICON_ID } from "./icons";
 import { t, type MessageKey } from "../i18n";
 import { applyChipEditResult, composeName, filterCategories, tokenizeNameInput } from "../sessions/name";
@@ -510,13 +512,14 @@ export class RenameSessionModal extends Modal {
 	constructor(
 		private plugin: AgentSessionsPlugin,
 		private currentName: string,
+		private target: SessionTarget | null,
 		private onSubmit: (name: string) => void
 	) {
 		super(plugin.app);
 	}
 
 	onOpen(): void {
-		this.setTitle(t("modal.renameSession.title"));
+		renderDialogHeader(this, dialogHeaderSpec(this.plugin, "modal.renameSession.title", this.target));
 		this.modalEl.addClass("agent-sessions-rename-modal");
 		const [category, name] = splitName(this.currentName);
 		this.field = buildComposedNameField(
@@ -580,8 +583,8 @@ export class MoveToCategoryModal extends Modal {
 		private plugin: AgentSessionsPlugin,
 		private currentCategory: string,
 		private label: string,
-		/** The session being moved, shown under the title (`sessionDisplayName`). */
-		private sessionName: string,
+		/** The session being moved, shown under the title. */
+		private target: SessionTarget | null,
 		private onSubmit: (name: string) => void
 	) {
 		super(plugin.app);
@@ -589,11 +592,7 @@ export class MoveToCategoryModal extends Modal {
 	}
 
 	onOpen(): void {
-		this.setTitle(t("modal.moveToCategory.title"));
-		this.contentEl.createEl("p", {
-			cls: "agent-sessions-modal-session",
-			text: t("modal.moveToCategory.session", { name: this.sessionName }),
-		});
+		renderDialogHeader(this, dialogHeaderSpec(this.plugin, "modal.moveToCategory.title", this.target));
 		const setting = makeWide(new Setting(this.contentEl).setName(t("modal.moveToCategory.categoryField")));
 		const boxEl = setting.controlEl.createDiv({ cls: "agent-sessions-name-input" });
 		this.boxEl = boxEl;
@@ -743,12 +742,17 @@ export class ConfirmModal extends Modal {
 		app: App,
 		private message: string,
 		private confirmLabel: string,
-		private onConfirm: () => void
+		private onConfirm: () => void,
+		/** The title and target session of a per-session confirmation; without it the dialog is the message alone. */
+		private header?: DialogHeaderSpec
 	) {
 		super(app);
 	}
 
 	onOpen(): void {
+		if (this.header) {
+			renderDialogHeader(this, this.header);
+		}
 		this.contentEl.createEl("p", { text: this.message });
 		new Setting(this.contentEl)
 			.addButton((button) => button.setButtonText(t("action.cancel")).onClick(() => this.close()))
@@ -779,8 +783,9 @@ export class ChangeModelModal extends Modal {
 	private otherId = "";
 
 	constructor(
-		plugin: AgentSessionsPlugin,
+		private plugin: AgentSessionsPlugin,
 		private current: CurrentModel,
+		private target: SessionTarget | null,
 		private onApply: (commands: string[]) => void
 	) {
 		super(plugin.app);
@@ -789,7 +794,7 @@ export class ChangeModelModal extends Modal {
 	}
 
 	onOpen(): void {
-		this.setTitle(t("modal.changeModel.title"));
+		renderDialogHeader(this, dialogHeaderSpec(this.plugin, "modal.changeModel.title", this.target));
 		const { current } = this;
 		this.contentEl.createEl("p", {
 			cls: "setting-item-description",

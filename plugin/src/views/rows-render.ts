@@ -76,7 +76,7 @@ export function renderAgentMark(container: HTMLElement, agent: string): void {
 export function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): void {
 	const menu = new Menu();
 	const items: Record<RowMenuId, (item: MenuItem) => void> = {
-		rename: (item) => item.setTitle(t("action.rename")).setIcon("pencil").onClick(() => actions.rename(row.id, row.name ?? "")),
+		rename: (item) => item.setTitle(t("action.rename")).setIcon("pencil").onClick(() => actions.rename(row)),
 		moveToCategory: (item) => item.setTitle(t("action.moveToCategory")).setIcon("folder-input").onClick(() => actions.moveToCategory(row)),
 		suggestName: (item) => item.setTitle(t("action.suggestNameCategory")).setIcon("sparkles").onClick(() => actions.suggestName(row)),
 		changeModel: (item) => {
@@ -97,7 +97,7 @@ export function showRowMenu(evt: MouseEvent, row: Row, actions: RowActions): voi
 				.setTitle(row.archived ? t("action.unarchive") : t("action.archive"))
 				.setIcon(row.archived ? "archive-restore" : "archive")
 				.onClick(() => actions.toggleArchive(row)),
-		endSession: (item) => item.setTitle(t("action.endSession")).setIcon("square-x").onClick(() => actions.endSession(row.id)),
+		endSession: (item) => item.setTitle(t("action.endSession")).setIcon("square-x").onClick(() => actions.endSession(row)),
 	};
 	const groups = rowMenuGroups(row, {
 		categorizable: categorizableLabel(row) !== null,

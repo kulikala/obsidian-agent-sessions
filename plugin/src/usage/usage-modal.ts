@@ -7,6 +7,7 @@
 import { App, Modal, Notice, setTooltip } from "obsidian";
 import { usage } from "../backend/backend";
 import { t } from "../i18n";
+import { renderSessionTarget, type DialogHeaderSpec } from "../ui/dialog-header";
 import {
 	costView,
 	effectiveRange,
@@ -53,7 +54,7 @@ export class UsageModal extends Modal {
 		private agentSessionsPath: string,
 		private vaultPath: string,
 		private sessionId: string,
-		private sessionName: string
+		private header: DialogHeaderSpec
 	) {
 		super(app);
 	}
@@ -62,7 +63,9 @@ export class UsageModal extends Modal {
 		this.modalEl.addClass("agent-sessions-usage-modal");
 
 		const header = this.contentEl.createDiv({ cls: "agent-sessions-usage-header" });
-		header.createDiv({ cls: "agent-sessions-usage-title", text: t("usage.title", { name: this.sessionName }) });
+		const heading = header.createDiv({ cls: "agent-sessions-usage-heading" });
+		heading.createDiv({ cls: "agent-sessions-usage-title", text: this.header.title });
+		renderSessionTarget(heading, this.header);
 		this.copyBtn = header.createEl("button", { cls: "agent-sessions-usage-copy mod-cta", text: t("action.copy") });
 		this.copyBtn.disabled = true;
 		this.copyBtn.addEventListener("click", () => this.copyMarkdown());

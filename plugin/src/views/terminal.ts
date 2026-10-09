@@ -1078,7 +1078,11 @@ export class TerminalView extends ItemView {
 					// same as `rows.ts`'s row-menu rename) — never `getDisplayText()`'s fallback
 					// chain, which would otherwise pre-fill something like "New Codex
 					// session" as if it were the actual stored name.
-					new RenameSessionModal(this.plugin, this.displayName, (name) => void this.plugin.renameSession(id, name)).open();
+					new RenameSessionModal(
+						this.plugin,
+						this.displayName,
+						{ id, agent: this.sessionAgent, name: this.displayName || null, label: this.label || null },
+						(name) => void this.plugin.renameSession(id, name)).open();
 				})
 		);
 		menu.addItem((item) =>

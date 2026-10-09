@@ -2707,10 +2707,45 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	border-top: none;
 	justify-content: flex-end;
 }
-.agent-sessions-modal-session {
+/* The target-session line under a per-session dialog's title (`ui/dialog-header.ts`): agent mark,
+   category chip, name. The name takes the leftover width and is cut with an ellipsis. */
+.agent-sessions-dialog-target {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+	min-width: 0;
+	margin: 0 0 var(--size-4-3);
+}
+
+.agent-sessions-dialog-target-agent {
+	display: inline-flex;
+	flex: 0 0 auto;
+	align-items: center;
 	color: var(--text-muted);
-	margin-top: 0;
-	overflow-wrap: anywhere;
+}
+
+.agent-sessions-dialog-target-agent svg {
+	width: 16px;
+	height: 16px;
+}
+
+.agent-sessions-dialog-target-name {
+	flex: 1 1 auto;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-weight: var(--font-semibold);
+	color: var(--text-normal);
+}
+
+.agent-sessions-usage-heading {
+	flex: 1 1 auto;
+	min-width: 0;
+}
+
+.agent-sessions-usage-heading .agent-sessions-dialog-target {
+	margin: var(--size-4-1) 0 0;
 }
 
 /* ---- Organize names and categories dialog ---- */
