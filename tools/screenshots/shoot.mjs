@@ -41,8 +41,8 @@ const OBSIDIAN_BIN =
 
 const keep = process.argv.includes("--keep");
 const onboarding = process.argv.includes("--onboarding");
-// `--efficiency` shoots the token efficiency dialog's four screens (efficiency-empty, -analyzing,
-// -result, -previous), in the dark and the light theme.
+// `--efficiency` shoots the token efficiency dialog's screens (efficiency-empty, -analyzing,
+// -result, -previous, -analyzing-split), in the dark and the light theme.
 const efficiencyOnly = process.argv.includes("--efficiency");
 // `--dialogs` shoots the per-session dialogs opened from a row's menu, in the dark and the light theme.
 const dialogsOnly = process.argv.includes("--dialogs");
@@ -213,7 +213,7 @@ function buildSandbox(root, now, look) {
 		}
 	}
 
-	return { home, userData, vault, runtime, sessions, ids: sessions.map((x) => x.id), logPath };
+	return { home, userData, vault, runtime, sessions, ids: sessions.map((x) => x.id), logPath, statePath };
 }
 
 /** Writes one `~/.claude/sessions/<pid>.json` record. The pid must be alive, so it's ours. */
@@ -397,9 +397,10 @@ async function dialogClip(page, look, selector) {
 }
 
 /**
- * Token efficiency, in its four screens: not analysed yet, an analysis half-way (the stand-in
- * `claude` takes a moment per check), the result just made with its first issue open, and a saved
- * result opened again a day later, with sessions started since.
+ * Token efficiency: not analysed yet; an analysis in one request, every check being analysed; the
+ * result just made with the agent's own issues open; the saved result opened again a day later,
+ * with sessions started since; and an analysis of a range large enough for several requests,
+ * caught after the first part is read (the stand-in `claude` takes longer per part).
  */
 async function efficiencyScenes(page, box, look) {
 	console.log("Scenes:");
@@ -409,25 +410,26 @@ async function efficiencyScenes(page, box, look) {
 		await page.evaluate(`app.commands.executeCommandById('agent-sessions:analyze-token-efficiency')`);
 		await page.waitFor(`document.querySelector('${dialog} .agent-sessions-efficiency-pane')`, { what: "the efficiency dialog" });
 	};
+	const close = async () => {
+		await pressEscape(page);
+		await page.waitFor(`!document.querySelector('${dialog}')`, { what: "the dialog to close" });
+	};
 	await clearNotices(page);
 	await open();
 	await page.waitFor(`document.querySelector('${dialog} .agent-sessions-efficiency-go button')`, { what: "the empty screen" });
 	await capture(page, `efficiency-empty-${theme}`, await dialogClip(page, look, dialog));
 
 	await page.evaluate(`document.querySelector('${dialog} .agent-sessions-efficiency-go button').click()`);
-	await page.waitFor(
-		`document.querySelectorAll('${dialog} .agent-sessions-efficiency-pt.is-ok, ${dialog} .agent-sessions-efficiency-pt.is-issue').length >= 3 && document.querySelector('${dialog} .agent-sessions-efficiency-pt.is-running')`,
-		{ what: "the analysis half-way" }
-	);
+	await page.waitFor(`document.querySelectorAll('${dialog} .agent-sessions-efficiency-pt.is-running').length >= 8`, { what: "the analysis running" });
 	await capture(page, `efficiency-analyzing-${theme}`, await dialogClip(page, look, dialog));
 
 	await page.waitFor(`document.querySelector('${dialog} .agent-sessions-efficiency-summary')`, { what: "the result", timeoutMs: 60_000 });
-	await page.evaluate(`document.querySelector('${dialog} button.agent-sessions-efficiency-pt-row').click()`);
+	// The last row: the issues the agent found on its own.
+	await page.evaluate(`[...document.querySelectorAll('${dialog} button.agent-sessions-efficiency-pt-row')].pop().click()`);
 	await capture(page, `efficiency-result-${theme}`, await dialogClip(page, look, dialog));
 
 	// The saved result, as if made a day ago: the sessions active since then are new to it.
-	await pressEscape(page);
-	await page.waitFor(`!document.querySelector('${dialog}')`, { what: "the dialog to close" });
+	await close();
 	const saved = join(box.runtime, "efficiency", "last-claude.json");
 	const result = JSON.parse(readFileSync(saved, "utf8"));
 	result.savedAt -= 86_400;
@@ -436,6 +438,20 @@ async function efficiencyScenes(page, box, look) {
 	await open();
 	await page.waitFor(`document.querySelector('${dialog} .agent-sessions-efficiency-summary')`, { what: "the saved result" });
 	await capture(page, `efficiency-previous-${theme}`, await dialogClip(page, look, dialog));
+
+	// A larger range: several requests, the first one read.
+	await close();
+	writeJson(box.statePath, { ...JSON.parse(readFileSync(box.statePath, "utf8")), efficiencySplit: true });
+	await open();
+	await page.waitFor(`document.querySelector('${dialog} .agent-sessions-efficiency-foot button')`, { what: "the saved result again" });
+	await page.evaluate(`[...document.querySelectorAll('${dialog} .agent-sessions-efficiency-foot button')].pop().click()`);
+	await page.waitFor(
+		`document.querySelector('${dialog} .agent-sessions-efficiency-pt.is-issue') && document.querySelector('${dialog} .agent-sessions-efficiency-pt.is-running')`,
+		{ what: "the first part read", timeoutMs: 60_000 }
+	);
+	await capture(page, `efficiency-analyzing-split-${theme}`, await dialogClip(page, look, dialog));
+	await page.waitFor(`document.querySelector('${dialog} .agent-sessions-efficiency-summary')`, { what: "the split result", timeoutMs: 120_000 });
+	writeJson(box.statePath, { ...JSON.parse(readFileSync(box.statePath, "utf8")), efficiencySplit: false });
 }
 
 /** The detail pane of one session per state the sandbox shows, framed to the pane. */

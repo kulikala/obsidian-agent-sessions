@@ -315,7 +315,7 @@ if (args[0] === "--version") {
 		const opt = (name) => rest[rest.indexOf(name) + 1];
 		out(activityOutput(Date.parse(opt("--from")) / 1000, Date.parse(opt("--to")) / 1000, rest.includes("--raw")));
 	} else if (cmd === "efficiency") {
-		out(efficiencyOutput(now, sessions, state.lang ?? "en"));
+		out(efficiencyOutput(now, sessions, state.lang ?? "en", state.efficiencySplit === true));
 	} else if (cmd === "resolve") {
 		out({ thread: null, transcript: null });
 	} else {
