@@ -30,6 +30,8 @@ import type { DetailContext } from "./detail";
 import { resolveRowStatus } from "../sessions/terminal-status";
 import { renderDetail } from "./detail-render";
 import { LimitsView } from "./limits-render";
+import type { RcServerState } from "../sessions/rc-server";
+import { openRcServerTerminal } from "../sessions/rc-server-host";
 
 export const VIEW_TYPE_SIDE = "agent-sessions-side";
 
@@ -73,6 +75,8 @@ export class SideView extends ItemView {
 	private actions!: RowActions;
 	/** The nav's three buttons (their tooltips are redrawn when the language changes). */
 	private navButtons: { newSession?: HTMLElement; manager?: HTMLElement; more?: HTMLElement } = {};
+	/** The nav's Remote Control toggle, shown while Claude Code is enabled. */
+	private rcToggle: HTMLElement | null = null;
 	/** Debounce timer for `terminal-status`. */
 	private statusRenderTimer: number | null = null;
 	/** Row time elements, re-rendered in place once a minute (shared with `ManagerView`). */
@@ -108,6 +112,7 @@ export class SideView extends ItemView {
 		this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.onActiveLeafChange()));
 		this.registerEvent(this.plugin.events.on("settings-changed", () => this.refreshLanguage()));
 		this.registerEvent(this.plugin.events.on("terminal-status", () => this.scheduleStatusRender()));
+		this.register(this.plugin.rcServer.onChange(() => this.updateRcToggle()));
 		this.register(() => this.limitsView.dispose());
 		this.register(() => {
 			if (this.statusRenderTimer) {
@@ -169,6 +174,8 @@ export class SideView extends ItemView {
 		this.navButtons.manager = this.iconButton(navEl, "layout-grid", t("action.sessionManager"), () =>
 			void this.plugin.openManagerTab()
 		);
+		navEl.createDiv({ cls: "agent-sessions-nav-spacer" });
+		this.rcToggle = this.buildRcToggle(navEl);
 		const moreBtn = this.iconButton(navEl, moreIconId(Platform.isMacOS), t("action.more"), (evt) => this.showMoreMenu(evt));
 		moreBtn.addClass("agent-sessions-nav-more");
 		this.navButtons.more = moreBtn;
@@ -186,8 +193,45 @@ export class SideView extends ItemView {
 		if (this.navButtons.more) {
 			setTooltip(this.navButtons.more, t("action.more"));
 		}
+		this.updateRcToggle();
 		this.limitsView.refreshAgents();
 		this.render();
+	}
+
+	/** A switch: off, starting (pulsing), listening (on), down (on, in the warning colour). A click
+	 * starts, wakes or stops the server; a right-click opens its terminal. */
+	private buildRcToggle(container: HTMLElement): HTMLElement {
+		const el = container.createDiv({ cls: "agent-sessions-rc-toggle clickable-icon", attr: { role: "switch", tabindex: "0" } });
+		setIcon(el.createSpan({ cls: "agent-sessions-rc-icon" }), "radio-tower");
+		el.createSpan({ cls: "agent-sessions-rc-track" }).createSpan({ cls: "agent-sessions-rc-knob" });
+		this.registerDomEvent(el, "click", () => void this.plugin.rcServer.click());
+		this.registerDomEvent(el, "keydown", (evt) => {
+			if (evt.key === "Enter" || evt.key === " ") {
+				evt.preventDefault();
+				void this.plugin.rcServer.click();
+			}
+		});
+		this.registerDomEvent(el, "contextmenu", (evt) => {
+			evt.preventDefault();
+			void openRcServerTerminal(this.plugin);
+		});
+		this.updateRcToggle(el);
+		return el;
+	}
+
+	private updateRcToggle(el: HTMLElement | null = this.rcToggle): void {
+		if (!el) {
+			return;
+		}
+		el.toggle(this.plugin.settings.agents.claude.enabled);
+		const state: RcServerState = this.plugin.rcServer.state();
+		for (const s of ["off", "starting", "listening", "down"] as const) {
+			el.toggleClass(`is-${s}`, s === state);
+		}
+		el.setAttr("aria-checked", state === "off" ? "false" : "true");
+		const tooltip = this.plugin.rcServer.asking() ? t("rc.tooltip.asking") : t(`rc.tooltip.${state}`);
+		el.setAttr("aria-label", tooltip);
+		setTooltip(el, tooltip);
 	}
 
 	private iconButton(

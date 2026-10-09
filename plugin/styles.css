@@ -754,6 +754,85 @@
 	margin-left: auto;
 }
 
+.agent-sessions-nav-spacer {
+	flex: 1 1 auto;
+}
+
+/* The side panel's Remote Control toggle: an icon and a small switch. */
+.agent-sessions-rc-toggle {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-1);
+}
+
+.agent-sessions-rc-icon {
+	display: flex;
+}
+
+.agent-sessions-rc-track {
+	position: relative;
+	width: 22px;
+	height: 12px;
+	border-radius: 6px;
+	background-color: var(--background-modifier-border-hover);
+	transition: background-color 120ms ease;
+}
+
+.agent-sessions-rc-knob {
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background-color: var(--background-primary);
+	transition: left 120ms ease;
+}
+
+.agent-sessions-rc-toggle:not(.is-off) .agent-sessions-rc-knob {
+	left: 12px;
+}
+
+.agent-sessions-rc-toggle.is-listening,
+.agent-sessions-rc-toggle.is-starting {
+	color: var(--interactive-accent);
+}
+
+.agent-sessions-rc-toggle.is-listening .agent-sessions-rc-track,
+.agent-sessions-rc-toggle.is-starting .agent-sessions-rc-track {
+	background-color: var(--interactive-accent);
+}
+
+.agent-sessions-rc-toggle.is-starting .agent-sessions-rc-track {
+	animation: agent-sessions-rc-pulse 1.2s ease-in-out infinite;
+}
+
+/* On, but the server isn't running: the warning colour, and a hollow knob. */
+.agent-sessions-rc-toggle.is-down {
+	color: var(--text-warning);
+}
+
+.agent-sessions-rc-toggle.is-down .agent-sessions-rc-track {
+	background-color: var(--text-warning);
+}
+
+.agent-sessions-rc-toggle.is-down .agent-sessions-rc-knob {
+	background-color: transparent;
+	box-shadow: inset 0 0 0 2px var(--background-primary);
+}
+
+@keyframes agent-sessions-rc-pulse {
+	50% {
+		opacity: 0.45;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.agent-sessions-rc-toggle.is-starting .agent-sessions-rc-track {
+		animation: none;
+	}
+}
+
 .agent-sessions-toolbar {
 	display: flex;
 	align-items: center;

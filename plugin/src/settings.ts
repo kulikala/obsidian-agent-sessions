@@ -249,6 +249,9 @@ export interface AgentSessionsSettings {
 	onboardingProgress: OnboardingProgress | null;
 	/** Whether the welcome guide shows its screenshots. */
 	onboardingImages: boolean;
+	/** The side panel's Remote Control toggle: on keeps it on across restarts, but only a click
+	 * starts the server (`sessions/rc-server.ts`). Not shown in the settings tab. */
+	rcServerEnabled: boolean;
 }
 
 export const DEFAULT_SETTINGS: AgentSessionsSettings = {
@@ -284,6 +287,7 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	onboardingOnUpdate: true,
 	onboardingProgress: null,
 	onboardingImages: true,
+	rcServerEnabled: false,
 };
 
 /** Validates a saved `agents` value, entry by entry — an invalid or missing field falls back to
@@ -406,6 +410,9 @@ export function mergeSettings(data: unknown, isMac = true): AgentSessionsSetting
 	saved.onboardingProgress = sanitizeProgress(saved.onboardingProgress);
 	if (typeof saved.onboardingImages !== "boolean") {
 		delete saved.onboardingImages;
+	}
+	if (typeof saved.rcServerEnabled !== "boolean") {
+		delete saved.rcServerEnabled;
 	}
 	if (!SUBMIT_KEYS.includes(saved.submitKey as SubmitKey)) {
 		delete saved.submitKey;
