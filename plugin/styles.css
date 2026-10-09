@@ -4328,6 +4328,18 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 	font-size: var(--font-ui-small);
 }
 
+.agent-sessions-efficiency-preview > summary {
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.agent-sessions-efficiency-preview > pre {
+	max-height: 320px;
+	overflow: auto;
+	font-size: var(--font-ui-smaller);
+	white-space: pre-wrap;
+}
+
 .agent-sessions-efficiency-stats {
 	display: grid;
 	grid-template-columns: repeat(auto-fill, minmax(7.5em, 1fr));

@@ -257,7 +257,7 @@ export class EfficiencyModal extends Modal {
 				continue;
 			}
 			const payload = checkPayload(block, plan);
-			tokens += estimateTokens(checkPrompt(payload, allowedActions(plan)));
+			tokens += estimateTokens(checkPrompt(payload, allowedActions(plan), getLang()));
 			for (const e of block.excerpts) {
 				if (payload.hits.some((h) => h.task === e.task)) {
 					sessions.add(e.session);
@@ -367,6 +367,14 @@ export class EfficiencyModal extends Modal {
 						? t("efficiency.details.limitPercent", { agent, window: usage.label, percent: Math.round(usage.percent) })
 						: t("efficiency.details.limitValue", { agent })
 			);
+			const prompts = pane.plans
+				.filter((plan) => plan.outcome === "model")
+				.map((plan) => checkPrompt(checkPayload(block, plan), allowedActions(plan), getLang()));
+			if (prompts.length > 0) {
+				const preview = body.createEl("details", { cls: `${CLS}-preview` });
+				preview.createEl("summary", { text: t("efficiency.details.preview") });
+				preview.createEl("pre", { text: prompts.join("\n\n----\n\n") });
+			}
 		});
 	}
 

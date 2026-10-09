@@ -823,6 +823,7 @@ export const en = {
 	"efficiency.details.limitValue": "Counts toward {agent}'s usage limits",
 	"efficiency.details.limitPercent": "Counts toward {agent}'s usage limits ({window}: {percent}% used now)",
 	"efficiency.details.limitLocal": "Runs on this machine and uses no usage limit",
+	"efficiency.details.preview": "Show what is sent",
 	"efficiency.window.five_hour": "5-hour window",
 	"efficiency.window.seven_day": "7-day window",
 	"efficiency.analyzing.heading": "Analyzing 8 checks",

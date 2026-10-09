@@ -821,6 +821,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"efficiency.details.limitValue": "{agent} の利用枠を使います",
 	"efficiency.details.limitPercent": "{agent} の利用枠を使います（{window}は現在 {percent}% 使用）",
 	"efficiency.details.limitLocal": "このマシンで動き、利用枠は使いません",
+	"efficiency.details.preview": "送るものを見る",
 	"efficiency.window.five_hour": "5 時間枠",
 	"efficiency.window.seven_day": "7 日枠",
 	"efficiency.analyzing.heading": "8 つの観点で解析しています",
