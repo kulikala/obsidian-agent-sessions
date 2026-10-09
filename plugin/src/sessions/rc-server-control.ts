@@ -5,6 +5,7 @@
 import type { DaemonSession } from "../types";
 import {
 	findRcServer,
+	rcConnectLink,
 	plainOutput,
 	rcServerClick,
 	rcServerSignal,
@@ -40,6 +41,8 @@ export interface RcServerDeps {
 	revealTerminal(): void;
 	/** Reports a failed start or stop. */
 	fail(message: string): void;
+	/** Tells the user the server a click started now listens, or a running server stopped. */
+	announce(event: "listening" | "down"): void;
 }
 
 export class RcServerControl {
@@ -47,6 +50,11 @@ export class RcServerControl {
 	private launching = false;
 	private signal: RcServerSignal = null;
 	private output = "";
+	/** The server's last connection link. */
+	private connectLink: string | null = null;
+	/** A click started the server and it hasn't listened since: its listening is announced. A
+	 * server found running when the plugin loads isn't. */
+	private announceListening = false;
 	private watching: RcServerWatch | null = null;
 	private watchPending = false;
 	/** `--permission-mode auto` was refused this time: started again without it. */
@@ -71,6 +79,11 @@ export class RcServerControl {
 	/** Whether the daemon runs the server. */
 	running(): boolean {
 		return this.daemon?.exited === null;
+	}
+
+	/** The link a browser opens to reach the server (`https://claude.ai/code?environment=…`), once it shows one. */
+	link(): string | null {
+		return this.current === "listening" ? this.connectLink : null;
 	}
 
 	/** Whether the server waits for an answer in its terminal. */
@@ -141,6 +154,7 @@ export class RcServerControl {
 		this.launching = true;
 		this.autoRefused = false;
 		this.revealed = false;
+		this.announceListening = true;
 		this.resetOutput();
 		this.closeWatch();
 		this.update();
@@ -203,10 +217,12 @@ export class RcServerControl {
 	private resetOutput(): void {
 		this.output = "";
 		this.signal = null;
+		this.connectLink = null;
 	}
 
 	private onOutput(text: string): void {
 		this.output = (this.output + plainOutput(text)).slice(-OUTPUT_KEEP);
+		this.connectLink = rcConnectLink(this.output) ?? this.connectLink;
 		const signal = rcServerSignal(this.output);
 		if (signal === this.signal) {
 			return;
@@ -227,10 +243,11 @@ export class RcServerControl {
 		if (this.daemon) {
 			this.daemon = { ...this.daemon, exited: this.daemon.exited ?? -1 };
 		}
-		this.update();
 		if (!refused) {
+			this.update();
 			return;
 		}
+		// Starting again at once: not a stop to announce.
 		this.autoRefused = true;
 		this.launching = true;
 		this.resetOutput();
@@ -261,6 +278,13 @@ export class RcServerControl {
 		const running = this.running();
 		if (next === this.current && asking === this.lastAsking && running === this.lastRunning) {
 			return;
+		}
+		if (next === "listening" && this.current !== "listening" && this.announceListening) {
+			this.announceListening = false;
+			this.deps.announce("listening");
+		} else if (next === "down" && this.lastRunning && !running) {
+			this.announceListening = false;
+			this.deps.announce("down");
 		}
 		this.current = next;
 		this.lastAsking = asking;

@@ -16,6 +16,7 @@ interface Harness {
 	kill: ReturnType<typeof vi.fn>;
 	confirmStop: ReturnType<typeof vi.fn>;
 	revealTerminal: ReturnType<typeof vi.fn>;
+	announce: ReturnType<typeof vi.fn>;
 	/** Sends output from the server to the current watch. */
 	output(text: string): void;
 	/** Ends the server, as the daemon's `exit` event does. */
@@ -31,6 +32,7 @@ function harness(opts: { enabled?: boolean; atWork?: number; confirm?: boolean; 
 	const kill = vi.fn(async () => undefined);
 	const confirmStop = vi.fn(async () => opts.confirm ?? true);
 	const revealTerminal = vi.fn();
+	const announce = vi.fn();
 	const deps: RcServerDeps = {
 		enabled: () => settings.enabled,
 		setEnabled: async (on) => {
@@ -47,6 +49,7 @@ function harness(opts: { enabled?: boolean; atWork?: number; confirm?: boolean; 
 		confirmStop,
 		revealTerminal,
 		fail: () => undefined,
+		announce,
 	};
 	return {
 		control: new RcServerControl(deps),
@@ -55,6 +58,7 @@ function harness(opts: { enabled?: boolean; atWork?: number; confirm?: boolean; 
 		kill,
 		confirmStop,
 		revealTerminal,
+		announce,
 		output: (text) => onOutput(text),
 		exit: () => onExit(),
 		settings,
@@ -166,6 +170,65 @@ describe("RcServerControl: clicks", () => {
 		await h.control.click();
 		expect(h.kill).toHaveBeenCalledTimes(1);
 		expect(h.control.state()).toBe("off");
+	});
+});
+
+describe("RcServerControl: notices and the link", () => {
+	const link = "https://claude.ai/code?environment=env_01AbC-9";
+
+	it("announces once when a clicked start begins listening, and offers its link", async () => {
+		const h = harness();
+		await h.control.click();
+		expect(h.control.link()).toBeNull();
+		h.output(`Remote Control  ${link}\nspace for QR code`);
+		h.output("space for QR code");
+		expect(h.announce.mock.calls).toEqual([["listening"]]);
+		expect(h.control.link()).toBe(link);
+	});
+
+	it("says nothing when the plugin loads and finds a listening server", async () => {
+		const h = harness({ enabled: true });
+		h.control.sync([server()]);
+		await settle();
+		h.output(link);
+		expect(h.control.state()).toBe("listening");
+		expect(h.announce).not.toHaveBeenCalled();
+	});
+
+	it("announces once when a running server stops, and drops the link", async () => {
+		const h = harness({ enabled: true });
+		h.control.sync([server()]);
+		await settle();
+		h.output(link);
+		h.exit();
+		await settle();
+		h.control.sync([server({ exited: 1, exitedAt: 9 })]);
+		h.control.sync([]);
+		expect(h.announce.mock.calls).toEqual([["down"]]);
+		expect(h.control.link()).toBeNull();
+	});
+
+	it("says nothing when on at load without a server, or when turned off", async () => {
+		const quiet = harness({ enabled: true });
+		quiet.control.sync([]);
+		expect(quiet.announce).not.toHaveBeenCalled();
+		const off = harness({ enabled: true });
+		off.control.sync([server()]);
+		await settle();
+		await off.control.click();
+		off.control.sync([]);
+		expect(off.announce).not.toHaveBeenCalled();
+	});
+
+	it("doesn't announce a stop when a refused auto mode starts again", async () => {
+		const h = harness();
+		await h.control.click();
+		h.output("error: option '--permission-mode <mode>' argument 'auto' is invalid.");
+		h.exit();
+		await settle();
+		expect(h.announce).not.toHaveBeenCalled();
+		h.output(link);
+		expect(h.announce.mock.calls).toEqual([["listening"]]);
 	});
 });
 
