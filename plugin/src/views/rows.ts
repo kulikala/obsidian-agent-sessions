@@ -15,7 +15,7 @@ import { splitName } from "../sessions/tree";
 
 export interface RowActions {
 	openSession(id: string): void;
-	rename(id: string, currentName: string): void;
+	rename(row: Row): void;
 	moveToCategory(row: Row): void;
 	/** Opens "Organize names and categories" for this one session. */
 	suggestName(row: Row): void;
@@ -23,7 +23,7 @@ export interface RowActions {
 	/** Opens the model/effort dialog (Claude sessions running in the daemon). */
 	changeModel(row: Row): void;
 	toggleArchive(row: Row): void;
-	endSession(id: string): void;
+	endSession(row: Row): void;
 	restartSession(row: Row): void;
 	/** Whether "Restart session" is enabled for the row. */
 	canRestart(row: Row): boolean;
@@ -317,7 +317,7 @@ export function createRowActions(
 			const row = plugin.index.sessions.get(id);
 			void plugin.openSession(id, { agent: row?.agent ?? "claude", cwd: row?.cwd ?? "" });
 		},
-		rename: (id, currentName) => {
+		rename: (row) => {
 			// `../ui/modals` itself has a top-level `obsidian` import, and `obsidian` has no runtime
 			// outside the real app (its npm package's `main` is empty) — so it's required lazily
 			// here, deferred until a rename is actually requested, rather than imported at the top of
@@ -325,7 +325,7 @@ export function createRowActions(
 			// without touching `obsidian` at all, since this closure is never invoked by those tests.
 			// eslint-disable-next-line @typescript-eslint/no-require-imports -- see comment above
 			const { RenameSessionModal } = require("../ui/modals") as typeof import("../ui/modals");
-			new RenameSessionModal(plugin, currentName, (name) => void plugin.renameSession(id, name)).open();
+			new RenameSessionModal(plugin, row.name ?? "", row, (name) => void plugin.renameSession(row.id, name)).open();
 		},
 		moveToCategory: (row) => {
 			const label = categorizableLabel(row);
@@ -336,7 +336,7 @@ export function createRowActions(
 			// eslint-disable-next-line @typescript-eslint/no-require-imports -- see rename's comment above
 			const { MoveToCategoryModal } = require("../ui/modals") as typeof import("../ui/modals");
 			const [category] = row.name ? splitName(row.name) : [""];
-			new MoveToCategoryModal(plugin, category ?? "", label, sessionDisplayName(row), (name) => void plugin.renameSession(row.id, name)).open();
+			new MoveToCategoryModal(plugin, category ?? "", label, row, (name) => void plugin.renameSession(row.id, name)).open();
 		},
 		suggestName: (row) => {
 			// See `rename`'s comment on why `../ui/organize-modal` is required lazily here.
@@ -350,7 +350,7 @@ export function createRowActions(
 			// eslint-disable-next-line @typescript-eslint/no-require-imports -- see rename's comment above
 			const { ChangeModelModal } = require("../ui/modals") as typeof import("../ui/modals");
 			const current = { display: plugin.index.statusline.get(row.id)?.model ?? null, effort: plugin.index.statusline.get(row.id)?.effort ?? null };
-			new ChangeModelModal(plugin, current, (commands) => void plugin.applyModelCommands(row.id, commands)).open();
+			new ChangeModelModal(plugin, current, row, (commands) => void plugin.applyModelCommands(row.id, commands)).open();
 		},
 		toggleArchive: (row) => {
 			if (row.archived) {
@@ -359,7 +359,7 @@ export function createRowActions(
 				plugin.archive(row.id, sessionDisplayName(row), row.agent);
 			}
 		},
-		endSession: (id) => plugin.endSession(id),
+		endSession: (row) => plugin.endSession(row.id, row),
 		restartSession: (row) => plugin.restartSession(row),
 		canRestart: (row) => plugin.restartState(row).enabled,
 		copyId: (id) => {

@@ -31,6 +31,7 @@ import { sessionDisplayName } from "../sessions/name";
 import { splitName } from "../sessions/tree";
 import { parseEnvLines, type AgentId } from "../settings";
 import { renderCategoryChip } from "./chip";
+import { dialogHeaderSpec, renderDialogHeader } from "./dialog-header";
 import { reviewState, viewAfterRun, type OrganizeView } from "./organize-view";
 import { createRoundCheck, type RoundCheck } from "./round-check";
 import { paletteHueDeg } from "../sessions/category";
@@ -86,7 +87,11 @@ export class OrganizeModal extends Modal {
 
 	onOpen(): void {
 		this.modalEl.addClass("agent-sessions-organize");
-		this.setTitle(t(this.single ? "organize.titleSingle" : "organize.title"));
+		if (this.sessionId !== undefined) {
+			renderDialogHeader(this, dialogHeaderSpec(this.plugin, "organize.titleSingle", this.plugin.index.sessions.get(this.sessionId) ?? null));
+		} else {
+			this.setTitle(t("organize.title"));
+		}
 		this.agent = pickOrganizeAgent(this.plugin.settings.agents);
 		this.statusEl = this.contentEl.createDiv({ cls: "agent-sessions-organize-status" });
 		this.views = {

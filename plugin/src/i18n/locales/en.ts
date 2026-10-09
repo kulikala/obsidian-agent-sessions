@@ -252,7 +252,6 @@ export const en = {
 	"modal.renameSession.title": "Rename",
 	"modal.moveToCategory.title": "Move to category",
 	"modal.moveToCategory.categoryField": "Category",
-	"modal.moveToCategory.session": "Session: {name}",
 
 	// ---- Welcome guide (ui/onboarding-modal.ts) ----
 	"action.back": "Back",
@@ -526,7 +525,7 @@ export const en = {
 	"status.group.archived": "Archived",
 
 	// ---- Session analytics modal (usage/usage-modal.ts) ----
-	"usage.title": "Session analytics: {name}",
+	"usage.title": "Session analytics",
 	"usage.loading": "Loading…",
 	"usage.loadFailed": "Failed to load: {error}",
 	"usage.col.time": "Time",

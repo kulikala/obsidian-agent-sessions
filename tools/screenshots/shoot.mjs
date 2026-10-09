@@ -43,6 +43,8 @@ const keep = process.argv.includes("--keep");
 const onboarding = process.argv.includes("--onboarding");
 // `--efficiency` shoots only the token efficiency dialog (efficiency-stats, -result, -fix).
 const efficiencyOnly = process.argv.includes("--efficiency");
+// `--dialogs` shoots the per-session dialogs opened from a row's menu, in the dark and the light theme.
+const dialogsOnly = process.argv.includes("--dialogs");
 // `--out DIR` writes the README set's images there (DIR/<lang>/ for a language other than English).
 const outArg = process.argv.indexOf("--out");
 const README_OUT = outArg >= 0 ? resolve(process.argv[outArg + 1]) : OUT_DIR;
@@ -308,6 +310,45 @@ async function readmeScenes(page, box, look) {
 
 	await openOrganizeResult(page, look);
 	await capture(page, "organize");
+}
+
+
+/**
+ * The per-session dialogs, opened through the side panel row's `⋯` menu (so the shot is what a
+ * user gets): rename, move to category, change model, end session, and the analytics.
+ */
+async function dialogScenes(page, box, look) {
+	const checkout = box.sessions.find((s) => s.transcript === "claude-checkout");
+	const theme = look.light ? "light" : "dark";
+	const openFromMenu = async (key) => {
+		const row = `.agent-sessions-side .agent-sessions-row[data-session-id=${JSON.stringify(checkout.id)}]`;
+		await page.evaluate(`document.querySelector(${JSON.stringify(row)}).dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: 1400, clientY: 300 }))`);
+		const title = msg(look.lang, key);
+		await page.waitFor(`[...document.querySelectorAll('.menu .menu-item-title')].some((e) => e.textContent === ${JSON.stringify(title)})`, { what: `the "${title}" menu item` });
+		await page.evaluate(`[...document.querySelectorAll('.menu .menu-item')].find((e) => e.querySelector('.menu-item-title')?.textContent === ${JSON.stringify(title)}).click()`);
+	};
+	const shoot = async (name) => {
+		await page.waitFor(`document.querySelector('.modal .agent-sessions-dialog-target')`, { what: `the ${name} dialog` });
+		await capture(page, `dialog-${name}-${theme}`, await dialogClip(page, look, ".modal"));
+		await pressEscape(page);
+		await page.waitFor(`!document.querySelector('.modal')`, { what: `the ${name} dialog to close` });
+	};
+	console.log("Scenes:");
+	await openFromMenu("action.rename");
+	await shoot("rename");
+	await openFromMenu("action.moveToCategory");
+	await shoot("move");
+	await openFromMenu("action.changeModel");
+	await shoot("model");
+	await openFromMenu("action.endSession");
+	await shoot("end");
+	await page.evaluate(`${PLUGIN}.showUsage(${JSON.stringify(checkout.id)})`);
+	await page.waitFor(`document.querySelector('.agent-sessions-usage-table tbody tr')`, { what: "the session analytics" });
+	await shoot("usage");
+	// A narrow dialog: the name is cut with an ellipsis, the chip stays whole.
+	await openFromMenu("action.moveToCategory");
+	await page.evaluate(`(() => { const m = document.querySelector('.modal'); m.style.width = '300px'; })()`);
+	await shoot("move-narrow");
 }
 
 /** The dialog's own box with a little of the dimmed window around it. */
@@ -703,6 +744,12 @@ async function run() {
 		try {
 			for (const lang of languages) {
 				readmeOutDir = lang === "en" ? README_OUT : join(README_OUT, lang);
+				if (dialogsOnly) {
+					for (const light of [false, true]) {
+						await withObsidian({ lang, light, window: WINDOW, scale: 2, imageBase }, dialogScenes);
+					}
+					continue;
+				}
 				await withObsidian({ lang, light: false, window: WINDOW, scale: 2, imageBase }, efficiencyOnly ? efficiencyScenes : readmeScenes);
 			}
 		} finally {

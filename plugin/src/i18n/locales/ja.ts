@@ -252,7 +252,6 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"modal.newSession.agentField": "エージェント",
 	"modal.renameSession.title": "名前を変更",
 	"modal.moveToCategory.title": "カテゴリに移動",
-	"modal.moveToCategory.session": "セッション: {name}",
 	"modal.moveToCategory.categoryField": "カテゴリ",
 
 	// ---- Welcome guide (ui/onboarding-modal.ts) ----
@@ -527,7 +526,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"status.group.archived": "アーカイブ済み",
 
 	// ---- Session analytics modal (usage/usage-modal.ts) ----
-	"usage.title": "セッション解析結果：{name}",
+	"usage.title": "セッション解析結果",
 	"usage.loading": "読み込み中…",
 	"usage.loadFailed": "集計に失敗しました: {error}",
 	"usage.col.time": "時刻",
