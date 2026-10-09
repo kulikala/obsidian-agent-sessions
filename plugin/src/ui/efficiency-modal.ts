@@ -45,7 +45,9 @@ import { allowedActions, checkPayload, checkPrompt, planChecks, runCheck, type C
 import { detectorMetrics, loadResult, overlaps, saveResult, type SavedResult } from "../sessions/efficiency-store";
 import { addUsage, type HeadlessUsage } from "../sessions/organize-agent";
 import { sessionDisplayName } from "../sessions/name";
+import { splitName } from "../sessions/tree";
 import { parseEnvLines, type AgentId } from "../settings";
+import { renderCategoryChip } from "./chip";
 import { formatCost, formatK, formatNumber } from "../usage/usage";
 import {
 	analysisFailureMessage,
@@ -53,6 +55,7 @@ import {
 	checkName,
 	classifyAnalysisFailure,
 	classifyStatsFailure,
+	compactNumber,
 	doneCount,
 	elapsedText,
 	hasData,
@@ -69,6 +72,7 @@ import {
 	statsFailureMessage,
 	summaryText,
 	targetLine,
+	tokensText,
 	transition,
 	waitingRows,
 	type DialogEvent,
@@ -174,7 +178,10 @@ export class EfficiencyModal extends Modal {
 		}
 		loading.remove();
 		const agents = AGENTS.filter((a) => out.agents?.[a] && s.agents[a]?.enabled);
-		const panes = agents.flatMap((agent) => panesOf(agent, out.agents[agent]).map((info) => ({ agent, info })));
+		// One tab per agent. Codex and OpenCode split their conversations by provider, and one
+		// provider's conversations never go to another, so the tab analyses the provider the agent
+		// used most (the first pane); the others are left out.
+		const panes = agents.map((agent) => ({ agent, info: panesOf(agent, out.agents[agent])[0] }));
 		if (panes.length === 0) {
 			this.dispatch({ type: "statsDone", agents: [], withResult: [] });
 			this.bodyEl.createDiv({ cls: `${CLS}-note`, text: t("efficiency.error.noData") });
@@ -183,10 +190,8 @@ export class EfficiencyModal extends Modal {
 		if (panes.length > 1) {
 			this.tabsEl = this.bodyEl.createDiv({ cls: `${CLS}-tabs`, attr: { role: "tablist" } });
 		}
-		// The provider goes on a tab only when the agent has more than one.
-		const count = (agent: string): number => panes.filter((p) => p.agent === agent).length;
 		for (const { agent, info } of panes) {
-			this.buildPane(agent, info, paneBlock(out.agents[agent], info), count(agent) > 1);
+			this.buildPane(agent, info, paneBlock(out.agents[agent], info));
 		}
 		this.dispatch({
 			type: "statsDone",
@@ -218,13 +223,13 @@ export class EfficiencyModal extends Modal {
 
 	// ---- Panes --------------------------------------------------------------------------------
 
-	private buildPane(agent: AgentId, info: EffPane, block: EffAgent, withProvider: boolean): void {
+	private buildPane(agent: AgentId, info: EffPane, block: EffAgent): void {
 		const el = this.bodyEl.createDiv({ cls: `${CLS}-pane` });
 		const name = AGENT_NAMES[agent] ?? agent;
 		let tab: HTMLElement | null = null;
 		if (this.tabsEl) {
 			tab = this.tabsEl.createEl("button", { cls: `${CLS}-tab`, attr: { role: "tab" } });
-			tab.createSpan({ text: withProvider && info.provider ? t("efficiency.tabProvider", { agent: name, provider: info.provider }) : name });
+			tab.createSpan({ text: name });
 			tab.createSpan({ cls: `${CLS}-tab-mark` });
 			tab.addEventListener("click", () => this.selectPane(info.key));
 		}
@@ -350,7 +355,7 @@ export class EfficiencyModal extends Modal {
 			item(
 				t("efficiency.details.amount"),
 				pane.sent.tokens > 0
-					? t("efficiency.details.amountValue", { tokens: formatK(pane.sent.tokens), sessions: pane.sent.sessions })
+					? t("efficiency.details.amountValue", { tokens: tokensText(pane.sent.tokens), sessions: pane.sent.sessions })
 					: t("efficiency.details.amountNone")
 			);
 			const agent = this.agentName(pane);
@@ -438,7 +443,7 @@ export class EfficiencyModal extends Modal {
 				cell.createSpan({ text: label });
 				return cell;
 			};
-			setTooltip(tile(formatK(tot.w), t("efficiency.basis.tokens")), t("efficiency.help.weighted"));
+			setTooltip(tile(compactNumber(tot.w), t("efficiency.basis.tokens")), t("efficiency.help.weighted"));
 			if (typeof tot.usd === "number") {
 				tile(t("efficiency.basis.costValue", { usd: formatCost(tot.usd) }), t("efficiency.basis.cost"));
 			}
@@ -451,7 +456,7 @@ export class EfficiencyModal extends Modal {
 			kv.createEl("dd", {
 				text:
 					saved.sent.tokens > 0
-						? t("efficiency.details.amountValue", { tokens: formatK(saved.sent.tokens), sessions: saved.sent.sessions })
+						? t("efficiency.details.amountValue", { tokens: tokensText(saved.sent.tokens), sessions: saved.sent.sessions })
 						: t("efficiency.details.amountNone"),
 			});
 			kv.createEl("dt", { text: t("efficiency.basis.model") });
@@ -514,8 +519,8 @@ export class EfficiencyModal extends Modal {
 			st.createSpan({ cls: `${CLS}-st-label`, text: stateLabel(row.state) });
 			if (finding) {
 				const amt = st.createSpan({ cls: `${CLS}-st-amt` });
-				amt.createSpan({ cls: `${CLS}-st-amt-long`, text: t("efficiency.saving", { tokens: formatK(finding.savingW) }) });
-				amt.createSpan({ cls: `${CLS}-st-amt-short`, text: t("efficiency.savingShort", { tokens: formatK(finding.savingW) }) });
+				amt.createSpan({ cls: `${CLS}-st-amt-long`, text: t("efficiency.saving", { tokens: tokensText(finding.savingW) }) });
+				amt.createSpan({ cls: `${CLS}-st-amt-short`, text: t("efficiency.savingShort", { n: compactNumber(finding.savingW) }) });
 			}
 			if (!openable || !finding || !saved) {
 				return;
@@ -558,11 +563,12 @@ export class EfficiencyModal extends Modal {
 		const hits = new Map(saved.hits.map((h) => [h.id, h]));
 		const sessionOfTask = new Map(saved.hits.filter((h) => h.task).map((h) => [h.task as string, h.session]));
 		for (const q of f.quotes) {
+			const quote = body.createDiv({ cls: `${CLS}-quote` });
+			quote.createEl("blockquote", { text: t("efficiency.quote", { text: q.text }) });
 			const session = sessionOfTask.get(taskOfRef(q.ref));
-			body.createEl("blockquote", {
-				cls: `${CLS}-quote`,
-				text: session ? t("efficiency.quote", { text: q.text, session: this.sessionLabel(session, pane.block) }) : q.text,
-			});
+			if (session) {
+				this.renderQuoteSource(quote.createDiv({ cls: `${CLS}-quote-source` }), session, pane.block);
+			}
 		}
 		if (f.action === "none") {
 			return;
@@ -593,6 +599,18 @@ export class EfficiencyModal extends Modal {
 		if (isOpen) {
 			fill(box.createDiv({ cls: `${CLS}-disc-body` }));
 		}
+	}
+
+	/** Where a quote comes from: the session's category chip and its name, without the "Category:"
+	 * prefix (the chip already says it). */
+	private renderQuoteSource(el: HTMLElement, id: string, block: EffAgent): void {
+		const row = this.plugin.index.sessions.get(id);
+		const name = row ? (row.name ?? sessionDisplayName(row)) : (block.sessions.find((s) => s.id === id)?.name ?? id.slice(0, 8));
+		const [category, label] = splitName(name);
+		if (category) {
+			renderCategoryChip(el, category, this.plugin.index.categoryColorIndex(category));
+		}
+		el.createSpan({ text: label || name });
 	}
 
 	private sessionLabel(id: string, block: EffAgent): string {

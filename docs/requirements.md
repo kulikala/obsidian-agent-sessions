@@ -101,7 +101,7 @@ Agent CLIs other than Claude Code, Codex, and OpenCode (agy, …) are a future d
   - R-S17.19 A conversation's excerpts go only to that conversation's own agent and, for Codex and OpenCode, its own provider (a local provider's to its local model); what one pane sends names only that provider's sessions.
   - R-S17.20 The last result per pane (agent, and provider for Codex and OpenCode) is saved and shown the next time the dialog opens for an overlapping range.
   - R-S17.21 The analysing agent finds no unmasked conversation text within reach: it runs in an empty folder made fresh for each run and removed afterwards, and the statistics cache holds no conversation text.
-  - R-S17.23 Claude Code, Codex and OpenCode conversations are analysed alike: Codex and OpenCode get a pane per provider; detectors whose signal an agent does not record (E04 for OpenCode) do not run for it.
+  - R-S17.23 Claude Code, Codex and OpenCode conversations are analysed alike: Codex and OpenCode split their conversations by provider and the dialog analyses the provider each used most (one tab per agent); detectors whose signal an agent does not record (E04 for OpenCode) do not run for it.
   - R-S17.22 No statistic depends on the words a person wrote: the same conversation in another language gives the same tasks, hits and impact. Only record formats the agents write and the masking patterns are matched.
 
 ### R-D Persistence and restore

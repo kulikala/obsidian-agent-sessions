@@ -195,7 +195,7 @@ For up to 30 sessions, or the one you chose, it sends the current name, the fold
 
 ### What Token efficiency sends
 
-Opening **Analyze token efficiency** computes statistics on this machine and sends nothing. Only when you press **Analyze** in a tab does the plugin run that conversation's own agent: once for each check the statistics alone cannot settle, one after another, at most eight times. Codex and OpenCode get one tab per provider their conversations used.
+Opening **Analyze token efficiency** computes statistics on this machine and sends nothing. Only when you press **Analyze** in a tab does the plugin run that conversation's own agent: once for each check the statistics alone cannot settle, one after another, at most eight times. Codex and OpenCode are analysed for the provider their conversations used most; conversations held with another provider are left out.
 
 - Claude Code: `claude -p` with Sonnet (or Opus, in the settings), without tools, nothing saved.
 - Codex: `codex exec` with a read-only sandbox and no rollout saved, on a model Codex lists for your account (`$CODEX_HOME/models_cache.json`): its newest generation, and in it Sol, else Terra, else Luna; when Codex refuses one, the next tier, then the next older generation, then the model in `config.toml`. A local provider (Ollama, LM Studio) uses its most used model in the range.

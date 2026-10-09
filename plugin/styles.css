@@ -4244,10 +4244,25 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 }
 
 .agent-sessions-efficiency-quote {
-	margin: 0;
-	padding: 2px 0 2px var(--size-4-3);
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-1);
+	padding-left: var(--size-4-3);
 	border-left: 2px solid var(--background-modifier-border);
+}
+
+.agent-sessions-efficiency-quote > blockquote {
+	margin: 0;
 	color: var(--text-muted);
+}
+
+.agent-sessions-efficiency-quote-source {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--size-4-2);
+	color: var(--text-faint);
+	font-size: var(--font-ui-smaller);
 }
 
 .agent-sessions-efficiency-body-act {

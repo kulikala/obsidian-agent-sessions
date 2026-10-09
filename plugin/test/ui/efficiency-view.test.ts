@@ -10,6 +10,7 @@ import {
 	checkName,
 	classifyAnalysisFailure,
 	classifyStatsFailure,
+	compactNumber,
 	doneCount,
 	elapsedText,
 	hasData,
@@ -28,6 +29,7 @@ import {
 	summarize,
 	summaryText,
 	targetLine,
+	tokensText,
 	transition,
 	waitingRows,
 	type DialogState,
@@ -114,11 +116,11 @@ describe("the eight rows", () => {
 		expect(summarize(rows)).toEqual({ issues: 3, savingW: 1_200_000 });
 		expect(summaryText(rows)).toBe("Found waste in 3 of 8 areas. Fixing it could save up to about 1.2M tokens.");
 		expect(summaryText(setRow(waitingRows(), 0, "issue", finding("rework", 1000)))).toBe(
-			"Found waste in 1 of 8 areas. Fixing it could save up to about 1.0k tokens."
+			"Found waste in 1 of 8 areas. Fixing it could save up to about 1K tokens."
 		);
 		expect(summaryText(waitingRows().map((r) => ({ ...r, state: "ok" })))).toBe(t("efficiency.result.none"));
 		setLang("ja");
-		expect(summaryText(rows)).toBe("3 つの観点で無駄が見つかりました。直すと、最大で約 1.2M トークン減らせる見込みです。");
+		expect(summaryText(rows)).toBe("3 つの観点で無駄が見つかりました。直すと、最大で約 120 万トークン減らせる見込みです。");
 	});
 
 	it("round-trip through a saved result, in the checks' order", () => {
@@ -131,6 +133,40 @@ describe("the eight rows", () => {
 		// A check the saved result doesn't have, and an issue without its finding.
 		const partial = savedRows([{ check: "rework", state: "issue", finding: null }]);
 		expect(partial.map((r) => r.state)).toEqual(["ok", "na", "na", "na", "na", "na", "na", "na"]);
+	});
+});
+
+describe("numbers in the dialog", () => {
+	it("English: K, M and B with at most one decimal and no .0", () => {
+		expect([0, 950, 8_500, 450_000, 1_000, 1_234, 999_950, 1_200_000, 28_600_000, 2_000_000_000].map(compactNumber)).toEqual([
+			"0",
+			"950",
+			"8.5K",
+			"450K",
+			"1K",
+			"1.2K",
+			"1M",
+			"1.2M",
+			"28.6M",
+			"2B",
+		]);
+		expect(tokensText(1)).toBe("1 token");
+		expect(tokensText(450_000)).toBe("450K tokens");
+	});
+
+	it("Japanese: 万 and 億, written out below 1 万", () => {
+		setLang("ja");
+		expect([8_500, 12_000, 450_000, 1_200_000, 28_600_000, 99_999_990, 120_000_000].map(compactNumber)).toEqual([
+			"8,500",
+			"1.2 万",
+			"45 万",
+			"120 万",
+			"2,860 万",
+			"1 億",
+			"1.2 億",
+		]);
+		expect(tokensText(1_200_000)).toBe("120 万トークン");
+		expect(tokensText(8_500)).toBe("8,500 トークン");
 	});
 });
 
@@ -164,7 +200,7 @@ describe("words", () => {
 		expect(metaLine(["a", null, "b"])).toBe("a · b");
 		expect(resultHeading(1_790_000_000, 1_790_000_000)).toMatch(/^Analysis from .+/);
 		setLang("ja");
-		expect(targetLine(week, 42, 28_600_000)).toBe("直近 7 日の 42 セッション（計 28.6M トークン）を調べます。");
+		expect(targetLine(week, 42, 28_600_000)).toBe("直近 7 日の 42 セッション（計 2,860 万トークン）を調べます。");
 		expect(elapsedText(72)).toBe("経過 1 分 12 秒（目安 1〜3 分）");
 		expect(metaLine([spanLabel(week, true), "42 セッション"])).toBe("直近 7 日・42 セッション");
 		expect(resultHeading(1_790_000_000, 1_790_000_000)).toMatch(/ の解析結果$/);

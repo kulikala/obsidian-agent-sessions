@@ -308,7 +308,7 @@ Shows when each agent was working. Open it from the Session manager toolbar, the
 Checks your recent work for wasted tokens, from your local records, and says what to change.
 
 1. Open the ⋯ menu of the side panel or the Session manager and choose **Analyze token efficiency**, or run **Analyze token efficiency** from the command palette.
-2. The dialog reads the records on this machine (nothing is sent) and lists the eight checks, with the range they cover ("Covers 42 sessions from the last 7 days (28.6M tokens)."). Codex and OpenCode have a tab per provider their conversations used.
+2. The dialog reads the records on this machine (nothing is sent) and lists the eight checks, with the range they cover ("Covers 42 sessions from the last 7 days (28.6M tokens)."). Codex and OpenCode are analysed for the provider their conversations used most.
 3. Press **Analyze**. **Details**, below it, says what is sent, how much, to which model, and which usage limit it counts toward; **Show what is sent** in it shows the exact text.
 4. The checks fill in from the top, with a progress bar and the time so far; a spinner marks the tab being analysed. **Stop analysis**, or closing the dialog, stops it; nothing of that run is kept.
 5. In the result, click a row marked **Issue found** to open it. On an issue a file or setting can fix, press **Ask the agent to fix it**, check or edit the request, and press **Start**.

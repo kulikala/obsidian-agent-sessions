@@ -12,7 +12,6 @@ import type { EffRange, Finding } from "../sessions/efficiency";
 import { CHECKS, type CheckId } from "../sessions/efficiency-checks";
 import type { SavedCheck } from "../sessions/efficiency-store";
 import { parseEvents } from "../sessions/organize-agent";
-import { formatK } from "../usage/usage";
 
 export type OverallState = "stats" | "ready" | "failed";
 export type Screen = "empty" | "analyzing" | "result";
@@ -155,15 +154,45 @@ export function spanLabel(range: Pick<EffRange, "start" | "end">, meta = false):
 	return days ? t("efficiency.span.days", { count: days }) : t("efficiency.span.hours", { count: hours });
 }
 
-/** "Covers 42 sessions from the last 7 days, 28.6M tokens in total." */
+/** A number shown in this dialog, short, in the units the language counts in
+ * (`efficiency.number.units`: Japanese 万 and 億, "45 万", "2,860 万"; English K, M and B,
+ * "450K", "28.6M"), with at most one decimal and none when it is 0. Below the smallest unit the
+ * number is written out ("8,500"). */
+export function compactNumber(n: number): string {
+	const lang = getLang();
+	const group = (value: number, digits: number): string =>
+		new Intl.NumberFormat(lang, { maximumFractionDigits: digits, minimumFractionDigits: 0 }).format(value);
+	// "1e9:{n}B|1e6:{n}M|1e3:{n}K", largest first. A number just under a unit that would round up
+	// to it in the next smaller one (999,950: "1,000K") takes the larger unit ("1M").
+	const units = t("efficiency.number.units")
+		.split("|")
+		.map((entry) => [Number(entry.slice(0, entry.indexOf(":"))), entry.slice(entry.indexOf(":") + 1)] as const)
+		.filter(([size]) => size > 0);
+	const abs = Math.abs(n);
+	for (const [i, [size, form]] of units.entries()) {
+		const next = units[i + 1]?.[0];
+		if (abs >= size || (next !== undefined && Math.round((abs / next) * 10) / 10 >= size / next)) {
+			return form.replace("{n}", group(Math.round((n / size) * 10) / 10, 1));
+		}
+	}
+	return group(Math.round(n), 0);
+}
+
+/** An amount of tokens as the dialog writes it: "120 万トークン", "8,500 トークン", "1.2M tokens". */
+export function tokensText(n: number): string {
+	const number = compactNumber(n);
+	return t(/\d$/.test(number) ? "efficiency.tokens" : "efficiency.tokensUnit", { n: number, count: Math.round(n) });
+}
+
+/** "Covers 42 sessions from the last 7 days (28.6M tokens)." */
 export function targetLine(range: Pick<EffRange, "start" | "end">, sessions: number, tokens: number): string {
-	return t("efficiency.target", { span: spanLabel(range), sessions, tokens: formatK(tokens) });
+	return t("efficiency.target", { span: spanLabel(range), sessions, tokens: tokensText(tokens) });
 }
 
 /** The summary under a result's heading. */
 export function summaryText(rows: Row[]): string {
 	const { issues, savingW } = summarize(rows);
-	return issues > 0 ? t("efficiency.result.summary", { count: issues, tokens: formatK(savingW) }) : t("efficiency.result.none");
+	return issues > 0 ? t("efficiency.result.summary", { count: issues, tokens: tokensText(savingW) }) : t("efficiency.result.none");
 }
 
 export function resultHeading(at: number, now = Date.now() / 1000): string {
