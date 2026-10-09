@@ -81,6 +81,12 @@ def _session_dict(s: Session) -> dict:
     # (`sessions.scan.read_after_compact`) -- the plugin's `compacted` state reads it.
     if s.after_compact is not None:
         out['after_compact'] = s.after_compact
+    # additive, only while something is scheduled (`sessions.schedule.summarize`) / the latest turn
+    # was started by a schedule -- the plugin's schedule badge and `looped` state read them.
+    if s.schedule is not None:
+        out['schedule'] = s.schedule
+    if s.scheduled_turn:
+        out['scheduled_turn'] = True
     return out
 
 

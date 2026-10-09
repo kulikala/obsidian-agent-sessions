@@ -21,7 +21,7 @@ RACY_WINDOW = 2.0
 # so upgrading agent-sessions itself can't leave stale extracted data sitting
 # in scan-cache.json forever (see agents/codex/scan.py's SCAN_SCHEMA_VERSION
 # for the same mechanism on the codex side, versioned independently).
-SCAN_SCHEMA_VERSION = 3
+SCAN_SCHEMA_VERSION = 4
 
 UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
 TITLE_PATTERN = '^{"type": *"custom-title"'      # grep (BRE)
@@ -364,11 +364,15 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None) -> Dict[str,
                 last_activity = cached.get('last_activity')
                 last_human = cached.get('last_human_prompt')
                 after_compact = cached.get('after_compact')
+                sched_state = cached.get('schedule_state')
             else:
                 from .detail import read_last_human_prompt_ts   # detail imports this module
+                from . import schedule as schedule_mod
                 last_activity = read_last_activity(p)
                 last_human = read_last_human_prompt_ts(p)
                 after_compact = read_after_compact(p)
+                prior = cached.get('schedule_state') if cached and cached.get('schema_version') == SCAN_SCHEMA_VERSION else None
+                sched_state = schedule_mod.fold(p, prior)
                 h = read_head_info(p)
                 if cache is not None:
                     cache[p] = {
@@ -379,6 +383,7 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None) -> Dict[str,
                         'last_activity': last_activity,
                         'last_human_prompt': last_human,
                         'after_compact': after_compact,
+                        'schedule_state': sched_state,
                     }
             mtime = last_activity or st.st_mtime
         except OSError:
@@ -389,7 +394,9 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None) -> Dict[str,
         goal = goals.get(sid)
         if goal and (goal['met'] or goal.get('failed')) and last_human and last_human > (goal['updated'] or 0):
             goal = None   # the next task has begun: a verdict mark lasts until the next human prompt
+        from .schedule import summarize
         out[sid] = Session(id=sid, name=name, cwd=h.cwd, mtime=mtime, path=p,
                             first_prompt=h.prompt, child=h.child, goal=goal,
-                            after_compact=after_compact)
+                            after_compact=after_compact, schedule=summarize(sched_state),
+                            scheduled_turn=bool((sched_state or {}).get('scheduled_turn')))
     return out
