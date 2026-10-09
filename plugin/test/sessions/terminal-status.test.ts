@@ -66,6 +66,16 @@ describe("terminalStatus", () => {
 		expect(terminalStatus(input({ attached: false }))).toBe("detached");
 	});
 
+	it("is looped when a schedule started the turn that ended, above waiting and below working", () => {
+		expect(terminalStatus(input({ looped: true }))).toBe("looped");
+		expect(terminalStatus(input({ looped: true, waiting: true }))).toBe("looped");
+		expect(terminalStatus(input({ looped: true, registryStatus: "busy" }))).toBe("working");
+		expect(terminalStatus(input({ looped: true, registryStatus: "waiting" }))).toBe("asking");
+		expect(statusGroup("looped", false)).toBe("needs-review");
+		expect(higherPriorityStatus("looped", "waiting")).toBe("looped");
+		expect(higherPriorityStatus("looped", "working")).toBe("working");
+	});
+
 	it("is waiting after busy->idle if the terminal hasn't been brought to the front", () => {
 		expect(terminalStatus(input({ waiting: true }))).toBe("waiting");
 	});

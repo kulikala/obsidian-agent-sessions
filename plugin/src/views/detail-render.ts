@@ -7,6 +7,7 @@
 
 import { setIcon, setTooltip } from "obsidian";
 import { renderCategoryChip } from "../ui/chip";
+import { activeSchedule, scheduleLines } from "../sessions/looped";
 import type { StatusInfo } from "../sessions/statusline";
 import type { TerminalStatus } from "../sessions/terminal-status";
 import type { Detail } from "../types";
@@ -141,6 +142,16 @@ function renderState(container: HTMLElement, row: Row, status: TerminalStatus): 
 	item(state.icon, state.cls, t(state.labelKey), t(state.descKey));
 	for (const att of attentionInfos(status, row.archived)) {
 		item(att.icon, att.cls, t(att.labelKey), t(att.descKey), "is-attention");
+	}
+	const schedule = activeSchedule(row);
+	if (schedule) {
+		const el = wrap.createDiv({ cls: "agent-sessions-detail-state-item" });
+		const mark = el.createSpan({ cls: "agent-sessions-detail-state-mark agent-sessions-row-schedule" });
+		setIcon(mark, "clock");
+		el.createSpan({ cls: "agent-sessions-detail-state-label", text: t("detail.schedule") });
+		for (const line of scheduleLines(schedule)) {
+			el.createDiv({ cls: "agent-sessions-detail-state-desc", text: line });
+		}
 	}
 }
 

@@ -40,6 +40,7 @@ import { submitSequence } from "../main";
 import type AgentSessionsPlugin from "../main";
 import { MarkTracker, type MarkerHandle, type MarkerSource } from "../terminal/marks";
 import { RenameSessionModal } from "../ui/modals";
+import { staysLooped, startsLooped } from "../sessions/looped";
 import { sessionDisplayName } from "../sessions/name";
 import { VIEW_TYPE_TERMINAL } from "../sessions/open-session";
 import { asAgentId, parseEnvLines, type Padding } from "../settings";
@@ -152,6 +153,8 @@ export class TerminalView extends ItemView {
 	private earlyOutput = "";
 
 	private waiting = false;
+	/** The turn that just ended was started by a schedule and the tab hasn't been in front since (`sessions/looped.ts`). */
+	private looped = false;
 	/** Codex only — the most recent classification of Codex's own OSC-0 terminal title
 	 * (`classifyCodexTitleStatus`, updated live by `onTitleChange` in `onOpen()`). `null` for
 	 * Claude always, and for Codex whenever the title carries neither of Codex's own markers. */
@@ -1397,6 +1400,10 @@ export class TerminalView extends ItemView {
 	// ---- Title and icon -----------------------------------------------------------
 
 	private onIndexChange(): void {
+		// A human instruction sent since (a rescan no longer says a schedule started the latest turn) ends `looped`.
+		if (this.looped && !staysLooped({ front: this.isFront(), scheduledTurn: this.plugin.index.sessions.get(this.id)?.scheduled_turn === true })) {
+			this.looped = false;
+		}
 		this.refreshName();
 		this.updateIcon();
 	}
@@ -1420,11 +1427,33 @@ export class TerminalView extends ItemView {
 			this.waiting = true;
 		}
 		this.updateIcon();
+		if (this.plugin.index.sessions.get(id)?.agent === "claude") {
+			void this.markLoopedIfScheduled(id);
+		}
+	}
+
+	/** Rescans the session (the transcript says who started the turn) and marks the tab `looped`
+	 * when a schedule started the turn that just ended. */
+	private async markLoopedIfScheduled(id: string): Promise<void> {
+		await this.plugin.index.rescan([id]);
+		const scheduledTurn = this.plugin.index.sessions.get(id)?.scheduled_turn === true;
+		if (!this.closed && startsLooped({ scheduledTurn, front: this.isFront() })) {
+			this.looped = true;
+			this.updateIcon();
+		}
 	}
 
 	private onFrontChange(): void {
+		let changed = false;
 		if (this.waiting && this.isFront()) {
 			this.waiting = false;
+			changed = true;
+		}
+		if (this.looped && this.isFront()) {
+			this.looped = false;
+			changed = true;
+		}
+		if (changed) {
 			this.updateIcon();
 		}
 	}
@@ -1464,6 +1493,7 @@ export class TerminalView extends ItemView {
 				| null
 				| undefined,
 			waiting: this.waiting,
+			looped: this.looped,
 			compacted: this.plugin.index.isCompacted(this.id),
 			attached: this.attached,
 			titleStatus: this.titleStatus,

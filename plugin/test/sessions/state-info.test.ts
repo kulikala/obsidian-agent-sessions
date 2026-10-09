@@ -71,3 +71,11 @@ describe("attentionInfos", () => {
 		}
 	});
 });
+
+describe("looped", () => {
+	it("is a needs-review attention with its own explanation", () => {
+		expect(attentionInfos("looped", false).map((a) => a.descKey)).toEqual(["detail.attention.looped"]);
+		expect(en["detail.attention.looped"]).toBeTruthy();
+		expect(ja["detail.attention.looped"]).toBeTruthy();
+	});
+});

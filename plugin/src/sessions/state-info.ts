@@ -26,6 +26,7 @@ export const STATE_DESC_KEY: Record<TerminalStatus, MessageKey> = {
 	working: "detail.state.working",
 	"running-shell": "detail.state.runningShell",
 	asking: "detail.state.asking",
+	looped: "detail.state.looped",
 	waiting: "detail.state.waiting",
 	compacted: "detail.state.compacted",
 	editing: "detail.state.editing",
@@ -88,7 +89,12 @@ export function attentionInfos(status: TerminalStatus, archived: boolean): Atten
 				icon: STATUS_GROUP_ICON["needs-review"],
 				cls: terminalStatusClass(status),
 				labelKey: "status.group.needsReview",
-				descKey: status === "compacted" ? "detail.attention.compacted" : "detail.attention.needsReview",
+				descKey:
+					status === "compacted"
+						? "detail.attention.compacted"
+						: status === "looped"
+							? "detail.attention.looped"
+							: "detail.attention.needsReview",
 			},
 		];
 	}

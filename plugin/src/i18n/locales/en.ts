@@ -506,6 +506,8 @@ export const en = {
 	// claude itself is waiting on a question, a permission prompt, or elicitation. Ranks above "waiting for input".
 	"status.asking": "Waiting for your answer",
 	"status.waiting": "Waiting for input",
+	// A turn started by /loop, a cron job or a wakeup ended while the tab was not in front.
+	"status.looped": "Scheduled run finished",
 	// Right after a /compact, before the next instruction has been sent. Ranks below "waiting
 	// for input" — kept as a distinct state so it's clear the context was just reset.
 	"status.compacted": "Compacted (context was reset)",
@@ -530,6 +532,7 @@ export const en = {
 	"detail.state.runningShell": "The agent is running a command and continues on its own when it finishes.",
 	"detail.state.asking": "The agent is asking a question or requesting permission and cannot go on until you answer.",
 	"detail.state.waiting": "The agent finished its turn and is waiting for your next instruction.",
+	"detail.state.looped": "A scheduled run (/loop, a cron job or a wakeup) finished while you were elsewhere. Open the tab to read what it did.",
 	"detail.state.compacted": "The conversation was just compacted and its context reset. Send your next instruction when ready.",
 	"detail.state.editing": "The built-in editor is open on this session. Close it to return to the agent.",
 	"detail.state.idle": "The session is connected and ready for your next instruction.",
@@ -540,6 +543,15 @@ export const en = {
 	"detail.attention.needsInput": "This session is waiting for your answer. Open it and respond so the agent can continue.",
 	"detail.attention.needsReview": "The agent finished while you were elsewhere. Open the tab to read the result.",
 	"detail.attention.compacted": "The context was just reset. Open the tab to check, then send your next instruction.",
+	"detail.attention.looped": "A scheduled run just finished. Open the tab to see the result; this clears once you do.",
+	// The schedule badge on a row (a Claude Code session with a live process and scheduled work).
+	"schedule.jobs": "{n} scheduled {n|task|tasks}.",
+	"schedule.jobsNext": "{n} scheduled {n|task|tasks}, next run at {time}.",
+	"schedule.wakeup": "Resumes by itself at {time}.",
+	"schedule.once": "once",
+	"schedule.next": "next run at {time}",
+	"schedule.more": "and {n} more",
+	"detail.schedule": "Schedule",
 
 	// ---- Session analytics modal (usage/usage-modal.ts) ----
 	"usage.title": "Session analytics",

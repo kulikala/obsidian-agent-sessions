@@ -1624,6 +1624,26 @@
 	color: var(--color-orange, darkorange);
 }
 
+/* A turn started by a schedule (/loop, a cron job, a wakeup) ended while the tab was not in front.
+   Grouped with `waiting` under "needs review"; a different hue and no motion, so it reads as
+   "something ran on its own" rather than "waiting for you". */
+.agent-sessions-status-looped {
+	color: var(--color-purple, mediumpurple);
+}
+
+/* The calm clock marking scheduled work on a row (and in the detail pane). */
+.agent-sessions-row-schedule {
+	display: inline-flex;
+	align-items: center;
+	flex: 0 0 auto;
+	color: var(--text-faint);
+}
+
+.agent-sessions-row-schedule svg {
+	width: 12px;
+	height: 12px;
+}
+
 .agent-sessions-status-editing {
 	color: var(--color-blue, dodgerblue);
 }

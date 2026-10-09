@@ -507,6 +507,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	// claude itself is waiting on a question, a permission prompt, or elicitation. Ranks above "waiting for input".
 	"status.asking": "回答待ち",
 	"status.waiting": "指示待ち",
+	"status.looped": "予約実行が完了",
 	// Right after a /compact, before the next instruction has been sent. Ranks below "waiting
 	// for input" — kept as a distinct state so it's clear the context was just reset.
 	"status.compacted": "compact 済み（文脈がリセットされています）",
@@ -531,6 +532,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"detail.state.runningShell": "エージェントがコマンドを実行中です。終われば自動で続きに進みます。",
 	"detail.state.asking": "エージェントが質問または許可を求めていて、あなたが答えるまで先に進めません。",
 	"detail.state.waiting": "エージェントが処理を終え、次の指示を待っています。",
+	"detail.state.looped": "予約された実行（/loop、cron、wakeup）が、あなたが別の作業をしている間に終わりました。タブを開いて内容を確認してください。",
 	"detail.state.compacted": "会話を compact した直後で、文脈がリセットされています。準備ができたら次の指示を送ってください。",
 	"detail.state.editing": "このセッションで内蔵エディタを開いています。閉じるとエージェントに戻ります。",
 	"detail.state.idle": "接続済みで、次の指示を受け付けられます。",
@@ -541,6 +543,14 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"detail.attention.needsInput": "このセッションはあなたの回答を待っています。開いて答えると、エージェントが続きに進みます。",
 	"detail.attention.needsReview": "別の作業中にエージェントの処理が終わりました。タブを開いて結果を確認してください。",
 	"detail.attention.compacted": "文脈がリセットされたところです。タブを開いて確認し、次の指示を送ってください。",
+	"detail.attention.looped": "予約された実行が終わったところです。タブを開いて結果を確認すると、この表示は消えます。",
+	"schedule.jobs": "予約された実行が {n} 件あります。",
+	"schedule.jobsNext": "予約された実行が {n} 件あります。次は {time} です。",
+	"schedule.wakeup": "{time} に自動で再開します。",
+	"schedule.once": "1 回のみ",
+	"schedule.next": "次は {time}",
+	"schedule.more": "ほか {n} 件",
+	"detail.schedule": "予約",
 
 	// ---- Session analytics modal (usage/usage-modal.ts) ----
 	"usage.title": "セッション解析結果",

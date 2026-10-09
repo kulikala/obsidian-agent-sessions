@@ -26,6 +26,31 @@ export interface ScanSession {
 	/** Claude only, additive: present while the transcript's last compaction hasn't been answered
 	 * by the model (`sessions/compacted.ts`'s `isCompacted`). */
 	after_compact?: AfterCompact;
+	/** Claude only, additive: present while the transcript says something is scheduled
+	 * (`sessions/looped.ts`'s `activeSchedule` also requires a live process). */
+	schedule?: SessionSchedule;
+	/** Claude only, additive: the latest turn was started by a schedule, with no human input since. */
+	scheduled_turn?: true;
+}
+
+/** Scheduled work in a Claude Code session (`agentsessions/sessions/schedule.py`'s `summarize`).
+ * Times are epoch seconds. */
+export interface SessionSchedule {
+	/** Up to five of the jobs `CronCreate` made; `job_count` is the full count. */
+	jobs: ScheduleJob[];
+	job_count: number;
+	/** A pending `ScheduleWakeup`. */
+	wakeup: number | null;
+	/** The soonest of the jobs' next fires and the wakeup. */
+	next: number | null;
+}
+
+export interface ScheduleJob {
+	cron: string;
+	recurring: boolean;
+	/** Claude's own description of the schedule (for example "Every 5 minutes"). */
+	human: string;
+	next: number | null;
 }
 
 /**
