@@ -60,9 +60,9 @@ In the same menu, **Compact session** sends `/compact`, and **Restart session** 
 
 ### Where tokens could be saved
 
-**Analyze token efficiency**, in the ⋯ menu of the side panel and the Session manager, finds where recent tokens went and what would save them: large tool outputs read again, conversations that carry earlier work along, caches that expired, files read at the start of every session. Each finding shows its evidence, cost and remedy, and a finding a file can fix can be handed to an agent, which starts in plan mode and shows the change before writing it. Statistics stay on this machine; see [What Token efficiency sends](#what-token-efficiency-sends). [More](docs/usage.md#token-efficiency)
+**Analyze token efficiency**, in the ⋯ menu of the side panel and the Session manager, checks your recent work for wasted tokens in eight checks: repeated fixes, a clear first request, several tasks in one conversation, overlong conversations, large output left in the conversation, cache rebuilds, repeated lookups and startup size. Each issue says what happened, why, what to do next and how many tokens fixing it could save; one a file can fix can be handed to an agent, which starts in plan mode and shows the change before writing it. Statistics stay on this machine; see [What Token efficiency sends](#what-token-efficiency-sends). [More](docs/usage.md#token-efficiency)
 
-![Analyze token efficiency for Claude Code: the range and its totals, where the tokens went, what Analyze would send, and findings with cost, evidence and remedy](docs/images/efficiency.png)
+![Token efficiency for Claude Code: the eight checks, three with an issue, the first one open with its next step, what happened, its cause and a quote](docs/images/efficiency.png)
 
 ### Setup with the welcome guide
 
@@ -171,7 +171,7 @@ To analyze token efficiency, it reads the same Claude Code transcripts, Codex ro
 | `~/.config/opencode/tui.json` | editor key, submit keys, status line entry | OpenCode enabled |
 | a temporary file | the prompt being edited | built-in editor open |
 | `~/.agents/sessions/efficiency/cache/` | token efficiency statistics (numbers and relative paths, no conversation text) | Token efficiency opened |
-| `~/.agents/sessions/efficiency/last-<pane>.json`, `prev-<pane>.json` | the last two analyses of each pane (`claude`, `codex-openai`, `opencode-ollama`, …), with masked quotes | after Analyze |
+| `~/.agents/sessions/efficiency/last-<tab>.json`, `prev-<tab>.json` | the last two analyses of each tab (`claude`, `codex-openai`, `opencode-ollama`, …), with masked quotes | after Analyze |
 | `~/.agents/sessions/efficiency-run/current/` | the analysis's empty working folder | during Analyze |
 | `<vault>/.agents/sessions/sessions.json` | sessions started here (folder, agent), archive, category colors, folded groups | always |
 | `<vault>/.claude/skills/` | the `agent-sessions` and `agent-sessions-help` skills | Claude Code enabled |
@@ -195,17 +195,17 @@ For up to 30 sessions, or the one you chose, it sends the current name, the fold
 
 ### What Token efficiency sends
 
-Opening **Analyze token efficiency** computes statistics on this machine and sends nothing. Only when you press **Analyze** in a pane does the plugin run that conversation's own agent once. Codex and OpenCode get one pane per provider their conversations used.
+Opening **Analyze token efficiency** computes statistics on this machine and sends nothing. Only when you press **Analyze** in a tab does the plugin run that conversation's own agent: once for each check the statistics alone cannot settle, one after another, at most eight times. Codex and OpenCode get one tab per provider their conversations used.
 
 - Claude Code: `claude -p` with Sonnet (or Opus, in the settings), without tools, nothing saved.
 - Codex: `codex exec` with a read-only sandbox and no rollout saved, on a model Codex lists for your account (`$CODEX_HOME/models_cache.json`): its newest generation, and in it Sol, else Terra, else Luna; when Codex refuses one, the next tier, then the next older generation, then the model in `config.toml`. A local provider (Ollama, LM Studio) uses its most used model in the range.
 - OpenCode: `opencode run` with the provider and its most used model in the range; the run's session is deleted afterwards. A provider on this machine (Ollama, LM Studio, or a `baseURL` on this machine) is analysed by its local model, so nothing leaves the machine.
 
-A conversation is never sent to another agent or provider, and a pane's statistics name only that provider's sessions. The pane shows where it goes and how much before you press it, and **Show what is sent** shows the exact text.
+A conversation is never sent to another agent or provider, and a tab's statistics name only that provider's sessions. **Details**, below **Analyze**, shows where it goes and about how much before you press it, and **Show what is sent** in it shows the exact text.
 
-It sends the range's numbers (totals, the largest tasks and the findings' figures), masked session names and folders, the sizes of the instruction files and the number of skills, and excerpts of up to 8 tasks: your prompts (up to 600 characters each), the start of the agent's replies (200 characters), and the tool calls (names, paths, the start of commands, the size of results). Tool results and file contents are not sent. Paths, URLs, e-mail addresses and anything that looks like a key or token are masked. At most 60,000 characters per analysis. The run starts in an empty folder, `~/.agents/sessions/efficiency-run/current/`, made fresh for each run and removed when it ends; Claude Code keeps one empty project folder for it under `~/.claude/projects/`. The statistics cache holds no conversation text; the last two results, with their masked quotes, stay in `~/.agents/sessions/efficiency/` until you delete them. This goes to that agent's service under your account and counts toward its usage limits.
+Each request carries the range's totals, that check's figures and the tasks behind them, masked session names and folders, the sizes of the instruction files and the number of skills, and excerpts of those tasks (of up to 8 tasks in all): your prompts (up to 600 characters each), the start of the agent's replies (200 characters), and the tool calls (names, paths, the start of commands, the size of results). Tool results and file contents are not sent. Paths, URLs, e-mail addresses and anything that looks like a key or token are masked. At most 60,000 characters per request. The run starts in an empty folder, `~/.agents/sessions/efficiency-run/current/`, made fresh for each run and removed when it ends; Claude Code keeps one empty project folder for it under `~/.claude/projects/`. The statistics cache holds no conversation text; the last two results, with their masked quotes, stay in `~/.agents/sessions/efficiency/` until you delete them. This goes to that agent's service under your account and counts toward its usage limits.
 
-**Ask an agent to fix** only starts a new session in the vault, with a request you can read and edit first: Claude Code in plan mode, Codex with a read-only sandbox that asks before writing, OpenCode with its `plan` agent. The plugin writes no file itself.
+**Ask the agent to fix it** only starts a new session in the vault, with a request you can read and edit first: Claude Code in plan mode, Codex with a read-only sandbox that asks before writing, OpenCode with its `plan` agent. The plugin writes no file itself.
 
 ### Other access
 
