@@ -28,7 +28,7 @@ class MaskTest(unittest.TestCase):
         self.assertEqual(self.mask('in /home/pat/other/proj/x.py'), 'in …/proj/x.py')
         self.assertEqual(self.mask('~/code/repo/main.go'), '…/repo/main.go')
         self.assertEqual(self.mask('run /compact now'), 'run /compact now')
-        self.assertEqual(self.mask('C:\\Users\\pat\\proj\\a.txt'), '…/proj/a.txt')
+        self.assertEqual(self.mask('C:\\Users\\pat\\proj\\a.txt'), '~\\proj\\a.txt')
         self.assertEqual(self.mask('home is /home/pat'), 'home is ~')
 
     def test_folder(self):
@@ -41,34 +41,55 @@ class MaskTest(unittest.TestCase):
             self.assertEqual(self.mask(text), text)
 
 
-class LimitTest(unittest.TestCase):
-    def item(self, task, impact, prompt_len, tools=0):
-        return {'task': task, 'impact_w': impact, 'prompts': [{'ref': task + '.p1', 'text': 'a' * prompt_len}],
-                'replies': [], 'tools': [{'tool': 'Read'}] * tools}
+class UserNameTest(unittest.TestCase):
+    """The home folder and the user name, in every form, never reach a model."""
 
-    def test_drops_smallest_impact_first_then_shortens_prompts(self):
-        items = [self.item('t-a', 10, 600), self.item('t-b', 5, 600), self.item('t-c', 20, 600)]
-        limit = excerpt.size(items) - 10
-        orig_build = excerpt.task_excerpt
-        try:
-            excerpt.task_excerpt = lambda s, t, m, w, texts=None: dict(next(i for i in items if i['task'] == t['id']))
-            analysed = [{'session': {'id': 's'}, 'tasks': [{'id': i['task'], 'in_range': True} for i in items]}]
-            hits = [{'task': i['task'], 'impact_w': i['impact_w'], 'needs_llm': False} for i in items]
-            out = excerpt.build(analysed, hits, excerpt.Masker('/h', None), limit=limit)
-            self.assertEqual([i['task'] for i in out], ['t-c', 't-a'])
-            one = excerpt.size([items[2]])
-            out = excerpt.build(analysed, hits, excerpt.Masker('/h', None), limit=one - 100)
-            self.assertEqual([i['task'] for i in out], ['t-c'])
-            self.assertEqual(len(out[0]['prompts'][0]['text']), excerpt.PROMPT_CHARS_SHORT)
-        finally:
-            excerpt.task_excerpt = orig_build
+    def setUp(self):
+        self.mask = excerpt.Masker(home='/Users/alex', vault='/Users/alex/vault', users=['alex', 'sam'])
 
-    def test_prompt_choice_keeps_first_rework_and_last(self):
-        prompts = [{'ref': 'p%d' % i, 'rework': [1] if i in (4, 9) else []} for i in range(12)]
-        chosen = [p['ref'] for p in excerpt.pick_prompts(prompts)]
-        self.assertEqual(len(chosen), excerpt.MAX_PROMPTS)
-        for ref in ('p0', 'p4', 'p9', 'p11'):
-            self.assertIn(ref, chosen)
+    def test_home_folders_of_every_system(self):
+        cases = {
+            'open /Users/alex/Applications now': 'open ~/Applications now',
+            'in /home/alex/src/app/main.py': 'in …/app/main.py',
+            'C:\\Users\\alex\\Desktop': '~\\Desktop',
+            'C:/Users/Alex/Desktop': '~/Desktop',
+            'd:\\users\\ALEX': '~',
+            'see /mnt/c/Users/alex/notes.txt': 'see ~/notes.txt',
+            'the folder ~/projects/x': 'the folder ~/projects/x',
+            'the folder ~/projects/x/y.md': 'the folder …/x/y.md',
+            '/Users/sam/Documents': '~/Documents',
+        }
+        for text, want in cases.items():
+            got = self.mask(text)
+            self.assertEqual(got, want, text)
+            self.assertNotRegex(got.lower(), 'alex|/sam')
+
+    def test_claude_project_folder_names(self):
+        self.assertEqual(self.mask('-Users-alex-Library-Mobile-Documents'), '-~-Library-Mobile-Documents')
+        self.assertEqual(self.mask('C--Users-alex-work'), '-~-work')
+        self.assertNotIn('alex', self.mask('~/.claude/projects/-Users-alex-work-repo/a.jsonl'))
+
+    def test_the_name_alone_between_separators(self):
+        self.assertEqual(self.mask('backup at /srv/alex/data'), 'backup at /srv/[user]/data')
+        self.assertEqual(self.mask('the share \\\\nas\\alex\\docs'), 'the share \\\\nas\\[user]\\docs')
+        self.assertEqual(self.mask.path('/var/lib/alex'), '…/lib/[user]')
+        self.assertEqual(self.mask.folder('/Users/alex'), '~')
+        self.assertEqual(self.mask.folder('/srv/alex'), '[user]')
+        self.assertEqual(self.mask.path('/Users/alex/vault/alex/a.md'), '[user]/a.md')
+
+    def test_what_is_not_a_user_name_is_left(self):
+        for text in ('alex wrote this', 'the alex-tools repo', 'src/alexX/a.py',
+                     'Users/alexx/a', 'a/sam.md', 'the /Users folder', '修正してください'):
+            self.assertEqual(self.mask(text), text, text)
+        # Two letters: only the home folder forms, never alone.
+        short = excerpt.Masker(home='/Users/jo', users=['jo'])
+        self.assertEqual(short('/Users/jo/x and /srv/jo/y'), '~/x and …/jo/y')
+
+    def test_user_names_come_from_the_login_and_the_home_folder(self):
+        names = excerpt.user_names('/home/pat')
+        self.assertIn('pat', names)
+        import getpass
+        self.assertIn(getpass.getuser(), names)
 
 
 if __name__ == '__main__':

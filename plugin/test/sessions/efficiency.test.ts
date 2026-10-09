@@ -3,13 +3,12 @@ import { setLang, t } from "../../src/i18n";
 import {
 	analysisArgs,
 	analysisModels,
-	defaultCause,
+	dropUnknownNumbers,
 	fixPrompt,
 	numbersIn,
 	paneBlock,
 	panesOf,
-	replaceUnknownNumbers,
-	statFinding,
+	sourcesOf,
 	statsChange,
 	usageWindow,
 	type EffAgent,
@@ -19,6 +18,25 @@ import {
 } from "../../src/sessions/efficiency";
 
 afterEach(() => setLang("en"));
+
+const FIX_AGENT: Finding = {
+	check: "largeOutput",
+	tasks: ["t-aaaa"],
+	hits: ["h-e01"],
+	title: "Large output stayed",
+	observed: "The output stayed.",
+	cause: "agent_behavior",
+	fix: "Show only failures.",
+	quotes: [],
+	action: "agent",
+	change: "add",
+	targets: ["/home/pat/vault/CLAUDE.md"],
+	draft: "",
+	sources: [],
+	impactW: 50_000,
+	impactUsd: null,
+	savingW: 40_000,
+};
 
 function hit(over: Partial<EffHit> & { id: string; detector: string }): EffHit {
 	return {
@@ -57,29 +75,12 @@ const HITS: EffHit[] = [
 	hit({ id: "h-e03", detector: "E03", task: "t-cccc", impact_w: 20_000, needs_llm: true, metrics: { tasks: 3, carry: 150_000 } }),
 ];
 
-describe("statistics-only findings", () => {
-	it("a canned finding: the detector's text, its cause, and an agent's change only when every hit agrees", () => {
-		const f = statFinding("largeOutput", [HITS[0]], false);
-		expect(f.title).toBe(t("efficiency.detector.E01.title"));
-		expect(f.observed).toContain("12.0k");
-		expect([f.cause, f.action, f.change, f.targets]).toEqual(["agent_behavior", "agent", "add", ["/home/pat/vault/CLAUDE.md"]]);
-		expect(f.savingW).toBe(40_000);
-		expect(f.fromStats).toBe(true);
-		const mixed = [HITS[0], { ...HITS[0], id: "h-e01b", targets: ["/other/CLAUDE.md"] }];
-		expect(statsChange(mixed)).toBeNull();
-		expect(statFinding("largeOutput", mixed, false).action).toBe("none");
-		expect(statFinding("rework", [HITS[2]], true).action).toBe("template");
-	});
-
-	it("the cause the statistics point to, by detector", () => {
-		expect(defaultCause([HITS[2]])).toBe("user_prompt");
-		expect(defaultCause([HITS[1]])).toBe("habit");
-		expect(defaultCause([{ ...HITS[1], remedy_kind: "fix", change: "add", targets: ["/s.json"] }])).toBe("config");
-		expect(defaultCause([hit({ id: "h-e17", detector: "E17", metrics: { calls: 12 } })])).toBe("user_prompt");
-	});
-
-	it("E17's canned text has its numbers", () => {
-		expect(statFinding("firstRequest", [hit({ id: "h-e17", detector: "E17", metrics: { calls: 12 } })], true).observed).toContain("12 calls");
+describe("an agent's change", () => {
+	it("only when every hit names the same change and files", () => {
+		expect(statsChange([HITS[0]])).toEqual({ change: "add", targets: ["/home/pat/vault/CLAUDE.md"] });
+		expect(statsChange([HITS[0], { ...HITS[0], id: "h-e01b", targets: ["/other/CLAUDE.md"] }])).toBeNull();
+		expect(statsChange([HITS[1]])).toBeNull();
+		expect(statsChange([])).toBeNull();
 	});
 });
 
@@ -88,14 +89,16 @@ describe("numbers", () => {
 		expect(numbersIn("about 12,345 tokens, 1.2M, 40K, 3万, 86% and 12 calls")).toEqual([12345, 1_200_000, 40_000, 30_000]);
 	});
 
-	it("keeps sentences whose numbers are within 5% of a sent value", () => {
-		expect(replaceUnknownNumbers("Used 1.2M tokens. Then 9,999 more.", [1_230_000], "CANNED")).toBe("Used 1.2M tokens. CANNED");
+	it("keeps sentences whose numbers are within 5% of a sent value, and drops the others", () => {
+		expect(dropUnknownNumbers("Used 1.2M tokens. Then 9,999 more. Done.", [1_230_000])).toBe("Used 1.2M tokens. Done.");
+		expect(dropUnknownNumbers("約 120 万トークン使いました。そのあと 9,999 回。", [1_200_000])).toBe("約 120 万トークン使いました。");
 	});
 });
 
 describe("prompts", () => {
 	const FIX: Finding = {
 		check: "largeOutput",
+		tasks: ["t-aaaa"],
 		hits: ["h-e01"],
 		title: "Test output fills the context",
 		observed: "The full output stayed.",
@@ -110,7 +113,6 @@ describe("prompts", () => {
 		impactW: 50_000,
 		impactUsd: 2,
 		savingW: 40_000,
-		fromStats: false,
 	};
 
 	it.each(["en", "ja"] as const)("the fix request has every required paragraph (%s)", (lang) => {
@@ -157,14 +159,12 @@ describe("prompts", () => {
 				read_path: "/v/docs/ref.md",
 			}),
 		];
-		const f = statFinding("repeatedLookups", hits, false);
-		expect(f.observed).toContain("docs/ref.md");
-		expect(f.fix).toContain("docs/ref.md");
+		const f: Finding = { ...FIX, check: "repeatedLookups", hits: ["h-e08"], sources: sourcesOf(hits), targets: ["/v/CLAUDE.md"] };
 		const text = fixPrompt(f, []) as string;
 		expect(text).toContain(t("efficiency.fix.prompt.sources"));
 		expect(text).toContain("- /v/docs/ref.md");
 		setLang("ja");
-		expect(fixPrompt(statFinding("repeatedLookups", hits, false), []) as string).toContain("- /v/docs/ref.md");
+		expect(fixPrompt(f, []) as string).toContain("- /v/docs/ref.md");
 	});
 
 	it("no fix request for advice", () => {
@@ -185,10 +185,8 @@ describe("Codex and OpenCode panes", () => {
 		breakdown: [],
 		tasks: [],
 		hits: [hit({ id: "h-1", detector: "E01", session: "s1" }), hit({ id: "h-2", detector: "E01", session: "s2" })],
-		excerpts: [],
 		baselines: { disabled: [] },
 		limits: { truncated: false, reason: null },
-		summary: { agent: "opencode" },
 	} as unknown as EffAgent;
 	const pane = (provider: string, ids: string[], local = false): EffPane => ({
 		key: `opencode-${provider}`,
@@ -201,22 +199,21 @@ describe("Codex and OpenCode panes", () => {
 		totals: totals(100),
 		breakdown: [],
 		hits: ids,
-		summary: { agent: "opencode", provider },
-		excerpts: [],
+		digest: { agent: "opencode", context: { provider }, sessions: [], tasks: [], hints: [] },
 	});
 
 	it("a pane holds only its provider's sessions and hits, and what it sends", () => {
 		const local = paneBlock(block, pane("ollama", ["h-2"], true));
 		expect(local.hits.map((h) => h.id)).toEqual(["h-2"]);
 		expect(local.sessions.map((s) => s.id)).toEqual(["s2"]);
-		expect(local.summary).toEqual({ agent: "opencode", provider: "ollama" });
+		expect(local.panes?.[0].digest?.context).toEqual({ provider: "ollama" });
 		expect(local.totals.w).toBe(100);
 		expect(local.range).toBe(block.range);
 	});
 
 	it("an older program's block becomes one pane", () => {
 		const [only] = panesOf("claude", block);
-		expect([only.key, only.hits, only.summary]).toEqual(["claude", ["h-1", "h-2"], block.summary]);
+		expect([only.key, only.hits, only.digest]).toEqual(["claude", ["h-1", "h-2"], undefined]);
 		expect(panesOf("opencode", { ...block, panes: [pane("ollama", [])] }).map((p) => p.key)).toEqual(["opencode-ollama"]);
 	});
 
@@ -258,7 +255,7 @@ describe("Codex and OpenCode panes", () => {
 	});
 
 	it("the fixing request says how each agent waits for approval", () => {
-		const f = statFinding("largeOutput", [HITS[0]], false);
+		const f = FIX_AGENT;
 		const claude = fixPrompt(f, []) as string;
 		const codex = fixPrompt(f, [], "codex") as string;
 		const opencode = fixPrompt(f, [], "opencode") as string;

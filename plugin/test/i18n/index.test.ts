@@ -106,9 +106,8 @@ describe("t (plural forms)", () => {
 		expect(t("usage.md.unpricedSuffix", { count: "3" })).toBe(" (excluding 3 replies without a price)");
 		expect(t("cost.unpriced.some", { count: "1", calls: "5" })).toMatch(/^1 of 5 replies has no price/);
 		expect(t("cost.unpriced.some", { count: "2", calls: "5" })).toMatch(/^2 of 5 replies have no price/);
-		expect(t("efficiency.detector.E16.cause", { corrections: 1, calls: 1, ratio: "2.0" })).toBe(
-			"This task had 1 rework turn and 1 call, about 2.0 times your usual per turn."
-		);
+		expect(t("efficiency.details.omitted", { count: 1, requests: 10 })).toBe("The oldest 1 task is left out to keep to 10 requests.");
+		expect(t("efficiency.details.omitted", { count: 4, requests: 10 })).toBe("The oldest 4 tasks are left out to keep to 10 requests.");
 	});
 
 	it("leaves the form untouched when the name is missing or isn't a count", () => {

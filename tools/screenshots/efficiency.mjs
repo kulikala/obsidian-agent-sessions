@@ -1,7 +1,8 @@
 // The made-up token efficiency data the screenshots show: what the stand-in CLI answers to
-// `json efficiency` (statistics, hits, masked excerpts) and what the stand-in `claude` answers
-// to the analysis prompt (findings that pass the plugin's checks: known hit ids, quotes copied
-// from the excerpts, numbers taken from the statistics). Nothing here comes from a real
+// `json efficiency` (statistics, hits and the masked digest of every task) and what the stand-in
+// `claude` answers to the analysis requests (issues that pass the plugin's checks: task ids that
+// were sent, quotes copied from the prompts, numbers taken from the digest). With `split`, the
+// digest has enough other tasks to need several requests. Nothing here comes from a real
 // conversation.
 
 import { cwdOf } from "./scenario.mjs";
@@ -35,7 +36,17 @@ const TEXT = {
 			e04Title: "The cache expired during a long break",
 			e04Observed: "After a pause of about two hours the cache had expired, and about 410,000 tokens were written to it again.",
 			e04Fix: "After a long break from a large conversation, start a new tab with the key points instead of continuing.",
+			pollTitle: "A wait loop checked the deploy every 30 seconds",
+			pollObserved: "The agent waited for the webhook deploy by checking its status again and again; each check read the whole conversation.",
+			pollFix: "Ask the agent to run the deploy's own wait command once, or to come back when you say it is done.",
+			lintTitle: "The linter ran on the whole repository",
+			lintObserved: "Each run linted every package, though the change touched one, and the full report came back each time.",
+			lintFix: "Name the package to lint in the request, or add the scoped lint command to CLAUDE.md.",
 		},
+		hooks: ["Retry failed webhook deliveries with backoff, then deploy to staging and tell me when it is live."],
+		hooksReply: "Added retries with exponential backoff. Deployed to staging; waiting for the rollout to finish.",
+		filler: "Tidy up the order history page: keep the columns as they are, fix the spacing, and check it in the browser.",
+		fillerReply: "Fixed the spacing in the order history table and checked it in the browser.",
 	},
 	ja: {
 		checkout: ["チェックアウトのテストを実行して、失敗するものを挙げてください。", "チェックアウトのテスト一式と型チェックを実行してください。"],
@@ -59,7 +70,17 @@ const TEXT = {
 			e04Title: "長い休憩のあと、キャッシュを作り直した",
 			e04Observed: "約 2 時間の間が空いてキャッシュが切れ、約 41 万トークンを書き込み直しました。",
 			e04Fix: "大きな会話から長く離れたあとは、続けるより、新しいタブで要点から始めてください。",
+			pollTitle: "デプロイの完了を 30 秒ごとに確かめ続けた",
+			pollObserved: "Webhook のデプロイが終わるまで、エージェントが状態を何度も確かめ、そのたびに会話の全体を読み直していました。",
+			pollFix: "デプロイの完了を待つコマンドを 1 回だけ実行させるか、終わったら知らせると伝えてください。",
+			lintTitle: "リポジトリ全体に lint をかけていた",
+			lintObserved: "変更は 1 つのパッケージだけでしたが、毎回すべてのパッケージに lint をかけ、全体の結果が返っていました。",
+			lintFix: "依頼に lint するパッケージを書くか、範囲を絞った lint のコマンドを CLAUDE.md に足してください。",
 		},
+		hooks: ["失敗した Webhook の配信をバックオフ付きで再送するようにして、ステージングにデプロイし、反映されたら教えてください。"],
+		hooksReply: "指数バックオフの再送を足しました。ステージングにデプロイし、反映を待っています。",
+		filler: "注文履歴のページを整えてください。列はそのままで、余白を直して、ブラウザで確かめてください。",
+		fillerReply: "注文履歴の表の余白を直し、ブラウザで確かめました。",
 	},
 };
 
@@ -81,8 +102,42 @@ function hit(over) {
 	};
 }
 
-/** `json efficiency`'s answer for the sandbox's sessions, `now` and `lang`. */
-export function efficiencyOutput(now, sessions, lang) {
+const CHECKS = ["rework", "firstRequest", "mixedTasks", "longContext", "largeOutput", "cacheRebuild", "repeatedLookups", "startupSize", "found"];
+
+/** A task's per-check savings: `of` names the checks with a saving; every other check is small. */
+function saving(of = {}) {
+	return Object.fromEntries(CHECKS.map((c) => [c, of[c] ?? 1_200]));
+}
+
+function iso(ts) {
+	return new Date(ts * 1000).toISOString().slice(0, 16);
+}
+
+/** One task of the digest: its prompts (and the start of the last reply) as turns. */
+function task(id, session, ts, prompts, reply, of, extra = {}) {
+	const turns = prompts.map((prompt, i) => ({
+		ref: `${id}.p${i + 1}`,
+		at: iso(ts + i * 600),
+		prompt,
+		w: 40_000 + 9_000 * i,
+		calls: 6 + 3 * i,
+		tools: { read: 2 + i, edit: 1 },
+		paths: ["src/orders/history.tsx"],
+		elapsed_s: 140 + 30 * i,
+		max_ctx: 61_000 + 8_000 * i,
+		models: ["claude-opus-5"],
+		...(i > 0 && extra.rework ? { rework: [1] } : {}),
+		...(i === prompts.length - 1 && reply ? { reply, reply_ref: `${id}.r${i + 1}` } : {}),
+	}));
+	return {
+		id, session, at: iso(ts), ts, w: turns.reduce((n, t) => n + t.w, 0), calls: turns.reduce((n, t) => n + t.calls, 0),
+		start_ctx: 56_000, end_ctx: 61_000 + 8_000 * prompts.length, turn_count: prompts.length, turns, saving: saving(of),
+	};
+}
+
+/** `json efficiency`'s answer for the sandbox's sessions, `now` and `lang`; `split`: with enough
+ * other tasks that the analysis takes several requests. */
+export function efficiencyOutput(now, sessions, lang, split = false) {
 	const text = TEXT[lang] ?? TEXT.en;
 	const byId = (id) => sessions.find((s) => s.id === id);
 	const storefront = cwdOf(byId(CHECKOUT));
@@ -142,26 +197,22 @@ export function efficiencyOutput(now, sessions, lang) {
 		{ cause: "other", w: 8_020_000 }, { cause: "team", w: 2_310_000 }, { cause: "E04", w: 1_190_000 },
 		{ cause: "E01", w: 1_080_000 }, { cause: "E02", w: 650_000 }, { cause: "E08", w: 230_000 },
 	];
-	const excerpts = [
-		{
-			task: "t-mig0000001", session: MIGRATION, provider: "anthropic", w: 1_410_000, calls: 140, impact_w: 1_250_000,
-			prompts: text.migration.map((t, i) => ({ ref: `t-mig0000001.p${i + 1}`, text: t, rework: i === 0 ? [] : [1] })),
-			replies: [{ ref: "t-mig0000001.r3", text: text.migrationReply }],
-			tools: [{ tool: "Read", kind: "read", chain: "main", path: "…/docs-site/CHANGELOG.md", result_tokens: 3_100, error: false },
-				{ tool: "Write", kind: "edit", chain: "main", path: "…/docs/migrate-to-v4.md", result_tokens: 20, error: false }],
-		},
-		{
-			task: "t-inf0000002", session: TERRAFORM, provider: "anthropic", w: 820_000, calls: 30, impact_w: 720_000,
-			prompts: text.terraform.map((t, i) => ({ ref: `t-inf0000002.p${i + 1}`, text: t, rework: [] })),
-			replies: [], tools: [{ tool: "Bash", kind: "exec", chain: "main", path: null, cmd: "terraform plan", result_tokens: 2_400, error: false }],
-		},
-		{
-			task: "t-chk0000001", session: CHECKOUT, provider: "anthropic", w: 2_870_000, calls: 410, impact_w: 1_370_400,
-			prompts: text.checkout.map((t, i) => ({ ref: `t-chk0000001.p${i + 1}`, text: t, rework: [] })),
-			replies: [{ ref: "t-chk0000001.r2", text: text.checkoutReply }],
-			tools: [{ tool: "Bash", kind: "exec", chain: "main", path: null, cmd: "npm test -- checkout", result_tokens: 21_000, error: false }],
-		},
+	const tasks = [
+		task("t-inf0000001", TERRAFORM, now - 20 * HOUR, text.terraform, null, { cacheRebuild: 350_000 }),
+		task("t-inf0000002", TERRAFORM, now - 18 * HOUR, text.terraform, null, {}),
+		task("t-mig0000001", MIGRATION, now - 9 * HOUR, text.migration, text.migrationReply, { rework: 450_000 }, { rework: true }),
+		task("t-hook000001", WEBHOOKS, now - 5 * HOUR, text.hooks, text.hooksReply, { found: 260_000 }),
+		task("t-chk0000001", CHECKOUT, now - 3 * HOUR, text.checkout, text.checkoutReply, { largeOutput: 400_000, found: 120_000 }),
 	];
+	if (split) {
+		const others = claudeSessions.filter((s) => ![CHECKOUT, MIGRATION, TERRAFORM, WEBHOOKS].includes(s.id));
+		for (let i = 0; i < 90; i++) {
+			const owner = others[i % others.length] ?? claudeSessions[0];
+			const prompt = `${text.filler} `.repeat(5).trim().slice(0, 600);
+			tasks.push(task(`t-f${String(i).padStart(9, "0")}`, owner.id, now - 29 * HOUR + i * 1_100, [prompt, prompt], text.fillerReply, {}));
+		}
+	}
+	tasks.sort((a, b) => a.ts - b.ts || (a.id < b.id ? -1 : 1));
 	const sessionsOut = claudeSessions.map((s, i) => ({
 		id: s.id, name: s.name, cwd: cwdOf(s), folder: s.project, version: "2.1.280", child: false, team: i === 0,
 		calls: 120 + 40 * i, w: 2_000_000 - 150_000 * i, usd: Math.round((8 - i) * 100) / 100,
@@ -176,39 +227,49 @@ export function efficiencyOutput(now, sessions, lang) {
 				breakdown,
 				tasks: [],
 				hits,
-				excerpts,
 				baselines: { window_days: 14, inputs: 318, starts: 126, L_med: 40.9, L1_med: 35.9, C_med: 9, disabled: [] },
 				limits: { truncated: false, reason: null, collisions: 0, disabled: [], sessions_read: claudeSessions.length },
-				summary: {
-					agent: "claude", range: { ...range, windows: undefined }, totals, breakdown,
-					hits: hits.map((h) => ({ id: h.id, detector: h.detector, session: h.session, task: h.task, metrics: h.metrics, impact_w: h.impact_w,
-						needs_llm: h.needs_llm, remedy_kind: h.remedy_kind, change: h.change, targets: h.shown_targets })),
-					sessions: sessionsOut.map((s) => ({ id: s.id, name: s.name, folder: s.folder })),
-					instructions: [{ file: "…/storefront/CLAUDE.md", type: "Project", bytes: 6_400, lines: 120 }],
-					skills: 64,
-				},
+				panes: [
+					{
+						key: "claude", agent: "claude", provider: "anthropic", model: null, models: [], local: false,
+						sessions: sessionsOut.length, w: totals.w, totals, breakdown, hits: hits.map((h) => h.id),
+						digest: {
+							agent: "claude",
+							context: {
+								range: { ...range, windows: undefined }, totals,
+								baselines: { L_med: 40.9, L1_med: 35.9, C_med: 9, disabled: [] },
+								instructions: [{ file: "…/storefront/CLAUDE.md", type: "Project", bytes: 6_400, lines: 120 }],
+								skills: 64, preamble_usual: 52_000,
+							},
+							sessions: sessionsOut.map((s) => ({ id: s.id, name: s.name, folder: s.folder, preamble: 56_000, tasks: tasks.filter((t) => t.session === s.id).length })),
+							tasks: tasks.filter((t) => sessionsOut.some((s) => s.id === t.session)),
+							hints: hits.map((h) => ({ id: h.id, detector: h.detector, session: h.session, task: h.task, metrics: h.metrics, targets: h.shown_targets })),
+						},
+					},
+				],
 			},
 		},
 	};
 }
 
-/** What the stand-in `claude` answers to each check's request (a JSON object, as asked), by check;
- * a check not listed answers "ok". */
+/** The issues the stand-in `claude` reports, by check (`found`: a list), each citing the tasks it
+ * was found in. The stand-in keeps, for each request, the issues whose tasks that request sent. */
 export function efficiencyReply(lang) {
 	const text = TEXT[lang] ?? TEXT.en;
 	const r = text.reply;
+	const issue = (evidence, title, observed, cause, fix, quotes = [], action = { kind: "none" }) => ({
+		verdict: "issue", title, observed, cause, fix, evidence, quotes, action,
+	});
 	return {
-		rework: {
-			verdict: "issue", hits: ["h-7e16a0c3d4"], title: r.e16Title, observed: r.e16Observed, cause: "user_prompt", fix: r.e16Fix,
-			savingTokens: 450_000, excerpts: [{ ref: "t-mig0000001.p3", text: text.migration[2] }], action: { kind: "template" },
-		},
-		largeOutput: {
-			verdict: "issue", hits: ["h-4e01c2a9b1", "h-4e01c2a9b2"], title: r.e01Title, observed: r.e01Observed, cause: "agent_behavior", fix: r.e01Fix,
-			savingTokens: 400_000, excerpts: [{ ref: "t-chk0000001.p1", text: text.checkout[0] }], action: { kind: "agent", draft: r.e01Draft },
-		},
-		cacheRebuild: {
-			verdict: "issue", hits: ["h-3e04a7b8c9"], title: r.e04Title, observed: r.e04Observed, cause: "habit", fix: r.e04Fix,
-			savingTokens: 350_000, excerpts: [], action: { kind: "none" },
-		},
+		rework: issue(["t-mig0000001"], r.e16Title, r.e16Observed, "user_prompt", r.e16Fix, [{ ref: "t-mig0000001.p3", text: text.migration[2] }], { kind: "template" }),
+		largeOutput: issue(["t-chk0000001"], r.e01Title, r.e01Observed, "agent_behavior", r.e01Fix, [{ ref: "t-chk0000001.p1", text: text.checkout[0] }], {
+			kind: "agent",
+			draft: r.e01Draft,
+		}),
+		cacheRebuild: issue(["t-inf0000001"], r.e04Title, r.e04Observed, "habit", r.e04Fix),
+		found: [
+			issue(["t-hook000001"], r.pollTitle, r.pollObserved, "agent_behavior", r.pollFix, [{ ref: "t-hook000001.p1", text: text.hooks[0].slice(0, 120) }]),
+			issue(["t-chk0000001"], r.lintTitle, r.lintObserved, "habit", r.lintFix),
+		],
 	};
 }

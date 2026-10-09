@@ -179,15 +179,15 @@ def main(args: List[str]) -> int:
 
 def _efficiency(opts: List[str]) -> int:
     """`json efficiency [--agent A]... [--threshold P] [--budget W] [--from ISO --to ISO]
-    [--max-sessions N] [--no-excerpts]`."""
+    [--max-sessions N] [--no-digest]`."""
     agent_names: List[str] = []
     kw = {}
     from_ts = to_ts = None
     i = 0
     while i < len(opts):
         opt = opts[i]
-        if opt == '--no-excerpts':
-            kw['excerpts'] = False
+        if opt == '--no-digest':
+            kw['digest'] = False
             i += 1
             continue
         if opt not in ('--agent', '--threshold', '--budget', '--from', '--to', '--max-sessions') \

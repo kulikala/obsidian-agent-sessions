@@ -347,7 +347,7 @@ def _abs(path: str, cwd: Optional[str]) -> str:
     return path if os.path.isabs(path) or not cwd else os.path.normpath(os.path.join(cwd, path))
 
 
-# ---- Reading text back for the excerpts ------------------------------------------------------
+# ---- Reading text back for the digest --------------------------------------------------------
 
 def read_line(path: str, off) -> Optional[dict]:
     if not isinstance(off, int):

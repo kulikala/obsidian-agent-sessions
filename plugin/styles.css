@@ -4219,6 +4219,26 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 	font-size: var(--font-ui-small);
 }
 
+/* One of several issues in an opened row (the last check): its title and saving above it. */
+.agent-sessions-efficiency-finding {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-3);
+}
+
+.agent-sessions-efficiency-finding + .agent-sessions-efficiency-finding {
+	padding-top: var(--size-4-3);
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.agent-sessions-efficiency-finding-title {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: var(--size-4-2);
+}
+
 .agent-sessions-efficiency-kv dd.agent-sessions-efficiency-fix {
 	font-weight: var(--font-semibold);
 }
@@ -4304,6 +4324,28 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 	border-radius: 3px;
 	background-color: var(--interactive-accent);
 	transition: width 0.3s ease;
+}
+
+/* One request: no parts to count, a segment slides until the reply is read. */
+.agent-sessions-efficiency-progress.is-indeterminate > i {
+	width: 30%;
+	animation: agent-sessions-efficiency-slide 1.6s ease-in-out infinite;
+}
+
+@keyframes agent-sessions-efficiency-slide {
+	from {
+		transform: translateX(-100%);
+	}
+	to {
+		transform: translateX(340%);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.agent-sessions-efficiency-progress.is-indeterminate > i {
+		animation: none;
+		transform: none;
+	}
 }
 
 .agent-sessions-efficiency-prog-meta {

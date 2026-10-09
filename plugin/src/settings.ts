@@ -222,7 +222,7 @@ export interface AgentSessionsSettings {
 	efficiencyThreshold: number;
 	/** Token efficiency: otherwise, the newest calls up to this many weighted tokens. */
 	efficiencyBudget: number;
-	/** Token efficiency: the Claude Code model that analyses the excerpts. */
+	/** Token efficiency: the Claude Code model that reads the digest. */
 	efficiencyModel: EfficiencyModel;
 	/** The activity calendar's period mode. Default `session`. */
 	activityMode: ActivityMode;

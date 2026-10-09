@@ -41,7 +41,7 @@ SCRATCH=$(mktemp -d)
 node tools/screenshots/shoot.mjs --plugin-js $SCRATCH/main.js   # add --keep to leave the sandbox behind
 ```
 
-`--efficiency` shoots only the token efficiency dialog's four screens, in the dark and the light theme: `efficiency-empty-<theme>.png` (not analysed yet), `efficiency-analyzing-<theme>.png` (half-way through the checks), `efficiency-result-<theme>.png` (the result just made, its first issue open) and `efficiency-previous-<theme>.png` (the saved result opened again a day later). `--out DIR` writes the README set to DIR (DIR/ja for Japanese) instead of `docs/images/`; use it for images the README does not show:
+`--efficiency` shoots only the token efficiency dialog, in the dark and the light theme: `efficiency-empty-<theme>.png` (not analysed yet), `efficiency-analyzing-<theme>.png` (one request, every check being analysed), `efficiency-result-<theme>.png` (the result just made, the agent's own issues open), `efficiency-previous-<theme>.png` (the saved result opened again a day later) and `efficiency-analyzing-split-<theme>.png` (a larger range sent in several requests, after the first one is read). `--out DIR` writes the README set to DIR (DIR/ja for Japanese) instead of `docs/images/`; use it for images the README does not show:
 
 ```sh
 node tools/screenshots/shoot.mjs --efficiency --out "$SCRATCH/shots" --plugin-js $SCRATCH/main.js
@@ -64,11 +64,11 @@ Every run builds a throwaway sandbox under the system temp directory:
   `~/.claude` and `~/.agents` are the sandbox's; `--use-mock-keychain` keeps macOS from asking
   for a keychain that doesn't exist there.
 - **A stand-in CLI** (`fake-cli.mjs`) — the plugin's `agentSessionsPath` points at it, and it
-  answers `json scan`, `live`, `detail`, `stats`, `usage`, `activity`, and `efficiency` (made-up statistics and excerpts in `efficiency.mjs`) from the scenario (`activity` makes up a few working spans per day for every session, deterministically).
+  answers `json scan`, `live`, `detail`, `stats`, `usage`, `activity`, and `efficiency` (made-up statistics and digest in `efficiency.mjs`) from the scenario (`activity` makes up a few working spans per day for every session, deterministically).
 - **A stand-in `claude`** (`fake-claude.mjs`) — the Claude Code path in the plugin's settings;
   "Organize names and categories" runs it headless, and it answers with
   `ORGANIZE_SUGGESTIONS` from `scenario.mjs` in Claude Code's `stream-json` shape; a token
-  efficiency check (its prompt carries `<<<DATA`, with the check in `statistics.check`) gets that check's reply from `efficiency.mjs`.
+  efficiency request (its prompt carries the digest between `<<<DATA` markers) gets a verdict on every check: the issues in `efficiency.mjs` whose tasks that request sent, "ok" for the rest.
 - **A stand-in daemon** (`fake-daemon.mjs`) — listens on the sandbox's `daemon.sock`, speaks the
   plugin's framed protocol, and replays a canned transcript (`transcripts.mjs`) when a tab
   attaches; it never starts a process.

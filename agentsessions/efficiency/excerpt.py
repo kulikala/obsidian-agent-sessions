@@ -1,18 +1,16 @@
-"""Masked excerpts of the tasks behind the hits (D-9).
+"""Masking, and reading conversation text back by byte offset, for the digest (`digest.py`).
 
-For at most `MAX_TASKS` tasks (those with hits that need the model first, then by impact)
-this reads back, by byte offset, the lines the file records point at: up to `MAX_PROMPTS`
-human prompts per task (the first, the rework candidates and the last first), the start of
-each turn's last reply, and the order of tool calls (name, kind, path, the start of a
-command, the size of the result -- never the result itself).
-
-Everything that leaves this module goes through `Masker`: secrets, e-mail addresses, the
-path part of URLs, and the home folder are replaced; paths inside the vault become
-relative to it, other paths keep only their last two parts. These are patterns of formats
-(keys, tokens, addresses, paths), not of words. The total is held under `LIMIT` characters
-by dropping the tasks with the smallest impact first, then shortening the prompts.
+Everything the digest takes from a conversation goes through `Masker`: secrets, e-mail
+addresses, the path part of URLs, and the home folder are replaced -- the home folder in every
+form it takes (`/Users/<name>`, `/home/<name>`, `C:\\Users\\<name>` with either separator,
+WSL's `/mnt/c/Users/<name>`, Claude Code's encoded `-Users-<name>-…` folder names), and the user
+name alone between path separators; paths inside the vault become relative to it, paths in the
+home folder start with `~`, other paths keep only their last two parts. These are patterns of
+formats (keys, tokens, addresses, paths), not of words. `ClaudeTexts` reads a Claude Code
+prompt, reply or command back from the line a file record points at.
 """
 
+import getpass
 import json
 import os
 import re
@@ -21,14 +19,6 @@ from typing import Dict, List, Optional
 from ..sessions import detail
 from . import normalize
 
-LIMIT = 60_000
-MAX_TASKS = 8
-MAX_PROMPTS = 8
-PROMPT_CHARS = 600
-PROMPT_CHARS_SHORT = 300
-REPLY_CHARS = 200
-COMMAND_CHARS = 120
-MAX_TOOLS = 40
 
 _SECRET_RES = [
     re.compile(r'sk-ant-[A-Za-z0-9_\-]+'),
@@ -50,12 +40,54 @@ _PATH_RE = re.compile(r'(?<![\w.~\-/:])~?/(?:[^\s/\'"`<>()\[\]{},;|]+/)*[^\s/\'"
                       r'|\b[A-Za-z]:\\(?:[^\s\\\'"`<>()|]+\\)*[^\s\\\'"`<>()|]*')
 
 
+# Where a user's home folder can appear, before the user name: macOS, Linux, Windows (either
+# separator, any drive), WSL's view of a Windows home, and Claude Code's encoded project folder
+# names (`-Users-<name>-…`, `C--Users-<name>-…`).
+_HOME_PREFIXES = (r'[A-Za-z]:[\\/]+Users[\\/]+', r'/mnt/[A-Za-z]/Users/', r'/Users/', r'/home/')
+_ENCODED_PREFIX = r'(?:[A-Za-z]-)?-(?:Users|home)-'
+# Characters that end a path component.
+_END = r'(?=$|[\\/\s\'"`<>()\[\]{},;:|])'
+# Shortest user name masked on its own between path separators.
+MIN_USER_NAME = 3
+
+
+def user_names(home: str) -> List[str]:
+    """This machine's user names: the login name and the home folder's last part."""
+    names = [os.path.basename(home.rstrip('/\\'))]
+    try:
+        names.append(getpass.getuser())
+    except Exception:
+        pass
+    return sorted({n for n in names if n}, key=lambda n: (-len(n), n))
+
+
 class Masker:
     """Masks strings before they are shown to a model (see the module docstring)."""
 
-    def __init__(self, home: Optional[str] = None, vault: Optional[str] = None):
+    def __init__(self, home: Optional[str] = None, vault: Optional[str] = None,
+                 users: Optional[List[str]] = None):
         self.home = (home or os.path.expanduser('~')).rstrip('/\\')
         self.vault = vault.rstrip('/\\') if vault else None
+        names = users if users is not None else user_names(self.home)
+        alt = '|'.join(re.escape(n) for n in names)
+        self._homes = re.compile(r'(?i)(?:%s)(?:%s)%s' % ('|'.join(_HOME_PREFIXES), alt, _END)) if alt else None
+        self._encoded = re.compile(r'(?i)%s(?:%s)(?![A-Za-z0-9_])' % (_ENCODED_PREFIX, alt)) if alt else None
+        self._names = {n.lower() for n in names if len(n) >= MIN_USER_NAME}
+        long = '|'.join(re.escape(n) for n in names if len(n) >= MIN_USER_NAME)
+        # A user name alone between separators (or after one, at the end of a path).
+        self._alone = re.compile(r'(?i)(?:(?<=[\\/])(?:%s)%s|(?<![^\s\'"`<>()\[\]{},;:|])(?:%s)(?=[\\/]))'
+                                 % (long, _END, long)) if long else None
+
+    def users(self, text: str) -> str:
+        """`text` with every home folder written out as `~` and a user name left alone between
+        separators as `[user]`."""
+        if self._homes:
+            text = self._homes.sub('~', text)
+        if self._encoded:
+            text = self._encoded.sub('-~', text)
+        if self._alone:
+            text = self._alone.sub('[user]', text)
+        return text
 
     def path(self, p: Optional[str]) -> Optional[str]:
         if not p:
@@ -67,22 +99,29 @@ class Masker:
         sep = '\\' if win else '/'
         if self.vault and (full == self.vault or full.startswith(self.vault + sep)):
             rel = full[len(self.vault):].lstrip(sep)
-            return rel.replace('\\', '/') or '.'
+            return self.users(rel.replace('\\', '/') or '.')
         if full == self.home:
             return '~'
         parts = [x for x in full.split(sep) if x]
-        if len(parts) <= 2 and not full.startswith(self.home):
-            return full
-        return '…/' + '/'.join(parts[-2:])
+        if full.startswith(self.home + sep):
+            rest = [x for x in full[len(self.home):].split(sep) if x]
+            if len(rest) <= 2:
+                return self.users('~/' + '/'.join(rest))
+        elif len(parts) <= 2:
+            return self.users(full)
+        return self.users('…/' + '/'.join(parts[-2:]))
 
     def folder(self, cwd: Optional[str]) -> Optional[str]:
         """A session's folder as it is shown to a model: relative inside the vault, its name
-        alone outside."""
+        alone outside (`~` for the home folder itself)."""
         if not cwd:
             return cwd
         if self.vault and (cwd == self.vault or cwd.startswith(self.vault + os.sep)):
-            return os.path.relpath(cwd, self.vault).replace(os.sep, '/')
-        return os.path.basename(cwd.rstrip('/\\'))
+            return self.users(os.path.relpath(cwd, self.vault).replace(os.sep, '/'))
+        if cwd.rstrip('/\\') == self.home:
+            return '~'
+        name = os.path.basename(cwd.rstrip('/\\'))
+        return '[user]' if name.lower() in self._names else self.users(name)
 
     def __call__(self, text: Optional[str]) -> str:
         if not text:
@@ -91,10 +130,12 @@ class Masker:
             text = r.sub('[secret]', text)
         text = _URL_RE.sub(lambda m: m.group(1) + m.group(2) + ('/…' if m.group(3) else ''), text)
         text = _EMAIL_RE.sub('[email]', text)
+        # Home folders first, so a path in another system's form still reads as one.
+        text = self.users(text)
         text = _PATH_RE.sub(lambda m: self.path(m.group(0)), text)
         if self.home:
             text = text.replace(self.home, '~')
-        return text
+        return self.users(text)
 
 
 def read_line(path: str, off: Optional[int]) -> Optional[dict]:
@@ -147,82 +188,3 @@ def _command(path: str, tool: dict) -> Optional[str]:
             cmd = (b.get('input') or {}).get('command')
             return cmd if isinstance(cmd, str) else None
     return None
-
-
-def pick_prompts(prompts: List[dict]) -> List[dict]:
-    """At most `MAX_PROMPTS`, keeping the first, the rework candidates and the last first."""
-    if len(prompts) <= MAX_PROMPTS:
-        return prompts
-    chosen = [0, len(prompts) - 1] + [i for i, p in enumerate(prompts) if p['rework']]
-    keep: List[int] = []
-    for i in chosen + list(range(len(prompts))):
-        if i not in keep and len(keep) < MAX_PROMPTS:
-            keep.append(i)
-    return [prompts[i] for i in sorted(keep)]
-
-
-def task_excerpt(session: dict, task: dict, mask: Masker, impact_w: float, texts=None) -> dict:
-    texts = texts or ClaudeTexts()
-    prompts = []
-    for p in pick_prompts(task['prompts']):
-        text = mask(texts.prompt(session, p['off']))[:PROMPT_CHARS]
-        prompts.append({'ref': p['ref'], 'text': text, 'rework': p['rework']})
-    replies = []
-    for t in task['_turns']:
-        last = next((c for c in reversed(t['main']) if c.get('text_off') is not None), None)
-        ref = next((p['ref'] for p in task['prompts'] if p['turn'] == t['idx']), None)
-        if last is None or ref is None:
-            continue
-        text = mask(texts.reply(session, last['text_off']))[:REPLY_CHARS]
-        if text:
-            replies.append({'ref': ref.replace('.p', '.r'), 'text': text})
-    results = {r['tu']: r for r in session['results']}
-    tools = []
-    for c in task['_calls']:
-        for t in c['tools']:
-            if len(tools) >= MAX_TOOLS:
-                break
-            r = results.get(t.get('id'), {})
-            cmd = texts.command(session, t) if c['chain'] == 'main' else None
-            entry = {'tool': t['n'], 'kind': t['k'], 'chain': 'main' if c['chain'] == 'main' else 'sub',
-                     'path': mask.path(normalize.abs_path(t.get('p'), c.get('cwd'))) if t.get('p') else None,
-                     'result_tokens': r.get('est'), 'error': bool(r.get('err'))}
-            if cmd:
-                entry['cmd'] = mask(cmd)[:COMMAND_CHARS]
-            tools.append(entry)
-    return {'task': task['id'], 'session': session['id'], 'provider': session.get('provider', 'anthropic'),
-            'w': task['w'], 'calls': task['calls'], 'impact_w': round(impact_w),
-            'prompts': prompts, 'replies': replies, 'tools': tools}
-
-
-def size(items: List[dict]) -> int:
-    return len(json.dumps(items, ensure_ascii=False))
-
-
-def build(analysed: List[dict], hits: List[dict], mask: Masker, limit: int = LIMIT, texts=None) -> List[dict]:
-    """The excerpts of the range: tasks behind hits, `needs_llm` ones first, largest impact
-    next, within `limit` characters."""
-    by_task: Dict[str, dict] = {}
-    for h in hits:
-        if not h.get('task'):
-            continue
-        entry = by_task.setdefault(h['task'], {'w': 0.0, 'llm': False})
-        entry['w'] += h['impact_w']
-        entry['llm'] = entry['llm'] or h['needs_llm']
-    found = {}
-    for a in analysed:
-        for t in a['tasks']:
-            if t['id'] in by_task and t['in_range']:
-                found[t['id']] = (a['session'], t)
-    order = sorted(found, key=lambda tid: (not by_task[tid]['llm'], -by_task[tid]['w'], tid))[:MAX_TASKS]
-    items = [task_excerpt(found[tid][0], found[tid][1], mask, by_task[tid]['w'], texts) for tid in order]
-    while size(items) > limit and len(items) > 1:
-        smallest = min(range(len(items)), key=lambda i: (items[i]['impact_w'], i))
-        items.pop(smallest)
-    if size(items) > limit:
-        for it in items:
-            for p in it['prompts']:
-                p['text'] = p['text'][:PROMPT_CHARS_SHORT]
-    while size(items) > limit and items and items[0]['tools']:
-        items[0]['tools'].pop()
-    return items

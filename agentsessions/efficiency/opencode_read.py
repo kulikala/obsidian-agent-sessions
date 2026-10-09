@@ -250,7 +250,7 @@ def _size(path: str, cwd: str) -> dict:
             'lines': body.count(b'\n') + (1 if body and not body.endswith(b'\n') else 0)}
 
 
-# ---- Reading text back for the excerpts ------------------------------------------------------
+# ---- Reading text back for the digest --------------------------------------------------------
 
 def prompt_text(d: '_db.Db', message_id) -> str:
     rows = d.query('SELECT data FROM part WHERE message_id = ? ORDER BY id', (message_id,))

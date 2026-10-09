@@ -3,6 +3,7 @@ import glob
 import io
 import json
 import os
+import re
 import shutil
 import tempfile
 import unittest
@@ -108,27 +109,96 @@ class OutputTest(unittest.TestCase):
     def test_shape(self):
         c = self.claude()
         self.assertEqual(set(c), {'range', 'totals', 'providers', 'sessions', 'breakdown', 'tasks', 'hits',
-                                  'excerpts', 'baselines', 'limits', 'summary', 'panes'})
+                                  'baselines', 'limits', 'panes'})
         self.assertEqual(c['range']['rule'], 'budget')
         self.assertEqual([(p['key'], p['provider'], p['local']) for p in c['panes']], [('claude', 'anthropic', False)])
-        self.assertEqual(c['panes'][0]['summary'], c['summary'])
-        self.assertEqual(c['panes'][0]['excerpts'], c['excerpts'])
+        self.assertEqual(set(c['panes'][0]['digest']), {'agent', 'context', 'sessions', 'tasks', 'hints'})
         self.assertEqual(c['providers'][0]['provider'], 'anthropic')
         self.assertEqual(c['baselines']['disabled'], [])
         self.assertFalse(c['limits']['truncated'])
         e16 = [h for h in c['hits'] if h['detector'] == 'E16']
         self.assertEqual(len(e16), 1)
         self.assertNotIn('E16', [x['cause'] for x in c['breakdown']])
-        self.assertEqual(c['excerpts'][0]['task'], e16[0]['task'])     # needs_llm tasks first
+        self.assertNotIn('digest', self.claude('--no-digest')['panes'][0])
 
-    def test_excerpt_prompts_come_from_the_transcript(self):
+    def test_digest_has_every_task_of_the_range_oldest_first(self):
         c = self.claude()
-        ex = c['excerpts'][0]
-        self.assertEqual(ex['prompts'][0]['text'], b.text_of('en', sc.LONG)[:600])
-        self.assertTrue(all(p['ref'].startswith(ex['task'] + '.p') for p in ex['prompts']))
-        sizes = report.sent_size(c['summary'], c['excerpts'])
-        self.assertLessEqual(sizes, 60_000)
-        self.assertEqual(self.claude('--no-excerpts')['excerpts'], [])
+        d = c['panes'][0]['digest']
+        ids = [t['id'] for t in d['tasks']]
+        lo, hi = c['range']['start'], c['range']['end']
+        self.assertTrue(ids)
+        self.assertEqual(len(ids), len(set(ids)))
+        self.assertEqual([t['ts'] for t in d['tasks']], sorted(t['ts'] for t in d['tasks']))
+        self.assertTrue(all(lo - 3 * sc.DAY <= t['ts'] <= hi for t in d['tasks']))
+        # Every hit with a task is among them, and goes along as a hint.
+        self.assertTrue({h['task'] for h in c['hits'] if h['task']} <= set(ids))
+        self.assertEqual({h['id'] for h in d['hints']}, {h['id'] for h in c['hits']})
+        self.assertEqual({s['id'] for s in d['sessions']}, {t['session'] for t in d['tasks']})
+        self.assertEqual(d['context']['range']['start'], lo)
+        self.assertIn('L_med', d['context']['baselines'])
+
+    def test_digest_turns_carry_prompts_replies_and_numbers_never_tool_output(self):
+        d = self.claude()['panes'][0]['digest']
+        task = next(t for t in d['tasks'] if t['session'] == sc.SCENARIO)
+        first = task['turns'][0]
+        self.assertEqual(first['prompt'], b.text_of('en', sc.LONG)[:600])
+        self.assertTrue(first['ref'].startswith(task['id'] + '.p'))
+        self.assertGreater(first['w'], 0)
+        self.assertEqual(first['tools'].get('read'), 1)
+        self.assertIn('src/a.py', first['paths'])            # inside the vault: relative
+        rework = [t for t in task['turns'] if t.get('rework')]
+        self.assertTrue(rework)
+        blob = json.dumps(d, ensure_ascii=False)
+        self.assertNotIn('x' * 50, blob)                     # read results: never sent
+        self.assertNotIn(b.CWD + '/', blob)
+        for t in d['tasks']:
+            for turn in t['turns']:
+                self.assertLessEqual(len(turn.get('prompt') or ''), 600)
+                self.assertLessEqual(len(turn.get('reply') or ''), 200)
+
+    def test_digest_text_is_masked(self):
+        sid = b.session_uuid(990)
+        t = b.Transcript(sid, sc.NOW - 3600)
+        t.prompt('use key sk-ant-api03-abcdefgh and mail pat@example.org about /srv/app/src/deep/auth.ts')
+        t.call(text='Read https://example.com/a/b?c=1 for pat@example.org')
+        t.write(os.path.join(b.project_dir(self.projects), sid + '.jsonl'))
+        self.age()
+        d = self.claude()['panes'][0]['digest']
+        turn = next(t for t in d['tasks'] if t['session'] == sid)['turns'][0]
+        self.assertEqual(turn['prompt'], 'use key [secret] and mail [email] about …/deep/auth.ts')
+        self.assertEqual(turn['reply'], 'Read https://example.com/… for [email]')
+
+    def test_digest_never_carries_the_user_name(self):
+        import getpass
+        from agentsessions.efficiency import excerpt
+        names = [n for n in excerpt.user_names(os.path.expanduser('~')) if len(n) >= 3]
+        self.assertTrue(names)
+        name = names[0]
+        sid = b.session_uuid(991)
+        t = b.Transcript(sid, sc.NOW - 3600)
+        t.prompt('copy /Users/%s/Applications/a.app to /home/%s/x and C:\\Users\\%s\\y, '
+                 'see ~/.claude/projects/-Users-%s-work/s.jsonl and /srv/%s/data' % ((name,) * 5))
+        t.read('/srv/%s/notes/today.md' % name)
+        t.call(text='Copied it into /Users/%s/Applications.' % name)
+        t.write(os.path.join(b.project_dir(self.projects), sid + '.jsonl'))
+        self.age()
+        blob = json.dumps(self.claude()['panes'][0]['digest'], ensure_ascii=False)
+        self.assertNotIn(os.path.expanduser('~'), blob)
+        for n in names:
+            self.assertNotRegex(blob, '(?i)[/\\\\-]%s(?![A-Za-z0-9])' % re.escape(n))
+        self.assertIn('~/Applications/a.app', blob)
+
+    def test_digest_savings_per_check(self):
+        d = self.claude()['panes'][0]['digest']
+        checks = {'rework', 'firstRequest', 'mixedTasks', 'longContext', 'largeOutput', 'cacheRebuild',
+                  'repeatedLookups', 'startupSize', 'found'}
+        for t in d['tasks']:
+            self.assertEqual(set(t['saving']), checks)
+            self.assertTrue(all(isinstance(v, int) and v >= 0 for v in t['saving'].values()))
+            self.assertEqual(t['saving']['found'], round(t['w'] * 0.3))
+            self.assertLessEqual(t['saving']['rework'], t['w'])
+        heavy = next(t for t in d['tasks'] if t['session'] == sc.SCENARIO and t['turn_count'] == 4)
+        self.assertGreater(heavy['saving']['rework'], 0)
 
     def test_cache_has_no_conversation_text_and_is_reused(self):
         self.claude()

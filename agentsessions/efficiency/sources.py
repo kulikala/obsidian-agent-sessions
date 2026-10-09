@@ -2,7 +2,7 @@
 
 A source lists the sessions written since a time and turns each into a session
 (`tasks.assemble` of its main record and its sub-agent records, through the cache), gives the
-agent's usage windows, reads prompt / reply / command text back for the excerpts, and says which
+agent's usage windows, reads prompt / reply / command text back for the digest, and says which
 model the analysis of one provider's conversations would use and whether that provider runs on
 this machine.
 
