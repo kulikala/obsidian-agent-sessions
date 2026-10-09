@@ -61,13 +61,13 @@ export interface AttentionInfo {
 	icon: string;
 	cls: string;
 	labelKey: MessageKey;
-	descKey: MessageKey;
 }
 
 /**
  * The attention kinds that apply — the same classification the side panel's badge counts
  * (`statusGroup`): `needs-input` for a session asking, `needs-review` for one waiting or just
- * compacted. Empty for everything else, and for archived rows.
+ * compacted. Empty for everything else, and for archived rows. The detail pane shows a kind as a
+ * small tag beside the state's name; the state's own explanation is the only sentence.
  */
 export function attentionInfos(status: TerminalStatus, archived: boolean): AttentionInfo[] {
 	const group = statusGroup(status, archived);
@@ -78,7 +78,6 @@ export function attentionInfos(status: TerminalStatus, archived: boolean): Atten
 				icon: STATUS_GROUP_ICON["needs-input"],
 				cls: terminalStatusClass("asking"),
 				labelKey: "status.group.needsInput",
-				descKey: "detail.attention.needsInput",
 			},
 		];
 	}
@@ -89,12 +88,6 @@ export function attentionInfos(status: TerminalStatus, archived: boolean): Atten
 				icon: STATUS_GROUP_ICON["needs-review"],
 				cls: terminalStatusClass(status),
 				labelKey: "status.group.needsReview",
-				descKey:
-					status === "compacted"
-						? "detail.attention.compacted"
-						: status === "looped"
-							? "detail.attention.looped"
-							: "detail.attention.needsReview",
 			},
 		];
 	}

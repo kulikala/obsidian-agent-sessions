@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { setLang } from "../../src/i18n";
-import { activeSchedule, scheduleLines, scheduleTooltip, startsLooped, staysLooped } from "../../src/sessions/looped";
+import { activeSchedule, describeCron, scheduleLines, scheduleTooltip, startsLooped, staysLooped } from "../../src/sessions/looped";
 import type { SessionSchedule } from "../../src/types";
 
 const NOW = new Date(2026, 9, 8, 12, 0, 0);
@@ -53,19 +53,59 @@ describe("scheduleTooltip", () => {
 	});
 });
 
-describe("scheduleLines", () => {
-	it("lists each job with its own next run, and the wakeup", () => {
-		const lines = scheduleLines(schedule({ wakeup: at(12, 30) }), NOW);
-		expect(lines).toHaveLength(2);
-		expect(lines[0]).toMatch(/^Every 5 minutes — next run at /);
-		expect(lines[1]).toMatch(/^Resumes by itself/);
+describe("describeCron", () => {
+	const cases: Array<[string, string, string]> = [
+		["*/30 * * * *", "Every 30 minutes", "30 分ごと"],
+		["*/1 * * * *", "Every 1 minute", "1 分ごと"],
+		["15 * * * *", "Every hour at 15 min past", "毎時 15 分"],
+		["0 9 * * *", "Every day at 9:00", "毎日 9:00"],
+		["5 14 * * 1", "Every Monday at 14:05", "毎週 月曜 14:05"],
+		["0 8 * * 7", "Every Sunday at 8:00", "毎週 日曜 8:00"],
+		["59 13 9 10 *", "Once, on 10/9 at 13:59", "1 回だけ 10 月 9 日 13:59"],
+		["0 9 * * 1-5", "Cron expression `0 9 * * 1-5`", "cron 式 `0 9 * * 1-5`"],
+		["nonsense", "Cron expression `nonsense`", "cron 式 `nonsense`"],
+	];
+
+	it.each(cases)("%s in English", (cron, en) => {
+		setLang("en");
+		expect(describeCron(cron)).toBe(en);
 	});
 
-	it("marks a one-shot job and counts the ones not listed", () => {
-		const s = schedule({ jobs: [{ cron: "0 9 8 10 *", recurring: false, human: "", next: null }], job_count: 4 });
+	it.each(cases)("%s in Japanese", (cron, _en, ja) => {
+		setLang("ja");
+		expect(describeCron(cron)).toBe(ja);
+		setLang("en");
+	});
+});
+
+describe("scheduleLines", () => {
+	it("describes each job in words with its next run beneath, then the wakeup", () => {
+		const lines = scheduleLines(schedule({ wakeup: at(12, 30) }), NOW);
+		expect(lines).toHaveLength(2);
+		expect(lines[0].text).toBe("Every 5 minutes");
+		expect(lines[0].note).toMatch(/^Next run at /);
+		expect(lines[1].text).toMatch(/^Resumes by itself/);
+	});
+
+	it("marks a one-shot job that is not a single date, and counts the ones not listed", () => {
+		const s = schedule({ jobs: [{ cron: "0 9 * * 1-5", recurring: false, human: "", next: null }], job_count: 4 });
 		const lines = scheduleLines(s, NOW);
-		expect(lines[0]).toBe("0 9 8 10 * (once)");
-		expect(lines[1]).toBe("and 3 more");
+		expect(lines[0]).toEqual({ text: "Once, Cron expression `0 9 * * 1-5`", note: undefined });
+		expect(lines[1].text).toBe("and 3 more");
+	});
+
+	it("leaves a single-date job as it is", () => {
+		const s = schedule({ jobs: [{ cron: "59 13 9 10 *", recurring: false, human: "", next: at(13, 59) }] });
+		expect(scheduleLines(s, NOW)[0].text).toBe("Once, on 10/9 at 13:59");
+	});
+
+	it("speaks Japanese", () => {
+		setLang("ja");
+		const lines = scheduleLines(schedule({ wakeup: at(12, 30) }), NOW);
+		setLang("en");
+		expect(lines[0].text).toBe("5 分ごと");
+		expect(lines[0].note).toMatch(/^次の実行は /);
+		expect(lines[1].text).toMatch(/に自動で再開します。$/);
 	});
 });
 

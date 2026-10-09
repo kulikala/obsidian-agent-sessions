@@ -131,26 +131,31 @@ function renderBadges(
  */
 function renderState(container: HTMLElement, row: Row, status: TerminalStatus): void {
 	const wrap = container.createDiv({ cls: "agent-sessions-detail-state" });
-	const item = (icon: string, cls: string, label: string, desc: string, extra?: string) => {
-		const el = wrap.createDiv({ cls: `agent-sessions-detail-state-item${extra ? ` ${extra}` : ""}` });
+	const item = (icon: string, cls: string, label: string, desc: string, tag?: { cls: string; text: string }) => {
+		const el = wrap.createDiv({ cls: "agent-sessions-detail-state-item" });
 		const mark = el.createSpan({ cls: `agent-sessions-detail-state-mark ${cls}` });
 		setIcon(mark, icon);
-		el.createSpan({ cls: "agent-sessions-detail-state-label", text: label });
+		const head = el.createDiv({ cls: "agent-sessions-detail-state-head" });
+		head.createSpan({ cls: "agent-sessions-detail-state-label", text: label });
+		if (tag) {
+			head.createSpan({ cls: `agent-sessions-detail-state-tag ${tag.cls}`, text: tag.text });
+		}
 		el.createDiv({ cls: "agent-sessions-detail-state-desc", text: desc });
 	};
 	const state = stateInfo(status, row.archived);
-	item(state.icon, state.cls, t(state.labelKey), t(state.descKey));
-	for (const att of attentionInfos(status, row.archived)) {
-		item(att.icon, att.cls, t(att.labelKey), t(att.descKey), "is-attention");
-	}
+	const [attention] = attentionInfos(status, row.archived);
+	item(state.icon, state.cls, t(state.labelKey), t(state.descKey), attention && { cls: attention.cls, text: t(attention.labelKey) });
 	const schedule = activeSchedule(row);
 	if (schedule) {
 		const el = wrap.createDiv({ cls: "agent-sessions-detail-state-item" });
 		const mark = el.createSpan({ cls: "agent-sessions-detail-state-mark agent-sessions-row-schedule" });
 		setIcon(mark, "clock");
-		el.createSpan({ cls: "agent-sessions-detail-state-label", text: t("detail.schedule") });
+		el.createDiv({ cls: "agent-sessions-detail-state-head" }).createSpan({ cls: "agent-sessions-detail-state-label", text: t("detail.schedule") });
 		for (const line of scheduleLines(schedule)) {
-			el.createDiv({ cls: "agent-sessions-detail-state-desc", text: line });
+			el.createDiv({ cls: "agent-sessions-detail-state-desc", text: line.text });
+			if (line.note) {
+				el.createDiv({ cls: "agent-sessions-detail-state-desc is-faint", text: line.note });
+			}
 		}
 	}
 }

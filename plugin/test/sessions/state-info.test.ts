@@ -57,25 +57,23 @@ describe("attentionInfos", () => {
 		expect(attentionInfos("waiting", true)).toEqual([]);
 	});
 
-	it("uses the group's icon and a distinct explanation for compacted", () => {
+	it("uses the group's icon and name for the tag, with no sentence of its own", () => {
 		const [asking] = attentionInfos("asking", false);
 		expect(asking.icon).toBe("hand");
 		const [waiting] = attentionInfos("waiting", false);
 		const [compacted] = attentionInfos("compacted", false);
+		const [looped] = attentionInfos("looped", false);
 		expect(waiting.icon).toBe("eye");
 		expect(waiting.labelKey).toBe(compacted.labelKey);
-		expect(waiting.descKey).not.toBe(compacted.descKey);
-		for (const a of [asking, waiting, compacted]) {
-			expect(en[a.descKey]).toBeTruthy();
-			expect(ja[a.descKey]).toBeTruthy();
-		}
+		expect(looped.labelKey).toBe(waiting.labelKey);
+		expect("descKey" in waiting).toBe(false);
 	});
 });
 
 describe("looped", () => {
-	it("is a needs-review attention with its own explanation", () => {
-		expect(attentionInfos("looped", false).map((a) => a.descKey)).toEqual(["detail.attention.looped"]);
-		expect(en["detail.attention.looped"]).toBeTruthy();
-		expect(ja["detail.attention.looped"]).toBeTruthy();
+	it("is a needs-review attention and has its own state explanation", () => {
+		expect(attentionInfos("looped", false).map((a) => a.kind)).toEqual(["needs-review"]);
+		expect(en["detail.state.looped"]).toBeTruthy();
+		expect(ja["detail.state.looped"]).toBeTruthy();
 	});
 });
