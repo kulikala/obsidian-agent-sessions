@@ -305,15 +305,15 @@ Shows when each agent was working. Open it from the Session manager toolbar, the
 
 ## Token efficiency
 
-Checks your recent work for wasted tokens, from your local records, and says what to change.
+Has an agent read your recent work for wasted tokens and say what to change.
 
 1. Open the ⋯ menu of the side panel or the Session manager and choose **Analyze token efficiency**, or run **Analyze token efficiency** from the command palette.
-2. The dialog reads the records on this machine (nothing is sent) and lists the eight checks, with the range they cover ("Covers 42 sessions from the last 7 days (28.6M tokens)."). Codex and OpenCode are analysed for the provider their conversations used most.
-3. Press **Analyze**. **Details**, below it, says what is sent, how much, to which model, and which usage limit it counts toward; **Show what is sent** in it shows the exact text.
-4. The checks fill in from the top, with a progress bar and the time so far; a spinner marks the tab being analysed. **Stop analysis**, or closing the dialog, stops it; nothing of that run is kept.
+2. The dialog reads the records on this machine (nothing is sent) and lists the nine checks, with the range they cover ("Covers 42 sessions from the last 7 days (28.6M tokens)."). Codex and OpenCode are analysed for the provider their conversations used most.
+3. Press **Analyze**. **Details**, below it, says what is sent, how much and in how many requests, to which model, and which usage limit it counts toward; **Show what is sent** in it shows the exact text of every request.
+4. Every check shows **Analyzing** until the agent's reply is read ("Checking all 9 areas"). A range too large for one request is sent in several, by period ("Read 2 of 5 parts"); a check turns to **Issue found** as soon as one part finds it. The time so far and an estimate are shown; a spinner marks the tab being analysed. **Stop analysis**, or closing the dialog, stops it; nothing of that run is kept.
 5. In the result, click a row marked **Issue found** to open it. On an issue a file or setting can fix, press **Ask the agent to fix it**, check or edit the request, and press **Start**.
 
-The eight checks:
+The nine checks:
 
 - **Redoing the same fix**: the same fix redone again and again in one task.
 - **What the first request says**: whether a short first request left out the target, the expected result or how to check it, so the agent searched around or redid work.
@@ -323,13 +323,15 @@ The eight checks:
 - **Cache rebuilds**: the cache written again after a break longer than its lifetime, or after a model switch mid-conversation.
 - **Repeated lookups**: the sessions in a folder all reading the same files at the start.
 - **What every conversation loads first**: instruction files or unused skills making each conversation start larger than usual.
+- **Found by the agent**: up to three other kinds of waste the agent sees that fit none of the eight above.
 
 What the dialog shows:
 
 - **A row's state**: **Not analyzed**, **Queued**, **Analyzing**, **No issues**, **Issue found** with "Up to …" (the tokens fixing it could save at most), or **Not applicable**.
-- **No issues without a model**: a check the statistics find nothing for is settled at once. Only checks with matches are sent, one request each.
-- **Not applicable**: there are no records in the range, or too few for that check: under 100 prompts in 14 days for Redoing the same fix, under 60 first prompts for What the first request says, fewer than three sessions for Repeated lookups and What every conversation loads first.
-- **The result**: its date, how many checks found an issue and how many tokens fixing them could save, then the range, the session count, the model and what the analysis itself cost.
+- **Who decides**: the agent reads the digest of every task in the range and judges all nine checks. What the local statistics noticed goes along as a hint; it does not decide a check.
+- **Not applicable**: the range has nothing the check is about: no task with a follow-up (Redoing the same fix), no prompt (What the first request says), no conversation with more than one task or turn (Several tasks in one conversation), no tool call (Large output left in the conversation), nothing read from or written to a cache (Cache rebuilds), fewer than two sessions (Repeated lookups), no conversation start on record (What every conversation loads first).
+- **Up to …**: worked out by the plugin from the cited tasks' own numbers, with the same formulas the statistics use for that kind of waste; the agent never sets it. An issue whose tasks were not among those sent is dropped.
+- **The result**: its date, how many of the nine checks found an issue and how many tokens fixing them could save, then the range, the session count, the model and what the analysis itself cost.
 - **An issue**: **How to fix it**, **What happened**, **Cause** (**The request**, **What the agent did**, **Settings** or **How you work**), quotes from the conversations, and an action.
 - **Data behind this analysis**: the range's tokens, cost, cache hit rate and model calls, what was sent and the model used.
 - **The range**: if the 5-hour or 7-day window is used at least as much as **Usage limit threshold**, that window; otherwise the newest calls up to the **Budget** in weighted tokens, and at least the last 24 hours, at most 7 days back.

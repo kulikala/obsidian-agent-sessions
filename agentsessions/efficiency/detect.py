@@ -8,7 +8,7 @@ session's `agent` decides.
 `{id, detector, agent, session, chain, ts, task, metrics, impact_w, impact_usd,
 saving_rate, confidence, needs_llm, remedy_kind, change, targets}` plus `_contrib` for the
 breakdown. Every signal is structural (sizes, counts, times, tool kinds and targets);
-`needs_llm` marks the hits whose meaning only a model reading the excerpts can confirm.
+`needs_llm` marks the hits whose meaning only a model reading the conversations can confirm.
 """
 
 import bisect
