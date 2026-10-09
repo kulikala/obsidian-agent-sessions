@@ -1122,7 +1122,7 @@ export class TerminalView extends ItemView {
 		);
 		menu.addItem((item) =>
 			item
-				.setTitle(t("action.showUsage"))
+				.setTitle(t("action.usage"))
 				.setIcon("bar-chart-2")
 				.onClick(() => this.plugin.showUsage(id))
 		);

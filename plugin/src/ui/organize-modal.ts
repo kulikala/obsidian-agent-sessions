@@ -31,7 +31,8 @@ import { sessionDisplayName } from "../sessions/name";
 import { splitName } from "../sessions/tree";
 import { parseEnvLines, type AgentId } from "../settings";
 import { renderCategoryChip } from "./chip";
-import { dialogHeaderSpec, renderDialogHeader } from "./dialog-header";
+import { dialogFooter, dialogHeaderSpec, markDialog, renderDialogHeader } from "./dialog-header";
+import { dialogTitle } from "./dialog-title";
 import { reviewState, viewAfterRun, type OrganizeView } from "./organize-view";
 import { createRoundCheck, type RoundCheck } from "./round-check";
 import { paletteHueDeg } from "../sessions/category";
@@ -87,10 +88,11 @@ export class OrganizeModal extends Modal {
 
 	onOpen(): void {
 		this.modalEl.addClass("agent-sessions-organize");
+		markDialog(this);
 		if (this.sessionId !== undefined) {
-			renderDialogHeader(this, dialogHeaderSpec(this.plugin, "organize.titleSingle", this.plugin.index.sessions.get(this.sessionId) ?? null));
+			renderDialogHeader(this, dialogHeaderSpec(this.plugin, "action.suggestNameCategory", this.plugin.index.sessions.get(this.sessionId) ?? null));
 		} else {
-			this.setTitle(t("organize.title"));
+			this.setTitle(dialogTitle("action.organize"));
 		}
 		this.agent = pickOrganizeAgent(this.plugin.settings.agents);
 		this.statusEl = this.contentEl.createDiv({ cls: "agent-sessions-organize-status" });
@@ -136,7 +138,7 @@ export class OrganizeModal extends Modal {
 			);
 		}
 		this.startActionsEl = el.createDiv({ cls: "agent-sessions-organize-actions" });
-		const setting = new Setting(this.startActionsEl);
+		const setting = dialogFooter(this.startActionsEl);
 		setting.addButton((b) => b.setButtonText(t("action.cancel")).onClick(() => this.close()));
 		setting.addButton((b) =>
 			b
@@ -159,7 +161,7 @@ export class OrganizeModal extends Modal {
 		this.liveEl = liveRow.createSpan({ cls: "agent-sessions-organize-live-text" });
 		this.logEl = this.progressEl.createDiv({ cls: "agent-sessions-organize-log" });
 		const actions = el.createDiv({ cls: "agent-sessions-organize-actions" });
-		new Setting(actions).addButton((b) => b.setButtonText(t("action.cancel")).onClick(() => this.abort?.abort()));
+		dialogFooter(actions).addButton((b) => b.setButtonText(t("action.cancel")).onClick(() => this.abort?.abort()));
 	}
 
 	private buildResultView(el: HTMLElement): void {
@@ -188,7 +190,7 @@ export class OrganizeModal extends Modal {
 	/** The result view's buttons, which depend on how many rows are unticked. */
 	private renderActions(): void {
 		this.resultActionsEl.empty();
-		const setting = new Setting(this.resultActionsEl);
+		const setting = dialogFooter(this.resultActionsEl);
 		setting.addButton((b) => b.setButtonText(t("action.cancel")).onClick(() => this.close()));
 		const state = reviewState(this.reviewRows.map((r) => r.check.get()));
 		const unchecked = state.unchecked;

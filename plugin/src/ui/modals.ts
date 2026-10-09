@@ -3,7 +3,8 @@
 import { App, Modal, Setting, setIcon } from "obsidian";
 import type AgentSessionsPlugin from "../main";
 import { renderCategoryChip } from "./chip";
-import { dialogHeaderSpec, renderDialogHeader, type DialogHeaderSpec } from "./dialog-header";
+import { dialogFooter, dialogHeaderSpec, markDialog, renderDialogHeader, type DialogHeaderSpec } from "./dialog-header";
+import { dialogTitle } from "./dialog-title";
 import type { SessionTarget } from "./dialog-header-model";
 import { AGENT_ICON_ID } from "./icons";
 import { t, type MessageKey } from "../i18n";
@@ -452,7 +453,8 @@ export class NewSessionModal extends Modal {
 	}
 
 	onOpen(): void {
-		this.setTitle(t("modal.newSession.title"));
+		markDialog(this);
+		this.setTitle(dialogTitle("action.newSession"));
 		if (this.enabledAgents.length > 1) {
 			const setting = new Setting(this.contentEl).setName(t("modal.newSession.agentField"));
 			const pickerEl = setting.controlEl.createDiv({ cls: "agent-sessions-agent-picker" });
@@ -481,7 +483,7 @@ export class NewSessionModal extends Modal {
 			(category) => this.plugin.index.categoryColorIndex(category),
 			{ category: "", name: "" }
 		);
-		new Setting(this.contentEl).addButton((button) =>
+		dialogFooter(this.contentEl).addButton((button) =>
 			button
 				.setButtonText(t("action.start"))
 				.setCta()
@@ -519,7 +521,7 @@ export class RenameSessionModal extends Modal {
 	}
 
 	onOpen(): void {
-		renderDialogHeader(this, dialogHeaderSpec(this.plugin, "modal.renameSession.title", this.target));
+		renderDialogHeader(this, dialogHeaderSpec(this.plugin, "action.rename", this.target));
 		this.modalEl.addClass("agent-sessions-rename-modal");
 		const [category, name] = splitName(this.currentName);
 		this.field = buildComposedNameField(
@@ -528,7 +530,7 @@ export class RenameSessionModal extends Modal {
 			(c) => this.plugin.index.categoryColorIndex(c),
 			{ category: category ?? "", name }
 		);
-		new Setting(this.contentEl)
+		dialogFooter(this.contentEl)
 			.addButton((button) => button.setButtonText(t("action.cancel")).onClick(() => this.close()))
 			.addButton((button) =>
 				button
@@ -592,7 +594,7 @@ export class MoveToCategoryModal extends Modal {
 	}
 
 	onOpen(): void {
-		renderDialogHeader(this, dialogHeaderSpec(this.plugin, "modal.moveToCategory.title", this.target));
+		renderDialogHeader(this, dialogHeaderSpec(this.plugin, "action.moveToCategory", this.target));
 		const setting = makeWide(new Setting(this.contentEl).setName(t("modal.moveToCategory.categoryField")));
 		const boxEl = setting.controlEl.createDiv({ cls: "agent-sessions-name-input" });
 		this.boxEl = boxEl;
@@ -649,7 +651,7 @@ export class MoveToCategoryModal extends Modal {
 			window.setTimeout(() => suggest.close(), 0);
 		});
 
-		new Setting(this.contentEl)
+		dialogFooter(this.contentEl)
 			.addButton((button) => button.setButtonText(t("action.cancel")).onClick(() => this.close()))
 			.addButton((button) =>
 				button
@@ -743,18 +745,20 @@ export class ConfirmModal extends Modal {
 		private message: string,
 		private confirmLabel: string,
 		private onConfirm: () => void,
-		/** The title and target session of a per-session confirmation; without it the dialog is the message alone. */
+		/** The title (the label of the item that opens it) and, for a per-session confirmation, the target session.
+		 * A confirmation raised by changing a control (a dropdown, a toggle) has none: the dialog is the message alone. */
 		private header?: DialogHeaderSpec
 	) {
 		super(app);
 	}
 
 	onOpen(): void {
+		markDialog(this);
 		if (this.header) {
 			renderDialogHeader(this, this.header);
 		}
 		this.contentEl.createEl("p", { text: this.message });
-		new Setting(this.contentEl)
+		dialogFooter(this.contentEl)
 			.addButton((button) => button.setButtonText(t("action.cancel")).onClick(() => this.close()))
 			.addButton((button) =>
 				button
@@ -794,7 +798,7 @@ export class ChangeModelModal extends Modal {
 	}
 
 	onOpen(): void {
-		renderDialogHeader(this, dialogHeaderSpec(this.plugin, "modal.changeModel.title", this.target));
+		renderDialogHeader(this, dialogHeaderSpec(this.plugin, "action.changeModel", this.target));
 		const { current } = this;
 		this.contentEl.createEl("p", {
 			cls: "setting-item-description",
@@ -839,7 +843,7 @@ export class ChangeModelModal extends Modal {
 			});
 		});
 		this.contentEl.createEl("p", { cls: "setting-item-description", text: t("modal.changeModel.note") });
-		new Setting(this.contentEl)
+		dialogFooter(this.contentEl)
 			.addButton((button) => button.setButtonText(t("action.cancel")).onClick(() => this.close()))
 			.addButton((button) =>
 				button

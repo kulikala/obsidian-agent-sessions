@@ -358,7 +358,7 @@ class TestHelpSkill(SkillsTestCase):
         'status.group.done', 'status.group.archived', 'organize.suggest', 'organize.suggestAgain',
         'organize.resuggest', 'organize.apply', 'organize.showLog', 'organize.onlyIncomplete',
         'modal.newSession.nameField', 'modal.newSession.agentField', 'install.winget.python',
-        'install.winget.claude', 'install.skills', 'action.changeModel', 'action.apply', 'modal.changeModel.title',
+        'install.winget.claude', 'install.skills', 'action.changeModel', 'action.apply', 'action.analyzeEfficiency',
         'modal.changeModel.model', 'modal.changeModel.effort', 'modal.changeModel.other', 'editor.model',
         'editor.effort', 'editor.keepCurrent', 'effort.auto',
     )
