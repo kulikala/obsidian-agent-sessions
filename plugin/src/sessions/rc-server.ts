@@ -107,6 +107,14 @@ function lastIndexOf(text: string, pattern: RegExp): number {
 	return at;
 }
 
+const LINK = /https:\/\/claude\.ai\/code\?environment=[\w-]+/g;
+
+/** The last connection link (`https://claude.ai/code?environment=…`) in `text` (plain output), or `null`. */
+export function rcConnectLink(text: string): string | null {
+	const links = text.match(LINK);
+	return links ? links[links.length - 1] : null;
+}
+
 /** Whether the server's output says it refused `--permission-mode auto`, so it can start again without it. */
 export function rejectsAutoMode(text: string): boolean {
 	return /permission[- ]mode/i.test(text) && /\bauto\b/.test(text) && /invalid|not (?:available|allowed|supported)|unknown|unavailable|disabled/i.test(text);

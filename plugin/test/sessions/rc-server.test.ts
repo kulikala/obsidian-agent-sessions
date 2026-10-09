@@ -6,6 +6,7 @@ import {
 	parseProcessLinks,
 	plainOutput,
 	RC_SERVER_ID,
+	rcConnectLink,
 	rcServerClick,
 	rcServerSignal,
 	rcServerState,
@@ -111,6 +112,20 @@ describe("rcServerSignal", () => {
 		const raw = "\x1b[2J\x1b[1;1H\x1b[1mEnable Remote Control?\x1b[0m (y/n) \r\n\x1b]0;claude\x07";
 		expect(plainOutput(raw)).toBe("Enable Remote Control? (y/n) \n");
 		expect(rcServerSignal(plainOutput(raw))).toBe("question");
+	});
+});
+
+describe("rcConnectLink", () => {
+	it("finds the latest connection link", () => {
+		expect(rcConnectLink("Remote Control  https://claude.ai/code?environment=env_01ab \n")).toBe("https://claude.ai/code?environment=env_01ab");
+		expect(rcConnectLink("https://claude.ai/code?environment=old\nhttps://claude.ai/code?environment=new_2")).toBe(
+			"https://claude.ai/code?environment=new_2"
+		);
+	});
+
+	it("is null without one", () => {
+		expect(rcConnectLink("visit claude.ai/code in a browser")).toBeNull();
+		expect(rcConnectLink("")).toBeNull();
 	});
 });
 

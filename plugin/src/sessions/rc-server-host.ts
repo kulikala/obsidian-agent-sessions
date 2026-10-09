@@ -3,6 +3,7 @@
 // `RC_SERVER_ID`, with the same environment as a Claude Code tab.
 
 import { execFile } from "node:child_process";
+import { basename } from "node:path";
 import { Notice, Platform } from "obsidian";
 import type AgentSessionsPlugin from "../main";
 import { loginEnv, resolveAgentBinary, withBinDirOnPath } from "../backend/backend";
@@ -60,6 +61,8 @@ export function createRcServerControl(plugin: AgentSessionsPlugin): RcServerCont
 			}),
 		revealTerminal: () => void openRcServerTerminal(plugin),
 		fail: (message) => new Notice(t("notice.rcServerFailed", { error: message })),
+		announce: (event) =>
+			new Notice(event === "listening" ? t("notice.rcServerListening", { folder: basename(plugin.vaultPath()) }) : t("notice.rcServerDown"), 8000),
 	});
 }
 

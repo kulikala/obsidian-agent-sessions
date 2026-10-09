@@ -277,6 +277,15 @@ export class SideView extends ItemView {
 				.setIcon("gauge")
 				.onClick(() => new EfficiencyModal(this.plugin).open())
 		);
+		const link = this.plugin.rcServer.link();
+		if (link) {
+			menu.addItem((item) =>
+				item
+					.setTitle(t("action.copyRcLink"))
+					.setIcon("link")
+					.onClick(() => void navigator.clipboard.writeText(link).then(() => new Notice(t("notice.copied"))))
+			);
+		}
 		menu.addItem((item) =>
 			item
 				.setTitle(t("action.openSettings"))
