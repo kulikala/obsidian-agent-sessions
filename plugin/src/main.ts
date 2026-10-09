@@ -973,7 +973,8 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	/**
 	 * `buildAgentArgv` plus the launch settings: OpenCode set to start through ollama gets
-	 * `ollama launch opencode --model <M> -y -- …`. Refuses (a `Notice`, and a thrown error the
+	 * `ollama launch opencode --model <M> -y -- …`; a named Claude session that resumes into Remote
+	 * Control (`resumeConnectsRemoteControl`) gets `--remote-control=<name>`. Refuses (a `Notice`, and a thrown error the
 	 * caller shows in the tab) when the model is empty — otherwise ollama would open its own
 	 * model picker inside the terminal.
 	 */
@@ -987,7 +988,9 @@ export default class AgentSessionsPlugin extends Plugin {
 		if (agent === "claude") {
 			const name = fresh ? this.launchNames.get(id) : undefined;
 			this.launchNames.delete(id);
-			return buildAgentArgv(agent, bin, id, fresh, undefined, false, name, start);
+			const row = fresh ? undefined : this.index.sessions.get(id);
+			const rcName = row?.name && this.resumeConnectsRemoteControl(row.transcript) ? row.name : undefined;
+			return buildAgentArgv(agent, bin, id, fresh, undefined, false, name, start, rcName);
 		}
 		if (agent !== "opencode" || settings.launchVia !== "ollama") {
 			return buildAgentArgv(agent, bin, id, fresh, undefined, false, undefined, start);
@@ -1867,11 +1870,12 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	/**
 	 * Remote Control keeps the title a session had when Claude Code created it: a resumed session
-	 * reconnects to the same Remote Control session without sending its name, so a rename made
+	 * reconnects to the same Remote Control session, and a rename made
 	 * while it was not connected (a headless rename, Remote Control off or still connecting) stays
 	 * behind there. Once the Claude session resumed at `launchedAt` reports Remote Control
 	 * connected and idle, this sends `/rename` with its current name — the one way Claude Code
-	 * pushes a title to a connected session. Nothing happens for a session without a name or
+	 * pushes a title to a connected session (also the fallback when the launch's
+	 * `--remote-control=<name>` did not set it). Nothing happens for a session without a name or
 	 * without Remote Control.
 	 */
 	async syncRemoteControlTitle(id: string, launchedAt: number): Promise<void> {

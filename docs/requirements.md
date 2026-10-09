@@ -108,7 +108,7 @@ Agent CLIs other than Claude Code, Codex, and OpenCode (agy, …) are a future d
 
 - R-D1 Closing a tab doesn't end the session (detach). It stays listed as running, and reopening it shows the continuation.
 - R-D2 Restarting Obsidian restores every open tab to the same session. A restored tab connects only **when it's brought to front** — restoring never connects everything at once.
-- R-D3 If the daemon is still alive, restoring reconnects and replays the recent output. If not (e.g. the machine restarted), it starts with `claude --resume <id>`.
+- R-D3 If the daemon is still alive, restoring reconnects and replays the recent output. If not (e.g. the machine restarted), it starts with `claude --resume <id>`, plus `--remote-control=<name>` when the session has a name and resuming connects Remote Control.
 - R-D4 A session only ends via "End session" or `claude` exiting on its own.
 
 ### R-A State, notifications, and status

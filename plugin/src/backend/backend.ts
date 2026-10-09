@@ -644,6 +644,7 @@ export function buildAgentArgv(
 	codexNoDaemon = false,
 	name?: string,
 	start: LaunchStart = {},
+	remoteControlName?: string,
 ): string[] {
 	// A first message and a permission mode only apply to a fresh session.
 	const prompt = fresh && start.prompt ? start.prompt : undefined;
@@ -669,7 +670,9 @@ export function buildAgentArgv(
 		return [bin, ...tail];
 	}
 	if (!fresh) {
-		return [bin, "--resume", id];
+		// `--remote-control=NAME` (one argument, so a name starting with `-` stays a value) names the
+		// Remote Control session; the caller passes it only for a session that resumes into Remote Control.
+		return remoteControlName ? [bin, "--resume", id, `--remote-control=${remoteControlName}`] : [bin, "--resume", id];
 	}
 	const argv = name ? [bin, "--session-id", id, `--name=${name}`] : [bin, "--session-id", id];
 	if (start.permissionMode) {
