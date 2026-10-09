@@ -153,6 +153,22 @@ describe("buildAgentArgv", () => {
 		expect(buildAgentArgv("claude", "/bin/claude", "abc", false, undefined, false, "N")).toEqual(["/bin/claude", "--resume", "abc"]);
 	});
 
+	it("claude resume into Remote Control carries the name as one --remote-control= argument", () => {
+		expect(buildAgentArgv("claude", "/bin/claude", "abc", false, undefined, false, undefined, {}, "My name")).toEqual([
+			"/bin/claude",
+			"--resume",
+			"abc",
+			"--remote-control=My name",
+		]);
+		expect(buildAgentArgv("claude", "/bin/claude", "abc", false, undefined, false, undefined, {}, "-x")).toEqual([
+			"/bin/claude",
+			"--resume",
+			"abc",
+			"--remote-control=-x",
+		]);
+		expect(buildAgentArgv("claude", "/bin/claude", "abc", false, undefined, false, undefined, {}, undefined)).toEqual(["/bin/claude", "--resume", "abc"]);
+	});
+
 	it("claude resume: --resume", () => {
 		expect(buildAgentArgv("claude", "/bin/claude", "abc-123", false)).toEqual(["/bin/claude", "--resume", "abc-123"]);
 	});
