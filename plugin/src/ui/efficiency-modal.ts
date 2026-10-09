@@ -361,7 +361,9 @@ export class EfficiencyModal extends Modal {
 			return;
 		}
 		const go = pane.el.createDiv({ cls: `${CLS}-go` });
-		go.createEl("button", { cls: "mod-cta", text: t("efficiency.analyze") }).addEventListener("click", () => void this.analyze(pane));
+		const analyze = go.createEl("button", { cls: "mod-cta", text: t("efficiency.analyze") });
+		analyze.disabled = !pane.plan || pane.plan.parts.length === 0;
+		analyze.addEventListener("click", () => void this.analyze(pane));
 		go.createDiv({ cls: `${CLS}-sub`, text: estimateText(pane.sent.requests) });
 		this.disclosure(pane, "details", t("efficiency.details"), t("efficiency.details.sub"), (body) => {
 			body.createDiv({ text: t("efficiency.details.lead") });
@@ -489,7 +491,7 @@ export class EfficiencyModal extends Modal {
 			foot.addClass("is-end");
 		}
 		const again = foot.createEl("button", { text: t("efficiency.again") });
-		again.disabled = !hasData(pane.block);
+		again.disabled = !hasData(pane.block) || !pane.plan || pane.plan.parts.length === 0;
 		again.addEventListener("click", () => void this.analyze(pane));
 	}
 
