@@ -48,6 +48,9 @@ const dialogsOnly = process.argv.includes("--dialogs");
 // `--detail-state` shoots only the side panel's detail pane for one session per state (add `--light` for the light theme).
 const detailStateOnly = process.argv.includes("--detail-state");
 const lightTheme = process.argv.includes("--light");
+// `--loop` shoots the side panel with scheduled work: a session with a schedule, and one whose tab
+// turned "Scheduled run finished" after a scheduled turn ended in the background.
+const loopOnly = process.argv.includes("--loop");
 // `--out DIR` writes the README set's images there (DIR/<lang>/ for a language other than English).
 const outArg = process.argv.indexOf("--out");
 const README_OUT = outArg >= 0 ? resolve(process.argv[outArg + 1]) : OUT_DIR;
@@ -79,13 +82,37 @@ function freePort() {
 
 // ---- Sandbox ------------------------------------------------------------------------------
 
+/** `--loop`: which sandbox sessions have scheduled work (the migration session's last turn was a scheduled one). */
+const LOOP_PATCH = {
+	"claude-docs": {
+		scheduledTurn: true,
+		schedule: { jobs: [{ cron: "*/30 * * * *", human: "Every 30 minutes", nextMinutes: 24 }] },
+	},
+	"claude-infra": {
+		schedule: { jobs: [{ cron: "0 9 * * *", human: "Every day at 9:00", nextMinutes: 190 }], wakeupMinutes: 12 },
+	},
+};
+
+/** The side panel with the hovered session's detail, for the scheduled and the finished-run rows. */
+async function loopScenes(page, box, look) {
+	console.log("Scenes:");
+	await clearNotices(page);
+	for (const [transcript, name] of [["claude-docs", "looped"], ["claude-infra", "schedule"]]) {
+		const id = box.sessions.find((s) => s.transcript === transcript).id;
+		await page.hover(`.agent-sessions-row[data-session-id=${JSON.stringify(id)}]`);
+		await page.waitFor(`document.querySelector('.agent-sessions-detail')?.dataset.rowId === ${JSON.stringify(id)}`, { what: `the ${name} detail` });
+		await sleep(400);
+		await capture(page, `loop-${name}`, await unionOf(page, [".workspace-split.mod-right-split"]));
+	}
+}
+
 /** `look`: { lang, light, scenario } — the UI language, the theme, and the words (scenarioFor). */
 function buildSandbox(root, now, look) {
 	const home = join(root, "home");
 	const userData = join(root, "profile");
 	const vault = join(root, "vault");
 	const runtime = join(home, ".agents", "sessions");
-	const sessions = look.scenario.sessions.map((s) => ({ ...s, cwd: cwdOf(s) }));
+	const sessions = look.scenario.sessions.map((s) => ({ ...s, ...(loopOnly ? LOOP_PATCH[s.transcript] : {}), cwd: cwdOf(s) }));
 
 	for (const [path, text] of Object.entries(look.scenario.notes)) {
 		mkdirSync(dirname(join(vault, path)), { recursive: true });
@@ -775,7 +802,7 @@ async function run() {
 					}
 					continue;
 				}
-				await withObsidian({ lang, light: lightTheme, window: WINDOW, scale: 2, imageBase }, detailStateOnly ? detailStateScenes : efficiencyOnly ? efficiencyScenes : readmeScenes);
+				await withObsidian({ lang, light: lightTheme, window: WINDOW, scale: 2, imageBase }, detailStateOnly ? detailStateScenes : loopOnly ? loopScenes : efficiencyOnly ? efficiencyScenes : readmeScenes);
 			}
 		} finally {
 			server.close();
