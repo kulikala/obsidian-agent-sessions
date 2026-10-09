@@ -7,6 +7,7 @@
 import type { Row } from "../sessions/index";
 import { sessionDisplayName } from "../sessions/name";
 import type { StatusInfo } from "../sessions/statusline";
+import type { TerminalStatus } from "../sessions/terminal-status";
 import { splitName } from "../sessions/tree";
 import type { Detail, UsageResult, UsageTotal } from "../types";
 import { formatCost } from "../usage/usage";
@@ -15,6 +16,8 @@ export interface DetailContext {
 	row: Row;
 	detail: Detail | null;
 	statusInfo: StatusInfo | null;
+	/** The session's state as the row mark shows it (`resolveRowStatus`). */
+	status: TerminalStatus;
 	/** `registry.get(id)?.rc ?? null`. `null` when there's no ledger entry. */
 	rc: boolean | null;
 	/** Calls `json usage`. The caller (`side.ts`/`manager.ts`) holds `agentSessionsPath`. */

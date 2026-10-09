@@ -526,6 +526,23 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"status.group.done": "完了",
 	"status.group.archived": "アーカイブ済み",
 
+	// ---- Detail pane: what each state and attention kind means (sessions/state-info.ts) ----
+	"detail.state.connecting": "セッションを起動中、または接続中です。まもなく使えるようになります。",
+	"detail.state.working": "エージェントが直近の指示を処理しています。待つか、タブを開いて経過を確認できます。",
+	"detail.state.runningShell": "エージェントがコマンドを実行中です。終われば自動で続きに進みます。",
+	"detail.state.asking": "エージェントが質問または許可を求めていて、あなたが答えるまで先に進めません。",
+	"detail.state.waiting": "エージェントが処理を終え、次の指示を待っています。",
+	"detail.state.compacted": "会話を compact した直後で、文脈がリセットされています。準備ができたら次の指示を送ってください。",
+	"detail.state.editing": "このセッションで内蔵エディタを開いています。閉じるとエージェントに戻ります。",
+	"detail.state.idle": "接続済みで、次の指示を受け付けられます。",
+	"detail.state.detached": "このセッションは今は動いていません。行をクリックするとタブを開いて再開できます。",
+	"detail.state.exited": "エージェントは終了しました。行をクリックするとタブを開き、結果の確認や再開ができます。",
+	"detail.state.error": "セッションを起動できなかったか、デーモンに届きませんでした。行をクリックすると詳細を確認できます。",
+	"detail.state.archived": "アーカイブ済みで、通常の一覧には出ません。行のメニューから戻せます。",
+	"detail.attention.needsInput": "このセッションはあなたの回答を待っています。開いて答えると、エージェントが続きに進みます。",
+	"detail.attention.needsReview": "別の作業中にエージェントの処理が終わりました。タブを開いて結果を確認してください。",
+	"detail.attention.compacted": "文脈がリセットされたところです。タブを開いて確認し、次の指示を送ってください。",
+
 	// ---- Session analytics modal (usage/usage-modal.ts) ----
 	"usage.title": "セッション解析結果：{name}",
 	"usage.loading": "読み込み中…",

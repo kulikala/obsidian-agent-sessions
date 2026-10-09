@@ -1228,6 +1228,7 @@ export class ManagerView extends ItemView {
 			row,
 			detail,
 			statusInfo: this.plugin.index.statusline.get(id),
+			status: resolveRowStatus(this.plugin, row),
 			rc: this.plugin.index.registry.get(id)?.rc ?? null,
 			fetchUsage: () => usage(this.plugin.agentSessionsPath(), this.plugin.vaultPath(), id),
 			categoryColorIndex: (category) => this.plugin.index.categoryColorIndex(category),
