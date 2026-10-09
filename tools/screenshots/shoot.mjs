@@ -47,6 +47,8 @@ const efficiencyOnly = process.argv.includes("--efficiency");
 const dialogsOnly = process.argv.includes("--dialogs");
 // `--detail-state` shoots only the side panel's detail pane for one session per state (add `--light` for the light theme).
 const detailStateOnly = process.argv.includes("--detail-state");
+// `--rc` shoots the side panel's Remote Control toggle (off, starting, listening, down) with its tooltip, in the dark and the light theme.
+const rcOnly = process.argv.includes("--rc");
 const lightTheme = process.argv.includes("--light");
 // `--out DIR` writes the README set's images there (DIR/<lang>/ for a language other than English).
 const outArg = process.argv.indexOf("--out");
@@ -416,6 +418,52 @@ async function detailStateScenes(page, box, look) {
 }
 
 /**
+ * The Remote Control toggle in each state. The stand-in daemon runs no server, so the state is set on
+ * the plugin's toggle directly, with its daemon refreshes held off.
+ */
+async function rcScenes(page, box, look) {
+	const theme = look.light ? "light" : "dark";
+	const control = `${PLUGIN}.rcServer`;
+	await page.evaluate(`${control}.sync = () => undefined`);
+	const server = `{ id: "rc-server", agent: "claude", cwd: "", pid: 1, startedAt: 0, clients: 0, exited: null, exitedAt: null }`;
+	const states = {
+		off: `${PLUGIN}.settings.rcServerEnabled = false; c.daemon = null; c.signal = null;`,
+		starting: `${PLUGIN}.settings.rcServerEnabled = true; c.daemon = ${server}; c.signal = null;`,
+		listening: `${PLUGIN}.settings.rcServerEnabled = true; c.daemon = ${server}; c.signal = "ready";`,
+		down: `${PLUGIN}.settings.rcServerEnabled = true; c.daemon = null; c.signal = null;`,
+	};
+	console.log("Scenes:");
+	await clearNotices(page);
+	for (const [state, set] of Object.entries(states)) {
+		await page.evaluate(`(() => { const c = ${control}; ${set} c.update(); })()`);
+		// The real pointer moving onto it doesn't bring Obsidian's tooltip up in the sandbox's window;
+		// mouse events dispatched on the element do (all as `MouseEvent`: a synthetic `PointerEvent` leaves it down).
+		await page.hover(".agent-sessions-side .agent-sessions-rc-toggle");
+		await page.evaluate(`(() => {
+			const e = document.querySelector('.agent-sessions-side .agent-sessions-rc-toggle');
+			const r = e.getBoundingClientRect();
+			const at = { clientX: r.x + 5, clientY: r.y + 5 };
+			e.dispatchEvent(new MouseEvent('pointerover', { bubbles: true, ...at }));
+			e.dispatchEvent(new MouseEvent('pointerenter', at));
+			e.dispatchEvent(new MouseEvent('mouseover', { bubbles: true, ...at }));
+			e.dispatchEvent(new MouseEvent('mouseenter', at));
+			e.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, ...at }));
+		})()`);
+		await page.waitFor(`document.querySelector('.tooltip')`, { what: `the ${state} tooltip` });
+		await sleep(300);
+		const area = await unionOf(page, [".agent-sessions-side .agent-sessions-nav", ".tooltip"]);
+		const margin = 16;
+		await capture(page, `rc-${state}-${theme}`, {
+			x: Math.max(0, area.x - margin),
+			y: Math.max(0, area.y - margin),
+			width: Math.min(look.window.width, area.width + 2 * margin),
+			height: Math.min(look.window.height, area.height + 2 * margin),
+		});
+		await page.evaluate(`document.querySelectorAll('.tooltip').forEach((t) => t.remove())`);
+	}
+}
+
+/**
  * "Organize names and categories": every session already has a category, so the "only unnamed"
  * switch goes off; the stand-in claude answers; one row is unticked and given a comment.
  */
@@ -769,9 +817,9 @@ async function run() {
 		try {
 			for (const lang of languages) {
 				readmeOutDir = lang === "en" ? README_OUT : join(README_OUT, lang);
-				if (dialogsOnly) {
+				if (dialogsOnly || rcOnly) {
 					for (const light of [false, true]) {
-						await withObsidian({ lang, light, window: WINDOW, scale: 2, imageBase }, dialogScenes);
+						await withObsidian({ lang, light, window: WINDOW, scale: 2, imageBase }, rcOnly ? rcScenes : dialogScenes);
 					}
 					continue;
 				}
