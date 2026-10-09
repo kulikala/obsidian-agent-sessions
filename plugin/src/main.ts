@@ -420,6 +420,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.register(this.index.registry.onIdle((id) => void this.notifyIdle(id)));
 
 		this.rcServer = createRcServerControl(this);
+		void this.rcServer.load();
 		this.registerEvent(this.events.on("settings-changed", () => this.rcServer.settingsChanged()));
 
 		// The welcome guide's floating window and what it watches the guide's session for.

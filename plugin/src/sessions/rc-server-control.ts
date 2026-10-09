@@ -26,6 +26,8 @@ export interface RcServerWatch {
 export interface RcServerDeps {
 	enabled(): boolean;
 	setEnabled(on: boolean): Promise<void>;
+	/** The daemon's session list; `[]` when the daemon isn't running (then neither is the server). */
+	list(): Promise<DaemonSession[]>;
 	/** Starts the server in the daemon (after forgetting an ended one) and returns its daemon
 	 * session. `autoMode` adds `--permission-mode auto`. */
 	launch(autoMode: boolean): Promise<DaemonSession | null>;
@@ -48,6 +50,8 @@ export interface RcServerDeps {
 export class RcServerControl {
 	private daemon: DaemonSession | null = null;
 	private launching = false;
+	/** A daemon list has come in (`sync`): until then a missing server isn't `down`. */
+	private known = false;
 	private signal: RcServerSignal = null;
 	private output = "";
 	/** The server's last connection link. */
@@ -96,11 +100,24 @@ export class RcServerControl {
 		return () => this.listeners.delete(cb);
 	}
 
+	/** Asks the daemon for its list at once, so the state is settled without waiting for the first
+	 * refresh. Never starts the server. */
+	async load(): Promise<void> {
+		if (this.known) {
+			return;
+		}
+		const sessions = await this.deps.list().catch(() => null);
+		if (sessions && !this.known) {
+			this.sync(sessions);
+		}
+	}
+
 	/** The daemon's list after a refresh. Follows a running server's output; never starts one. */
 	sync(sessions: readonly DaemonSession[]): void {
 		if (this.disposed) {
 			return;
 		}
+		this.known = true;
 		this.daemon = findRcServer(sessions);
 		if (this.daemon?.exited === null) {
 			void this.ensureWatch();
@@ -117,7 +134,7 @@ export class RcServerControl {
 
 	/** A click on the toggle. */
 	async click(): Promise<void> {
-		if (this.launching) {
+		if (this.launching || !this.known) {
 			return;
 		}
 		switch (rcServerClick(this.current)) {
@@ -159,7 +176,9 @@ export class RcServerControl {
 		this.closeWatch();
 		this.update();
 		try {
-			this.daemon = await this.deps.launch(true);
+			// A server the daemon still runs (one this view hadn't heard of yet) is followed, not started twice.
+			const running = findRcServer(await this.deps.list());
+			this.daemon = running?.exited === null ? running : await this.deps.launch(true);
 			await this.ensureWatch();
 		} catch (err) {
 			this.deps.fail(err instanceof Error ? err.message : String(err));
@@ -268,6 +287,7 @@ export class RcServerControl {
 			enabled: this.deps.enabled(),
 			daemon: this.daemon,
 			launching: this.launching,
+			known: this.known,
 			signal: this.signal,
 		});
 	}
@@ -282,7 +302,7 @@ export class RcServerControl {
 		if (next === "listening" && this.current !== "listening" && this.announceListening) {
 			this.announceListening = false;
 			this.deps.announce("listening");
-		} else if (next === "down" && this.lastRunning && !running) {
+		} else if (next === "down" && this.current === "listening") {
 			this.announceListening = false;
 			this.deps.announce("down");
 		}

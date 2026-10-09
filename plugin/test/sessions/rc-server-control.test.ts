@@ -13,6 +13,7 @@ interface Harness {
 	control: RcServerControl;
 	deps: RcServerDeps;
 	launch: ReturnType<typeof vi.fn>;
+	list: ReturnType<typeof vi.fn>;
 	kill: ReturnType<typeof vi.fn>;
 	confirmStop: ReturnType<typeof vi.fn>;
 	revealTerminal: ReturnType<typeof vi.fn>;
@@ -24,7 +25,11 @@ interface Harness {
 	settings: { enabled: boolean };
 }
 
-function harness(opts: { enabled?: boolean; atWork?: number; confirm?: boolean; launched?: DaemonSession } = {}): Harness {
+function harness(
+	opts: { enabled?: boolean; atWork?: number; confirm?: boolean; launched?: DaemonSession; listed?: DaemonSession[]; unsynced?: boolean } = {}
+): Harness {
+	const listed = opts.listed ?? [];
+	const list = vi.fn(async () => listed);
 	const settings = { enabled: opts.enabled ?? false };
 	let onOutput: (text: string) => void = () => undefined;
 	let onExit: () => void = () => undefined;
@@ -38,6 +43,7 @@ function harness(opts: { enabled?: boolean; atWork?: number; confirm?: boolean; 
 		setEnabled: async (on) => {
 			settings.enabled = on;
 		},
+		list,
 		launch,
 		kill,
 		watch: async (out, exit) => {
@@ -51,8 +57,13 @@ function harness(opts: { enabled?: boolean; atWork?: number; confirm?: boolean; 
 		fail: () => undefined,
 		announce,
 	};
+	const control = new RcServerControl(deps);
+	if (!opts.unsynced) {
+		control.sync(listed);
+	}
 	return {
-		control: new RcServerControl(deps),
+		list,
+		control,
 		deps,
 		launch,
 		kill,
@@ -173,6 +184,55 @@ describe("RcServerControl: clicks", () => {
 	});
 });
 
+describe("RcServerControl: before the first daemon list", () => {
+	it("isn't down, and ignores clicks, until the daemon list comes in", async () => {
+		const h = harness({ enabled: true, unsynced: true });
+		expect(h.control.state()).toBe("starting");
+		await h.control.click();
+		expect(h.launch).not.toHaveBeenCalled();
+		h.control.sync([]);
+		expect(h.control.state()).toBe("down");
+		expect(h.announce).not.toHaveBeenCalled();
+	});
+
+	it("asks the daemon at once on load, and follows a running server without starting it", async () => {
+		const h = harness({ enabled: true, unsynced: true, listed: [server()] });
+		await h.control.load();
+		await settle();
+		expect(h.list).toHaveBeenCalledTimes(1);
+		expect(h.control.state()).toBe("starting");
+		h.output("https://claude.ai/code?environment=env_1");
+		expect(h.control.state()).toBe("listening");
+		expect(h.launch).not.toHaveBeenCalled();
+		expect(h.announce).not.toHaveBeenCalled();
+	});
+
+	it("settles as down on load when the daemon has no server", async () => {
+		const h = harness({ enabled: true, unsynced: true });
+		await h.control.load();
+		expect(h.control.state()).toBe("down");
+		expect(h.launch).not.toHaveBeenCalled();
+	});
+});
+
+describe("RcServerControl: no second server", () => {
+	it("follows the server the daemon still runs instead of starting another", async () => {
+		const h = harness({ enabled: true });
+		expect(h.control.state()).toBe("down");
+		h.list.mockResolvedValueOnce([server({ pid: 37637 })]);
+		await h.control.click();
+		expect(h.launch).not.toHaveBeenCalled();
+		expect(h.control.running()).toBe(true);
+	});
+
+	it("starts one when the daemon's list has only an ended server", async () => {
+		const h = harness({ enabled: true });
+		h.list.mockResolvedValueOnce([server({ exited: 1, exitedAt: 9 })]);
+		await h.control.click();
+		expect(h.launch).toHaveBeenCalledTimes(1);
+	});
+});
+
 describe("RcServerControl: notices and the link", () => {
 	const link = "https://claude.ai/code?environment=env_01AbC-9";
 
@@ -206,6 +266,17 @@ describe("RcServerControl: notices and the link", () => {
 		h.control.sync([]);
 		expect(h.announce.mock.calls).toEqual([["down"]]);
 		expect(h.control.link()).toBeNull();
+	});
+
+	it("announces a stop only from listening, not from a server that never listened", async () => {
+		const h = harness({ enabled: true });
+		h.control.sync([server()]);
+		await settle();
+		expect(h.control.state()).toBe("starting");
+		h.exit();
+		await settle();
+		expect(h.control.state()).toBe("down");
+		expect(h.announce).not.toHaveBeenCalled();
 	});
 
 	it("says nothing when on at load without a server, or when turned off", async () => {
