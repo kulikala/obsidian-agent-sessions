@@ -758,15 +758,17 @@
 	flex: 1 1 auto;
 }
 
-/* The side panel's Remote Control toggle: an icon and a small switch. */
+/* The side panel's Remote Control toggle: "rc" (as in a row's "rc ○") and a small switch, which alone shows the state. */
 .agent-sessions-rc-toggle {
 	display: flex;
 	align-items: center;
 	gap: var(--size-4-1);
 }
 
-.agent-sessions-rc-icon {
-	display: flex;
+.agent-sessions-rc-label {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	line-height: 1;
 }
 
 .agent-sessions-rc-track {
@@ -793,11 +795,6 @@
 	left: 12px;
 }
 
-.agent-sessions-rc-toggle.is-listening,
-.agent-sessions-rc-toggle.is-starting {
-	color: var(--interactive-accent);
-}
-
 .agent-sessions-rc-toggle.is-listening .agent-sessions-rc-track,
 .agent-sessions-rc-toggle.is-starting .agent-sessions-rc-track {
 	background-color: var(--interactive-accent);
@@ -808,10 +805,6 @@
 }
 
 /* On, but the server isn't running: the warning colour, and a hollow knob. */
-.agent-sessions-rc-toggle.is-down {
-	color: var(--text-warning);
-}
-
 .agent-sessions-rc-toggle.is-down .agent-sessions-rc-track {
 	background-color: var(--text-warning);
 }
