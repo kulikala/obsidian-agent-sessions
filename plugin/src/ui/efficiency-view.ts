@@ -1,28 +1,34 @@
-// The token efficiency dialog's pure part: its states, what each failure means, and which findings
-// a pane shows. The whole dialog goes `stats` (reading the records) -> `ready` (or `failed`); after
-// that each pane (one per analysed agent) goes `idle` -> `working` -> `result` or `failed`, and a
-// failed or cancelled analysis returns to the statistics' own findings, never to nothing.
+// The token efficiency dialog's pure part: its states, the eight check rows, what each failure
+// means, and the lines the screens show. The dialog reads the records first (`stats`, then
+// `ready` or `failed`); after that each pane shows one of three screens: `empty` (not analysed
+// yet), `analyzing`, or `result` (the analysis just made, or the saved one -- the same screen).
+// Stopping an analysis, or one that fails, goes back to the saved result when there is one and
+// to `empty` otherwise; a stopped analysis keeps nothing of its own.
 
 import { HeadlessError } from "../backend/headless";
-import { getLang, t } from "../i18n";
+import { getLang, t, type MessageKey } from "../i18n";
 import { formatDateTimeShort } from "../i18n/datetime";
+import type { EffRange, Finding } from "../sessions/efficiency";
+import { CHECKS, type CheckId } from "../sessions/efficiency-checks";
+import type { SavedCheck } from "../sessions/efficiency-store";
 import { parseEvents } from "../sessions/organize-agent";
 
 export type OverallState = "stats" | "ready" | "failed";
-export type PaneState = "idle" | "working" | "result" | "failed";
+export type Screen = "empty" | "analyzing" | "result";
 
 export interface DialogState {
 	overall: OverallState;
-	panes: Record<string, PaneState>;
+	panes: Record<string, Screen>;
 }
 
 export type DialogEvent =
-	| { type: "statsDone"; agents: string[] }
+	/** The records are read: the panes, and which of them have a saved result. */
+	| { type: "statsDone"; agents: string[]; withResult: string[] }
 	| { type: "statsFailed" }
 	| { type: "start"; agent: string }
-	| { type: "succeeded"; agent: string }
-	| { type: "failed"; agent: string }
-	| { type: "cancelled"; agent: string }
+	| { type: "finished"; agent: string }
+	/** Stopped by the user or by a failure; `hasResult`: a saved result to go back to. */
+	| { type: "stopped"; agent: string; hasResult: boolean }
 	| { type: "restart" };
 
 export function initialState(): DialogState {
@@ -34,31 +40,175 @@ export function transition(state: DialogState, event: DialogEvent): DialogState 
 	switch (event.type) {
 		case "restart":
 			return initialState();
-		case "statsDone":
+		case "statsDone": {
 			if (state.overall !== "stats") {
 				return state;
 			}
-			return { overall: "ready", panes: Object.fromEntries(event.agents.map((a) => [a, "idle" as PaneState])) };
+			const withResult = new Set(event.withResult);
+			return { overall: "ready", panes: Object.fromEntries(event.agents.map((a) => [a, withResult.has(a) ? "result" : "empty"])) };
+		}
 		case "statsFailed":
 			return state.overall === "stats" ? { overall: "failed", panes: {} } : state;
 	}
-	const pane = state.panes[event.agent];
-	if (state.overall !== "ready" || pane === undefined) {
+	const screen = state.panes[event.agent];
+	if (state.overall !== "ready" || screen === undefined) {
 		return state;
 	}
-	let next: PaneState = pane;
-	if (event.type === "start" && pane !== "working") {
-		next = "working";
-	} else if (pane === "working") {
-		next = event.type === "succeeded" ? "result" : event.type === "failed" ? "failed" : event.type === "cancelled" ? "idle" : pane;
+	let next: Screen = screen;
+	if (event.type === "start" && screen !== "analyzing") {
+		next = "analyzing";
+	} else if (screen === "analyzing") {
+		next = event.type === "finished" ? "result" : event.type === "stopped" ? (event.hasResult ? "result" : "empty") : screen;
 	}
-	return next === pane ? state : { ...state, panes: { ...state.panes, [event.agent]: next } };
+	return next === screen ? state : { ...state, panes: { ...state.panes, [event.agent]: next } };
 }
 
-/** Which findings a pane shows: the model's after a successful analysis, the statistics' own
- * otherwise (before, during, and after a failed or cancelled one). */
-export function shownFindings(pane: PaneState): "llm" | "stats" {
-	return pane === "result" ? "llm" : "stats";
+// ---- The eight rows ------------------------------------------------------------------------------
+
+/** A row's state: not analysed, waiting for its turn, being analysed, no issues, an issue, or not
+ * applicable. */
+export type CheckState = "idle" | "waiting" | "running" | "ok" | "issue" | "na";
+
+export interface Row {
+	check: CheckId;
+	state: CheckState;
+	finding: Finding | null;
+}
+
+/** The rows before any analysis: every check not analysed. */
+export function idleRows(): Row[] {
+	return CHECKS.map((c) => ({ check: c.id, state: "idle", finding: null }));
+}
+
+/** The rows as an analysis starts: every check waiting its turn. */
+export function waitingRows(): Row[] {
+	return CHECKS.map((c) => ({ check: c.id, state: "waiting", finding: null }));
+}
+
+/** `rows` with row `index` replaced. */
+export function setRow(rows: Row[], index: number, state: CheckState, finding: Finding | null = null): Row[] {
+	return rows.map((r, i) => (i === index ? { ...r, state, finding: state === "issue" ? finding : null } : r));
+}
+
+/** Whether a row has its answer. */
+export function isSettled(state: CheckState): boolean {
+	return state === "ok" || state === "issue" || state === "na";
+}
+
+/** How many checks have their answer. */
+export function doneCount(rows: Row[]): number {
+	return rows.filter((r) => isSettled(r.state)).length;
+}
+
+/** The rows of a saved result, in the checks' order (a check it doesn't have: not applicable). */
+export function savedRows(checks: SavedCheck[]): Row[] {
+	return CHECKS.map((c) => {
+		const saved = checks.find((x) => x.check === c.id);
+		if (!saved) {
+			return { check: c.id, state: "na" as CheckState, finding: null };
+		}
+		return { check: c.id, state: saved.state === "issue" && !saved.finding ? "ok" : saved.state, finding: saved.state === "issue" ? saved.finding : null };
+	});
+}
+
+/** What a finished analysis saves of its rows. */
+export function rowsToSave(rows: Row[]): SavedCheck[] {
+	return rows.map((r) => ({ check: r.check, state: r.state === "issue" ? "issue" : r.state === "na" ? "na" : "ok", finding: r.finding }));
+}
+
+/** The issues, and the tokens fixing all of them could save at most. */
+export function summarize(rows: Row[]): { issues: number; savingW: number } {
+	let issues = 0;
+	let savingW = 0;
+	for (const r of rows) {
+		if (r.state === "issue" && r.finding) {
+			issues += 1;
+			savingW += r.finding.savingW;
+		}
+	}
+	return { issues, savingW };
+}
+
+// ---- Words -------------------------------------------------------------------------------------
+
+export function checkName(id: CheckId): string {
+	return t(`efficiency.check.${id}.name` as MessageKey);
+}
+
+export function checkDesc(id: CheckId): string {
+	return t(`efficiency.check.${id}.desc` as MessageKey);
+}
+
+export function stateLabel(state: CheckState): string {
+	return t(`efficiency.state.${state}` as MessageKey);
+}
+
+/** How far back the range reaches: "last 7 days", "last 30 hours" (in hours below two days);
+ * `meta`: as the first part of a meta line ("Last 7 days"). */
+export function spanLabel(range: Pick<EffRange, "start" | "end">, meta = false): string {
+	const hours = Math.max(1, Math.round((range.end - range.start) / 3600));
+	const days = hours >= 48 ? Math.round(hours / 24) : null;
+	if (meta) {
+		return days ? t("efficiency.meta.days", { count: days }) : t("efficiency.meta.hours", { count: hours });
+	}
+	return days ? t("efficiency.span.days", { count: days }) : t("efficiency.span.hours", { count: hours });
+}
+
+/** A number shown in this dialog, short, in the units the language counts in
+ * (`efficiency.number.units`: Japanese 万 and 億, "45 万", "2,860 万"; English K, M and B,
+ * "450K", "28.6M"), with at most one decimal and none when it is 0. Below the smallest unit the
+ * number is written out ("8,500"). */
+export function compactNumber(n: number): string {
+	const lang = getLang();
+	const group = (value: number, digits: number): string =>
+		new Intl.NumberFormat(lang, { maximumFractionDigits: digits, minimumFractionDigits: 0 }).format(value);
+	// "1e9:{n}B|1e6:{n}M|1e3:{n}K", largest first. A number just under a unit that would round up
+	// to it in the next smaller one (999,950: "1,000K") takes the larger unit ("1M").
+	const units = t("efficiency.number.units")
+		.split("|")
+		.map((entry) => [Number(entry.slice(0, entry.indexOf(":"))), entry.slice(entry.indexOf(":") + 1)] as const)
+		.filter(([size]) => size > 0);
+	const abs = Math.abs(n);
+	for (const [i, [size, form]] of units.entries()) {
+		const next = units[i + 1]?.[0];
+		if (abs >= size || (next !== undefined && Math.round((abs / next) * 10) / 10 >= size / next)) {
+			return form.replace("{n}", group(Math.round((n / size) * 10) / 10, 1));
+		}
+	}
+	return group(Math.round(n), 0);
+}
+
+/** An amount of tokens as the dialog writes it: "120 万トークン", "8,500 トークン", "1.2M tokens". */
+export function tokensText(n: number): string {
+	const number = compactNumber(n);
+	return t(/\d$/.test(number) ? "efficiency.tokens" : "efficiency.tokensUnit", { n: number, count: Math.round(n) });
+}
+
+/** "Covers 42 sessions from the last 7 days (28.6M tokens)." */
+export function targetLine(range: Pick<EffRange, "start" | "end">, sessions: number, tokens: number): string {
+	return t("efficiency.target", { span: spanLabel(range), sessions, tokens: tokensText(tokens) });
+}
+
+/** The summary under a result's heading. */
+export function summaryText(rows: Row[]): string {
+	const { issues, savingW } = summarize(rows);
+	return issues > 0 ? t("efficiency.result.summary", { count: issues, tokens: tokensText(savingW) }) : t("efficiency.result.none");
+}
+
+export function resultHeading(at: number, now = Date.now() / 1000): string {
+	return t("efficiency.result.heading", { date: formatDateTimeShort(at, getLang(), now) });
+}
+
+/** "1 min 12 s elapsed · about 1–3 min". */
+export function elapsedText(seconds: number): string {
+	const s = Math.max(0, Math.floor(seconds));
+	const time = s >= 60 ? t("efficiency.elapsed.minutes", { m: Math.floor(s / 60), s: s % 60 }) : t("efficiency.elapsed.seconds", { s });
+	return t("efficiency.elapsed", { time });
+}
+
+/** Parts of a meta line, joined as the language joins them. */
+export function metaLine(parts: (string | null | undefined)[]): string {
+	return parts.filter((p): p is string => !!p).join(t("efficiency.meta.sep"));
 }
 
 // ---- Failures (D-11) -------------------------------------------------------------------------
@@ -169,16 +319,11 @@ export function hasData(block: { totals: { calls: number } }): boolean {
 	return block.totals.calls > 0;
 }
 
-/** Whether pressing Analyze again may get past a failure (not when the agent can't be started). */
-export function retryHelps(failure: AnalysisFailure): boolean {
-	return failure.kind !== "agentUnavailable";
-}
-
-/** The message for a failed analysis: what went wrong (the band adds what stays shown). */
-export function analysisFailureMessage(failure: AnalysisFailure, agent: string): string {
+/** The message for a failed analysis, or `null` for one the user stopped (nothing to say). */
+export function analysisFailureMessage(failure: AnalysisFailure, agent: string): string | null {
 	switch (failure.kind) {
 		case "cancelled":
-			return t("efficiency.error.cancelled");
+			return null;
 		case "agentUnavailable":
 			return t("efficiency.error.agentUnavailable", { agent, detail: failure.detail });
 		case "rateLimit":
@@ -192,159 +337,3 @@ export function analysisFailureMessage(failure: AnalysisFailure, agent: string):
 	}
 }
 
-// ---- What the pane says (the status band, the steps, the list's heading) -----------------------
-
-/** Where the findings a pane shows come from: the statistics alone, the analysis just made, or the
- * saved result of an earlier one. */
-export type ListSource = "stats" | "llm" | "previous";
-
-/** The source of a pane's list: the analysis after a successful one; the previous result (when
- * there is one) while idle or after a failure; the statistics otherwise, including while
- * analysing. */
-export function listSource(pane: PaneState, hasPrevious: boolean): ListSource {
-	if (shownFindings(pane) === "llm") {
-		return "llm";
-	}
-	return pane !== "working" && hasPrevious ? "previous" : "stats";
-}
-
-export interface ListHeading {
-	source: ListSource;
-	text: string;
-	/** The list is the statistics' while an analysis runs: dimmed and not clickable. */
-	busy: boolean;
-}
-
-/** The heading over a pane's list, which always says where the findings come from. */
-export function listHeading(
-	pane: PaneState,
-	previous: { savedAt: number } | null,
-	result: { at: number; model: string } | null
-): ListHeading {
-	const source = listSource(pane, previous !== null);
-	const date = (at: number): string => formatDateTimeShort(at, getLang());
-	if (source === "llm") {
-		return {
-			source,
-			text: result ? t("efficiency.list.result", { date: date(result.at), model: result.model }) : t("efficiency.list.resultUndated"),
-			busy: false,
-		};
-	}
-	if (source === "previous" && previous) {
-		return { source, text: t("efficiency.list.previous", { date: date(previous.savedAt) }), busy: false };
-	}
-	return { source: "stats", text: t(pane === "working" ? "efficiency.list.statsWorking" : "efficiency.list.stats"), busy: pane === "working" };
-}
-
-export type BandTone = "busy" | "info" | "done" | "error";
-
-export interface Band {
-	text: string;
-	tone: BandTone;
-	/** What screen readers hear: the text without the ticking counters, so it changes only when
-	 * the state does. */
-	announce: string;
-	/** Show the Cancel button (an analysis is running). */
-	cancel: boolean;
-}
-
-export interface BandInput {
-	overall: OverallState;
-	/** The pane's state; absent while the statistics are read or when they failed. */
-	pane?: PaneState;
-	/** The analysing agent's name, as on the tab. */
-	agent?: string;
-	/** Seconds since reading or analysing started. */
-	seconds?: number;
-	/** Characters of the reply received so far. */
-	chars?: number;
-	/** The range has records. */
-	hasData?: boolean;
-	/** There is something to send (excerpts or hits). */
-	analysable?: boolean;
-	/** Findings the statistics found on their own. */
-	statCount?: number;
-	/** Findings in the analysis just made. */
-	resultCount?: number;
-	/** When the previous result shown was saved (seconds), or null when none is shown. */
-	previousAt?: number | null;
-	/** The analysing agent used tools. */
-	toolUsed?: boolean;
-	/** Why the last analysis (or the statistics) failed, and whether pressing Analyze may help. */
-	error?: { text: string; retry: boolean } | null;
-}
-
-/** Sentences joined as the language joins them (a space in English, nothing in Japanese). */
-function sentences(parts: string[]): string {
-	return parts.reduce((first, next) => t("efficiency.band.then", { first, next }));
-}
-
-/** The one line at the top of a pane: what is going on now and what to do next. */
-export function band(input: BandInput): Band {
-	const seconds = input.seconds ?? 0;
-	const plain = (text: string, tone: BandTone): Band => ({ text, tone, announce: text, cancel: false });
-	if (input.overall === "stats") {
-		return { text: t("efficiency.band.reading", { seconds }), tone: "busy", announce: t("efficiency.band.announceReading"), cancel: false };
-	}
-	if (input.overall === "failed") {
-		return plain(input.error?.text ?? "", "error");
-	}
-	if (input.hasData === false) {
-		return plain(t("efficiency.error.noData"), "info");
-	}
-	const pane = input.pane ?? "idle";
-	const agent = input.agent ?? "";
-	if (pane === "working") {
-		const params = { agent, seconds, chars: input.chars ?? 0 };
-		return {
-			text: t(params.chars > 0 ? "efficiency.band.workingChars" : "efficiency.band.working", params),
-			tone: "busy",
-			announce: t("efficiency.band.announceWorking", { agent }),
-			cancel: true,
-		};
-	}
-	if (input.error) {
-		// What stays below: a saved result when there is one (the button then reads "Analyze
-		// again"), the statistics' own findings otherwise.
-		const previous = typeof input.previousAt === "number";
-		const parts = [input.error.text, t(previous ? "efficiency.band.keptPrevious" : "efficiency.band.keptStats")];
-		if (input.error.retry) {
-			parts.push(t("efficiency.band.retry", { button: t(previous ? "efficiency.consent.again" : "efficiency.consent.send") }));
-		}
-		return plain(sentences(parts), "error");
-	}
-	if (pane === "result") {
-		const count = input.resultCount ?? 0;
-		const done = count > 0 ? t("efficiency.band.done", { count }) : t("efficiency.band.doneNone");
-		return input.toolUsed ? plain(sentences([t("efficiency.toolUsed"), done]), "error") : plain(done, "done");
-	}
-	if (typeof input.previousAt === "number") {
-		return plain(t("efficiency.band.previous", { date: formatDateTimeShort(input.previousAt, getLang()) }), "info");
-	}
-	if (input.analysable === false) {
-		return plain(t("efficiency.band.nothing"), "info");
-	}
-	const count = input.statCount ?? 0;
-	return plain(count > 0 ? t("efficiency.band.stats", { count }) : t("efficiency.band.statsNone"), "info");
-}
-
-/** A step's mark: finished, running now, waiting for the user, or not reached yet. */
-export type StepState = "done" | "busy" | "current" | "todo";
-
-/** The three steps -- read the records, analyse in detail, results and next steps -- and where
- * the pane is among them. */
-export function steps(overall: OverallState, pane: PaneState | undefined, source: ListSource): [StepState, StepState, StepState] {
-	if (overall === "stats") {
-		return ["busy", "todo", "todo"];
-	}
-	if (overall === "failed") {
-		return ["current", "todo", "todo"];
-	}
-	if (pane === "working") {
-		return ["done", "busy", "todo"];
-	}
-	if (source !== "stats") {
-		return ["done", "done", "current"];
-	}
-	return ["done", "current", "todo"];
-}

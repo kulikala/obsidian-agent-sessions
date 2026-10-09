@@ -2,30 +2,25 @@ import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { runAnalysis } from "../../src/sessions/efficiency";
-import {
-	detectorMetrics,
-	loadPrevious,
-	loadResult,
-	overlaps,
-	payloadHash,
-	saveResult,
-	type SavedResult,
-} from "../../src/sessions/efficiency-store";
+import { detectorMetrics, loadPrevious, loadResult, overlaps, saveResult, type SavedResult } from "../../src/sessions/efficiency-store";
 
 function result(savedAt: number): SavedResult {
 	return {
-		version: 1,
+		version: 2,
 		agent: "claude",
 		savedAt,
 		model: "sonnet",
 		range: { rule: "budget", start: 100, end: 200, used_percentage: null, exhausted: false },
 		totals: { w: 10 } as SavedResult["totals"],
+		sessions: 1,
+		sessionIds: ["s1"],
+		checks: [
+			{ check: "rework", state: "ok", finding: null },
+			{ check: "firstRequest", state: "na", finding: null },
+		],
 		hits: [],
-		findings: [],
-		dismissed: [],
 		selfCost: { input: 1, output: 2, usd: 0.01 },
-		payloadHash: payloadHash("payload"),
+		sent: { tokens: 4000, sessions: 2 },
 		metrics: {},
 	};
 }
@@ -51,13 +46,20 @@ describe("saved results", () => {
 		expect(loadResult(dir, "claude")).toBeNull();
 		writeFileSync(join(dir, "last-claude.json"), JSON.stringify({ ...result(1), agent: "codex" }));
 		expect(loadResult(dir, "claude")).toBeNull();
+		writeFileSync(join(dir, "last-claude.json"), JSON.stringify({ ...result(1), checks: [{ check: "rework", state: "maybe" }] }));
+		expect(loadResult(dir, "claude")).toBeNull();
 	});
 
-	it("shows a previous result only when the ranges overlap; same content by hash", () => {
+	it("treats a result saved in the earlier format (findings, no checks) as no result", () => {
+		const old = { ...result(1), version: 1, findings: [], dismissed: [], payloadHash: "x" } as Partial<SavedResult>;
+		delete old.checks;
+		writeFileSync(join(dir, "last-claude.json"), JSON.stringify(old));
+		expect(loadResult(dir, "claude")).toBeNull();
+	});
+
+	it("shows a previous result only when the ranges overlap", () => {
 		expect(overlaps(result(1), { start: 150, end: 300 })).toBe(true);
 		expect(overlaps(result(1), { start: 201, end: 300 })).toBe(false);
-		expect(payloadHash("payload")).toBe(result(1).payloadHash);
-		expect(payloadHash("other")).not.toBe(result(1).payloadHash);
 	});
 
 	it("keeps per-detector numbers", () => {
@@ -67,28 +69,5 @@ describe("saved results", () => {
 			{ detector: "E04", impact_w: 1 },
 		] as SavedResult["hits"];
 		expect(detectorMetrics(hits)).toEqual({ E01: { hits: 2, impact_w: 12 }, E04: { hits: 1, impact_w: 1 } });
-	});
-});
-
-describe("runAnalysis", () => {
-	const block = { hits: [], excerpts: [], summary: {} };
-
-	it("asks once more after an unreadable reply and adds both usages", async () => {
-		const asked: string[] = [];
-		const replies = ["sorry", '{"findings": [], "dismissed": []}'];
-		const out = await runAnalysis("P", block, async (p) => {
-			asked.push(p);
-			return { text: replies[asked.length - 1], usage: { input: 10, output: 1, usd: 0.1 } };
-		});
-		expect(asked).toHaveLength(2);
-		expect(asked[1]).toContain("could not be used");
-		expect(out.result?.findings).toEqual([]);
-		expect(out.usage).toEqual({ input: 20, output: 2, usd: 0.2 });
-		expect(out.retried).not.toBeNull();
-	});
-
-	it("gives up after the second unreadable reply", async () => {
-		const out = await runAnalysis("P", block, async () => ({ text: "no", usage: null }));
-		expect(out.result).toBeNull();
 	});
 });

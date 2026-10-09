@@ -96,8 +96,8 @@ describe("t (plural forms)", () => {
 
 	it("reads the count from a formatted string", () => {
 		setLang("en");
-		expect(t("efficiency.range.sessions", { count: "1" })).toBe("1 session");
-		expect(t("efficiency.range.sessions", { count: "1,234" })).toBe("1,234 sessions");
+		expect(t("efficiency.meta.sessions", { count: "1" })).toBe("1 session");
+		expect(t("efficiency.meta.sessions", { count: "1,234" })).toBe("1,234 sessions");
 	});
 
 	it("agrees the verb and handles several counts in one string", () => {

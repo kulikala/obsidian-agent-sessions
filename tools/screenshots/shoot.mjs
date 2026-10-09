@@ -41,7 +41,8 @@ const OBSIDIAN_BIN =
 
 const keep = process.argv.includes("--keep");
 const onboarding = process.argv.includes("--onboarding");
-// `--efficiency` shoots only the token efficiency dialog (efficiency-stats, -result, -fix).
+// `--efficiency` shoots the token efficiency dialog's four screens (efficiency-empty, -analyzing,
+// -result, -previous), in the dark and the light theme.
 const efficiencyOnly = process.argv.includes("--efficiency");
 // `--dialogs` shoots the per-session dialogs opened from a row's menu, in the dark and the light theme.
 const dialogsOnly = process.argv.includes("--dialogs");
@@ -396,30 +397,45 @@ async function dialogClip(page, look, selector) {
 }
 
 /**
- * Token efficiency: the statistics with the consent area, the findings after the stand-in
- * `claude` answers the analysis, and the confirmation before a fixing session starts.
+ * Token efficiency, in its four screens: not analysed yet, an analysis half-way (the stand-in
+ * `claude` takes a moment per check), the result just made with its first issue open, and a saved
+ * result opened again a day later, with sessions started since.
  */
 async function efficiencyScenes(page, box, look) {
 	console.log("Scenes:");
+	const theme = look.light ? "light" : "dark";
+	const dialog = ".agent-sessions-efficiency";
+	const open = async () => {
+		await page.evaluate(`app.commands.executeCommandById('agent-sessions:analyze-token-efficiency')`);
+		await page.waitFor(`document.querySelector('${dialog} .agent-sessions-efficiency-pane')`, { what: "the efficiency dialog" });
+	};
 	await clearNotices(page);
-	await page.evaluate(`app.commands.executeCommandById('agent-sessions:analyze-token-efficiency')`);
-	await page.waitFor(`document.querySelector('.agent-sessions-efficiency-consent button')`, { what: "the efficiency dialog" });
-	await capture(page, "efficiency-stats", await dialogClip(page, look, ".agent-sessions-efficiency"));
+	await open();
+	await page.waitFor(`document.querySelector('${dialog} .agent-sessions-efficiency-go button')`, { what: "the empty screen" });
+	await capture(page, `efficiency-empty-${theme}`, await dialogClip(page, look, dialog));
 
-	const analyze = msg(look.lang, "efficiency.consent.send");
-	await page.evaluate(`[...document.querySelectorAll('.agent-sessions-efficiency-consent button')].find((b) => b.textContent.includes(${JSON.stringify(analyze)})).click()`);
-	await page.waitFor(`document.querySelector('.agent-sessions-efficiency-cost')?.textContent.length > 0`, { what: "the analysis" });
-	await page.evaluate(`(() => {
-		const cards = [...document.querySelectorAll('.agent-sessions-efficiency-card')];
-		cards.forEach((c) => c.querySelector('.agent-sessions-efficiency-card-evidence')?.setAttribute('open', ''));
-		document.querySelector('.agent-sessions-efficiency-list').scrollIntoView({ block: "start" });
-	})()`);
-	await capture(page, "efficiency-result", await dialogClip(page, look, ".agent-sessions-efficiency"));
+	await page.evaluate(`document.querySelector('${dialog} .agent-sessions-efficiency-go button').click()`);
+	await page.waitFor(
+		`document.querySelectorAll('${dialog} .agent-sessions-efficiency-pt.is-ok, ${dialog} .agent-sessions-efficiency-pt.is-issue').length >= 3 && document.querySelector('${dialog} .agent-sessions-efficiency-pt.is-running')`,
+		{ what: "the analysis half-way" }
+	);
+	await capture(page, `efficiency-analyzing-${theme}`, await dialogClip(page, look, dialog));
 
-	const fix = msg(look.lang, "efficiency.card.fixButton");
-	await page.evaluate(`[...document.querySelectorAll('.agent-sessions-efficiency-card button')].find((b) => b.textContent.includes(${JSON.stringify(fix)})).click()`);
-	await page.waitFor(`document.querySelector('.agent-sessions-efficiency-fix textarea')`, { what: "the fix confirmation" });
-	await capture(page, "efficiency-fix", await dialogClip(page, look, ".agent-sessions-efficiency-fix"));
+	await page.waitFor(`document.querySelector('${dialog} .agent-sessions-efficiency-summary')`, { what: "the result", timeoutMs: 60_000 });
+	await page.evaluate(`document.querySelector('${dialog} button.agent-sessions-efficiency-pt-row').click()`);
+	await capture(page, `efficiency-result-${theme}`, await dialogClip(page, look, dialog));
+
+	// The saved result, as if made a day ago: the sessions active since then are new to it.
+	await pressEscape(page);
+	await page.waitFor(`!document.querySelector('${dialog}')`, { what: "the dialog to close" });
+	const saved = join(box.runtime, "efficiency", "last-claude.json");
+	const result = JSON.parse(readFileSync(saved, "utf8"));
+	result.savedAt -= 86_400;
+	result.sessionIds = result.sessionIds.slice(0, 2);
+	writeFileSync(saved, JSON.stringify(result));
+	await open();
+	await page.waitFor(`document.querySelector('${dialog} .agent-sessions-efficiency-summary')`, { what: "the saved result" });
+	await capture(page, `efficiency-previous-${theme}`, await dialogClip(page, look, dialog));
 }
 
 /** The detail pane of one session per state the sandbox shows, framed to the pane. */
@@ -844,13 +860,13 @@ async function run() {
 		try {
 			for (const lang of languages) {
 				readmeOutDir = lang === "en" ? README_OUT : join(README_OUT, lang);
-				if (dialogsOnly || rcOnly) {
+				if (dialogsOnly || rcOnly || efficiencyOnly) {
 					for (const light of [false, true]) {
-						await withObsidian({ lang, light, window: WINDOW, scale: 2, imageBase }, rcOnly ? rcScenes : dialogScenes);
+						await withObsidian({ lang, light, window: WINDOW, scale: 2, imageBase }, rcOnly ? rcScenes : efficiencyOnly ? efficiencyScenes : dialogScenes);
 					}
 					continue;
 				}
-				await withObsidian({ lang, light: lightTheme, window: WINDOW, scale: 2, imageBase }, detailStateOnly ? detailStateScenes : loopOnly ? loopScenes : efficiencyOnly ? efficiencyScenes : readmeScenes);
+				await withObsidian({ lang, light: lightTheme, window: WINDOW, scale: 2, imageBase }, detailStateOnly ? detailStateScenes : loopOnly ? loopScenes : readmeScenes);
 			}
 		} finally {
 			server.close();

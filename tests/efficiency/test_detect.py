@@ -329,6 +329,46 @@ class DetectorTest(unittest.TestCase):
         sc.scenario(self.root, 'en', heavy=True)                    # too few prompts: stopped
         self.assertEqual(of(run(self.root), 'E16'), [])
 
+    # ---- E17
+    def few_clues_session(self, lang, first):
+        t = b.Transcript(sc.SCENARIO, sc.NOW - 2 * sc.DAY)
+        t.prompt(first)
+        t.edit('/work/vault/src/a.py', 'a0', 'a1')
+        t.prompt(b.SHORT[lang], after=60)               # rework: short, soon, the same file
+        t.edit('/work/vault/src/a.py', 'a1', 'a2')
+        t.write(os.path.join(b.project_dir(self.root), sc.SCENARIO + '.jsonl'))
+
+    def test_e17_short_first_request_then_rework(self):
+        sc.baseline_sessions(self.root, 'en')
+        self.few_clues_session('en', b.SHORT['en'])
+        [h] = of(run(self.root), 'E17')
+        self.assertTrue(h['needs_llm'])
+        self.assertEqual(h['session'], sc.SCENARIO)
+        self.assertEqual(h['metrics']['corrections'], 1)
+        self.assertGreater(h['impact_w'], 0)
+
+    def test_e17_guards(self):
+        sc.baseline_sessions(self.root, 'en')
+        self.few_clues_session('en', b.text_of('en', sc.LONG))     # an ordinary first request
+        self.assertEqual(of(run(self.root), 'E17'), [])
+        shutil.rmtree(self.root)
+        os.makedirs(self.root)
+        sc.baseline_sessions(self.root, 'en', count=20)             # too few starts: stopped
+        self.few_clues_session('en', b.SHORT['en'])
+        self.assertEqual(of(run(self.root), 'E17'), [])
+
+    def test_e17_same_in_every_language(self):
+        found = []
+        for lang in ('en', 'ja', 'es'):
+            self.root = os.path.join(tempfile.mkdtemp(), lang)
+            self.addCleanup(shutil.rmtree, os.path.dirname(self.root))
+            sc.baseline_sessions(self.root, lang)
+            self.few_clues_session(lang, b.SHORT[lang])
+            found.append([(h['id'], h['impact_w']) for h in of(run(self.root), 'E17')])
+        self.assertEqual(len(found[0]), 1)
+        self.assertEqual(found[0], found[1])
+        self.assertEqual(found[0], found[2])
+
     # ---- language
     def test_three_languages_give_the_same_hits(self):
         results = []

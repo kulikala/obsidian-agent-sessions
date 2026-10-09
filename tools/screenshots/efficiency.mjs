@@ -24,20 +24,17 @@ const TEXT = {
 		terraform: ["Remove the unused staging buckets and their IAM bindings."],
 		reply: {
 			e01Title: "Full test output stays in the conversation",
-			e01Cause:
+			e01Observed:
 				"The checkout suite printed about 21,000 tokens of output, and every one of the next 200 calls read it again. The same command did this in several sessions.",
-			e01Summary: "Have the agent print only failing tests and the end of the output.",
-			e01Steps: ["Add the rule below to the project's CLAUDE.md.", "Run the suite through it the next time."],
+			e01Fix: "Add a rule to CLAUDE.md: print only the failing tests and the end of the output.",
 			e01Draft: "- When running tests, print only the failing tests and the last 30 lines of output.\n- Read large files by line range, not whole.",
 			e16Title: "The guide was corrected several times",
-			e16Cause:
+			e16Observed:
 				"The first request named the content but not the format; the format came in the third message, after a full draft had been written and rewritten.",
-			e16Summary: "Say the format and how to check it in the first message.",
-			e16Steps: ["Name the target, the expected result, how to check it and what not to touch.", "If a second correction misses again, write down what you learned and start a new tab."],
-			e02Title: "One conversation carried a very large context",
-			e02Cause: "The checkout work went on in one conversation after the fix was done, re-reading its whole context on every call.",
-			e02Summary: "Start the next piece of work in a new tab and pass on only the key points.",
-			e03Reason: "The infrastructure tasks reused the same plan and files; this was one piece of work.",
+			e16Fix: "Put the format and how to check it in the first request. If two corrections still miss, start again in a new tab.",
+			e04Title: "The cache expired during a long break",
+			e04Observed: "After a pause of about two hours the cache had expired, and about 410,000 tokens were written to it again.",
+			e04Fix: "After a long break from a large conversation, start a new tab with the key points instead of continuing.",
 		},
 	},
 	ja: {
@@ -51,20 +48,17 @@ const TEXT = {
 		migrationReply: "v3 の形式で、破壊的変更ごとに1節ずつ書き直しました。",
 		terraform: ["使っていないステージング用バケットと IAM の紐づけを削除してください。"],
 		reply: {
-			e01Title: "テストの全出力が会話に残り続けている",
-			e01Cause:
+			e01Title: "テストの全出力が会話に残り続けた",
+			e01Observed:
 				"チェックアウトのテスト一式が約 21,000 トークンを出力し、そのあとの 200 回の呼び出しが毎回それを読み直していました。同じコマンドで、複数のセッションに同じことが起きています。",
-			e01Summary: "失敗したテストと出力の末尾だけを出すように、エージェントに伝えます。",
-			e01Steps: ["下の決まりをプロジェクトの CLAUDE.md に足します。", "次にテストを実行するときから効きます。"],
+			e01Fix: "失敗したテストと出力の末尾だけを出すよう、CLAUDE.md に決まりを足してください。",
 			e01Draft: "- テストを実行したら、失敗したテストと出力の末尾 30 行だけを出す。\n- 大きなファイルは全体でなく行の範囲で読む。",
-			e16Title: "ガイドの修正が何度も往復した",
-			e16Cause: "最初の依頼は内容を挙げていましたが、形式は3つ目の入力で伝えられ、それまでに下書きの全体が2回書かれていました。",
-			e16Summary: "形式と確かめ方を、最初の入力に書きます。",
-			e16Steps: ["対象・期待する結果・確かめ方・触らない範囲を書きます。", "2回直しても違うときは、分かったことを書き出して新しいタブで始めます。"],
-			e02Title: "1つの会話でとても大きな文脈を抱え続けた",
-			e02Cause: "修正が終わったあとも同じ会話でチェックアウトの作業を続け、呼び出しのたびに文脈の全体を読み直していました。",
-			e02Summary: "次の作業は新しいタブで始め、要点だけを渡します。",
-			e03Reason: "インフラの作業は同じ計画とファイルを使い続けており、1つの作業でした。",
+			e16Title: "形式の指定が後になり、ガイドを書き直した",
+			e16Observed: "最初の依頼には内容だけがあり、形式は 3 つ目の入力で伝えていました。それまでに下書きの全体を 2 回書いています。",
+			e16Fix: "形式と確認方法を、最初の依頼に書いてください。2 回直しても違うときは、新しいタブでやり直してください。",
+			e04Title: "長い休憩のあと、キャッシュを作り直した",
+			e04Observed: "約 2 時間の間が空いてキャッシュが切れ、約 41 万トークンを書き込み直しました。",
+			e04Fix: "大きな会話から長く離れたあとは、続けるより、新しいタブで要点から始めてください。",
 		},
 	},
 };
@@ -198,28 +192,23 @@ export function efficiencyOutput(now, sessions, lang) {
 	};
 }
 
-/** What the stand-in `claude` answers to the analysis prompt (a JSON object, as asked). */
+/** What the stand-in `claude` answers to each check's request (a JSON object, as asked), by check;
+ * a check not listed answers "ok". */
 export function efficiencyReply(lang) {
-	const r = (TEXT[lang] ?? TEXT.en).reply;
-	const migration = (TEXT[lang] ?? TEXT.en).migration;
+	const text = TEXT[lang] ?? TEXT.en;
+	const r = text.reply;
 	return {
-		findings: [
-			{
-				hits: ["h-7e16a0c3d4"], detector: "E16", origin: "user_prompt", title: r.e16Title, cause: r.e16Cause,
-				quotes: [{ ref: "t-mig0000001.p3", text: migration[2] }],
-				remedy: { kind: "habit", summary: r.e16Summary, steps: r.e16Steps }, confidence: "medium",
-			},
-			{
-				hits: ["h-4e01c2a9b1", "h-4e01c2a9b2"], detector: "E01", origin: "config", title: r.e01Title, cause: r.e01Cause,
-				quotes: [{ ref: "t-chk0000001.p1", text: (TEXT[lang] ?? TEXT.en).checkout[0] }],
-				remedy: { kind: "fix", change: "add", summary: r.e01Summary, steps: r.e01Steps, targets: ["…/storefront/CLAUDE.md"], draft: r.e01Draft },
-				confidence: "high",
-			},
-			{
-				hits: ["h-2e02b9f0e1"], detector: "E02", origin: "habit", title: r.e02Title, cause: r.e02Cause, quotes: [],
-				remedy: { kind: "habit", summary: r.e02Summary, steps: [] }, confidence: "medium",
-			},
-		],
-		dismissed: [{ hits: ["h-9e03c4d5e6"], reason: r.e03Reason }],
+		rework: {
+			verdict: "issue", hits: ["h-7e16a0c3d4"], title: r.e16Title, observed: r.e16Observed, cause: "user_prompt", fix: r.e16Fix,
+			savingTokens: 450_000, excerpts: [{ ref: "t-mig0000001.p3", text: text.migration[2] }], action: { kind: "template" },
+		},
+		largeOutput: {
+			verdict: "issue", hits: ["h-4e01c2a9b1", "h-4e01c2a9b2"], title: r.e01Title, observed: r.e01Observed, cause: "agent_behavior", fix: r.e01Fix,
+			savingTokens: 400_000, excerpts: [{ ref: "t-chk0000001.p1", text: text.checkout[0] }], action: { kind: "agent", draft: r.e01Draft },
+		},
+		cacheRebuild: {
+			verdict: "issue", hits: ["h-3e04a7b8c9"], title: r.e04Title, observed: r.e04Observed, cause: "habit", fix: r.e04Fix,
+			savingTokens: 350_000, excerpts: [], action: { kind: "none" },
+		},
 	};
 }
