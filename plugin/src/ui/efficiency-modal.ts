@@ -62,6 +62,8 @@ import { sessionDisplayName } from "../sessions/name";
 import { splitName } from "../sessions/tree";
 import { parseEnvLines, type AgentId } from "../settings";
 import { renderCategoryChip } from "./chip";
+import { dialogFooter, markDialog } from "./dialog-header";
+import { dialogTitle } from "./dialog-title";
 import { formatCost, formatK, formatNumber } from "../usage/usage";
 import {
 	analysisFailureMessage,
@@ -160,7 +162,8 @@ export class EfficiencyModal extends Modal {
 
 	onOpen(): void {
 		this.modalEl.addClass(CLS);
-		this.setTitle(t("efficiency.title"));
+		markDialog(this);
+		this.setTitle(dialogTitle("action.analyzeEfficiency"));
 		this.bodyEl = this.contentEl.createDiv({ cls: `${CLS}-body` });
 		void this.loadStats();
 	}
@@ -522,19 +525,10 @@ export class EfficiencyModal extends Modal {
 			const text = head.createSpan({ cls: `${CLS}-pt-text` });
 			text.createSpan({ cls: `${CLS}-pt-name`, text: checkName(row.check) });
 			const titles = findings.map((f) => f.title).filter((x) => x);
-			const desc =
-				screen === "empty"
-					? checkDesc(row.check)
-					: row.state === "running"
-						? t("efficiency.reading")
-						: findings.length > 0
-							? titles.length > 0
-								? metaLine(titles)
-								: checkDesc(row.check)
-							: "";
-			if (desc) {
-				text.createSpan({ cls: `${CLS}-pt-desc`, text: desc });
-			}
+			// Every row has a second line — the issues' titles, "reading", or what the check looks
+			// for — so the rows are of one height.
+			const desc = row.state === "running" && screen !== "empty" ? t("efficiency.reading") : titles.length > 0 ? metaLine(titles) : checkDesc(row.check);
+			text.createSpan({ cls: `${CLS}-pt-desc`, text: desc });
 			const st = head.createSpan({ cls: `${CLS}-st is-${row.state}` });
 			if (row.state === "running") {
 				st.createSpan({ cls: `${CLS}-spin` });
@@ -832,7 +826,8 @@ class FixConfirmModal extends Modal {
 
 	onOpen(): void {
 		this.modalEl.addClass(`${CLS}-fix-dialog`);
-		this.setTitle(t("efficiency.fix.confirmTitle"));
+		markDialog(this);
+		this.setTitle(dialogTitle("efficiency.action.agent"));
 		const name = fixSessionName(this.finding);
 		new Setting(this.contentEl).setName(t("efficiency.fix.agent")).setDesc(AGENT_NAMES[this.agent] ?? this.agent);
 		new Setting(this.contentEl).setName(t("efficiency.fix.name")).setDesc(name);
@@ -846,11 +841,12 @@ class FixConfirmModal extends Modal {
 				this.agent === "codex" ? "efficiency.fix.planNoteCodex" : this.agent === "opencode" ? "efficiency.fix.planNoteOpencode" : "efficiency.fix.planNote"
 			),
 		});
-		this.contentEl.createDiv({ cls: `${CLS}-subhead`, text: t("efficiency.fix.prompt") });
-		const area = this.contentEl.createEl("textarea", { cls: `${CLS}-fix-prompt` });
+		const field = this.contentEl.createDiv({ cls: `${CLS}-fix-field` });
+		field.createDiv({ cls: `${CLS}-subhead`, text: t("efficiency.fix.prompt") });
+		const area = field.createEl("textarea", { cls: `${CLS}-fix-prompt` });
 		area.value = this.prompt;
 		area.rows = 18;
-		new Setting(this.contentEl).addButton((b) =>
+		dialogFooter(this.contentEl).addButton((b) =>
 			b
 				.setButtonText(t("efficiency.fix.start"))
 				.setCta()

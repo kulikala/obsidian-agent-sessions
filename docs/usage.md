@@ -223,7 +223,7 @@ All three are in the session's ⋯ menu (see [Session menu](#session-menu)).
 
 ## Session analytics
 
-Shows what one session used: cost, tokens, tools and time, for the whole session and for each prompt. Open it with **Session analytics** in the session's ⋯ menu, or **Show session analytics** in the session tab's ⋯ menu.
+Shows what one session used: cost, tokens, tools and time, for the whole session and for each prompt. Open it with **Session analytics** in the session's ⋯ menu or in the session tab's ⋯ menu.
 
 ![Session analytics for Storefront: Checkout total flicker: cards for cost, tokens, turns and duration; input, output and tool-use bars; and one row per prompt with its time, input, output and cost](images/analytics.png)
 

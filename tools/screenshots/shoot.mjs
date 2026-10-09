@@ -375,6 +375,8 @@ async function dialogScenes(page, box, look) {
 	await shoot("model");
 	await openFromMenu("action.endSession");
 	await shoot("end");
+	await openFromMenu("action.suggestNameCategory");
+	await shoot("suggest");
 	await page.evaluate(`${PLUGIN}.showUsage(${JSON.stringify(checkout.id)})`);
 	await page.waitFor(`document.querySelector('.agent-sessions-usage-table tbody tr')`, { what: "the session analytics" });
 	await shoot("usage");
@@ -382,6 +384,21 @@ async function dialogScenes(page, box, look) {
 	await openFromMenu("action.moveToCategory");
 	await page.evaluate(`(() => { const m = document.querySelector('.modal'); m.style.width = '300px'; })()`);
 	await shoot("move-narrow");
+	// The dialogs without a session line: new session and organize.
+	const shootPlain = async (name, selector) => {
+		await page.waitFor(`document.querySelector(${JSON.stringify(selector)})`, { what: `the ${name} dialog` });
+		await capture(page, `dialog-${name}-${theme}`, await dialogClip(page, look, ".modal"));
+		await pressEscape(page);
+		await page.waitFor(`!document.querySelector('.modal')`, { what: `the ${name} dialog to close` });
+	};
+	await page.evaluate(`app.commands.executeCommandById('agent-sessions:new-session')`);
+	await shootPlain("new", ".modal .agent-sessions-name-input-field");
+	// Organize, from the side panel's ⋯ menu.
+	await page.evaluate(`app.workspace.getLeavesOfType('agent-sessions-side')[0].view.showMoreMenu(new MouseEvent('click', { clientX: 1500, clientY: 80 }))`);
+	const organize = msg(look.lang, "action.organize");
+	await page.waitFor(`[...document.querySelectorAll('.menu .menu-item-title')].some((e) => e.textContent === ${JSON.stringify(organize)})`, { what: "the organize menu item" });
+	await page.evaluate(`[...document.querySelectorAll('.menu .menu-item')].find((e) => e.querySelector('.menu-item-title')?.textContent === ${JSON.stringify(organize)}).click()`);
+	await shootPlain("organize", ".modal.agent-sessions-organize");
 }
 
 /** The dialog's own box with a little of the dimmed window around it. */
@@ -427,6 +444,49 @@ async function efficiencyScenes(page, box, look) {
 	// The last row: the issues the agent found on its own.
 	await page.evaluate(`[...document.querySelectorAll('${dialog} button.agent-sessions-efficiency-pt-row')].pop().click()`);
 	await capture(page, `efficiency-result-${theme}`, await dialogClip(page, look, dialog));
+
+	// The first issue opened instead, then the data behind the analysis, then the fixing dialog.
+	const openOnly = (selector) =>
+		page.evaluate(`(() => {
+			const rows = [...document.querySelectorAll('${dialog} button.agent-sessions-efficiency-pt-row')];
+			rows.pop().click();
+			document.querySelector(${JSON.stringify(selector)})?.click();
+		})()`);
+	await openOnly(`${dialog} .agent-sessions-efficiency-pt.is-issue button.agent-sessions-efficiency-pt-row`);
+	await capture(page, `efficiency-issue-${theme}`, await dialogClip(page, look, dialog));
+	await page.evaluate(`document.querySelector('${dialog} .agent-sessions-efficiency-pt.is-open button.agent-sessions-efficiency-pt-row')?.click()`);
+	await page.evaluate(`document.querySelector('${dialog} [data-open-key="basis"]').click()`);
+	await page.evaluate(`document.querySelector('${dialog} [data-open-key="basis"]').scrollIntoView({ block: "end" })`);
+	await capture(page, `efficiency-basis-${theme}`, await dialogClip(page, look, dialog));
+	await page.evaluate(`document.querySelector('${dialog} [data-open-key="basis"]').click()`);
+	// The issue whose request can go to an agent: open each issue until its button shows.
+	const agentButton = await page.evaluate(`(() => {
+		const label = ${JSON.stringify(msg(look.lang, "efficiency.action.agent"))};
+		const find = () => [...document.querySelectorAll('${dialog} .agent-sessions-efficiency-body-act button')].find((e) => e.textContent === label);
+		const issues = () => document.querySelectorAll('${dialog} .agent-sessions-efficiency-pt.is-issue');
+		for (let i = 0; i < issues().length; i++) {
+			const row = issues()[i];
+			if (!row.classList.contains('is-open')) row.querySelector('button.agent-sessions-efficiency-pt-row')?.click();
+			const b = find();
+			if (b) {
+				b.click();
+				return true;
+			}
+		}
+		return false;
+	})()`);
+	if (agentButton) {
+		await page.waitFor(`document.querySelector('.agent-sessions-efficiency-fix-dialog')`, { what: "the fixing dialog" });
+		await capture(page, `efficiency-fix-${theme}`, await dialogClip(page, look, ".agent-sessions-efficiency-fix-dialog"));
+		await pressEscape(page);
+		await page.waitFor(`!document.querySelector('.agent-sessions-efficiency-fix-dialog')`, { what: "the fixing dialog to close" });
+	}
+	// About 400 px wide: the window itself is narrow, as on a phone or a split screen.
+	await page.setViewport(440, look.window.height);
+	await sleep(500);
+	await capture(page, `efficiency-narrow-${theme}`, await dialogClip(page, { ...look, window: { ...look.window, width: 440 } }, dialog));
+	await page.setViewport(look.window.width, look.window.height);
+	await sleep(500);
 
 	// The saved result, as if made a day ago: the sessions active since then are new to it.
 	await close();

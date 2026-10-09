@@ -12,9 +12,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"action.insertNoteAt": "現在のノートを @ で挿入",
 	"action.more": "その他",
 	"action.organize": "セッション名とカテゴリを整理",
-	"organize.title": "セッション名とカテゴリを整理",
 	"organize.intro": "最近の会話をもとに、エージェントが各セッションのカテゴリと名前を提案します。適用を押すまで何も変わりません。",
-	"organize.titleSingle": "名前とカテゴリを提案",
 	"organize.introSingle": "エージェントが、このセッションの会話から、カテゴリと名前を提案します。適用を押すまで何も変わりません。",
 	"organize.suggestSingleAgain": "もう一度提案",
 	"organize.unchanged": "今の名前とカテゴリのままでよさそうです。適用するものはありません。",
@@ -68,7 +66,6 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"model.alias.bestShort": "最良",
 	"model.alias.opusplan": "Opus Plan（計画は Opus、実行は Sonnet）",
 	"effort.auto": "デフォルト",
-	"modal.changeModel.title": "モデルを変更",
 	"modal.changeModel.model": "モデル",
 	"modal.changeModel.current": "現在: {model} · {effort}",
 	"modal.changeModel.effort": "エフォート",
@@ -86,7 +83,6 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"action.restartSession": "セッションを再起動",
 	"action.restartSession.hint": "エージェントを終了し、同じ会話を再開します。設定・フック・スキル・環境変数の変更を反映したいときに使います",
 	"action.usage": "セッション解析結果",
-	"action.showUsage": "セッション解析結果を表示",
 	"action.copyId": "ID をコピー",
 	"action.prevInstruction": "前の指示",
 	"action.nextInstruction": "次の指示",
@@ -262,11 +258,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"settings.submitKeyMismatch.desc": "keybindings.json の内容が、この送信キーと食い違っています。",
 
 	// ---- Modals (ui/modals.ts) ----
-	"modal.newSession.title": "新規セッション",
 	"modal.newSession.nameField": "名前",
 	"modal.newSession.agentField": "エージェント",
-	"modal.renameSession.title": "名前を変更",
-	"modal.moveToCategory.title": "カテゴリに移動",
 	"modal.moveToCategory.categoryField": "カテゴリ",
 
 	// ---- Welcome guide (ui/onboarding-modal.ts) ----
@@ -376,7 +369,6 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"settings.backend.missing": "まだインストールされていません。",
 	"settings.backend.bundled": "このプラグインが {dir} にインストールし、{python} で動いています。プラグインの更新とともに更新されます。",
 	"settings.backend.external": "{path} を使っています。",
-	"install.title": "agent-sessions をインストール",
 	"install.checking": "このコンピュータを確認しています…",
 	"install.intro": "agent-sessions は、セッションを動かし続け、エージェントの記録を読むプログラムです。このプラグインに同梱されており、インストールするとホームフォルダ内に書き出され、この Vault にはエージェント用スキルが追加されます。プラグインを更新すると、どちらも更新されます。",
 	"install.details": "詳細",
@@ -571,7 +563,6 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"detail.schedule": "予約",
 
 	// ---- Session analytics modal (usage/usage-modal.ts) ----
-	"usage.title": "セッション解析結果",
 	"usage.loading": "読み込み中…",
 	"usage.loadFailed": "集計に失敗しました: {error}",
 	"usage.col.time": "時刻",
@@ -714,7 +705,6 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"efficiency.help.weighted": "換算トークン: 入力に、キャッシュの書き込みを 1.25 倍（5 分）か 2 倍（1 時間）、キャッシュの読み込みを 0.1 倍、出力を 5 倍して足した量です。使い方の違うものを同じ尺度で比べられます。",
 	"efficiency.copied": "型をコピーしました",
 	"efficiency.hitLine": "{session} · {time} · {tokens} 換算トークン",
-	"efficiency.fix.confirmTitle": "エージェントに直してもらう",
 	"efficiency.fix.agent": "頼むエージェント",
 	"efficiency.fix.name": "新しいセッション",
 	"efficiency.fix.targets": "変えてよいファイル",
@@ -737,7 +727,6 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"efficiency.error.rateLimit": "利用枠の上限に達しています（{time} にリセット）。",
 	"efficiency.error.rateLimitUnknown": "利用枠の上限に達しています。",
 	// ---- ui/efficiency-modal.ts ----
-	"efficiency.title": "トークン効率",
 	"efficiency.loading": "記録を読んでいます…",
 	"efficiency.empty.heading": "9 つの観点で、トークンの無駄と直し方を調べます",
 	"efficiency.target": "{span}の {sessions} セッション（計 {tokens}）を調べます。",

@@ -11,9 +11,7 @@ export const en = {
 	"action.insertNoteAt": "Insert current note with @",
 	"action.more": "More",
 	"action.organize": "Organize names and categories",
-	"organize.title": "Organize names and categories",
 	"organize.intro": "An agent proposes a category and a name for each session from its recent conversation. Nothing changes until you press Apply.",
-	"organize.titleSingle": "Suggest name and category",
 	"organize.introSingle": "An agent proposes a category and a name for this session from its conversation. Nothing changes until you press Apply.",
 	"organize.suggestSingleAgain": "Suggest again",
 	"organize.unchanged": "The current name and category already look right. Nothing to apply.",
@@ -67,7 +65,6 @@ export const en = {
 	"model.alias.bestShort": "Best",
 	"model.alias.opusplan": "Opus Plan (Opus to plan, Sonnet to run)",
 	"effort.auto": "Default",
-	"modal.changeModel.title": "Change model",
 	"modal.changeModel.model": "Model",
 	"modal.changeModel.current": "Now: {model} · {effort}",
 	"modal.changeModel.effort": "Effort",
@@ -85,7 +82,6 @@ export const en = {
 	"action.restartSession": "Restart session",
 	"action.restartSession.hint": "Ends the agent and resumes the same conversation, to pick up changed settings, hooks, skills or environment",
 	"action.usage": "Session analytics",
-	"action.showUsage": "Show session analytics",
 	"action.copyId": "Copy ID",
 	"action.prevInstruction": "Previous instruction",
 	"action.nextInstruction": "Next instruction",
@@ -261,11 +257,8 @@ export const en = {
 	"settings.submitKeyMismatch.desc": "keybindings.json doesn't match this submit key.",
 
 	// ---- Modals (ui/modals.ts) ----
-	"modal.newSession.title": "New session",
 	"modal.newSession.nameField": "Name",
 	"modal.newSession.agentField": "Agent",
-	"modal.renameSession.title": "Rename",
-	"modal.moveToCategory.title": "Move to category",
 	"modal.moveToCategory.categoryField": "Category",
 
 	// ---- Welcome guide (ui/onboarding-modal.ts) ----
@@ -375,7 +368,6 @@ export const en = {
 	"settings.backend.missing": "Not installed yet.",
 	"settings.backend.bundled": "Installed by this plugin in {dir}, running on {python}. Updated along with the plugin.",
 	"settings.backend.external": "Using {path}.",
-	"install.title": "Install agent-sessions",
 	"install.checking": "Checking this computer…",
 	"install.intro": "agent-sessions keeps your sessions running and reads the agents' transcripts. It comes bundled with this plugin; installing writes it to a folder in your home directory, and updates to the plugin update it too.",
 	"install.details": "Details",
@@ -572,7 +564,6 @@ export const en = {
 	"detail.schedule": "Schedule",
 
 	// ---- Session analytics modal (usage/usage-modal.ts) ----
-	"usage.title": "Session analytics",
 	"usage.loading": "Loading…",
 	"usage.loadFailed": "Failed to load: {error}",
 	"usage.col.time": "Time",
@@ -716,7 +707,6 @@ export const en = {
 	"efficiency.help.weighted": "Weighted tokens: input, plus cache writes at 1.25 (five minutes) or 2 (one hour), cache reads at 0.1 and output at 5, so different usage compares on one scale.",
 	"efficiency.copied": "Copied the template",
 	"efficiency.hitLine": "{session} · {time} · {tokens} weighted tokens",
-	"efficiency.fix.confirmTitle": "Ask an agent to fix",
 	"efficiency.fix.agent": "Agent",
 	"efficiency.fix.name": "New session",
 	"efficiency.fix.targets": "Files it may change",
@@ -739,7 +729,6 @@ export const en = {
 	"efficiency.error.rateLimit": "The usage limit is reached (it resets {time}).",
 	"efficiency.error.rateLimitUnknown": "The usage limit is reached.",
 	// ---- ui/efficiency-modal.ts ----
-	"efficiency.title": "Token efficiency",
 	"efficiency.loading": "Reading the records…",
 	"efficiency.empty.heading": "Find wasted tokens in 9 areas, and how to fix them",
 	"efficiency.target": "Covers {sessions} {sessions|session|sessions} from the {span} ({tokens}).",

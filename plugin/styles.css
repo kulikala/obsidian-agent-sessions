@@ -2017,6 +2017,11 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	height: 85vh;
 }
 
+/* The title is drawn in the content's own header; Obsidian's empty one would add space above it. */
+.agent-sessions-usage-modal .modal-header:has(.modal-title:empty) {
+	display: none;
+}
+
 .agent-sessions-usage-modal .modal-content {
 	display: flex;
 	flex-direction: column;
@@ -2031,7 +2036,8 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	justify-content: space-between;
 	flex: none;
 	gap: var(--size-4-3);
-	padding: var(--size-4-3) var(--size-4-4);
+	/* The modal's own padding is the inset; the right side leaves room for its close button. */
+	padding: 0 var(--size-4-6) var(--size-4-4) 0;
 	border-bottom: 1px solid var(--background-modifier-border);
 }
 
@@ -2052,7 +2058,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 .agent-sessions-usage-body {
 	flex: 1 1 auto;
 	overflow-y: auto;
-	padding: var(--size-4-3) var(--size-4-4) var(--size-4-4);
+	padding: var(--size-4-4) 0 0;
 }
 
 .agent-sessions-usage-loading,
@@ -2086,7 +2092,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 .agent-sessions-usage-cards {
 	display: grid;
 	grid-template-columns: repeat(4, 1fr);
-	gap: var(--size-4-3);
+	gap: var(--size-4-4);
 	margin-bottom: var(--size-4-4);
 }
 
@@ -2121,7 +2127,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	display: grid;
 	grid-template-columns: 1fr 1fr 1.2fr;
 	align-items: start;
-	gap: var(--size-4-3);
+	gap: var(--size-4-4);
 	margin-bottom: var(--size-4-4);
 }
 
@@ -2262,7 +2268,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 
 .agent-sessions-usage-table th,
 .agent-sessions-usage-table td {
-	padding: var(--size-2-1) var(--size-4-2);
+	padding: var(--size-4-1) var(--size-4-2);
 	border-bottom: 1px solid var(--background-modifier-border);
 	text-align: left;
 }
@@ -2296,6 +2302,8 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	width: 5.5em;
 }
 
+/* A column's heading lines up with its values: the time and the numbers on the right. */
+.agent-sessions-usage-table th:is(:nth-child(2), :nth-child(4), :nth-child(5), :nth-child(6)),
 .agent-sessions-usage-table .agent-sessions-usage-num {
 	text-align: right;
 	font-variant-numeric: tabular-nums;
@@ -2639,7 +2647,10 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 }
 .agent-sessions-install-status {
 	color: var(--text-muted);
-	min-height: 1.5em;
+}
+
+.agent-sessions-install-status:empty {
+	display: none;
 }
 
 /* Only OpenCode enabled: it has no usage windows, so its usage area draws nothing at all. */
@@ -2857,6 +2868,55 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	border-top: none;
 	justify-content: flex-end;
 }
+/* ---- Dialogs (`markDialog` in `ui/dialog-header.ts`; docs/design.md §16.2) ----
+   One scale, Obsidian's own variables: --size-4-1 (4px) between the lines of one item,
+   --size-4-2 (8px) between a label and its field and between items inside a block,
+   --size-4-3 (12px) the inset of a bordered or tinted block and the gap between its parts,
+   --size-4-4 (16px) between the blocks of a dialog and the modal's own padding.
+   The title sits --size-4-4 above the content, or --size-4-2 above the session line. The content
+   is one column of blocks; fields have no dividers between them; the button row that ends the
+   dialog has the one divider, --size-4-4 above and below it. */
+.modal.agent-sessions-dialog .modal-header {
+	margin-bottom: var(--size-4-4);
+}
+
+.modal.agent-sessions-dialog .modal-header:has(+ .modal-content > .agent-sessions-dialog-target:first-child) {
+	margin-bottom: var(--size-4-2);
+}
+
+.modal.agent-sessions-dialog .modal-content,
+.modal.agent-sessions-dialog .agent-sessions-organize-view,
+.modal.agent-sessions-dialog .agent-sessions-organize-actions {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-4);
+}
+
+.modal.agent-sessions-dialog .modal-content > *,
+.modal.agent-sessions-dialog .agent-sessions-organize-view > * {
+	margin-block: 0;
+}
+
+.modal.agent-sessions-dialog .setting-item.setting-item:not(.setting-item-heading) {
+	padding-block: 0;
+	border-top: none;
+}
+
+.modal.agent-sessions-dialog .setting-item.agent-sessions-dialog-footer.agent-sessions-dialog-footer {
+	padding-top: var(--size-4-4);
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+/* A label beside its control sits on the control's middle line. */
+.modal.agent-sessions-dialog .setting-item:not(.agent-sessions-wide-setting) {
+	align-items: center;
+}
+
+/* A label above its field: one item. */
+.modal.agent-sessions-dialog .agent-sessions-wide-setting {
+	row-gap: var(--size-4-2);
+}
+
 /* The target-session line under a per-session dialog's title (`ui/dialog-header.ts`): agent mark,
    category chip, name. The name takes the leftover width and is cut with an ellipsis. */
 .agent-sessions-dialog-target {
@@ -2864,7 +2924,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	align-items: center;
 	gap: var(--size-4-1);
 	min-width: 0;
-	margin: 0 0 var(--size-4-3);
+	margin: 0;
 }
 
 .agent-sessions-dialog-target-agent {
@@ -2895,7 +2955,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 }
 
 .agent-sessions-usage-heading .agent-sessions-dialog-target {
-	margin: var(--size-4-1) 0 0;
+	margin: var(--size-4-2) 0 0;
 }
 
 /* ---- Organize names and categories dialog ---- */
@@ -2906,11 +2966,9 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 
 .agent-sessions-organize-intro {
 	color: var(--text-muted);
-	margin-top: 0;
 }
 
 .agent-sessions-organize-agent {
-	margin: 0 0 var(--size-4-2);
 	font-size: var(--font-ui-small);
 	font-weight: var(--font-semibold);
 }
@@ -2920,7 +2978,6 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 }
 
 .agent-sessions-organize-status {
-	margin-bottom: var(--size-4-2);
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
 }
@@ -2929,14 +2986,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	display: none;
 }
 
-/* Each view ends with its buttons; the space above them is the same in every view. */
-.agent-sessions-organize-actions {
-	margin-top: var(--size-4-3);
-}
-
-.agent-sessions-organize-actions > .setting-item {
-	padding-bottom: 0;
-}
+/* Each view ends with its buttons (`dialogFooter`), the same distance below the view in every view. */
 
 .agent-sessions-organize-status.is-error {
 	color: var(--text-error);
@@ -2980,7 +3030,6 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 }
 
 .agent-sessions-organize-logdetails {
-	margin-top: var(--size-4-3);
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 }
@@ -3189,7 +3238,6 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 
 .agent-sessions-organize-overall {
 	width: 100%;
-	margin-top: var(--size-4-3);
 }
 
 @media (max-width: 640px) {
@@ -3249,7 +3297,6 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 
 .agent-sessions-model-other {
 	width: 100%;
-	margin-bottom: var(--size-4-2);
 }
 
 /* ---- Activity calendar (views/activity.ts) ---- */
@@ -3926,10 +3973,13 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 
 /* ---- Token efficiency dialog ---- */
 
-/* Every screen is a column on Obsidian's 4px scale: the heading, the eight rows, then one action
-   area. Rows and disclosures are full-width bordered blocks; a row with an issue opens in place. */
+/* Every screen is a column of blocks on the dialogs' scale (see "Dialogs"): the heading, the nine
+   rows, the disclosures, then one action area, --size-4-4 apart. Rows, disclosures and the summary
+   are full-width blocks with the same inset (--size-4-3) and corners; a row with an issue opens in
+   place. The scrollbar's gutter is kept, so the width does not jump when the content grows. */
 .agent-sessions-efficiency {
 	width: min(720px, 92vw);
+	scrollbar-gutter: stable;
 }
 
 .agent-sessions-efficiency-body {
@@ -3940,7 +3990,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 .agent-sessions-efficiency-pane {
 	display: flex;
 	flex-direction: column;
-	gap: var(--size-4-5);
+	gap: var(--size-4-4);
 }
 
 .agent-sessions-efficiency-sub,
@@ -3990,8 +4040,8 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 .agent-sessions-efficiency-tabs {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 2px;
-	margin-bottom: var(--size-4-5);
+	gap: var(--size-2-1);
+	margin-bottom: var(--size-4-4);
 	border-bottom: 1px solid var(--background-modifier-border);
 }
 
@@ -4043,8 +4093,8 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 }
 
 .agent-sessions-efficiency-summary {
-	padding: var(--size-4-3) var(--size-4-4);
-	border-radius: var(--radius-l);
+	padding: var(--size-4-3);
+	border-radius: var(--radius-m);
 	background-color: hsla(var(--interactive-accent-hsl), 0.1);
 }
 
@@ -4053,11 +4103,11 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	font-variant-numeric: tabular-nums;
 }
 
-/* The eight rows. */
+/* The nine rows. */
 .agent-sessions-efficiency-points {
 	overflow: hidden;
 	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-l);
+	border-radius: var(--radius-m);
 }
 
 .agent-sessions-efficiency-pt + .agent-sessions-efficiency-pt {
@@ -4108,6 +4158,7 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 
 .agent-sessions-efficiency-pt-name {
 	font-weight: var(--font-semibold);
+	line-height: 1.5;
 }
 
 .agent-sessions-efficiency-pt-desc {
@@ -4136,7 +4187,7 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 	display: inline-flex;
 	flex: none;
 	align-items: center;
-	gap: var(--size-4-1);
+	gap: var(--size-4-2);
 	color: var(--text-faint);
 	font-size: var(--font-ui-small);
 	white-space: nowrap;
@@ -4190,7 +4241,7 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 	display: inline-flex;
 	align-items: center;
 	gap: var(--size-4-1);
-	margin-left: var(--size-4-2);
+	margin-left: var(--size-4-1);
 	color: var(--text-accent);
 	font-weight: var(--font-normal);
 }
@@ -4215,7 +4266,7 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 	display: flex;
 	flex-direction: column;
 	gap: var(--size-4-3);
-	padding: var(--size-4-1) var(--size-4-3) var(--size-4-4);
+	padding: var(--size-4-1) var(--size-4-3) var(--size-4-3);
 	font-size: var(--font-ui-small);
 }
 
@@ -4250,7 +4301,7 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 .agent-sessions-efficiency-kv {
 	display: grid;
 	grid-template-columns: auto minmax(0, 1fr);
-	gap: var(--size-4-1) var(--size-4-4);
+	gap: var(--size-4-2) var(--size-4-3);
 	margin: 0;
 }
 
@@ -4382,7 +4433,7 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 	display: flex;
 	flex-direction: column;
 	gap: var(--size-4-3);
-	padding: var(--size-4-3) var(--size-4-4);
+	padding: var(--size-4-3);
 	border-top: 1px solid var(--background-modifier-border);
 	background-color: var(--background-secondary);
 	font-size: var(--font-ui-small);
@@ -4402,7 +4453,7 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 
 .agent-sessions-efficiency-stats {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(7.5em, 1fr));
+	grid-template-columns: repeat(auto-fit, minmax(7.5em, 1fr));
 	gap: var(--size-4-2);
 	font-variant-numeric: tabular-nums;
 }
@@ -4444,7 +4495,13 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 	min-width: 12em;
 }
 
-/* The confirmation before a fixing session. */
+/* The confirmation before a fixing session: the request's label sits on its field. */
+.agent-sessions-efficiency-fix-field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+}
+
 .agent-sessions-efficiency-fix-prompt {
 	width: 100%;
 	font-family: var(--font-monospace);
@@ -4462,9 +4519,16 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 		display: none;
 	}
 
+	/* The state moves under the text when both do not fit on one line. */
 	.agent-sessions-efficiency-pt-row,
 	button.agent-sessions-efficiency-pt-row {
-		gap: var(--size-4-2);
+		flex-wrap: wrap;
+		justify-content: flex-start;
+		gap: var(--size-4-1) var(--size-4-2);
+	}
+
+	.agent-sessions-efficiency-pt-text {
+		flex: 1 1 14em;
 	}
 
 	.agent-sessions-efficiency-st-amt-long {

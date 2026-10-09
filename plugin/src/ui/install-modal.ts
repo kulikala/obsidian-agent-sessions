@@ -7,6 +7,8 @@ import { skillFolders } from "../backend/agent-skills";
 import { MIN_PYTHON, type InstallDirChoice, type PythonInfo, type UnsuitableReason } from "../backend/bundle";
 import type { WingetPackage } from "../backend/windows";
 import { t, type MessageKey } from "../i18n";
+import { dialogFooter, markDialog } from "./dialog-header";
+import { dialogTitle } from "./dialog-title";
 import type AgentSessionsPlugin from "../main";
 import { AGENT_IDS } from "../settings";
 
@@ -23,13 +25,16 @@ export class InstallBackendModal extends Modal {
 		app: App,
 		private plugin: AgentSessionsPlugin,
 		private onDone?: () => void,
-		private onClosed?: () => void
+		private onClosed?: () => void,
+		/** The label of the button that opens the dialog: Install, or Reinstall in settings. */
+		private titleKey: MessageKey = "action.installBackend"
 	) {
 		super(app);
 	}
 
 	onOpen(): void {
-		this.titleEl.setText(t("install.title"));
+		markDialog(this);
+		this.setTitle(dialogTitle(this.titleKey));
 		void this.check();
 	}
 
@@ -87,7 +92,7 @@ export class InstallBackendModal extends Modal {
 			folders.length > 0 ? t("install.skillsValue", { folders: folders.join(", ") }) : t("install.skillsSkipped")
 		);
 		const status = contentEl.createEl("p", { cls: "agent-sessions-install-status" });
-		new Setting(contentEl)
+		dialogFooter(contentEl)
 			.addButton((button) => button.setButtonText(t("action.cancel")).onClick(() => this.close()))
 			.addButton((button) =>
 				button
@@ -177,7 +182,7 @@ export class InstallBackendModal extends Modal {
 	}
 
 	private renderRetry(): void {
-		new Setting(this.contentEl)
+		dialogFooter(this.contentEl)
 			.addButton((button) => button.setButtonText(t("action.cancel")).onClick(() => this.close()))
 			.addButton((button) => button.setButtonText(t("action.checkAgain")).onClick(() => void this.check()));
 	}

@@ -2,10 +2,11 @@
 // the target session on line 2 — the agent's mark, the category chip, the name. No "Session:"
 // prefix: a session name can itself contain a colon, so the look alone tells the target apart.
 
-import { setIcon, setTooltip, type Modal } from "obsidian";
+import { Setting, setIcon, setTooltip, type Modal } from "obsidian";
 import type AgentSessionsPlugin from "../main";
 import { t, type MessageKey } from "../i18n";
 import { renderCategoryChip } from "./chip";
+import { dialogTitle } from "./dialog-title";
 import { buildSessionHeader, type SessionTarget } from "./dialog-header-model";
 import { AGENT_ICON_ID } from "./icons";
 
@@ -22,12 +23,25 @@ export interface DialogHeaderSpec {
 	colorIndexFor: (category: string) => number;
 }
 
+/** `titleKey` is the label of the menu item, command or button that opens the dialog (`dialog-title.ts`). */
 export function dialogHeaderSpec(plugin: AgentSessionsPlugin, titleKey: MessageKey, target: SessionTarget | null): DialogHeaderSpec {
-	return { title: t(titleKey), target, colorIndexFor: (c) => plugin.index.categoryColorIndex(c) };
+	return { title: dialogTitle(titleKey), target, colorIndexFor: (c) => plugin.index.categoryColorIndex(c) };
+}
+
+/** Puts a dialog on the shared spacing (`styles.css`, "Dialogs"; `docs/design.md` §16.2): its
+ * content is a column of blocks `--size-4-4` apart, with no divider between fields. */
+export function markDialog(modal: Modal): void {
+	modal.modalEl.addClass("agent-sessions-dialog");
+}
+
+/** The button row that ends a dialog: a divider above it, the buttons on the right. */
+export function dialogFooter(container: HTMLElement): Setting {
+	return new Setting(container).setClass("agent-sessions-dialog-footer");
 }
 
 /** Sets the modal's title and puts the target line at the top of its content. */
 export function renderDialogHeader(modal: Modal, spec: DialogHeaderSpec): void {
+	markDialog(modal);
 	modal.setTitle(spec.title);
 	renderSessionTarget(modal.contentEl, spec);
 }

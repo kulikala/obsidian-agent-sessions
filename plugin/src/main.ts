@@ -1489,8 +1489,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/** Opens the install dialog (side panel's empty state, settings); `onDone` runs after a successful install. */
-	openInstallBackend(onDone?: () => void, onClosed?: () => void): void {
-		new InstallBackendModal(this.app, this, onDone, onClosed).open();
+	openInstallBackend(onDone?: () => void, onClosed?: () => void, titleKey: MessageKey = "action.installBackend"): void {
+		new InstallBackendModal(this.app, this, onDone, onClosed, titleKey).open();
 	}
 
 	vaultPath(): string {
@@ -2865,7 +2865,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	showUsage(id: string): void {
 		const row = this.index.sessions.get(id);
 		const target = row ?? { id, agent: "claude", name: null, label: null };
-		new UsageModal(this.app, this.agentSessionsPath(), this.vaultPath(), id, dialogHeaderSpec(this, "usage.title", target)).open();
+		new UsageModal(this.app, this.agentSessionsPath(), this.vaultPath(), id, dialogHeaderSpec(this, "action.usage", target)).open();
 	}
 
 	archive(id: string, name: string, agent: string): void {
@@ -3730,7 +3730,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		}
 		setting.setDesc(t("settings.backend.bundled", { dir: bundled.dir, python: bundled.python }));
 		setting.addButton((button) =>
-			button.setButtonText(t("action.reinstall")).onClick(() => plugin.openInstallBackend(() => this.redraw()))
+			button.setButtonText(t("action.reinstall")).onClick(() => plugin.openInstallBackend(() => this.redraw(), undefined, "action.reinstall"))
 		);
 		setting.addButton((button) =>
 			button
@@ -3745,7 +3745,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 							},
 							(err: unknown) => new Notice(t("uninstall.failed", { error: String(err) }))
 						);
-					}).open();
+					}, dialogHeaderSpec(plugin, "action.uninstallBackend", null)).open();
 				})
 		);
 	}
