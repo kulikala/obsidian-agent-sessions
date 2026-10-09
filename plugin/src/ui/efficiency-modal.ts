@@ -513,7 +513,9 @@ export class EfficiencyModal extends Modal {
 			}
 			st.createSpan({ cls: `${CLS}-st-label`, text: stateLabel(row.state) });
 			if (finding) {
-				st.createSpan({ cls: `${CLS}-st-amt`, text: t("efficiency.saving", { tokens: formatK(finding.savingW) }) });
+				const amt = st.createSpan({ cls: `${CLS}-st-amt` });
+				amt.createSpan({ cls: `${CLS}-st-amt-long`, text: t("efficiency.saving", { tokens: formatK(finding.savingW) }) });
+				amt.createSpan({ cls: `${CLS}-st-amt-short`, text: t("efficiency.savingShort", { tokens: formatK(finding.savingW) }) });
 			}
 			if (!openable || !finding || !saved) {
 				return;
@@ -542,10 +544,11 @@ export class EfficiencyModal extends Modal {
 		pane.el.querySelector<HTMLElement>(`[data-open-key="${key}"]`)?.focus();
 	}
 
-	/** An issue's next step, what happened, its cause, quotes and action. */
+	/** An issue's fix, what happened, its cause, quotes and action. */
 	private renderFinding(body: HTMLElement, pane: Pane, f: Finding, saved: SavedResult): void {
-		body.createDiv({ cls: `${CLS}-fix`, text: f.fix });
 		const kv = body.createEl("dl", { cls: `${CLS}-kv` });
+		kv.createEl("dt", { text: t("efficiency.finding.fix") });
+		kv.createEl("dd", { cls: `${CLS}-fix`, text: f.fix });
 		kv.createEl("dt", { text: t("efficiency.finding.observed") });
 		kv.createEl("dd", { text: f.observed });
 		if (f.cause) {

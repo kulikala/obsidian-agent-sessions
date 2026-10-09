@@ -112,13 +112,13 @@ describe("the eight rows", () => {
 		rows = setRow(rows, 4, "issue", finding("largeOutput", 400_000));
 		rows = setRow(rows, 5, "issue", finding("cacheRebuild", 350_000));
 		expect(summarize(rows)).toEqual({ issues: 3, savingW: 1_200_000 });
-		expect(summaryText(rows)).toBe("3 of 8 checks found issues. Fixing them could save up to about 1.2M tokens.");
+		expect(summaryText(rows)).toBe("Found waste in 3 of 8 areas. Fixing it could save up to about 1.2M tokens.");
 		expect(summaryText(setRow(waitingRows(), 0, "issue", finding("rework", 1000)))).toBe(
-			"1 of 8 checks found an issue. Fixing it could save up to about 1.0k tokens."
+			"Found waste in 1 of 8 areas. Fixing it could save up to about 1.0k tokens."
 		);
 		expect(summaryText(waitingRows().map((r) => ({ ...r, state: "ok" })))).toBe(t("efficiency.result.none"));
 		setLang("ja");
-		expect(summaryText(rows)).toBe("8 観点のうち 3 つに指摘があり、直すと最大で約 1.2M トークン減らせる見込みです。");
+		expect(summaryText(rows)).toBe("3 つの観点で無駄が見つかりました。直すと、最大で約 1.2M トークン減らせる見込みです。");
 	});
 
 	it("round-trip through a saved result, in the checks' order", () => {
@@ -136,11 +136,11 @@ describe("the eight rows", () => {
 
 describe("words", () => {
 	it("each check's name and description, and each state, in both languages", () => {
-		expect(checkName("rework")).toBe("Repeated fixes");
-		expect(checkDesc("startupSize")).toBe("Whether instruction files or unused skills make each conversation start large");
+		expect(checkName("rework")).toBe("Redoing the same fix");
+		expect(checkDesc("startupSize")).toBe("Do instruction files or unused skills make every start large?");
 		expect(["idle", "waiting", "running", "ok", "issue", "na"].map((s) => stateLabel(s as "ok"))).toEqual([
 			"Not analyzed",
-			"Waiting",
+			"Queued",
 			"Analyzing",
 			"No issues",
 			"Issue found",
@@ -158,14 +158,14 @@ describe("words", () => {
 		expect(spanLabel({ start: 0, end: 30 * 3600 })).toBe("last 30 hours");
 		expect(spanLabel(week, true)).toBe("Last 7 days");
 		expect(spanLabel({ start: 0, end: 600 })).toBe("last 1 hour");
-		expect(targetLine(week, 42, 28_600_000)).toBe("Covers 42 sessions from the last 7 days, 28.6M tokens in total.");
-		expect(elapsedText(72)).toBe("1 min 12 s elapsed · about 1–3 min");
-		expect(elapsedText(9)).toBe("9 s elapsed · about 1–3 min");
+		expect(targetLine(week, 42, 28_600_000)).toBe("Covers 42 sessions from the last 7 days (28.6M tokens).");
+		expect(elapsedText(72)).toBe("1 min 12 s elapsed (about 1–3 min)");
+		expect(elapsedText(9)).toBe("9 s elapsed (about 1–3 min)");
 		expect(metaLine(["a", null, "b"])).toBe("a · b");
-		expect(resultHeading(1_790_000_000, 1_790_000_000)).toMatch(/^Analysis of .+/);
+		expect(resultHeading(1_790_000_000, 1_790_000_000)).toMatch(/^Analysis from .+/);
 		setLang("ja");
-		expect(targetLine(week, 42, 28_600_000)).toBe("直近 7 日の 42 セッション、計 28.6M トークンが対象です。");
-		expect(elapsedText(72)).toBe("1 分 12 秒経過・目安 1〜3 分");
+		expect(targetLine(week, 42, 28_600_000)).toBe("直近 7 日の 42 セッション（計 28.6M トークン）を調べます。");
+		expect(elapsedText(72)).toBe("経過 1 分 12 秒（目安 1〜3 分）");
 		expect(metaLine([spanLabel(week, true), "42 セッション"])).toBe("直近 7 日・42 セッション");
 		expect(resultHeading(1_790_000_000, 1_790_000_000)).toMatch(/ の解析結果$/);
 	});

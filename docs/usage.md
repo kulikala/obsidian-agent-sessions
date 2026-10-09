@@ -308,30 +308,30 @@ Shows when each agent was working. Open it from the Session manager toolbar, the
 Checks your recent work for wasted tokens, from your local records, and says what to change.
 
 1. Open the ⋯ menu of the side panel or the Session manager and choose **Analyze token efficiency**, or run **Analyze token efficiency** from the command palette.
-2. The dialog reads the records on this machine (nothing is sent) and lists the eight checks, with the range they cover ("Covers 42 sessions from the last 7 days, 28.6M tokens in total."). Codex and OpenCode have a tab per provider their conversations used.
+2. The dialog reads the records on this machine (nothing is sent) and lists the eight checks, with the range they cover ("Covers 42 sessions from the last 7 days (28.6M tokens)."). Codex and OpenCode have a tab per provider their conversations used.
 3. Press **Analyze**. **Details**, below it, says what is sent, how much, to which model, and which usage limit it counts toward; **Show what is sent** in it shows the exact text.
 4. The checks fill in from the top, with a progress bar and the time so far; a spinner marks the tab being analysed. **Stop analysis**, or closing the dialog, stops it; nothing of that run is kept.
 5. In the result, click a row marked **Issue found** to open it. On an issue a file or setting can fix, press **Ask the agent to fix it**, check or edit the request, and press **Start**.
 
 The eight checks:
 
-- **Repeated fixes**: the same fix redone again and again in one task.
-- **A clear first request**: whether a short first request left out the target, the expected result or how to check it, so the agent searched around or redid work.
+- **Redoing the same fix**: the same fix redone again and again in one task.
+- **What the first request says**: whether a short first request left out the target, the expected result or how to check it, so the agent searched around or redid work.
 - **Several tasks in one conversation**: a conversation that went on after its task changed, carrying the earlier work along.
-- **Overlong conversations**: a conversation that went on with a very large context.
+- **Very long conversations**: a conversation that went on with a very large context.
 - **Large output left in the conversation**: test, log or file output that stayed in the context and was read again by later calls.
 - **Cache rebuilds**: the cache written again after a break longer than its lifetime, or after a model switch mid-conversation.
 - **Repeated lookups**: the sessions in a folder all reading the same files at the start.
-- **Startup size**: instruction files or unused skills making each conversation start larger than usual.
+- **What every conversation loads first**: instruction files or unused skills making each conversation start larger than usual.
 
 What the dialog shows:
 
-- **A row's state**: **Not analyzed**, **Waiting**, **Analyzing**, **No issues**, **Issue found** with "Up to …" (the tokens fixing it could save at most), or **Not applicable**.
+- **A row's state**: **Not analyzed**, **Queued**, **Analyzing**, **No issues**, **Issue found** with "Up to …" (the tokens fixing it could save at most), or **Not applicable**.
 - **No issues without a model**: a check the statistics find nothing for is settled at once. Only checks with matches are sent, one request each.
-- **Not applicable**: there are no records in the range, or too few for that check: under 100 prompts in 14 days for Repeated fixes, under 60 first prompts for A clear first request, fewer than three sessions for Repeated lookups and Startup size.
+- **Not applicable**: there are no records in the range, or too few for that check: under 100 prompts in 14 days for Redoing the same fix, under 60 first prompts for What the first request says, fewer than three sessions for Repeated lookups and What every conversation loads first.
 - **The result**: its date, how many checks found an issue and how many tokens fixing them could save, then the range, the session count, the model and what the analysis itself cost.
-- **An issue**: the next step, **What happened**, **Cause** (**How the request was written**, **What the agent did**, **Settings** or **Working habits**), quotes from the conversations, and an action.
-- **Basis of this analysis**: the range's tokens, cost, cache hit rate and model calls, what was sent and the model used.
+- **An issue**: **How to fix it**, **What happened**, **Cause** (**The request**, **What the agent did**, **Settings** or **How you work**), quotes from the conversations, and an action.
+- **Data behind this analysis**: the range's tokens, cost, cache hit rate and model calls, what was sent and the model used.
 - **The range**: if the 5-hour or 7-day window is used at least as much as **Usage limit threshold**, that window; otherwise the newest calls up to the **Budget** in weighted tokens, and at least the last 24 hours, at most 7 days back.
 - **Weighted tokens**: input, plus cache writes at 1.25 (five minutes) or 2 (one hour), cache reads at 0.1, and output at 5, so different usage compares on one scale.
 - **The saved result**: the last result opens again the next time for an overlapping range, with the number of sessions started since. **Analyze again** runs it anew; a stopped or failed run leaves the saved one shown.
@@ -339,7 +339,7 @@ What the dialog shows:
 What the issues ask of you:
 
 - **Ask the agent to fix it** starts a new session in the vault, named "Token efficiency: …", in plan mode (Codex: a read-only sandbox that asks before writing; OpenCode: the plan agent — switch to build with Tab after you approve). It shows the change as a diff and waits for your approval before writing; only the listed files may change. The change applies to conversations started afterwards.
-- **Copy a request template** (on Repeated fixes and A clear first request) copies a request outline: target, expected result, how to check, what not to touch.
+- **Copy a request template** (on Redoing the same fix and What the first request says) copies a request outline: target, expected result, how to check, what not to touch.
 - Advice about habits (when to start a new conversation, which model to use) has no button. To switch to a new conversation, open a new tab.
 - What is sent, and where: see [What Token efficiency sends](../README.md#what-token-efficiency-sends).
 

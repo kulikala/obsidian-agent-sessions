@@ -60,9 +60,9 @@ In the same menu, **Compact session** sends `/compact`, and **Restart session** 
 
 ### Where tokens could be saved
 
-**Analyze token efficiency**, in the ⋯ menu of the side panel and the Session manager, checks your recent work for wasted tokens in eight checks: repeated fixes, a clear first request, several tasks in one conversation, overlong conversations, large output left in the conversation, cache rebuilds, repeated lookups and startup size. Each issue says what happened, why, what to do next and how many tokens fixing it could save; one a file can fix can be handed to an agent, which starts in plan mode and shows the change before writing it. Statistics stay on this machine; see [What Token efficiency sends](#what-token-efficiency-sends). [More](docs/usage.md#token-efficiency)
+**Analyze token efficiency**, in the ⋯ menu of the side panel and the Session manager, checks your recent work for wasted tokens in eight checks: redoing the same fix, what the first request says, several tasks in one conversation, very long conversations, large output left in the conversation, cache rebuilds, repeated lookups, and what every conversation loads first. Each issue says what happened, why, what to do next and how many tokens fixing it could save; one a file can fix can be handed to an agent, which starts in plan mode and shows the change before writing it. Statistics stay on this machine; see [What Token efficiency sends](#what-token-efficiency-sends). [More](docs/usage.md#token-efficiency)
 
-![Token efficiency for Claude Code: the eight checks, three with an issue, the first one open with its next step, what happened, its cause and a quote](docs/images/efficiency.png)
+![Token efficiency for Claude Code: the eight checks, three with an issue, the first one open with how to fix it, what happened, its cause and a quote](docs/images/efficiency.png)
 
 ### Setup with the welcome guide
 

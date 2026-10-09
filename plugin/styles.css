@@ -4219,9 +4219,12 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 	font-size: var(--font-ui-small);
 }
 
-.agent-sessions-efficiency-fix {
-	font-size: var(--font-ui-medium);
-	font-weight: var(--font-medium);
+.agent-sessions-efficiency-kv dd.agent-sessions-efficiency-fix {
+	font-weight: var(--font-semibold);
+}
+
+.agent-sessions-efficiency-st-amt-short {
+	display: none;
 }
 
 .agent-sessions-efficiency-kv {
@@ -4405,6 +4408,14 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 	.agent-sessions-efficiency-pt-row,
 	button.agent-sessions-efficiency-pt-row {
 		gap: var(--size-4-2);
+	}
+
+	.agent-sessions-efficiency-st-amt-long {
+		display: none;
+	}
+
+	.agent-sessions-efficiency-st-amt-short {
+		display: inline;
 	}
 }
 
