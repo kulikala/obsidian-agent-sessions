@@ -27,6 +27,7 @@ export function createRcServerControl(plugin: AgentSessionsPlugin): RcServerCont
 			plugin.settings.rcServerEnabled = on;
 			await plugin.saveSettings();
 		},
+		list: () => listSessions(plugin),
 		launch: (autoMode) => launch(plugin, autoMode),
 		kill: async () => {
 			const client = new DaemonClient(plugin.sockPath());
@@ -69,6 +70,22 @@ export function createRcServerControl(plugin: AgentSessionsPlugin): RcServerCont
 /** Opens the server's terminal tab, or brings it to the front. */
 export function openRcServerTerminal(plugin: AgentSessionsPlugin): Promise<unknown> {
 	return plugin.openSession(RC_SERVER_ID, { agent: "claude", cwd: plugin.vaultPath() });
+}
+
+/** The daemon's session list, without starting the daemon: `[]` when it can't be reached. */
+async function listSessions(plugin: AgentSessionsPlugin): Promise<DaemonSession[]> {
+	const client = new DaemonClient(plugin.sockPath());
+	try {
+		await client.connect();
+	} catch {
+		return [];
+	}
+	try {
+		await client.hello("plugin");
+		return ((await client.list()).sessions as DaemonSession[] | undefined) ?? [];
+	} finally {
+		client.close();
+	}
 }
 
 /** Starts the server unless one already runs, and returns its daemon session. */

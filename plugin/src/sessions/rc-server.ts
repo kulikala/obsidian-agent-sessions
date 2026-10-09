@@ -10,7 +10,8 @@ export const RC_SERVER_ID = "rc-server";
 
 /**
  * - `off`: the toggle is off.
- * - `starting`: on, and the server runs (or is being started) but has not shown its connection link yet.
+ * - `starting`: on, and the server runs (or is being started) but has not shown its connection link
+ *   yet, or the daemon hasn't been asked yet whether it runs.
  * - `listening`: on, and the server shows its connection link.
  * - `down`: on, but no server runs. Only a click starts it again.
  */
@@ -23,6 +24,8 @@ export interface RcServerFacts {
 	daemon: DaemonSession | null;
 	/** A start the user asked for is under way (the daemon may not list the process yet). */
 	launching: boolean;
+	/** The daemon has been asked whether the server runs (`false` right after the plugin loads). */
+	known: boolean;
 	/** What the server's output said last. */
 	signal: RcServerSignal;
 }
@@ -33,7 +36,7 @@ export function rcServerState(facts: RcServerFacts): RcServerState {
 	}
 	const running = facts.daemon !== null && facts.daemon.exited === null;
 	if (!running) {
-		return facts.launching ? "starting" : "down";
+		return facts.launching || !facts.known ? "starting" : "down";
 	}
 	return facts.signal === "ready" ? "listening" : "starting";
 }

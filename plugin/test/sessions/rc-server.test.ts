@@ -21,7 +21,7 @@ function server(over: Partial<DaemonSession> = {}): DaemonSession {
 }
 
 function facts(over: Partial<RcServerFacts> = {}): RcServerFacts {
-	return { enabled: true, daemon: server(), launching: false, signal: null, ...over };
+	return { enabled: true, daemon: server(), launching: false, known: true, signal: null, ...over };
 }
 
 describe("rcServerState", () => {
@@ -38,6 +38,11 @@ describe("rcServerState", () => {
 
 	it("is starting while a start is under way and the daemon doesn't list it yet", () => {
 		expect(rcServerState(facts({ daemon: null, launching: true }))).toBe("starting");
+	});
+
+	it("is starting, not down, before the daemon has been asked", () => {
+		expect(rcServerState(facts({ daemon: null, known: false }))).toBe("starting");
+		expect(rcServerState(facts({ daemon: null, known: false, enabled: false }))).toBe("off");
 	});
 
 	it("is listening once the server shows its link", () => {
