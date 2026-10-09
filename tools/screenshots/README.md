@@ -41,7 +41,7 @@ SCRATCH=$(mktemp -d)
 node tools/screenshots/shoot.mjs --plugin-js $SCRATCH/main.js   # add --keep to leave the sandbox behind
 ```
 
-`--efficiency` shoots only the token efficiency dialog: `efficiency-stats.png` (the statistics and the consent area), `efficiency-result.png` (the findings after the stand-in `claude` answers the analysis) and `efficiency-fix.png` (the confirmation before a fixing session). `--out DIR` writes the README set to DIR (DIR/ja for Japanese) instead of `docs/images/`; use it for images the README does not show:
+`--efficiency` shoots only the token efficiency dialog's four screens, in the dark and the light theme: `efficiency-empty-<theme>.png` (not analysed yet), `efficiency-analyzing-<theme>.png` (half-way through the checks), `efficiency-result-<theme>.png` (the result just made, its first issue open) and `efficiency-previous-<theme>.png` (the saved result opened again a day later). `--out DIR` writes the README set to DIR (DIR/ja for Japanese) instead of `docs/images/`; use it for images the README does not show:
 
 ```sh
 node tools/screenshots/shoot.mjs --efficiency --out "$SCRATCH/shots" --plugin-js $SCRATCH/main.js
@@ -68,7 +68,7 @@ Every run builds a throwaway sandbox under the system temp directory:
 - **A stand-in `claude`** (`fake-claude.mjs`) — the Claude Code path in the plugin's settings;
   "Organize names and categories" runs it headless, and it answers with
   `ORGANIZE_SUGGESTIONS` from `scenario.mjs` in Claude Code's `stream-json` shape; a token
-  efficiency analysis (its prompt carries `<<<DATA`) gets the findings from `efficiency.mjs`.
+  efficiency check (its prompt carries `<<<DATA`, with the check in `statistics.check`) gets that check's reply from `efficiency.mjs`.
 - **A stand-in daemon** (`fake-daemon.mjs`) — listens on the sandbox's `daemon.sock`, speaks the
   plugin's framed protocol, and replays a canned transcript (`transcripts.mjs`) when a tab
   attaches; it never starts a process.
