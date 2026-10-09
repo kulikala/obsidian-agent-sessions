@@ -50,6 +50,7 @@ describe("DEFAULT_SETTINGS", () => {
 			onboardingOnUpdate: true,
 			onboardingProgress: null,
 			onboardingImages: true,
+			rcServerEnabled: false,
 		});
 	});
 });
@@ -279,6 +280,12 @@ describe("mergeSettings (onboarding)", () => {
 		expect(mergeSettings({ onboardingImages: true }).onboardingImages).toBe(true);
 		expect(mergeSettings({ onboardingImages: "no" }).onboardingImages).toBe(true);
 		expect(mergeSettings({}).onboardingImages).toBe(true);
+	});
+
+	it("keeps the Remote Control toggle's saved position and drops a non-boolean one", () => {
+		expect(mergeSettings({ rcServerEnabled: true }).rcServerEnabled).toBe(true);
+		expect(mergeSettings({ rcServerEnabled: "on" }).rcServerEnabled).toBe(false);
+		expect(mergeSettings({}).rcServerEnabled).toBe(false);
 	});
 });
 

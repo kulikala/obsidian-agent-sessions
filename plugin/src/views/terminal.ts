@@ -45,6 +45,7 @@ import { sessionDisplayName } from "../sessions/name";
 import { VIEW_TYPE_TERMINAL } from "../sessions/open-session";
 import { asAgentId, parseEnvLines, type Padding } from "../settings";
 import { isResumeFailure } from "../sessions/resume-failure";
+import { RC_SERVER_ID } from "../sessions/rc-server";
 import { classifyCodexTitleStatus, type CodexTitleStatus } from "../sessions/codex-title-status";
 import {
 	ALL_TERMINAL_STATUSES,
@@ -94,7 +95,9 @@ type ExitReason =
 	| { kind: "agent-missing"; message: string }
 	| { kind: "daemon-unavailable"; message: string }
 	| { kind: "disconnected" }
-	| { kind: "error"; message: string };
+	| { kind: "error"; message: string }
+	/** The Remote Control server's tab, with no server running. Only its button starts one. */
+	| { kind: "rc-stopped" };
 
 function messageOf(err: unknown): string {
 	return err instanceof Error ? err.message : String(err);
@@ -216,11 +219,20 @@ export class TerminalView extends ItemView {
 	}
 
 	getDisplayText(): string {
+		if (this.isRcServer()) {
+			return t("rc.title");
+		}
 		return sessionDisplayName({ name: this.displayName, label: this.label, agent: this.agent, id: this.id });
 	}
 
 	getIcon(): string {
 		return this.icon || "square-terminal";
+	}
+
+	/** The Remote Control server's tab (`sessions/rc-server.ts`): it shows the server, and never
+	 * starts one by itself. */
+	private isRcServer(): boolean {
+		return this.id === RC_SERVER_ID;
 	}
 
 	/** Used by the side panel and manager to find the target for renaming or compacting. */
@@ -444,6 +456,7 @@ export class TerminalView extends ItemView {
 		this.register(this.plugin.index.registry.onChange(() => this.updateIcon()));
 		this.register(this.plugin.index.registry.onIdle((id) => this.onIdle(id)));
 		this.register(this.plugin.index.registry.onBusy((id) => this.onBusyMark(id)));
+		this.register(this.plugin.rcServer.onChange(() => this.onRcServerChange()));
 		this.registerEvent(this.plugin.events.on("settings-changed", () => this.applySettings()));
 		this.registerEvent(this.app.workspace.on("css-change", () => this.applyTheme()));
 		this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.onFrontChange()));
@@ -638,6 +651,11 @@ export class TerminalView extends ItemView {
 			const list = await client.list();
 			const sessions = (list.sessions as DaemonSession[] | undefined) ?? [];
 			if (!sessions.some((s) => s.id === this.daemonId)) {
+				if (this.isRcServer()) {
+					this.disconnect();
+					this.showExit({ kind: "rc-stopped" });
+					return;
+				}
 				await this.startSession(client, this.fresh);
 			}
 			await this.attachTo(client);
@@ -884,6 +902,10 @@ export class TerminalView extends ItemView {
 		// Moves the row out of "Running" now (Claude's ledger does this by itself; Codex and
 		// OpenCode have nothing else prompting a re-read of the daemon's list).
 		void this.plugin.index.refreshLive();
+		if (this.isRcServer()) {
+			this.showExit({ kind: "rc-stopped" });
+			return;
+		}
 		const early = this.startedAt > 0 && Date.now() - this.startedAt <= EARLY_EXIT_MS;
 		this.startedAt = 0;
 		if (early && code === 127) {
@@ -1069,6 +1091,9 @@ export class TerminalView extends ItemView {
 	// hint for the two values Obsidian actually passes today.
 	onPaneMenu(menu: Menu, source: "more-options" | "tab-header" | (string & {})): void {
 		super.onPaneMenu(menu, source);
+		if (this.isRcServer()) {
+			return;
+		}
 		const id = this.id;
 		const justCompacted = this.plugin.isJustCompacted(id);
 		menu.addSeparator();
@@ -1331,6 +1356,11 @@ export class TerminalView extends ItemView {
 				button(t("action.retry"), "mod-cta", () => void this.retry());
 				button(t("action.close"), undefined, () => void this.closeTab(false));
 				break;
+			case "rc-stopped":
+				msg.setText(t("rc.exit.notRunning"));
+				button(t("action.rcServerStart"), "mod-cta", () => void this.startRcServer());
+				button(t("action.close"), undefined, () => void this.closeTab(true));
+				break;
 		}
 		el.show();
 	}
@@ -1339,6 +1369,28 @@ export class TerminalView extends ItemView {
 		this.exitReason = null;
 		this.exitEl.empty();
 		this.exitEl.hide();
+	}
+
+	/** The Remote Control server tab's start button: starts the server as the side panel's toggle
+	 * does, then shows it here. */
+	private async startRcServer(): Promise<void> {
+		this.hideExit();
+		this.disconnect();
+		this.terminal.reset();
+		await this.plugin.rcServer.startFromTerminal();
+		await this.ensureAttached();
+	}
+
+	/** The server tab of a stopped server shows the server again once the side panel's toggle
+	 * starts it. */
+	private onRcServerChange(): void {
+		if (!this.isRcServer() || this.exitReason?.kind !== "rc-stopped" || !this.plugin.rcServer.running()) {
+			return;
+		}
+		this.hideExit();
+		this.disconnect();
+		this.terminal.reset();
+		void this.ensureAttached();
 	}
 
 	/** Reconnects (attach if the daemon already has `id`, otherwise start). */
@@ -1463,7 +1515,7 @@ export class TerminalView extends ItemView {
 	}
 
 	private isExited(): boolean {
-		if (this.exitReason?.kind === "exited") {
+		if (this.exitReason?.kind === "exited" || this.exitReason?.kind === "rc-stopped") {
 			return true;
 		}
 		const row = this.plugin.index.sessions.get(this.id);
@@ -1472,7 +1524,7 @@ export class TerminalView extends ItemView {
 
 	/** Daemon unreachable, claude missing, or a start failure (`exited` is handled separately). */
 	private isErrorState(): boolean {
-		return !!this.exitReason && this.exitReason.kind !== "exited";
+		return !!this.exitReason && this.exitReason.kind !== "exited" && this.exitReason.kind !== "rc-stopped";
 	}
 
 	/**

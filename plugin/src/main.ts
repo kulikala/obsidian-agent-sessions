@@ -142,6 +142,9 @@ import {
 } from "./sessions/terminal-status";
 import { claudeSettingsPath, readFullscreenTui } from "./terminal/tui-mode";
 import { resumeConnectsRemoteControl } from "./sessions/remote-control";
+import { RC_SERVER_ID } from "./sessions/rc-server";
+import type { RcServerControl } from "./sessions/rc-server-control";
+import { createRcServerControl } from "./sessions/rc-server-host";
 import type { ArchivedSession, DaemonSession, Detail, LiveResult, ScanResult } from "./types";
 import {
 	AGENT_SKILLS_NOTICE,
@@ -279,6 +282,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	settings: AgentSessionsSettings = DEFAULT_SETTINGS;
 	/** Events internal to the plugin (`settings-changed`, `terminal-status`). */
 	events = new Events();
+	/** The side panel's Remote Control toggle (`sessions/rc-server-control.ts`). */
+	rcServer!: RcServerControl;
 	/** Combines the scan results with what's running and what's open in a tab. Holds one `registry` and one `statusline`. */
 	index!: SessionIndex;
 	/**
@@ -414,6 +419,9 @@ export default class AgentSessionsPlugin extends Plugin {
 
 		this.register(this.index.registry.onIdle((id) => void this.notifyIdle(id)));
 
+		this.rcServer = createRcServerControl(this);
+		this.registerEvent(this.events.on("settings-changed", () => this.rcServer.settingsChanged()));
+
 		// The welcome guide's floating window and what it watches the guide's session for.
 		const coach = new OnboardingCoachWindow(this);
 		this.coach = coach;
@@ -435,6 +443,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.register(
 			this.index.onDaemonSessions((sessions) => {
 				this.daemonSessions = sessions;
+				this.rcServer.sync(sessions);
 				this.adoptOrphanSessions(sessions);
 				void this.linkSuccessors();
 				void this.followAgentNew();
@@ -582,6 +591,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.stopIndex?.();
 		this.stopIndex = null;
 		this.index.dispose();
+		this.rcServer?.dispose();
 		if (this.cleanupExitedTimer) {
 			window.clearTimeout(this.cleanupExitedTimer);
 			this.cleanupExitedTimer = null;
@@ -2053,7 +2063,13 @@ export default class AgentSessionsPlugin extends Plugin {
 		for (const view of this.terminalViews()) {
 			// A linked tab's daemon session is listed under the id it was linked to.
 			const daemon = running.get(view.daemonSessionId) ?? running.get(view.sessionId);
-			if (view.sessionAgent !== "claude" || !daemon || registry.get(view.sessionId) !== null || views.has(view.sessionId)) {
+			if (
+				view.sessionAgent !== "claude" ||
+				view.sessionId === RC_SERVER_ID ||
+				!daemon ||
+				registry.get(view.sessionId) !== null ||
+				views.has(view.sessionId)
+			) {
 				continue;
 			}
 			views.set(view.sessionId, view);
