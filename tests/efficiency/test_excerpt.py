@@ -41,35 +41,5 @@ class MaskTest(unittest.TestCase):
             self.assertEqual(self.mask(text), text)
 
 
-class LimitTest(unittest.TestCase):
-    def item(self, task, impact, prompt_len, tools=0):
-        return {'task': task, 'impact_w': impact, 'prompts': [{'ref': task + '.p1', 'text': 'a' * prompt_len}],
-                'replies': [], 'tools': [{'tool': 'Read'}] * tools}
-
-    def test_drops_smallest_impact_first_then_shortens_prompts(self):
-        items = [self.item('t-a', 10, 600), self.item('t-b', 5, 600), self.item('t-c', 20, 600)]
-        limit = excerpt.size(items) - 10
-        orig_build = excerpt.task_excerpt
-        try:
-            excerpt.task_excerpt = lambda s, t, m, w, texts=None: dict(next(i for i in items if i['task'] == t['id']))
-            analysed = [{'session': {'id': 's'}, 'tasks': [{'id': i['task'], 'in_range': True} for i in items]}]
-            hits = [{'task': i['task'], 'impact_w': i['impact_w'], 'needs_llm': False} for i in items]
-            out = excerpt.build(analysed, hits, excerpt.Masker('/h', None), limit=limit)
-            self.assertEqual([i['task'] for i in out], ['t-c', 't-a'])
-            one = excerpt.size([items[2]])
-            out = excerpt.build(analysed, hits, excerpt.Masker('/h', None), limit=one - 100)
-            self.assertEqual([i['task'] for i in out], ['t-c'])
-            self.assertEqual(len(out[0]['prompts'][0]['text']), excerpt.PROMPT_CHARS_SHORT)
-        finally:
-            excerpt.task_excerpt = orig_build
-
-    def test_prompt_choice_keeps_first_rework_and_last(self):
-        prompts = [{'ref': 'p%d' % i, 'rework': [1] if i in (4, 9) else []} for i in range(12)]
-        chosen = [p['ref'] for p in excerpt.pick_prompts(prompts)]
-        self.assertEqual(len(chosen), excerpt.MAX_PROMPTS)
-        for ref in ('p0', 'p4', 'p9', 'p11'):
-            self.assertIn(ref, chosen)
-
-
 if __name__ == '__main__':
     unittest.main()

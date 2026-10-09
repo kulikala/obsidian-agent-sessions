@@ -381,9 +381,10 @@ class OpencodeTest(_Tmp):
                          ('opencode-ollama', 'big-local', True))
         self.assertTrue(panes['mybox']['local'])
         self.assertFalse(panes['anthropic']['local'])
-        cloud_sent = json.dumps([panes['anthropic']['summary'], panes['anthropic']['excerpts']])
+        cloud_sent = json.dumps(panes['anthropic']['digest'])
         self.assertNotIn('Secret local title', cloud_sent)
         self.assertNotIn('ses_local', cloud_sent)
+        self.assertIn('Cloud title', cloud_sent)
         self.assertEqual(panes['anthropic']['sessions'], 1)
         self.assertEqual(panes['ollama']['sessions'], 3)
 

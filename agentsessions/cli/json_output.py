@@ -478,16 +478,16 @@ def stats_output() -> dict:
 
 def efficiency_output(agent_names: Optional[List[str]] = None, threshold: float = 80.0,
                       budget: float = 10_000_000, explicit=None, max_sessions: int = 200,
-                      excerpts: bool = True, now: Optional[float] = None) -> dict:
+                      digest: bool = True, now: Optional[float] = None) -> dict:
     """`{"version": 1, "agents": {"claude": {...}, "codex": {...}, "opencode": {...}}}` -- the
-    token efficiency statistics, hits and masked excerpts of each requested (and enabled) agent;
+    token efficiency statistics, hits and the masked digest of each requested (and enabled) agent;
     see `agentsessions/efficiency/report.py`."""
     from ..efficiency import report, sources
     now = time.time() if now is None else now
     enabled = agents.enabled_agents()
     wanted = [a for a in (agent_names or enabled) if a in enabled]
     kw = dict(vault=config.VAULT, threshold=threshold, budget=budget, explicit=explicit,
-              max_sessions=max_sessions, with_excerpts=excerpts)
+              max_sessions=max_sessions, with_digest=digest)
     out: Dict[str, dict] = {}
     if 'claude' in wanted:
         c = cache.load(path=config.CACHE_PATH)

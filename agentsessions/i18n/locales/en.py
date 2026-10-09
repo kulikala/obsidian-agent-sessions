@@ -91,7 +91,7 @@ MESSAGES = {
     'cmd.json_bad_iso': 'bad ISO8601: {value}',
     'cmd.json_unknown_option': 'unknown option: {option}',
     'cmd.json_bad_value': 'bad value for {option}: {value}',
-    'cmd.json_efficiency_usage': 'usage: agent-sessions json efficiency [--agent A]... [--threshold P] [--budget W] [--from ISO --to ISO] [--max-sessions N] [--no-excerpts]',
+    'cmd.json_efficiency_usage': 'usage: agent-sessions json efficiency [--agent A]... [--threshold P] [--budget W] [--from ISO --to ISO] [--max-sessions N] [--no-digest]',
     'cmd.json_unknown_subcommand': 'unknown json subcommand: {sub}',
     'cmd.json_resolve_usage': 'usage: agent-sessions json resolve AGENT --pid PID --since ISO_OR_EPOCH --cwd PATH',
     'cmd.json_moved_usage': 'usage: agent-sessions json moved AGENT --pid PID --since ISO_OR_EPOCH',

@@ -1,18 +1,18 @@
 """`json efficiency` for one agent: sessions -> range -> tasks -> hits -> the output block of D-8.
 
 The agent's sessions come from a source (`sources.py`: Claude Code, Codex or OpenCode). The range
-is fixed once per run (D-3), statistics and excerpts come from the same read, and nothing here
+is fixed once per run (D-3), statistics and the digest come from the same read, and nothing here
 carries display text: the plugin chooses the words in the UI language.
 
 What may be sent to a model is split into panes, one per provider the sessions used (Claude Code
-has one): each pane's summary and excerpts name only that provider's sessions, so a conversation
+has one): each pane's digest (`digest.py`) names only that provider's sessions, so a conversation
 held with a local model never reaches another provider, not even by its name.
 """
 
 import statistics
 from typing import Dict, List, Optional, Tuple
 
-from . import cache, detect, excerpt, impact, normalize, sources, tasks
+from . import cache, detect, digest, excerpt, impact, normalize, sources, tasks
 
 DAY = 86400.0
 MAX_LOOKBACK_DAYS = 7
@@ -22,10 +22,6 @@ DEFAULT_BUDGET = 10_000_000
 DEFAULT_MAX_SESSIONS = 200
 MAX_TASKS_OUT = 20
 MAX_HITS_OUT = 200
-SUMMARY_TASKS = 20
-SUMMARY_HITS = 40
-# Room kept for the session rows the excerpts add to the summary.
-SUMMARY_SLACK = 2000
 
 
 # ---- Range (D-3) ----------------------------------------------------------------
@@ -137,19 +133,19 @@ def _hit_out(h: dict, mask: excerpt.Masker) -> dict:
 def build(now: float, projects_dir: str, status_dir: str, stats_cache_path: str,
           vault: Optional[str] = None, threshold: float = DEFAULT_THRESHOLD,
           budget: float = DEFAULT_BUDGET, explicit: Optional[Tuple[float, float]] = None,
-          max_sessions: int = DEFAULT_MAX_SESSIONS, with_excerpts: bool = True,
+          max_sessions: int = DEFAULT_MAX_SESSIONS, with_digest: bool = True,
           names: Optional[Dict[str, str]] = None, home: Optional[str] = None,
           cache_folder: Optional[str] = None) -> dict:
     """The `agents.claude` block of `json efficiency` (D-8)."""
     src = sources.ClaudeSource(projects_dir, status_dir, stats_cache_path)
     return build_for(now, src, vault=vault, threshold=threshold, budget=budget, explicit=explicit,
-                     max_sessions=max_sessions, with_excerpts=with_excerpts, names=names, home=home,
+                     max_sessions=max_sessions, with_digest=with_digest, names=names, home=home,
                      cache_folder=cache_folder)
 
 
 def build_for(now: float, src, vault: Optional[str] = None, threshold: float = DEFAULT_THRESHOLD,
               budget: float = DEFAULT_BUDGET, explicit: Optional[Tuple[float, float]] = None,
-              max_sessions: int = DEFAULT_MAX_SESSIONS, with_excerpts: bool = True,
+              max_sessions: int = DEFAULT_MAX_SESSIONS, with_digest: bool = True,
               names: Optional[Dict[str, str]] = None, home: Optional[str] = None,
               cache_folder: Optional[str] = None) -> dict:
     """The `agents.<agent>` block of `json efficiency` (D-8) for the sessions of `src`."""
@@ -161,13 +157,13 @@ def build_for(now: float, src, vault: Optional[str] = None, threshold: float = D
         sessions, limits = src.read(now, oldest, max_sessions, reader)
         src.prune(folder)
         return _block(now, src, sessions, limits, reader, vault, threshold, budget, explicit,
-                      with_excerpts, names or {}, home)
+                      with_digest, names or {}, home)
     finally:
         src.close()
 
 
 def _block(now, src, sessions, limits, reader, vault, threshold, budget, explicit,
-           with_excerpts, names, home) -> dict:
+           with_digest, names, home) -> dict:
     turns_by = {s['id']: tasks.turns_of(s) for s in sessions}
     base = tasks.baselines(sessions, now, turns_by_session=turns_by)
     all_calls = [c for s in sessions for c in s['calls']]
@@ -220,7 +216,6 @@ def _block(now, src, sessions, limits, reader, vault, threshold, budget, explici
         'breakdown': impact.breakdown(ranged, hits),
         'tasks': [_task_out(t) for t in task_rows[:MAX_TASKS_OUT]],
         'hits': [_hit_out(h, mask) for h in hits[:MAX_HITS_OUT]],
-        'excerpts': [],
         'baselines': base,
         'limits': limits,
     }
@@ -229,37 +224,26 @@ def _block(now, src, sessions, limits, reader, vault, threshold, budget, explici
         provider = prov['provider']
         mine = [a for a in analysed if sources.provider_of(a['session']) == provider]
         ids = {a['session']['id'] for a in mine}
-        part = dict(block, sessions=[x for x in block['sessions'] if x['id'] in ids],
-                    tasks=[x for x in block['tasks'] if x['session'] in ids],
-                    hits=[x for x in block['hits'] if x['session'] in ids], excerpts=[])
-        part['totals'] = _totals([c for a in mine for c in a['session']['calls'] if tasks.in_range(c['ts'], rng)],
-                                 [p for a, p in zip(analysed, preambles) if a in mine])
-        part['breakdown'] = impact.breakdown(
-            [c for a in mine for c in a['session']['calls'] if tasks.in_range(c['ts'], rng)],
-            [h for h in hits if h['session'] in ids])
-        if with_excerpts:
-            # The summary and the excerpts are sent together: both fit in `excerpt.LIMIT`.
-            room = excerpt.LIMIT - excerpt.size([summary(part, mine, mask, names, src.agent)]) - SUMMARY_SLACK
-            items = excerpt.build(mine, [h for h in hits if h['session'] in ids], mask,
-                                  limit=max(room, 0), texts=src.texts)
-            part['excerpts'] = items
-            while items and sent_size(summary(part, mine, mask, names, src.agent), items) > excerpt.LIMIT:
-                items.pop(min(range(len(items)), key=lambda i: (items[i]['impact_w'], i)))
-        panes.append({
+        ranged_mine = [c for a in mine for c in a['session']['calls'] if tasks.in_range(c['ts'], rng)]
+        totals_ = _totals(ranged_mine, [p for a, p in zip(analysed, preambles) if a in mine])
+        breakdown_ = impact.breakdown(ranged_mine, [h for h in hits if h['session'] in ids])
+        pane_hits = [x for x in block['hits'] if x['session'] in ids]
+        pane = {
             'key': src.agent if src.agent == 'claude' else '%s-%s' % (src.agent, provider),
             'agent': src.agent, 'provider': provider, 'model': prov['analysis_model'],
             'models': prov['analysis_models'],
-            'local': prov['local'], 'sessions': len(part['sessions']), 'w': part['totals']['w'],
-            'totals': part['totals'], 'breakdown': part['breakdown'],
-            'hits': [h['id'] for h in part['hits']],
-            'summary': summary(part, mine, mask, names, src.agent), 'excerpts': part['excerpts'],
-        })
+            'local': prov['local'], 'sessions': len(ids), 'w': totals_['w'],
+            'totals': totals_, 'breakdown': breakdown_,
+            'hits': [h['id'] for h in pane_hits],
+        }
+        if with_digest:
+            context = {'range': {k: v for k, v in rng_info.items() if k != 'windows'},
+                       'totals': totals_,
+                       'baselines': {k: base[k] for k in ('L_med', 'L1_med', 'C_med', 'disabled')}}
+            pane['digest'] = digest.build(mine, pane_hits, mask, names, rng, texts=src.texts,
+                                          agent=src.agent, context=context)
+        panes.append(pane)
     block['panes'] = panes
-    if panes:
-        block['excerpts'] = panes[0]['excerpts']
-        block['summary'] = panes[0]['summary']
-    else:
-        block['summary'] = summary(block, analysed, mask, names, src.agent)
     return block
 
 
@@ -289,45 +273,3 @@ def _providers(analysed: List[dict], rng: Tuple[float, float], src) -> List[dict
         entry['w'] = round(entry['w'])
         rows.append(entry)
     return rows
-
-
-def sent_size(summary_: dict, excerpts: List[dict]) -> int:
-    """Characters of what the plugin sends: the summary and the excerpts, as JSON."""
-    return excerpt.size([summary_]) + excerpt.size(excerpts)
-
-
-def summary(block: dict, analysed: List[dict], mask: excerpt.Masker, names: Dict[str, str],
-            agent: str = 'claude') -> dict:
-    """What is sent to the model besides the excerpts (D-9, items 1 and 3): numbers, ids,
-    masked session names and folders, instruction file sizes and the skill count."""
-    hits = block['hits'][:SUMMARY_HITS]
-    tasks_ = block['tasks'][:SUMMARY_TASKS]
-    wanted = {h['session'] for h in hits} | {t['session'] for t in tasks_} \
-        | {e['session'] for e in block['excerpts']}
-    sessions = [{'id': s['id'], 'name': mask(s['name']) if s['name'] else None, 'folder': s['folder']}
-                for s in block['sessions'] if s['id'] in wanted]
-    instr: Dict[str, dict] = {}
-    skills = []
-    for a in analysed:
-        s = a['session']
-        if s['id'] not in wanted:
-            continue
-        pre = s['main'].get('preamble', {})
-        if pre.get('skills') is not None:
-            skills.append(pre['skills'])
-        for f in pre.get('instr', []):
-            shown = mask.path(normalize.abs_path(f.get('p'), s['cwd']))
-            instr[shown] = {'file': shown, 'type': f.get('type'), 'bytes': f['bytes'], 'lines': f['lines']}
-    rng = {k: v for k, v in block['range'].items() if k != 'windows'}
-    return {
-        'agent': agent, 'range': rng, 'totals': block['totals'], 'breakdown': block['breakdown'],
-        'baselines': {k: block['baselines'][k] for k in ('L_med', 'L1_med', 'C_med', 'disabled')},
-        'tasks': tasks_,
-        'hits': [{'id': h['id'], 'detector': h['detector'], 'session': h['session'], 'task': h['task'],
-                  'metrics': h['metrics'], 'impact_w': h['impact_w'], 'confidence': h['confidence'],
-                  'needs_llm': h['needs_llm'], 'remedy_kind': h['remedy_kind'], 'change': h['change'],
-                  'targets': h['shown_targets']} for h in hits],
-        'sessions': sessions,
-        'instructions': sorted(instr.values(), key=lambda x: x['file']),
-        'skills': max(skills) if skills else None,
-    }
