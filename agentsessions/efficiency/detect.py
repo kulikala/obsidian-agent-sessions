@@ -1,4 +1,4 @@
-"""Detectors (D-6, P1): E01, E02, E03, E04, E05, E08, E14, E16, for Claude Code, Codex and
+"""Detectors (D-6, P1): E01, E02, E03, E04, E05, E08, E14, E16, E17, for Claude Code, Codex and
 OpenCode sessions alike. Where the agents differ -- the instruction file's name, when a cache
 counts as expired (E04, not for OpenCode), how long an instruction file may be (E14) -- the
 session's `agent` decides.
@@ -49,6 +49,9 @@ E14_MAX_SKILLS = 50
 E16_MIN_CORRECTIONS = 2
 E16_MIN_INTERRUPTS = 2
 E16_CALL_RATIO = 2.0
+E17_SHORT_RATIO = 0.5
+E17_LOOK_SHARE = 0.5
+E17_LOOK_TARGETS = 3
 
 INSTRUCTION_NAMES = ('CLAUDE.md', 'AGENTS.md')
 INSTRUCTION_FILE = {'claude': 'CLAUDE.md', 'codex': 'AGENTS.md', 'opencode': 'AGENTS.md'}
@@ -549,6 +552,43 @@ def e16(analysed: List[dict], base: dict, rng: Tuple[float, float]) -> List[dict
     return found
 
 
+# ---- E17 -----------------------------------------------------------------------
+
+def e17(analysed: List[dict], base: dict, rng: Tuple[float, float]) -> List[dict]:
+    """A task's first request with few clues (structure only; `needs_llm`): it is short next to
+    the user's usual starting prompt, names no file the task then touched, and the task went on
+    to search around first or to rework. The impact is the first turn's calls."""
+    if 'E17' in base['disabled'] or not base.get('L1_med'):
+        return []
+    found = []
+    for a in analysed:
+        s = a['session']
+        for t in a['tasks']:
+            if not t['in_range'] or not t['prompts'] or t['first_ratio'] is None:
+                continue
+            if t['first_ratio'] > E17_SHORT_RATIO or t['first_mentions_file']:
+                continue
+            searched = (t['first_look_share'] >= E17_LOOK_SHARE
+                        and t['first_look_targets'] >= E17_LOOK_TARGETS)
+            if not (searched or t['corrections'] or t['interrupts']):
+                continue
+            first = t['_turns'][0]
+            calls = [c for c in first['main'] + first['sub'] if tasks.in_range(c['ts'], rng)]
+            if not calls:
+                continue
+            prompt = t['prompts'][0]
+            origin = prompt.get('uuid') or t['id']
+            found.append(_hit(
+                'E17', s['id'], origin, prompt['ts'], task=t['id'], needs_llm=True, confidence='medium',
+                metrics={'first_ratio': t['first_ratio'], 'look_share': t['first_look_share'],
+                         'look_targets': t['first_look_targets'], 'corrections': t['corrections'],
+                         'interrupts': t['interrupts'], 'calls': len(calls)},
+                impact_w=sum(normalize.w_of(c) for c in calls),
+                impact_usd=impact.usd_sum(impact.call_usd(c) for c in calls),
+                _contrib={impact.call_key(c): normalize.w_of(c) for c in calls}))
+    return found
+
+
 # ---- All ------------------------------------------------------------------------
 
 def run(analysed: List[dict], base: dict, rng: Tuple[float, float]) -> Tuple[List[dict], int]:
@@ -556,7 +596,7 @@ def run(analysed: List[dict], base: dict, rng: Tuple[float, float]) -> Tuple[Lis
     the same id (a hash collision) the later one is dropped and counted in `collisions`."""
     hits = (e01(analysed, rng) + e02(analysed, rng) + e03(analysed, rng)
             + e04_e05(analysed, rng) + e08(analysed, rng) + e14(analysed, rng)
-            + e16(analysed, base, rng))
+            + e16(analysed, base, rng) + e17(analysed, base, rng))
     agents = {a['session']['id']: a['session'].get('agent') or 'claude' for a in analysed}
     for h in hits:
         h['agent'] = agents.get(h['session'], 'claude')
