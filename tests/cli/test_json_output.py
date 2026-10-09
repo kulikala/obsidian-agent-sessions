@@ -118,6 +118,26 @@ class TestScanOutput(JsonoutTestBase):
         self.assertNotIn('after_compact', by_id[ID1])
         self.assertEqual(by_id[ID2]['after_compact'], 'clean')
 
+    def test_schedule_and_scheduled_turn_reported_and_cached(self):
+        recs = [
+            {'type': 'user', 'cwd': '/Users/k/other', 'message': {'role': 'user', 'content': 'unnamed question'}},
+            {'type': 'assistant', 'timestamp': '2026-10-08T03:00:00.000Z', 'message': {'content': [
+                {'type': 'tool_use', 'id': 't1', 'name': 'CronCreate',
+                 'input': {'cron': '*/5 * * * *', 'prompt': 'p', 'recurring': True}}]}},
+            {'type': 'user', 'timestamp': '2026-10-08T03:00:01.000Z',
+             'message': {'content': [{'type': 'tool_result', 'tool_use_id': 't1', 'content': 'ok'}]},
+             'toolUseResult': {'id': 'abcd1234', 'humanSchedule': 'Every 5 minutes'}},
+            {'type': 'user', 'isMeta': True, 'turnOrigin': 'scheduled', 'scheduledTaskId': 'abcd1234',
+             'message': {'role': 'user', 'content': 'p'}},
+        ]
+        write_jsonl(os.path.join(self.proj, ID2 + '.jsonl'), recs)
+        for _ in range(2):    # the second pass is served from the scan cache
+            by_id = {s['id']: s for s in jsonout.scan_output()['sessions']}
+            self.assertNotIn('schedule', by_id[ID1])
+            self.assertNotIn('scheduled_turn', by_id[ID1])
+            self.assertEqual(by_id[ID2]['schedule']['job_count'], 1)
+            self.assertTrue(by_id[ID2]['scheduled_turn'])
+
     def test_only_returns_just_that_id_and_updates_cache(self):
         out = jsonout.scan_output(only=[ID1])
         ids = [s['id'] for s in out['sessions']]

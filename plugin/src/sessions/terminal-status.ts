@@ -9,6 +9,7 @@ export type TerminalStatus =
 	| "working"
 	| "running-shell"
 	| "asking"
+	| "looped"
 	| "waiting"
 	| "compacted"
 	| "editing"
@@ -35,6 +36,11 @@ export interface TerminalStatusInput {
 	 * this tab hasn't been viewed yet."
 	 */
 	registryStatus: "busy" | "shell" | "waiting" | "idle" | null | undefined;
+	/**
+	 * The turn that just ended was started by a schedule (`/loop`, a cron job or a wakeup), and the
+	 * tab hasn't been brought to front since (`looped.ts`).
+	 */
+	looped?: boolean;
 	/** After `busy→idle`, this tab still hasn't been brought to front (distinct from claude's own `waiting` above). */
 	waiting: boolean;
 	/**
@@ -58,7 +64,7 @@ export interface TerminalStatusInput {
 
 /** Priority order: error > exited > asking (registry `waiting` or Codex's own `titleStatus`) >
  * editing > connecting > running-shell > working (registry `busy` or Codex's own `titleStatus`) >
- * waiting > compacted > detached > idle. */
+ * looped > waiting > compacted > detached > idle. */
 export function terminalStatus(input: TerminalStatusInput): TerminalStatus {
 	if (input.error) {
 		return "error";
@@ -81,6 +87,9 @@ export function terminalStatus(input: TerminalStatusInput): TerminalStatus {
 	if (input.registryStatus === "busy" || input.titleStatus === "working") {
 		return "working";
 	}
+	if (input.looped) {
+		return "looped";
+	}
 	if (input.waiting) {
 		return "waiting";
 	}
@@ -100,6 +109,7 @@ export const TERMINAL_STATUS_ICON: Record<TerminalStatus, string> = {
 	working: "loader-circle",
 	"running-shell": "terminal",
 	asking: "hand",
+	looped: "repeat",
 	waiting: "eye",
 	compacted: "archive-restore",
 	editing: "pencil-line",
@@ -119,6 +129,7 @@ export const ALL_TERMINAL_STATUSES: readonly TerminalStatus[] = [
 	"working",
 	"running-shell",
 	"asking",
+	"looped",
 	"waiting",
 	"compacted",
 	"editing",
@@ -134,6 +145,7 @@ export const STATUS_LABEL_KEY: Record<TerminalStatus, MessageKey> = {
 	working: "status.working",
 	"running-shell": "status.runningShell",
 	asking: "status.asking",
+	looped: "status.looped",
 	waiting: "status.waiting",
 	compacted: "status.compacted",
 	editing: "status.editing",
@@ -156,6 +168,7 @@ export type StatusGroup = "needs-input" | "needs-review" | "running" | "done" | 
  * derived from `TerminalStatus`) and `error` (no distinct filter bucket — see `statusGroup`'s comment). */
 const STATUS_GROUP_OF: Record<TerminalStatus, StatusGroup> = {
 	asking: "needs-input",
+	looped: "needs-review",
 	waiting: "needs-review",
 	compacted: "needs-review",
 	connecting: "running",
@@ -245,6 +258,7 @@ const PRIORITY_ORDER: readonly TerminalStatus[] = [
 	"connecting",
 	"running-shell",
 	"working",
+	"looped",
 	"waiting",
 	"compacted",
 	"detached",

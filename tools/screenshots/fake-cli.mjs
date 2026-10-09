@@ -43,6 +43,16 @@ function scanSession(s) {
 	} else {
 		row.goal = null;
 	}
+	if (s.schedule) {
+		const at = (minutes) => now + minutes * 60;
+		const jobs = s.schedule.jobs.map((j) => ({ cron: j.cron, recurring: true, human: j.human, next: at(j.nextMinutes) }));
+		const wakeup = s.schedule.wakeupMinutes != null ? at(s.schedule.wakeupMinutes) : null;
+		const nexts = [...jobs.map((j) => j.next), ...(wakeup != null ? [wakeup] : [])];
+		row.schedule = { jobs, job_count: jobs.length, wakeup, next: Math.min(...nexts) };
+	}
+	if (s.scheduledTurn) {
+		row.scheduled_turn = true;
+	}
 	return row;
 }
 

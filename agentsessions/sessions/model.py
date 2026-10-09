@@ -26,6 +26,11 @@ class Session:
     # local commands has followed the last compaction, `'input'` once a prompt has been sent
     # but not yet answered, `None` otherwise.
     after_compact: Optional[str] = None
+    # Claude Code only (sessions/schedule.py): the session's `CronCreate` jobs and pending
+    # `ScheduleWakeup`, or None when nothing is scheduled.
+    schedule: Optional[dict] = None
+    # Claude Code only: whether the latest turn was started by a schedule, with no human input since.
+    scheduled_turn: bool = False
 
 
 @dataclass

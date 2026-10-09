@@ -42,6 +42,13 @@ describe("attentionCounts", () => {
 		expect(counts.waiting).toBe(2);
 	});
 
+	it("counts a looped session in the needs-review bucket", () => {
+		const rows = [row({ id: "a" }), row({ id: "b" })];
+		const counts = attentionCounts(source({ a: "looped", b: "waiting" }), rows);
+		expect(counts.waiting).toBe(2);
+		expect(counts.waitingIds).toEqual(["a", "b"]);
+	});
+
 	it("is 0 for both, with no ids, when neither is present", () => {
 		const rows = [row({ id: "a" }), row({ id: "b" })];
 		const counts = attentionCounts(source({ a: "idle", b: "working" }), rows);

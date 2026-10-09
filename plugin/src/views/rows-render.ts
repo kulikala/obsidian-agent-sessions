@@ -33,6 +33,7 @@ import {
 } from "./rows";
 import { rowMenuGroups, type RowMenuId } from "./row-menu";
 import { renderGoalMark } from "./goal-render";
+import { activeSchedule, scheduleTooltip } from "../sessions/looped";
 
 const HOVER_DELAY_MS = 300;
 
@@ -52,6 +53,18 @@ export function rowStatusMark(container: HTMLElement, plugin: AgentSessionsPlugi
 	setIcon(mark, icon);
 	setTooltip(mark, statusTooltip(status, row.archived));
 	return mark;
+}
+
+/** A calm clock after the name of a Claude Code session whose process is alive and has scheduled
+ * work (`/loop`, `CronCreate`, `ScheduleWakeup`); the tooltip says what is scheduled. */
+export function renderScheduleMark(container: HTMLElement, row: Row): void {
+	const schedule = activeSchedule(row);
+	if (!schedule) {
+		return;
+	}
+	const mark = container.createSpan({ cls: "agent-sessions-row-schedule" });
+	setIcon(mark, "clock");
+	setTooltip(mark, scheduleTooltip(schedule));
 }
 
 /**
@@ -154,6 +167,7 @@ export function renderRow(container: HTMLElement, row: Row, opts: RenderRowOptio
 	}
 	el.createSpan({ cls: "agent-sessions-row-name", text: rowLabel(row) });
 	renderGoalMark(el, row.goal, attentionStatus);
+	renderScheduleMark(el, row);
 	const time = formatRelativeTime(row.last_activity);
 	if (time) {
 		const timeEl = el.createSpan({ cls: "agent-sessions-row-time", text: time });
