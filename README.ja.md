@@ -3,7 +3,7 @@
 # Agent Sessions
 
 <!-- intro:start (タグライン、導入、「こんな人のために」は 1 つのまとまりです) -->
-**ノートの隣に置く、ターミナルエージェントの作業台。**
+**仕事を本物のエージェントに預けて、閉じて、戻る。**
 
 [![Release](https://img.shields.io/github/v/release/kulikala/obsidian-agent-sessions?style=flat-square)](https://github.com/kulikala/obsidian-agent-sessions/releases)
 [![License](https://img.shields.io/github/license/kulikala/obsidian-agent-sessions?style=flat-square)](LICENSE)
@@ -11,24 +11,24 @@
 
 [インストール](#インストール) · [ドキュメント](docs/usage.md) · [English](README.md)
 
-[Claude Code](https://claude.com/claude-code)、[Codex](https://github.com/openai/codex)、[OpenCode](https://opencode.ai) を、[Obsidian](https://obsidian.md) のノートの隣のターミナルタブで動かします。実行中・入力待ち・完了のどれかと、使用量・コストが 1 つの一覧に並び、タブを閉じても Obsidian を終了しても、セッションは動き続けます。
+[Claude Code](https://claude.com/claude-code)、[Codex](https://github.com/openai/codex)、[OpenCode](https://opencode.ai) を、[Obsidian](https://obsidian.md) のノートの隣のターミナルタブで動かします。実行中・入力待ち・完了のどれかと、使用量・コストが 1 つの一覧に並び、タブを閉じても Obsidian を終了しても、セッションは動き続けます。どのセッションにも記録が残るので、明日はその続きから頼めます。
 そのために常駐のヘルパープログラムと、エージェントの設定に追加する hooks を使います。どちらも下に一覧があり、ボタン 1 つで削除できます。
 
 ![ターミナルタブで動く Claude Code のセッションと、開いているタブ・起動中・最近のセッションを並べたサイドパネル](docs/onboarding/ja/overview.png)
 
 - **タブを閉じても、Obsidian を終了しても、セッションは動き続けます。** 小さな Python のヘルパーが常駐します。削除は設定から。（[起動するプログラム](#起動するプログラム)）
+- **どのセッションにも記録が残ります。** 終了したセッションは会話の続きから再開でき、タブごとに別のセッションです。（[サイドパネルでのセッションの切り替え](#サイドパネルでのセッションの切り替え)）
 - **全セッションの状態・使用量・コストが 1 つの一覧に。** 読むのはこのマシン上のエージェントのローカルファイルです。（[ネットワーク](#ネットワーク)）
-- **エージェント自身のターミナルを、書いている書類の隣に。** 設定・ログイン・スラッシュコマンドはエージェントのものです。出力中の vault のパスはリンクで開けます。
 
 ## こんな人のために
 
-書類をエージェントと書く人へ。案件が何本あっても。
+Claude Code・Codex・OpenCode を使っている、または入れる気のある人へ。ノートの隣から仕事を預けたい人。
 
 - Claude Code や Codex を一日中使い、設計書・提案書・ノートを書かせている。
 - 複数の案件を並行して回し、どのセッションが自分を待っているかを知りたい。
 - 書類を Obsidian に置いていて、そのエディターをターミナルの隣に置きたい。
 
-向かないのは、チャット画面やノートへのインライン編集がほしい人（使うのはエージェント自身のターミナルです）、Obsidian モバイルを使う人、エージェントを WSL で動かす Windows の人です。
+向かないのは、チャット画面やノートへのインライン編集がほしい人（使うのはエージェント自身のターミナルです）、会話するだけのチャット欄がほしい人、モバイルだけで使いたい人、エージェントを WSL で動かす Windows の人です。
 <!-- intro:end -->
 
 ## インストールで起きること
@@ -47,6 +47,7 @@
 - Obsidian 1.8.7 以降のデスクトップ版（macOS・Linux・Windows）。
 - Python 3.9 以降。追加のパッケージは要りません。ヘルパープログラムの実行に使います。
 - Claude Code、Codex、OpenCode のいずれか（インストールとログイン済み）。契約済みのものをそのまま使い、このプラグイン用のアカウントやキーは要りません。
+- 使ったことがなければ、先に公式のページから入れてから戻ってきてください（[Claude Code](https://claude.com/claude-code)、[Codex](https://github.com/openai/codex)、[OpenCode](https://opencode.ai)）。
 
 ## エージェントを選ぶ
 

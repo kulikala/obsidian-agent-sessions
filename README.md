@@ -3,7 +3,7 @@
 # Agent Sessions
 
 <!-- intro:start (tagline, introduction and "Who it is for" are one block) -->
-**A workbench for terminal agents, next to your notes.**
+**Hand a job to a real agent. Close the lid, and come back to it.**
 
 [![Release](https://img.shields.io/github/v/release/kulikala/obsidian-agent-sessions?style=flat-square)](https://github.com/kulikala/obsidian-agent-sessions/releases)
 [![License](https://img.shields.io/github/license/kulikala/obsidian-agent-sessions?style=flat-square)](LICENSE)
@@ -11,24 +11,24 @@
 
 [Install](#install) · [Docs](docs/usage.md) · [日本語](README.ja.md)
 
-Run [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex) and [OpenCode](https://opencode.ai) in terminal tabs next to your notes in [Obsidian](https://obsidian.md). One list shows which sessions are running, waiting for input or done, with usage and cost, and the sessions keep running when you close a tab or quit Obsidian.
+Run [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex) and [OpenCode](https://opencode.ai) in terminal tabs next to your notes in [Obsidian](https://obsidian.md). One list shows which sessions are running, waiting for input or done, with usage and cost, and the sessions keep running when you close a tab or quit Obsidian. Every session keeps its record, so tomorrow you can pick up where you left off.
 A helper program and hooks in the agents' settings make this work; both are listed below and removed with one button.
 
 ![A Claude Code session in a terminal tab, with the side panel listing open, running, and recent Claude Code and Codex sessions](docs/images/overview.png)
 
 - **Sessions keep running when you close a tab or quit Obsidian.** A small Python helper stays resident; you remove it in Settings. ([Programs it starts](#programs-it-starts))
+- **Every session keeps its record.** Reopen an ended session and its conversation resumes; each tab is its own session. ([Switch between sessions](#switch-between-sessions-in-the-side-panel))
 - **State, usage and cost of every session in one list.** Read on your machine from the agents' local files. ([Network](#network))
-- **The agent's own terminal, next to the document it writes.** Your settings, login and slash commands are the agent's own. Vault paths in the output open as links.
 
 ## Who it is for
 
-For people who write documents with agents, several projects at a time.
+For people who already run (or are ready to install) Claude Code, Codex or OpenCode, and want to hand work over from next to their notes.
 
 - You use Claude Code or Codex all day, to draft specs, proposals and notes.
 - You keep several projects going at once and want to see which session needs you.
 - You keep your documents in Obsidian and want its editor next to the terminal.
 
-**Not for:** a chat panel or inline editing of notes (you get the agent's own terminal), Obsidian mobile, and Windows with the agents in WSL.
+**Not for:** a chat panel or inline editing of notes (you get the agent's own terminal), a plain chat box to talk in, use on mobile only, and Windows with the agents in WSL.
 <!-- intro:end -->
 
 ## What Install does
@@ -47,6 +47,7 @@ The dialog above is what the plugin shows before it installs anything.
 - Obsidian 1.8.7 or later, on desktop: macOS, Linux or Windows.
 - Python 3.9 or later, no extra packages. It runs the helper program.
 - Claude Code, Codex or OpenCode, installed and signed in. Your own subscription is used; the plugin needs no account or key.
+- Never used one? Install it from its official page first ([Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex), [OpenCode](https://opencode.ai)), then come back.
 
 ## Choose your agent
 
