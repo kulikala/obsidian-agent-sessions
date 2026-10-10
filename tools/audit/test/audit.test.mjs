@@ -51,6 +51,13 @@ test("secrets fail unless the file is exempt", () => {
 	assert.deepEqual(kinds(`key ${key}`, { secrets: false }), []);
 	assert.deepEqual(kinds(join("sk-ant-", "api03-", "x".repeat(30))), ["secrets"]);
 	assert.deepEqual(kinds("sk-short"), []);
+	assert.deepEqual(kinds(join("sk_", "live_", "a1".repeat(12))), ["secrets"]);
+	assert.deepEqual(kinds(join("rk_", "live_", "a1".repeat(12))), ["secrets"]);
+	assert.deepEqual(kinds(join("xox", "b-1234-", "abcdefghij")), ["secrets"]);
+	assert.deepEqual(kinds(join("xapp-", "1-", "A1B2C3D4E5F6")), ["secrets"]);
+	assert.deepEqual(kinds(join("postgres://alex:", "S3cr3t!@localhost:5432/app")), ["secrets"]);
+	assert.deepEqual(kinds(join("https://sam:", "hunter2@db.example.com/x")), ["secrets"]);
+	assert.deepEqual(kinds("https://alex:<token>@example.com and https://example.com:8080/x"), []);
 });
 
 test("commit messages: English, with Claude's two trailer lines last", () => {

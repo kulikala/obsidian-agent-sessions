@@ -9,7 +9,7 @@
 			"noreply@anthropic\\.com",
 			"noreply@github\\.com",
 			"\\d+\\+[A-Za-z0-9-]+@users\\.noreply\\.github\\.com",
-			"[^@]+@example\\.(com|org|net)",
+			"[^@]+@(?:[A-Za-z0-9-]+\\.)*example\\.(com|org|net)",
 			"[^@]+@[^@]+\\.(example|invalid|test)"
 		]
 	},
@@ -21,7 +21,9 @@
 			{ "name": "an OpenAI-style API key", "pattern": "\\bsk-(?!ant-)(?:proj-)?[A-Za-z0-9_-]{32,}" },
 			{ "name": "a GitHub token", "pattern": "\\bgh[pousr]_[A-Za-z0-9]{30,}|\\bgithub_pat_[A-Za-z0-9_]{30,}" },
 			{ "name": "an AWS access key", "pattern": "\\bAKIA[0-9A-Z]{16}\\b" },
-			{ "name": "a Slack token", "pattern": "\\bxox[abprs]-[0-9A-Za-z-]{20,}" },
+			{ "name": "a Slack token", "pattern": "\\bxox[abeoprs]-[0-9A-Za-z-]{10,}|\\bxapp-\\d-[0-9A-Za-z-]{10,}" },
+			{ "name": "a Stripe key", "pattern": "\\b[sr]k_(?:live|test)_[0-9A-Za-z]{10,}" },
+			{ "name": "a URL with a password in it", "pattern": "\\b[a-z][a-z0-9+.-]*://[^/\\s:@'\"`]+:(?![<${*\\u2026])[^/\\s@'\"`]+@[^\\s/]" },
 			{ "name": "a Google API key", "pattern": "\\bAIza[0-9A-Za-z_-]{35}\\b" },
 			{ "name": "a private key", "pattern": "-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY" }
 		]

@@ -5,19 +5,23 @@ on:
     tags:
       - "*"
 
+# Nothing by default; each job asks for what it needs.
+permissions: {}
+
 jobs:
+  # Builds with a read-only token, so the dependencies' install scripts never run next to one
+  # that can write.
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      # For the build provenance attestation below.
-      id-token: write
-      attestations: write
+      contents: read
     defaults:
       run:
         working-directory: plugin
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -28,14 +32,37 @@ jobs:
       - run: npm ci
       - run: npm run build
 
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plugin
+          path: |
+            plugin/main.js
+            plugin/manifest.json
+            plugin/styles.css
+          if-no-files-found: error
+
+  # Attests and drafts the release from the built files: no checkout, no install.
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # For the build provenance attestation below.
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: plugin
+
       # Lets anyone verify the released files were built here, from this commit
       # (`gh attestation verify main.js --repo kulikala/obsidian-agent-sessions`).
       - uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
-            plugin/main.js
-            plugin/manifest.json
-            plugin/styles.css
+            main.js
+            manifest.json
+            styles.css
 
       - name: Create release
         env:
@@ -43,6 +70,8 @@ jobs:
         run: |
           tag="${GITHUB_REF#refs/tags/}"
           gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
             --title "$tag" \
             --draft \
             main.js manifest.json styles.css
