@@ -87,7 +87,7 @@ import { getLang, languageOptions, resolveLang, setLang, t, type MessageKey } fr
 import { applyCodexConfig, codexProfileNeedsSync, defaultCodexConfigPath, type ApplyCodexConfigResult } from "./terminal/codex-config";
 import { msSinceKey, summarizeReloadSafety, type ReloadSafety } from "./terminal/reload-safety";
 import { applyEditorKey, applySubmitKey, defaultKeybindingsPath, readChatBindings, readEnterMode } from "./terminal/keybindings";
-import { commandChunks, PASTE_BEGIN, PASTE_END } from "./terminal/command-chunks";
+import { commandChunks, oneLineName, PASTE_BEGIN, PASTE_END, pasteSafe, renameCommand } from "./terminal/command-chunks";
 import { afterWait, planHeadlessCommand } from "./terminal/headless-plan";
 import { agentSendSequence, editorKeyLabel, reconcileSubmitKey } from "./terminal/keys";
 import {
@@ -1589,6 +1589,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		if (rememberAgent(this.settings, agent, opts)) {
 			void this.saveSettings();
 		}
+		name = name === undefined ? undefined : oneLineName(name);
 		const id = crypto.randomUUID();
 		// OpenCode on Windows can't start with a long first message on its command line: it is
 		// typed in once the TUI is ready instead (`typeFirstMessage`).
@@ -1652,7 +1653,7 @@ export default class AgentSessionsPlugin extends Plugin {
 				if (!(await this.index.registry.waitFor(id, "idle", WAIT_IDLE_MS))) {
 					return;
 				}
-				await this.sendCommand(id, `/rename ${name}`);
+				await this.sendCommand(id, renameCommand(name));
 				void this.index.waitForName(id, name);
 			})
 			.catch((err) => {
@@ -1717,7 +1718,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			}
 			await sleep(CODEX_COMPOSER_POLL_MS);
 		}
-		await this.typeHeldLine(view, `/rename ${name}`);
+		await this.typeHeldLine(view, renameCommand(name));
 	}
 
 	/** `typeLine` with the user's input held back meanwhile (`TerminalView.holdInput`): keys typed
@@ -1751,7 +1752,7 @@ export default class AgentSessionsPlugin extends Plugin {
 				return;
 			}
 			// A bare command needs a trailing space to close Codex's popup (`commandChunks`).
-			send(PASTE_BEGIN + (line.includes(" ") ? line : line + " ") + PASTE_END);
+			send(PASTE_BEGIN + pasteSafe(line.includes(" ") ? line : line + " ") + PASTE_END);
 			shown = await this.waitDraft(view, (draft) => lineState(draft, line) === "resubmit", LINE_ECHO_MS);
 			if (!shown) {
 				const draft = view.promptDraft();
@@ -1833,9 +1834,9 @@ export default class AgentSessionsPlugin extends Plugin {
 			}
 			const view = this.findTerminalView(id);
 			if (view?.isAttached()) {
-				await this.typeHeldLine(view, `/rename ${name}`);
+				await this.typeHeldLine(view, renameCommand(name));
 			} else {
-				await this.sendCommand(id, `/rename ${name}`);
+				await this.sendCommand(id, renameCommand(name));
 			}
 			void this.index.waitForName(id, name);
 		} catch (err) {
@@ -1889,7 +1890,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			return;
 		}
 		try {
-			await this.sendCommand(id, `/rename ${name}`);
+			await this.sendCommand(id, renameCommand(name));
 		} catch (err) {
 			console.warn("agent-sessions: Remote Control title", err);
 		}
@@ -2359,6 +2360,7 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * name goes into `sessions.json` instead and the index overlays it on the row; nothing is
 	 * sent to the TUI. */
 	async renameSession(id: string, name: string): Promise<void> {
+		name = oneLineName(name);
 		const view = this.findTerminalView(id);
 		let stored: string | undefined;
 		try {
@@ -2401,7 +2403,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			return;
 		}
 		try {
-			await this.sendCommand(id, `/rename ${name}`, t("progress.renaming"));
+			await this.sendCommand(id, renameCommand(name), t("progress.renaming"));
 			// `/rename` doesn't call the model and doesn't show up in events.log, so wait for it
 			// by repeatedly rescanning. Once `Row.name` changes, subscribers redraw the tab title.
 			void this.index.waitForName(id, name);
@@ -2467,7 +2469,7 @@ export default class AgentSessionsPlugin extends Plugin {
 			}
 			await this.applyModelCommandsOrThrow(view.sessionId, commands);
 			if (!(await hasDraft())) {
-				view.sendBytes(Buffer.from(PASTE_BEGIN + text + PASTE_END, "utf8"));
+				view.sendBytes(Buffer.from(PASTE_BEGIN + pasteSafe(text) + PASTE_END, "utf8"));
 				await sleep(SUBMIT_AFTER_EDIT_MS);
 			}
 			view.submitPrompt();

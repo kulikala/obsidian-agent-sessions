@@ -565,12 +565,14 @@ export async function resolveSuggestions(
 
 // ---- Parsing -------------------------------------------------------------------------
 
-/** Removes colons, quotes, brackets and emoji, collapses whitespace and drops edge punctuation. */
+/** Removes control characters, colons, quotes, brackets and emoji, collapses whitespace and drops
+ * edge punctuation. */
 function cleanLabel(value: unknown): string {
 	if (typeof value !== "string") {
 		return "";
 	}
 	return value
+		.replace(/[\x00-\x1f\x7f-\x9f]/g, " ")
 		.replace(/[:：]/g, " ")
 		.replace(/["“”「」『』()[\]{}（）【】〈〉《》<>]/g, " ")
 		.replace(/(^|\s)['‘’]|['‘’](?=\s|$)/g, " ")

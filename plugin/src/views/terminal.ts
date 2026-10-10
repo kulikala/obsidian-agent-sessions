@@ -61,6 +61,7 @@ import { EditorPane, type EditResult } from "./editor-pane";
 import { syncTabGoalMark } from "./goal-render";
 import { planEditorSend } from "../terminal/model-switch";
 import { submitsAfterEdit } from "../backend/edit-server";
+import { PASTE_BEGIN, PASTE_END, pasteSafe } from "../terminal/command-chunks";
 
 export { VIEW_TYPE_TERMINAL };
 
@@ -1300,7 +1301,7 @@ export class TerminalView extends ItemView {
 		if (!text) {
 			return;
 		}
-		const wrapped = this.terminal.modes.bracketedPasteMode ? `\x1b[200~${text}\x1b[201~` : text;
+		const wrapped = this.terminal.modes.bracketedPasteMode ? `${PASTE_BEGIN}${pasteSafe(text)}${PASTE_END}` : text;
 		this.sendInput(Buffer.from(wrapped, "utf8"));
 	}
 

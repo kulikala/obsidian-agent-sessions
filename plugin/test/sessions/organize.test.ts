@@ -328,6 +328,16 @@ describe("parseSuggestions", () => {
 
 const sug = (over: Partial<Suggestion>): Suggestion => ({ id: "a", category: "Work", name: "Login fix", reason: "", keep: false, ...over });
 
+describe("parseSuggestions and control characters", () => {
+	it("drops control characters from a suggested name and category", () => {
+		const text = JSON.stringify([{ id: "a", category: "Wo\u001brk", name: "x\u001b[201~\u0015say hi\r" }]);
+		const [s] = parseSuggestions(text, ["a"]);
+		expect(s.name).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+		expect(s.category).not.toMatch(/[\u0000-\u001f\u007f-\u009f]/);
+		expect(s.name).toContain("say hi");
+	});
+});
+
 describe("checkSuggestion", () => {
 	const existing = ["Work", "Home"];
 
