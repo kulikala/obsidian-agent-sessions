@@ -35,8 +35,9 @@ def record_hook(raw: bytes) -> None:
         for key in ('reason', 'source'):
             if isinstance(data.get(key), str):
                 entry[key] = data[key]
-        os.makedirs(os.path.dirname(config.EVENTS_LOG), exist_ok=True)
-        with open(config.EVENTS_LOG, 'a', encoding='utf-8') as f:
+        os.makedirs(os.path.dirname(config.EVENTS_LOG), mode=0o700, exist_ok=True)
+        fd = os.open(config.EVENTS_LOG, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        with open(fd, 'a', encoding='utf-8') as f:
             f.write(json.dumps(entry, ensure_ascii=False) + '\n')
     except Exception:
         pass
@@ -62,7 +63,7 @@ def _update_compacted(data: dict) -> None:
     event = data.get('hook_event_name')
     try:
         if event == 'SessionStart' and data.get('source') == 'compact':
-            os.makedirs(config.COMPACTED_DIR, exist_ok=True)
+            os.makedirs(config.COMPACTED_DIR, mode=0o700, exist_ok=True)
             fd, tmp = tempfile.mkstemp(dir=config.COMPACTED_DIR, prefix='.compacted.', suffix='.tmp')
             try:
                 with os.fdopen(fd, 'w', encoding='utf-8') as f:
@@ -155,7 +156,7 @@ def record_status(raw: bytes) -> str:
     session_id = data.get('session_id')
     if session_id:
         try:
-            os.makedirs(config.STATUS_DIR, exist_ok=True)
+            os.makedirs(config.STATUS_DIR, mode=0o700, exist_ok=True)
             fd, tmp = tempfile.mkstemp(dir=config.STATUS_DIR, prefix='.status.', suffix='.tmp')
             try:
                 with os.fdopen(fd, 'wb') as f:

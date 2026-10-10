@@ -5,6 +5,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { ensurePrivateDir, PRIVATE_FILE_MODE } from "./paths";
 import type { Lang } from "../i18n";
 import { submitKeyStatuslineSymbol } from "../terminal/keys";
 import type { AgentId, AgentSettings, OpencodeLaunchVia, SubmitKey } from "../settings";
@@ -61,7 +62,7 @@ export function writeUiState(
 	isMac = true,
 	agentLaunch?: Record<string, AgentLaunchState>
 ): void {
-	fs.mkdirSync(runtimeDir, { recursive: true });
+	ensurePrivateDir(runtimeDir);
 	const state: UiState = { submitKey, submitSymbol: submitKeyStatuslineSymbol(submitKey, isMac), language, agents };
 	if (agentLaunch) {
 		state.agentLaunch = agentLaunch;
@@ -69,7 +70,7 @@ export function writeUiState(
 	const data = JSON.stringify(state, null, 1);
 	const filePath = path.join(runtimeDir, "ui.json");
 	const tmp = path.join(runtimeDir, `.ui.${process.pid}.${Date.now()}.tmp`);
-	fs.writeFileSync(tmp, data, "utf8");
+	fs.writeFileSync(tmp, data, { encoding: "utf8", mode: PRIVATE_FILE_MODE });
 	try {
 		fs.renameSync(tmp, filePath);
 	} catch (err) {

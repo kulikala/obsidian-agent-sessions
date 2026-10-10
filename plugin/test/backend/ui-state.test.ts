@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -16,6 +16,19 @@ describe("writeUiState", () => {
 
 	afterEach(() => {
 		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it.skipIf(process.platform === "win32")("keeps the runtime folder and ui.json to this user, also when the folder was open", () => {
+		writeUiState(runtimeDir, "enter", "en", ["claude"]);
+		expect(statSync(runtimeDir).mode & 0o777).toBe(0o700);
+		expect(statSync(join(runtimeDir, "ui.json")).mode & 0o777).toBe(0o600);
+		chmodSync(runtimeDir, 0o755);
+		writeUiState(runtimeDir, "enter", "en", ["claude"]);
+		expect(statSync(runtimeDir).mode & 0o777).toBe(0o700);
+		const nested = join(dir, "fresh", "sessions");
+		mkdirSync(join(dir, "fresh"));
+		writeUiState(nested, "enter", "en", ["claude"]);
+		expect(statSync(nested).mode & 0o777).toBe(0o700);
 	});
 
 	it("writes submitKey and its matching symbol to ui.json", () => {

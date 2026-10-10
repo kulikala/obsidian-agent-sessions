@@ -7,6 +7,7 @@
 
 import { existsSync, mkdirSync, rmSync } from "fs";
 import { join } from "path";
+import { PRIVATE_DIR_MODE } from "./paths";
 
 export const RUN_FOLDER_NAME = "current";
 
@@ -31,7 +32,7 @@ export async function inRunFolder<T>(base: string, fn: (dir: string) => Promise<
 	}
 	busy.add(dir);
 	try {
-		mkdirSync(base, { recursive: true });
+		mkdirSync(base, { recursive: true, mode: PRIVATE_DIR_MODE });
 		if (existsSync(dir)) {
 			rmSync(dir, { recursive: true, force: true });
 		}

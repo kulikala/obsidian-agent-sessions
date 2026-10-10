@@ -4,6 +4,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { ensurePrivateDir, PRIVATE_FILE_MODE } from "../backend/paths";
 import { t } from "../i18n";
 import type { ArchivedSession, StoreSessionEntry } from "../types";
 
@@ -117,10 +118,10 @@ export function loadStore(storePath: string): Store {
 /** Writes to tmp then renames. Assumes the caller holds the lock already (see `updateStore`). */
 function saveStore(storePath: string, store: Store): void {
 	const dir = path.dirname(storePath);
-	fs.mkdirSync(dir, { recursive: true });
+	ensurePrivateDir(dir);
 	const data = JSON.stringify(toRecord(store), null, 1);
 	const tmp = path.join(dir, `.sessions.${process.pid}.${Date.now()}.tmp`);
-	fs.writeFileSync(tmp, data, "utf8");
+	fs.writeFileSync(tmp, data, { encoding: "utf8", mode: PRIVATE_FILE_MODE });
 	try {
 		fs.renameSync(tmp, storePath);
 	} catch (err) {
