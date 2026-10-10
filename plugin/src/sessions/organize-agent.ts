@@ -33,16 +33,60 @@ export function agentLabel(agent: AgentId, setting: HeadlessModel = "sonnet"): s
 	return model ? `${name} (${model})` : name;
 }
 
+/** Codex features that give the model a tool (a shell, apps, a browser, sub-agents, images,
+ * plugins and skills); a headless run turns each of them off. */
+const CODEX_TOOL_FEATURES = [
+	"shell_tool",
+	"unified_exec",
+	"apps",
+	"browser_use",
+	"computer_use",
+	"in_app_browser",
+	"image_generation",
+	"view_image",
+	"multi_agent",
+	"plugins",
+	"skill_search",
+	"tool_suggest",
+	"sleep_tool",
+];
+
+/** The OpenCode agent a headless run uses, defined by `headlessEnv` with every permission denied. */
+export const OPENCODE_HEADLESS_AGENT = "agent-sessions-headless";
+
 /**
- * The arguments of the headless run; the prompt is written to stdin for all three.
+ * The MCP servers a Codex `config.toml` declares (`[mcp_servers.<name>]`, also as a sub-table),
+ * so a headless run can turn each one off: Codex's `-c` sets keys one at a time and cannot empty
+ * the table. Names Codex's `-c` path cannot spell (anything but letters, digits, `_` and `-`) are
+ * left out.
+ */
+export function codexMcpServers(configToml: string | null): string[] {
+	const names = new Set<string>();
+	for (const m of (configToml ?? "").matchAll(/^\s*\[\s*mcp_servers\s*\.\s*("?)([A-Za-z0-9_-]+)\1\s*[.\]]/gm)) {
+		names.add(m[2]);
+	}
+	return [...names];
+}
+
+/**
+ * The arguments of the headless run; the prompt is written to stdin for all three. None of them
+ * has a tool: what the prompt quotes from conversations is data, and a model that follows an
+ * instruction inside it has nothing to act with.
  * - Claude Code: no tools, MCP servers, hooks or skills, and no transcript.
  * - Codex: `exec` with a read-only sandbox, outside a Git repository, no rollout file, and the
- *   user's execpolicy rules off; events as JSONL.
- * - OpenCode: `run` without external plugins, events as JSON.
+ *   user's execpolicy rules off; the shell and every other tool feature, web search and each
+ *   MCP server in `mcpServers` (`codexMcpServers`) turned off; events as JSONL.
+ * - OpenCode: `run` without external plugins, as `OPENCODE_HEADLESS_AGENT` (every tool denied,
+ *   see `headlessEnv`), events as JSON.
  * `extraArgs` (a model for Codex `-m` or OpenCode `--model`) go before Codex's `-` (the prompt
  * from stdin) and at the end for the others.
  */
-export function headlessArgs(agent: AgentId, setting: HeadlessModel = "sonnet", extraArgs: string[] = []): string[] {
+export function headlessArgs(
+	agent: AgentId,
+	setting: HeadlessModel = "sonnet",
+	extraArgs: string[] = [],
+	mcpServers: string[] = []
+): string[] {
 	switch (agent) {
 		case "claude":
 			return [
@@ -70,13 +114,45 @@ export function headlessArgs(agent: AgentId, setting: HeadlessModel = "sonnet", 
 				"read-only",
 				"--ephemeral",
 				"--ignore-rules",
+				...CODEX_TOOL_FEATURES.flatMap((f) => ["-c", `features.${f}=false`]),
+				"-c",
+				'web_search="disabled"',
+				...mcpServers.flatMap((name) => ["-c", `mcp_servers.${name}.enabled=false`]),
 				"--json",
 				...extraArgs,
 				"-",
 			];
 		case "opencode":
-			return ["run", "--pure", "--format", "json", ...extraArgs];
+			return ["run", "--pure", "--agent", OPENCODE_HEADLESS_AGENT, "--format", "json", ...extraArgs];
 	}
+}
+
+/**
+ * The environment of the headless run: for OpenCode, `OPENCODE_CONFIG_CONTENT` defines
+ * `OPENCODE_HEADLESS_AGENT` with every permission (and so every tool, MCP ones included) denied,
+ * added to a config the user already passes that way. The others run with `env` as it is.
+ */
+export function headlessEnv(agent: AgentId, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+	if (agent !== "opencode") {
+		return env;
+	}
+	let config: Record<string, unknown> = {};
+	try {
+		const parsed: unknown = JSON.parse(env.OPENCODE_CONFIG_CONTENT ?? "{}");
+		config = parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+	} catch {
+		config = {};
+	}
+	const agents = asRecord(config.agent);
+	const headless = {
+		mode: "primary",
+		description: "Agent Sessions: one answer from text, without tools.",
+		permission: { "*": "deny", external_directory: "deny" },
+	};
+	return {
+		...env,
+		OPENCODE_CONFIG_CONTENT: JSON.stringify({ ...config, agent: { ...agents, [OPENCODE_HEADLESS_AGENT]: headless } }),
+	};
 }
 
 function tryParse(text: string): unknown {

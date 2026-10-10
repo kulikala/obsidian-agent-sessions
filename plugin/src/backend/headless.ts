@@ -7,9 +7,12 @@
 // afterwards by its exact id.
 
 import { spawn } from "child_process";
-import { mkdirSync } from "fs";
+import { mkdirSync, readFileSync } from "fs";
+import { homedir } from "os";
 import {
+	codexMcpServers,
 	headlessArgs,
+	headlessEnv,
 	headlessUsage,
 	opencodeSessionId,
 	parseAgentOutput,
@@ -18,6 +21,7 @@ import {
 	type HeadlessUsage,
 } from "../sessions/organize-agent";
 import type { AgentId } from "../settings";
+import { defaultCodexConfigPath } from "../terminal/codex-config";
 import { programInvocation } from "./windows";
 
 const TIMEOUT_MS = 180000;
@@ -60,6 +64,15 @@ export interface HeadlessRun {
 	onProgress?: (chars: number) => void;
 }
 
+/** The text of the Codex `config.toml` the run reads (`CODEX_HOME` in its environment), or `null`. */
+function readCodexConfig(env: NodeJS.ProcessEnv): string | null {
+	try {
+		return readFileSync(defaultCodexConfigPath(homedir(), env.CODEX_HOME), "utf8");
+	} catch {
+		return null;
+	}
+}
+
 /** Resolves with the reply, the stdout and the usage; rejects with a `HeadlessError` on failure,
  * timeout or abort. */
 export function runHeadless(run: HeadlessRun): Promise<HeadlessResult> {
@@ -70,10 +83,11 @@ export function runHeadless(run: HeadlessRun): Promise<HeadlessResult> {
 			return;
 		}
 		// Windows: an npm-installed agent is a `.cmd` shim, which goes through cmd.exe.
-		const call = programInvocation(run.bin, headlessArgs(run.agent, run.model, run.extraArgs));
+		const mcp = run.agent === "codex" ? codexMcpServers(readCodexConfig(run.env)) : [];
+		const call = programInvocation(run.bin, headlessArgs(run.agent, run.model, run.extraArgs, mcp));
 		const child = spawn(call.file, call.args, {
 			cwd: run.cwd,
-			env: run.env,
+			env: headlessEnv(run.agent, run.env),
 			stdio: ["pipe", "pipe", "pipe"],
 			windowsHide: true,
 			windowsVerbatimArguments: call.verbatim,
