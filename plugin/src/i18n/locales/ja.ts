@@ -667,17 +667,17 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"error.notConnected": "デーモンに未接続",
 	"error.agentSessionsNotFound": "agent-sessions が見つからない: {path}",
 	"error.daemonUnavailable": "デーモンに接続できない。Python が無いか、ソケットが作れない可能性がある。",
-	// ---- sessions/efficiency.ts（トークン効率: 決まり文・修正の依頼文）----
+	// ---- sessions/efficiency.ts（利用枠を増やす: 決まり文・修正の依頼文）----
 	"efficiency.change.add": "足す",
 	"efficiency.change.trim": "削る",
 	"efficiency.change.move": "移す",
-	"efficiency.fix.sessionName": "トークン効率: {title}",
+	"efficiency.fix.sessionName": "利用枠を増やす: {title}",
 	"efficiency.fix.moveFrom": "移す元",
 	"efficiency.fix.moveTo": "移し先",
 	"efficiency.fix.effect": "最大でおよそ {tokens} 換算トークン",
 	"efficiency.fix.effectUsd": "最大でおよそ {tokens} 換算トークン（{usd}）",
 	"efficiency.template": "対象:\n期待する結果:\n確かめ方:\n触らない範囲:",
-	"efficiency.fix.prompt.intro": "トークン効率の解析で見つかった 1 件を直したいです。",
+	"efficiency.fix.prompt.intro": "「利用枠を増やす」でトークンの使い方を解析したところ、無駄が 1 件見つかりました。これを直したいです。",
 	"efficiency.fix.prompt.finding": "所見: {title}",
 	"efficiency.fix.prompt.cause": "原因: {cause}",
 	"efficiency.fix.prompt.evidence": "根拠:",
@@ -825,10 +825,10 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"efficiency.basis.model": "使ったモデル",
 	"efficiency.newSessions": "この解析のあと、セッションが {count} 件増えています。",
 	"efficiency.again": "もう一度解析する",
-	"action.analyzeEfficiency": "トークン効率を解析",
+	"action.analyzeEfficiency": "利用枠を増やす…",
 
-	// ---- 設定: トークン効率 ----
-	"settings.efficiency.heading": "トークン効率",
+	// ---- 設定: 利用枠を増やす ----
+	"settings.efficiency.heading": "利用枠を増やす",
 	"settings.efficiencyThreshold.name": "利用枠のしきい値",
 	"settings.efficiencyThreshold.desc": "5 時間枠か 7 日枠の使用率がこの値（50〜95%）以上なら、その枠を解析します。",
 	"settings.efficiencyBudget.name": "予算",

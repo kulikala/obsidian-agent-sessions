@@ -218,7 +218,7 @@ export function analysisModels(pane: Pick<EffPane, "model" | "models">): (string
 
 /** The CLI arguments that make the analysis use the pane's provider and model: Codex `-m` (and
  * `-c model_provider=…` for a provider other than OpenAI), OpenCode `--model provider/model`.
- * Claude Code's model is the "Model for token efficiency" setting (`headlessArgs`). */
+ * Claude Code's model is the "Model for the analysis" setting (`headlessArgs`). */
 export function analysisArgs(pane: Pick<EffPane, "agent" | "provider" | "model">): string[] {
 	if (pane.agent === "codex") {
 		const args = pane.model ? ["-m", pane.model] : [];
@@ -432,7 +432,7 @@ function sameList(a: string[], b: string[]): boolean {
 
 export const MAX_LINES: Record<ChangeKind, number> = { add: 40, trim: 120, move: 120 };
 
-/** The new session's name: "Token efficiency: <title>". */
+/** The new session's name: "Stretch your usage limit: <title>" (the feature's name as its category). */
 export function fixSessionName(finding: Pick<Finding, "title">): string {
 	return t("efficiency.fix.sessionName", { title: finding.title });
 }

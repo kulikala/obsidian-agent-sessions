@@ -2015,6 +2015,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	width: 90vw;
 	max-width: 1100px;
 	height: 85vh;
+	padding-block: var(--size-4-6);
 }
 
 /* The title is drawn in the content's own header; Obsidian's empty one would add space above it. */
@@ -2037,7 +2038,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	flex: none;
 	gap: var(--size-4-3);
 	/* The modal's own padding is the inset; the right side leaves room for its close button. */
-	padding: 0 var(--size-4-6) var(--size-4-4) 0;
+	padding: 0 var(--size-4-6) var(--size-4-6) 0;
 	border-bottom: 1px solid var(--background-modifier-border);
 }
 
@@ -2058,7 +2059,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 .agent-sessions-usage-body {
 	flex: 1 1 auto;
 	overflow-y: auto;
-	padding: var(--size-4-4) 0 0;
+	padding: var(--size-4-6) 0 0;
 }
 
 .agent-sessions-usage-loading,
@@ -2075,7 +2076,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	display: flex;
 	align-items: center;
 	gap: var(--size-4-2);
-	margin-bottom: var(--size-4-3);
+	margin-bottom: var(--size-4-4);
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
 }
@@ -2093,11 +2094,11 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	display: grid;
 	grid-template-columns: repeat(4, 1fr);
 	gap: var(--size-4-4);
-	margin-bottom: var(--size-4-4);
+	margin-bottom: var(--size-4-6);
 }
 
 .agent-sessions-usage-card {
-	padding: var(--size-4-3);
+	padding: var(--size-4-4);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
 	background: var(--background-secondary);
@@ -2110,7 +2111,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 }
 
 .agent-sessions-usage-card-label {
-	margin-top: var(--size-2-1);
+	margin-top: var(--size-4-1);
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 	text-transform: uppercase;
@@ -2118,7 +2119,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 }
 
 .agent-sessions-usage-card-sub {
-	margin-top: var(--size-2-1);
+	margin-top: var(--size-4-1);
 	color: var(--text-faint);
 	font-size: var(--font-ui-smaller);
 }
@@ -2128,18 +2129,18 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	grid-template-columns: 1fr 1fr 1.2fr;
 	align-items: start;
 	gap: var(--size-4-4);
-	margin-bottom: var(--size-4-4);
+	margin-bottom: var(--size-4-6);
 }
 
 .agent-sessions-usage-chart {
-	padding: var(--size-4-3);
+	padding: var(--size-4-4);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
 	background: var(--background-secondary);
 }
 
 .agent-sessions-usage-chart-title {
-	margin-bottom: var(--size-4-2);
+	margin-bottom: var(--size-4-3);
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 	text-transform: uppercase;
@@ -2182,7 +2183,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	display: flex;
 	flex-wrap: wrap;
 	gap: var(--size-4-2);
-	margin-top: var(--size-4-2);
+	margin-top: var(--size-4-3);
 	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 }
@@ -2268,7 +2269,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 
 .agent-sessions-usage-table th,
 .agent-sessions-usage-table td {
-	padding: var(--size-4-1) var(--size-4-2);
+	padding: var(--size-4-2);
 	border-bottom: 1px solid var(--background-modifier-border);
 	text-align: left;
 }
@@ -2870,14 +2871,19 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 }
 /* ---- Dialogs (`markDialog` in `ui/dialog-header.ts`; docs/design.md §16.2) ----
    One scale, Obsidian's own variables: --size-4-1 (4px) between the lines of one item,
-   --size-4-2 (8px) between a label and its field and between items inside a block,
-   --size-4-3 (12px) the inset of a bordered or tinted block and the gap between its parts,
-   --size-4-4 (16px) between the blocks of a dialog and the modal's own padding.
-   The title sits --size-4-4 above the content, or --size-4-2 above the session line. The content
+   --size-4-2 (8px) between a label and its field and between small items side by side,
+   --size-4-3 (12px) between the lines of a list inside a block,
+   --size-4-4 (16px) the inset of a bordered or tinted block and the gap between its parts,
+   --size-4-6 (24px) between the blocks of a dialog and the modal's own padding above and below.
+   The title sits --size-4-6 above the content, or --size-4-2 above the session line. The content
    is one column of blocks; fields have no dividers between them; the button row that ends the
-   dialog has the one divider, --size-4-4 above and below it. */
+   dialog has the one divider, --size-4-6 above and below it. */
+.modal.agent-sessions-dialog {
+	padding-block: var(--size-4-6);
+}
+
 .modal.agent-sessions-dialog .modal-header {
-	margin-bottom: var(--size-4-4);
+	margin-bottom: var(--size-4-6);
 }
 
 .modal.agent-sessions-dialog .modal-header:has(+ .modal-content > .agent-sessions-dialog-target:first-child) {
@@ -2889,7 +2895,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 .modal.agent-sessions-dialog .agent-sessions-organize-actions {
 	display: flex;
 	flex-direction: column;
-	gap: var(--size-4-4);
+	gap: var(--size-4-6);
 }
 
 .modal.agent-sessions-dialog .modal-content > *,
@@ -2903,7 +2909,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 }
 
 .modal.agent-sessions-dialog .setting-item.agent-sessions-dialog-footer.agent-sessions-dialog-footer {
-	padding-top: var(--size-4-4);
+	padding-top: var(--size-4-6);
 	border-top: 1px solid var(--background-modifier-border);
 }
 
@@ -2995,7 +3001,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 /* Progress: a spinner with the ticking line, and a timestamped log of the steps. */
 .agent-sessions-organize-progress {
 	margin: 0;
-	padding: var(--size-4-3);
+	padding: var(--size-4-4);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-s);
 	background-color: var(--background-secondary);
@@ -3060,7 +3066,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	grid-template-areas: "current suggested check";
 	gap: var(--size-4-2) var(--size-4-4);
 	align-items: center;
-	padding: var(--size-4-3) var(--size-4-3) var(--size-4-3) var(--size-4-4);
+	padding: var(--size-4-4) var(--size-4-3) var(--size-4-4) var(--size-4-4);
 	border-bottom: 1px solid var(--background-modifier-border);
 	border-left: 3px solid var(--interactive-accent);
 	background: color-mix(in srgb, var(--interactive-accent) 8%, var(--background-primary));
@@ -3974,8 +3980,8 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 /* ---- Token efficiency dialog ---- */
 
 /* Every screen is a column of blocks on the dialogs' scale (see "Dialogs"): the heading, the nine
-   rows, the disclosures, then one action area, --size-4-4 apart. Rows, disclosures and the summary
-   are full-width blocks with the same inset (--size-4-3) and corners; a row with an issue opens in
+   rows, the disclosures, then one action area, --size-4-6 apart. Rows, disclosures and the summary
+   are full-width blocks with the same inset (--size-4-4) and corners; a row with an issue opens in
    place. The scrollbar's gutter is kept, so the width does not jump when the content grows. */
 .agent-sessions-efficiency {
 	width: min(720px, 92vw);
@@ -3990,7 +3996,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 .agent-sessions-efficiency-pane {
 	display: flex;
 	flex-direction: column;
-	gap: var(--size-4-4);
+	gap: var(--size-4-6);
 }
 
 .agent-sessions-efficiency-sub,
@@ -4041,7 +4047,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	display: flex;
 	flex-wrap: wrap;
 	gap: var(--size-2-1);
-	margin-bottom: var(--size-4-4);
+	margin-bottom: var(--size-4-6);
 	border-bottom: 1px solid var(--background-modifier-border);
 }
 
@@ -4082,7 +4088,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 .agent-sessions-efficiency-summary {
 	display: flex;
 	flex-direction: column;
-	gap: var(--size-4-1);
+	gap: var(--size-4-2);
 }
 
 .agent-sessions-efficiency-h1 {
@@ -4093,7 +4099,7 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 }
 
 .agent-sessions-efficiency-summary {
-	padding: var(--size-4-3);
+	padding: var(--size-4-4);
 	border-radius: var(--radius-m);
 	background-color: hsla(var(--interactive-accent-hsl), 0.1);
 }
@@ -4121,7 +4127,7 @@ button.agent-sessions-efficiency-pt-row,
 	align-items: center;
 	gap: var(--size-4-3);
 	width: 100%;
-	padding: var(--size-4-2) var(--size-4-3);
+	padding: var(--size-4-4);
 	text-align: start;
 }
 
@@ -4153,6 +4159,7 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 	display: flex;
 	flex: 1;
 	flex-direction: column;
+	gap: var(--size-4-1);
 	min-width: 0;
 }
 
@@ -4265,8 +4272,8 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 .agent-sessions-efficiency-pt-body {
 	display: flex;
 	flex-direction: column;
-	gap: var(--size-4-3);
-	padding: var(--size-4-1) var(--size-4-3) var(--size-4-3);
+	gap: var(--size-4-4);
+	padding: 0 var(--size-4-4) var(--size-4-4);
 	font-size: var(--font-ui-small);
 }
 
@@ -4274,11 +4281,11 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 .agent-sessions-efficiency-finding {
 	display: flex;
 	flex-direction: column;
-	gap: var(--size-4-3);
+	gap: var(--size-4-4);
 }
 
 .agent-sessions-efficiency-finding + .agent-sessions-efficiency-finding {
-	padding-top: var(--size-4-3);
+	padding-top: var(--size-4-4);
 	border-top: 1px solid var(--background-modifier-border);
 }
 
@@ -4301,7 +4308,7 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 .agent-sessions-efficiency-kv {
 	display: grid;
 	grid-template-columns: auto minmax(0, 1fr);
-	gap: var(--size-4-2) var(--size-4-3);
+	gap: var(--size-4-3) var(--size-4-4);
 	margin: 0;
 }
 
@@ -4317,7 +4324,7 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 .agent-sessions-efficiency-quote {
 	display: flex;
 	flex-direction: column;
-	gap: var(--size-4-1);
+	gap: var(--size-4-2);
 	padding-left: var(--size-4-3);
 	border-left: 2px solid var(--background-modifier-border);
 }
@@ -4342,24 +4349,11 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 	gap: var(--size-4-2);
 }
 
-/* The one action of the empty screen. */
-.agent-sessions-efficiency-go {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: var(--size-4-2);
-}
-
-.agent-sessions-efficiency-go > button.mod-cta {
-	padding: var(--size-4-2) var(--size-4-8);
-	font-size: var(--font-ui-medium);
-}
-
 /* Progress while analysing. */
 .agent-sessions-efficiency-prog {
 	display: flex;
 	flex-direction: column;
-	gap: var(--size-4-2);
+	gap: var(--size-4-3);
 }
 
 .agent-sessions-efficiency-progress {
@@ -4417,6 +4411,7 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 	display: flex;
 	flex: 1;
 	flex-direction: column;
+	gap: var(--size-4-1);
 	min-width: 0;
 }
 
@@ -4432,8 +4427,8 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 .agent-sessions-efficiency-disc-body {
 	display: flex;
 	flex-direction: column;
-	gap: var(--size-4-3);
-	padding: var(--size-4-3);
+	gap: var(--size-4-4);
+	padding: var(--size-4-4);
 	border-top: 1px solid var(--background-modifier-border);
 	background-color: var(--background-secondary);
 	font-size: var(--font-ui-small);
@@ -4454,14 +4449,15 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 .agent-sessions-efficiency-stats {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(7.5em, 1fr));
-	gap: var(--size-4-2);
+	gap: var(--size-4-3);
 	font-variant-numeric: tabular-nums;
 }
 
 .agent-sessions-efficiency-stat {
 	display: flex;
 	flex-direction: column;
-	padding: var(--size-4-2) var(--size-4-3);
+	gap: var(--size-4-1);
+	padding: var(--size-4-3) var(--size-4-4);
 	border-radius: var(--radius-s);
 	background-color: var(--background-primary);
 }
@@ -4475,15 +4471,22 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 	font-size: var(--font-ui-smaller);
 }
 
-/* The bottom line: a note on the left, one button on the right. */
+/* The bottom line of every screen: a note on the left, its one button on the right (Analyze, Stop
+   analysis, Analyze again). It is pinned to the bottom of the dialog, over the modal's own bottom
+   padding, so the button is always in view and the rows scroll under it. */
 .agent-sessions-efficiency-foot {
+	position: sticky;
+	bottom: calc(-1 * var(--size-4-6));
+	z-index: 1;
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
 	justify-content: space-between;
 	gap: var(--size-4-3);
-	padding-top: var(--size-4-4);
+	margin-bottom: calc(-1 * var(--size-4-6));
+	padding-block: var(--size-4-6);
 	border-top: 1px solid var(--background-modifier-border);
+	background-color: var(--modal-background, var(--background-primary));
 }
 
 .agent-sessions-efficiency-foot.is-end {
@@ -4524,7 +4527,7 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 	button.agent-sessions-efficiency-pt-row {
 		flex-wrap: wrap;
 		justify-content: flex-start;
-		gap: var(--size-4-1) var(--size-4-2);
+		gap: var(--size-4-2);
 	}
 
 	.agent-sessions-efficiency-pt-text {

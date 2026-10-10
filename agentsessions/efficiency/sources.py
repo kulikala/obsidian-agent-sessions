@@ -71,7 +71,7 @@ class ClaudeSource:
                                    cache_path=self.stats_cache_path)['windows']
 
     def analysis_model(self, provider: str, calls: List[dict]) -> Optional[str]:
-        return None             # the "Model for token efficiency" setting, chosen by the plugin
+        return None             # the "Model for the analysis" setting, chosen by the plugin
 
     def is_local(self, provider: str) -> bool:
         return False
