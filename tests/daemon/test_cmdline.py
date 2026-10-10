@@ -20,6 +20,11 @@ class TestShimArgument(unittest.TestCase):
         self.assertEqual(cmdline.shim_argument('say "hi"'), '^^^"say^^^ \\^^^"hi\\^^^"^^^"')
         self.assertEqual(cmdline.shim_argument('a b\\'), '^^^"a^^^ b\\\\^^^"')
 
+    def test_line_breaks_go_in_as_spaces(self):
+        # cmd.exe ends its line at a line break; the same as windows.ts's cmdShimArgument.
+        self.assertEqual(cmdline.shim_argument('one\r\ntwo\n\nthree'), cmdline.shim_argument('one two three'))
+        self.assertNotIn('\n', cmdline.shim_line(['C:\\x\\codex.cmd', '--', 'a\nb']))
+
     def test_an_empty_argument_is_kept(self):
         self.assertEqual(cmdline.shim_argument(''), '^^^"^^^"')
 

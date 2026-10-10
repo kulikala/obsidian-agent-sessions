@@ -222,7 +222,9 @@ export function analysisModels(pane: Pick<EffPane, "model" | "models">): (string
 export function analysisArgs(pane: Pick<EffPane, "agent" | "provider" | "model">): string[] {
 	if (pane.agent === "codex") {
 		const args = pane.model ? ["-m", pane.model] : [];
-		return pane.provider && pane.provider !== "openai" ? [...args, "-c", `model_provider="${pane.provider}"`] : args;
+		// The id comes from the conversation's rollout: written as a TOML basic string (JSON's escapes
+		// are TOML's), so a quote or a line break in it stays inside the value.
+		return pane.provider && pane.provider !== "openai" ? [...args, "-c", `model_provider=${JSON.stringify(pane.provider)}`] : args;
 	}
 	if (pane.agent === "opencode" && pane.model) {
 		return ["--model", pane.provider ? `${pane.provider}/${pane.model}` : pane.model];

@@ -104,6 +104,8 @@ describe("npm shims through cmd.exe", () => {
 		expect(cmdShimArgument('{"a":true}')).toBe('^^^"{\\^^^"a\\^^^":true}^^^"');
 		expect(cmdShimArgument("C:\\dir\\")).toBe('^^^"C:\\dir\\\\^^^"');
 		expect(cmdShimArgument("a&b|c<d>e%f!g^h")).toBe('^^^"a^^^&b^^^|c^^^<d^^^>e^^^%f^^^!g^^^^h^^^"');
+		// cmd.exe would end the line at a line break: each run of them goes in as one space.
+		expect(cmdShimArgument("one\r\ntwo\n\nthree")).toBe(cmdShimArgument("one two three"));
 	});
 
 	it("runs the shim as one verbatim `cmd.exe /d /s /c` line", () => {

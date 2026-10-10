@@ -157,6 +157,12 @@ describe("a first message typed in after start", () => {
 		expect(typesFirstMessage("opencode", undefined, "win32")).toBe(false);
 	});
 
+	it("OpenCode on Windows types a message with a line break, which cmd.exe would cut", () => {
+		expect(typesFirstMessage("opencode", "first\nsecond", "win32")).toBe(true);
+		expect(typesFirstMessage("opencode", "first\r\nsecond", "win32")).toBe(true);
+		expect(typesFirstMessage("opencode", "first\nsecond", "linux")).toBe(false);
+	});
+
 	it("waits for OpenCode's footer", () => {
 		expect(opencodeReady("┃  Plan · gpt-oss:20b\n~/vault    12.1K  ctrl+p commands")).toBe(true);
 		expect(opencodeReady("~\\Documents\\TestVault   ⠙ Loading plugins…")).toBe(false);

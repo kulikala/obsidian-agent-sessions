@@ -17,8 +17,10 @@ _CMD_META = re.compile(r'([()\][%!^"`<>&|;, \t*?])')
 
 
 def shim_argument(arg: str) -> str:
-    """`arg` for a batch file's command line: unchanged when it holds nothing `cmd.exe` would act
-    on, else quoted for the C runtime and every metacharacter escaped twice."""
+    """`arg` for a batch file's command line, its line breaks as spaces: unchanged when it holds
+    nothing `cmd.exe` would act on, else quoted for the C runtime and every metacharacter escaped twice."""
+    # `cmd.exe` ends its line at a line break and drops the rest: line breaks go in as spaces.
+    arg = re.sub(r'[\r\n]+', ' ', arg)
     if arg and not _CMD_META.search(arg):
         return arg
     quoted = re.sub(r'(\\*)"', lambda m: m.group(1) * 2 + '\\"', arg)
