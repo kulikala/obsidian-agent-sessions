@@ -181,6 +181,8 @@ export class DaemonClient extends EventEmitter {
 		env: Record<string, string>;
 		cols: number;
 		rows: number;
+		/** `false`: no `AGENT_SESSIONS_ID` in the session's environment (default `true`). */
+		id_env?: boolean;
 	}): Promise<JsonResponse> {
 		return this.request("start", args);
 	}

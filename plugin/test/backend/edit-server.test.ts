@@ -226,4 +226,8 @@ describe("tabOwnsEditSession", () => {
 		expect(tabOwnsEditSession(linked, "ses_abc")).toBe(true);
 		expect(tabOwnsEditSession(linked, "other")).toBe(false);
 	});
+
+	it("never matches the Remote Control server, whose spawned sessions may carry its id", () => {
+		expect(tabOwnsEditSession({ sessionId: "rc-server", daemonId: "rc-server" }, "rc-server")).toBe(false);
+	});
 });

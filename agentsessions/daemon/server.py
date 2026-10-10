@@ -625,7 +625,10 @@ class Daemon:
         env = {str(k): str(v) for k, v in env_in.items()}
         env['TERM'] = 'xterm-256color'
         env['COLORTERM'] = 'truecolor'
-        env['AGENT_SESSIONS_ID'] = id
+        # `id_env: false` (the Remote Control server): the sessions it spawns inherit its
+        # environment, and none of them is the session this id names.
+        if req.get('id_env', True) is not False:
+            env['AGENT_SESSIONS_ID'] = id
         try:
             term = ptyproc.spawn(argv, env, cwd, cols, rows)
         except OSError as e:
