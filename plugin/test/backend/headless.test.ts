@@ -78,11 +78,11 @@ describe("headlessArgs model and extra arguments", () => {
 describe("buildAgentArgv with a first message (same order as launch.py's build_argv)", () => {
 	it("Claude Code: --permission-mode before --, the prompt after it", () => {
 		expect(
-			buildAgentArgv("claude", "/bin/claude", "abc", true, undefined, false, "Token efficiency: X", {
+			buildAgentArgv("claude", "/bin/claude", "abc", true, undefined, false, "Stretch your usage limit: X", {
 				prompt: "Fix it",
 				permissionMode: "plan",
 			})
-		).toEqual(["/bin/claude", "--session-id", "abc", "--name=Token efficiency: X", "--permission-mode", "plan", "--", "Fix it"]);
+		).toEqual(["/bin/claude", "--session-id", "abc", "--name=Stretch your usage limit: X", "--permission-mode", "plan", "--", "Fix it"]);
 	});
 
 	it("Codex: -- then the prompt; OpenCode: --prompt", () => {

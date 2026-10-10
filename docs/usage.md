@@ -17,7 +17,7 @@ How to do things with Agent Sessions, what each screen shows, and what to do whe
 - [Session manager](#session-manager)
 - [Activity calendar](#activity-calendar)
 - [Usage and limits](#usage-and-limits)
-- [Token efficiency](#token-efficiency)
+- [Stretch your usage limit](#stretch-your-usage-limit)
 - [Agent skills](#agent-skills)
 - [Remote Control](#remote-control)
 - [Settings](#settings)
@@ -303,11 +303,11 @@ Shows when each agent was working. Open it from the Session manager toolbar, the
 - One session's cost, tokens and tools, turn by turn: [Session analytics](#session-analytics).
 - They come from each agent's own local files.
 
-## Token efficiency
+## Stretch your usage limit
 
-Has an agent read your recent work for wasted tokens and say what to change.
+For when your usage limit runs out too fast: has an agent read your recent work for wasted tokens and say what to change.
 
-1. Open the ⋯ menu of the side panel or the Session manager and choose **Analyze token efficiency**, or run **Analyze token efficiency** from the command palette.
+1. Open the ⋯ menu of the side panel or the Session manager and choose **Stretch your usage limit…**, or run **Stretch your usage limit…** from the command palette.
 2. The dialog reads the records on this machine (nothing is sent) and lists the nine checks, with the range they cover ("Covers 42 sessions from the last 7 days (28.6M tokens)."). Codex and OpenCode are analysed for the provider their conversations used most.
 3. Press **Analyze**. **Details**, below it, says what is sent, how much and in how many requests, to which model, and which usage limit it counts toward; **Show what is sent** in it shows the exact text of every request.
 4. Every check shows **Analyzing** until the agent's reply is read ("Checking all 9 areas"). A range too large for one request is sent in several, by period ("Read 2 of 5 parts"); a check turns to **Issue found** as soon as one part finds it. The time so far and an estimate are shown; a spinner marks the tab being analysed. **Stop analysis**, or closing the dialog, stops it; nothing of that run is kept.
@@ -340,10 +340,10 @@ What the dialog shows:
 
 What the issues ask of you:
 
-- **Ask the agent to fix it** starts a new session in the vault, named "Token efficiency: …", in plan mode (Codex: a read-only sandbox that asks before writing; OpenCode: the plan agent — switch to build with Tab after you approve). It shows the change as a diff and waits for your approval before writing; only the listed files may change. The change applies to conversations started afterwards.
+- **Ask the agent to fix it** starts a new session in the vault, named "Stretch your usage limit: …", in plan mode (Codex: a read-only sandbox that asks before writing; OpenCode: the plan agent — switch to build with Tab after you approve). It shows the change as a diff and waits for your approval before writing; only the listed files may change. The change applies to conversations started afterwards.
 - **Copy a request template** (on Redoing the same fix and What the first request says) copies a request outline: target, expected result, how to check, what not to touch.
 - Advice about habits (when to start a new conversation, which model to use) has no button. To switch to a new conversation, open a new tab.
-- What is sent, and where: see [What Token efficiency sends](../README.md#what-token-efficiency-sends).
+- What is sent, and where: see [What "Stretch your usage limit" sends](../README.md#what-stretch-your-usage-limit-sends).
 
 ## Agent skills
 
@@ -384,9 +384,9 @@ A Claude Code session with Remote Control (started with it, or with "Enable Remo
 | **Scrollback lines** | terminal history |
 | **Editor pane height (%)** | built-in editor height |
 | **Model for suggestions** | Sonnet, Haiku |
-| **Usage limit threshold** (Token efficiency) | 50–95%, 80 by default |
-| **Budget** (Token efficiency) | 1,000,000–100,000,000 weighted tokens, 10,000,000 by default |
-| **Model for the analysis** (Token efficiency) | Sonnet, Opus |
+| **Usage limit threshold** (Stretch your usage limit) | 50–95%, 80 by default |
+| **Budget** (Stretch your usage limit) | 1,000,000–100,000,000 weighted tokens, 10,000,000 by default |
+| **Model for the analysis** (Stretch your usage limit) | Sonnet, Opus |
 | **Language** | Auto, English, 日本語 |
 | **Show the welcome guide after updates** | on, off |
 | **Load the guide's pictures from GitHub** | on, off |

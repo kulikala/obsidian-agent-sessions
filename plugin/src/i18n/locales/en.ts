@@ -669,17 +669,17 @@ export const en = {
 	"error.agentSessionsNotFound": "agent-sessions was not found: {path}",
 	"error.daemonUnavailable": "Can't connect to the daemon. Python may be missing, or the socket couldn't be created.",
 
-	// ---- sessions/efficiency.ts (token efficiency: canned findings, fix request) ----
+	// ---- sessions/efficiency.ts (Stretch your usage limit: canned findings, fix request) ----
 	"efficiency.change.add": "add",
 	"efficiency.change.trim": "trim",
 	"efficiency.change.move": "move",
-	"efficiency.fix.sessionName": "Token efficiency: {title}",
+	"efficiency.fix.sessionName": "Stretch your usage limit: {title}",
 	"efficiency.fix.moveFrom": "move from",
 	"efficiency.fix.moveTo": "move to",
 	"efficiency.fix.effect": "up to about {tokens} weighted tokens",
 	"efficiency.fix.effectUsd": "up to about {tokens} weighted tokens ({usd})",
 	"efficiency.template": "Target:\nExpected result:\nHow to check:\nDo not touch:",
-	"efficiency.fix.prompt.intro": "I'd like to fix one finding from the token efficiency analysis.",
+	"efficiency.fix.prompt.intro": "I'd like to fix one finding from \"Stretch your usage limit\", the analysis of where my tokens go.",
 	"efficiency.fix.prompt.finding": "Finding: {title}",
 	"efficiency.fix.prompt.cause": "Cause: {cause}",
 	"efficiency.fix.prompt.evidence": "Evidence:",
@@ -827,10 +827,10 @@ export const en = {
 	"efficiency.basis.model": "Model used",
 	"efficiency.newSessions": "{count} new {count|session|sessions} since this analysis.",
 	"efficiency.again": "Analyze again",
-	"action.analyzeEfficiency": "Analyze token efficiency",
+	"action.analyzeEfficiency": "Stretch your usage limit…",
 
-	// ---- Settings: token efficiency ----
-	"settings.efficiency.heading": "Token efficiency",
+	// ---- Settings: Stretch your usage limit ----
+	"settings.efficiency.heading": "Stretch your usage limit",
 	"settings.efficiencyThreshold.name": "Usage limit threshold",
 	"settings.efficiencyThreshold.desc": "When the 5-hour or 7-day window is used at least this much (50–95%), that window is analysed.",
 	"settings.efficiencyBudget.name": "Budget",

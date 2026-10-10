@@ -60,9 +60,9 @@ In the same menu, **Compact session** sends `/compact`, and **Restart session** 
 
 ### Where tokens could be saved
 
-**Analyze token efficiency**, in the ⋯ menu of the side panel and the Session manager, has the agent read your recent work and look for wasted tokens in nine areas: redoing the same fix, what the first request says, several tasks in one conversation, very long conversations, large output left in the conversation, cache rebuilds, repeated lookups, what every conversation loads first, and any other waste the agent finds. Each issue says what happened, why, what to do next and how many tokens fixing it could save; one a file can fix can be handed to an agent, which starts in plan mode and shows the change before writing it. Statistics stay on this machine; see [What Token efficiency sends](#what-token-efficiency-sends). [More](docs/usage.md#token-efficiency)
+**Stretch your usage limit…**, in the ⋯ menu of the side panel and the Session manager, is for when your usage limit runs out too fast. It has the agent read your recent work and look for wasted tokens in nine areas: redoing the same fix, what the first request says, several tasks in one conversation, very long conversations, large output left in the conversation, cache rebuilds, repeated lookups, what every conversation loads first, and any other waste the agent finds. Each issue says what happened, why, what to do next and how many tokens fixing it could save; one a file can fix can be handed to an agent, which starts in plan mode and shows the change before writing it. Statistics stay on this machine; see [What "Stretch your usage limit" sends](#what-stretch-your-usage-limit-sends). [More](docs/usage.md#stretch-your-usage-limit)
 
-![Token efficiency for Claude Code: the nine areas, four with an issue, the agent's own two issues open with how to fix each, what happened, its cause and a quote](docs/images/efficiency.png)
+![Stretch your usage limit for Claude Code: the nine areas, four with an issue, the agent's own two issues open with how to fix each, what happened, its cause and a quote](docs/images/efficiency.png)
 
 ### Setup with the welcome guide
 
@@ -155,7 +155,7 @@ To list sessions and calculate usage:
 
 A database that cannot be opened read-only is copied to a temporary folder, read, and deleted.
 
-To analyze token efficiency, it reads the same Claude Code transcripts, Codex rollouts and OpenCode database. Claude Code records the sizes of `CLAUDE.md`, `.claude/rules/` and auto memory `MEMORY.md` and the number of skills at each session's start, and Codex the `AGENTS.md` it loaded; for OpenCode it reads the size of `AGENTS.md` (or `CLAUDE.md`) in the session's folder and the folders above it up to the Git root, and of `~/.config/opencode/AGENTS.md`. It also reads the top-level `model` and `model_provider` of `$CODEX_HOME/config.toml` and the model list in `$CODEX_HOME/models_cache.json`, and the providers' `baseURL` in `~/.config/opencode/opencode.json` (to tell local models). To find the instruction file that owns a file sessions keep reading, it checks whether a `.git`, a `CLAUDE.md` or (Codex and OpenCode) an `AGENTS.md` exists in the folders above that file.
+For Stretch your usage limit, it reads the same Claude Code transcripts, Codex rollouts and OpenCode database. Claude Code records the sizes of `CLAUDE.md`, `.claude/rules/` and auto memory `MEMORY.md` and the number of skills at each session's start, and Codex the `AGENTS.md` it loaded; for OpenCode it reads the size of `AGENTS.md` (or `CLAUDE.md`) in the session's folder and the folders above it up to the Git root, and of `~/.config/opencode/AGENTS.md`. It also reads the top-level `model` and `model_provider` of `$CODEX_HOME/config.toml` and the model list in `$CODEX_HOME/models_cache.json`, and the providers' `baseURL` in `~/.config/opencode/opencode.json` (to tell local models). To find the instruction file that owns a file sessions keep reading, it checks whether a `.git`, a `CLAUDE.md` or (Codex and OpenCode) an `AGENTS.md` exists in the folders above that file.
 
 ### Files it writes
 
@@ -170,7 +170,7 @@ To analyze token efficiency, it reads the same Claude Code transcripts, Codex ro
 | `~/.config/opencode/agent-sessions-tui.jsx` | status line | OpenCode enabled |
 | `~/.config/opencode/tui.json` | editor key, submit keys, status line entry | OpenCode enabled |
 | a temporary file | the prompt being edited | built-in editor open |
-| `~/.agents/sessions/efficiency/cache/` | token efficiency statistics (numbers and relative paths, no conversation text) | Token efficiency opened |
+| `~/.agents/sessions/efficiency/cache/` | statistics for Stretch your usage limit (numbers and relative paths, no conversation text) | Stretch your usage limit opened |
 | `~/.agents/sessions/efficiency/last-<tab>.json`, `prev-<tab>.json` | the last two analyses of each tab (`claude`, `codex-openai`, `opencode-ollama`, …), with masked quotes | after Analyze |
 | `~/.agents/sessions/efficiency-run/current/` | the analysis's empty working folder | during Analyze |
 | `<vault>/.agents/sessions/sessions.json` | sessions started here (folder, agent), archive, category colors, folded groups | always |
@@ -193,9 +193,9 @@ Nothing is sent until you press **Suggest** in **Organize names and categories**
 
 For up to 30 sessions, or the one you chose, it sends the current name, the folder, the first prompt, your last three prompts and a short excerpt of the last reply; your existing category names with their session counts and up to three example session names each; and, if you ask again, the previous suggestion and your comments. This goes to that agent's service under your account and counts toward its usage limits.
 
-### What Token efficiency sends
+### What "Stretch your usage limit" sends
 
-Opening **Analyze token efficiency** computes statistics on this machine and sends nothing. Only when you press **Analyze** in a tab does the plugin run that conversation's own agent: once, judging all nine areas, or, when the range is too large for one request, once per period, one after another, at most ten times. Codex and OpenCode are analysed for the provider their conversations used most; conversations held with another provider are left out.
+Opening **Stretch your usage limit…** computes statistics on this machine and sends nothing. Only when you press **Analyze** in a tab does the plugin run that conversation's own agent: once, judging all nine areas, or, when the range is too large for one request, once per period, one after another, at most ten times. Codex and OpenCode are analysed for the provider their conversations used most; conversations held with another provider are left out.
 
 - Claude Code: `claude -p` with Sonnet (or Opus, in the settings), without tools, nothing saved.
 - Codex: `codex exec` with a read-only sandbox and no rollout saved, on a model Codex lists for your account (`$CODEX_HOME/models_cache.json`): its newest generation, and in it Sol, else Terra, else Luna; when Codex refuses one, the next tier, then the next older generation, then the model in `config.toml`. A local provider (Ollama, LM Studio) uses its most used model in the range.

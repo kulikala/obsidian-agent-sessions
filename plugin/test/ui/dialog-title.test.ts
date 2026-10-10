@@ -31,7 +31,7 @@ const DIALOGS: { dialog: string; key: MessageKey; openers: string[] }[] = [
 	{ dialog: "Suggest name and category", key: "action.suggestNameCategory", openers: ["views/rows-render.ts"] },
 	{ dialog: "Change model", key: "action.changeModel", openers: ["views/rows-render.ts"] },
 	{ dialog: "Organize names and categories", key: "action.organize", openers: ["views/side.ts", "views/manager.ts"] },
-	{ dialog: "Token efficiency", key: "action.analyzeEfficiency", openers: ["main.ts", "views/side.ts", "views/manager.ts"] },
+	{ dialog: "Stretch your usage limit", key: "action.analyzeEfficiency", openers: ["main.ts", "views/side.ts", "views/manager.ts"] },
 	{ dialog: "Ask the agent to fix it", key: "efficiency.action.agent", openers: ["ui/efficiency-modal.ts"] },
 	{ dialog: "End session", key: "action.endSession", openers: ["views/rows-render.ts"] },
 	{ dialog: "Restart session", key: "action.restartSession", openers: ["views/rows-render.ts"] },

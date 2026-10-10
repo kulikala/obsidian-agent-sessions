@@ -1,4 +1,4 @@
-// "Analyze token efficiency": runs `json efficiency` (local, nothing sent), then shows one tab per
+// "Stretch your usage limit…" (the token efficiency dialog): runs `json efficiency` (local, nothing sent), then shows one tab per
 // agent, for the provider its conversations used most, so a conversation is only ever analysed
 // where it was held. Every pane lists the same nine checks (`sessions/efficiency-checks.ts`) and
 // shows one of three screens:
