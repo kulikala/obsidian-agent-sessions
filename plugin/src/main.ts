@@ -175,6 +175,7 @@ import { ActivityView, VIEW_TYPE_ACTIVITY } from "./views/activity";
 import { syncTabGoalMark } from "./views/goal-render";
 import { ManagerView, VIEW_TYPE_MANAGER } from "./views/manager";
 import { SideView, VIEW_TYPE_SIDE } from "./views/side";
+import { leafIdsOf } from "./views/side-list";
 import { TerminalView } from "./views/terminal";
 
 export { VIEW_TYPE_SIDE, VIEW_TYPE_MANAGER, VIEW_TYPE_TERMINAL };
@@ -2346,12 +2347,18 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/** Calls `TerminalView.relinkId(newId)` on every open tab currently at `oldId` (normally one,
-	 * but a split can make several). */
+	 * but a split can make several), and tells the index which ids have a tab now: a relink is no
+	 * layout change, so the side panel wouldn't (the row's tab mark, `Row.hasTab`). */
 	private relinkTerminalViews(oldId: string, newId: string): void {
+		let relinked = false;
 		for (const view of this.terminalViews()) {
 			if (view.sessionId === oldId) {
 				view.relinkId(newId);
+				relinked = true;
 			}
+		}
+		if (relinked) {
+			this.index.setOpenTabs(leafIdsOf(this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL)));
 		}
 	}
 
