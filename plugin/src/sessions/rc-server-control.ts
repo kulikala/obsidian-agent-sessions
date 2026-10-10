@@ -10,7 +10,9 @@ import {
 	rcServerClick,
 	rcServerSignal,
 	rcServerState,
+	rcStartNeedsConfirm,
 	rejectsAutoMode,
+	type RcPermissionMode,
 	type RcServerSignal,
 	type RcServerState,
 } from "./rc-server";
@@ -28,9 +30,16 @@ export interface RcServerDeps {
 	setEnabled(on: boolean): Promise<void>;
 	/** The daemon's session list; `[]` when the daemon isn't running (then neither is the server). */
 	list(): Promise<DaemonSession[]>;
-	/** Starts the server in the daemon (after forgetting an ended one) and returns its daemon
-	 * session. `autoMode` adds `--permission-mode auto`. */
-	launch(autoMode: boolean): Promise<DaemonSession | null>;
+	/** The permission mode the server is set to start in (`settings.rcServerMode`). */
+	mode(): RcPermissionMode;
+	/** The mode the user last accepted in the start confirmation; `null` before the first time. */
+	accepted(): RcPermissionMode | null;
+	setAccepted(mode: RcPermissionMode): Promise<void>;
+	/** Asks before a start, saying what the server lets others do in `mode`. */
+	confirmStart(mode: RcPermissionMode): Promise<boolean>;
+	/** Starts the server in the daemon (after forgetting an ended one) in `mode`, and returns its
+	 * daemon session. */
+	launch(mode: RcPermissionMode): Promise<DaemonSession | null>;
 	/** Ends the server. */
 	kill(): Promise<void>;
 	/** Follows the server's output from the start (the daemon replays what it kept) until `close`. */
@@ -50,6 +59,10 @@ export interface RcServerDeps {
 export class RcServerControl {
 	private daemon: DaemonSession | null = null;
 	private launching = false;
+	/** The start confirmation is open: further clicks wait for it. */
+	private confirming = false;
+	/** The mode of the last start. */
+	private launchedMode: RcPermissionMode | null = null;
 	/** A daemon list has come in (`sync`): until then a missing server isn't `down`. */
 	private known = false;
 	private signal: RcServerSignal = null;
@@ -134,16 +147,20 @@ export class RcServerControl {
 
 	/** A click on the toggle. */
 	async click(): Promise<void> {
-		if (this.launching || !this.known) {
+		if (this.launching || this.confirming || !this.known) {
 			return;
 		}
 		switch (rcServerClick(this.current)) {
 			case "start":
-				await this.deps.setEnabled(true);
-				await this.start();
+				if (await this.confirm()) {
+					await this.deps.setEnabled(true);
+					await this.start();
+				}
 				break;
 			case "wake":
-				await this.start();
+				if (await this.confirm()) {
+					await this.start();
+				}
 				break;
 			case "stop":
 				await this.stop();
@@ -164,6 +181,24 @@ export class RcServerControl {
 		this.listeners.clear();
 	}
 
+	/** Asks before a start when `rcStartNeedsConfirm` says so, and records the accepted mode. */
+	private async confirm(): Promise<boolean> {
+		const mode = this.deps.mode();
+		if (!rcStartNeedsConfirm(mode, this.deps.accepted())) {
+			return true;
+		}
+		this.confirming = true;
+		try {
+			if (!(await this.deps.confirmStart(mode))) {
+				return false;
+			}
+			await this.deps.setAccepted(mode);
+			return true;
+		} finally {
+			this.confirming = false;
+		}
+	}
+
 	private async start(): Promise<void> {
 		if (this.launching) {
 			return;
@@ -178,7 +213,13 @@ export class RcServerControl {
 		try {
 			// A server the daemon still runs (one this view hadn't heard of yet) is followed, not started twice.
 			const running = findRcServer(await this.deps.list());
-			this.daemon = running?.exited === null ? running : await this.deps.launch(true);
+			if (running?.exited === null) {
+				this.daemon = running;
+				this.launchedMode = null;
+			} else {
+				this.launchedMode = this.deps.mode();
+				this.daemon = await this.deps.launch(this.launchedMode);
+			}
 			await this.ensureWatch();
 		} catch (err) {
 			this.deps.fail(err instanceof Error ? err.message : String(err));
@@ -255,10 +296,10 @@ export class RcServerControl {
 	}
 
 	/** The server ended. Stays down until a click, except right after a start whose
-	 * `--permission-mode auto` was refused: that start goes on without it. */
+	 * `--permission-mode auto` was refused: that start goes on in `default`. */
 	private async onExit(): Promise<void> {
 		this.closeWatch();
-		const refused = !this.autoRefused && this.deps.enabled() && rejectsAutoMode(this.output);
+		const refused = !this.autoRefused && this.launchedMode === "auto" && this.deps.enabled() && rejectsAutoMode(this.output);
 		if (this.daemon) {
 			this.daemon = { ...this.daemon, exited: this.daemon.exited ?? -1 };
 		}
@@ -272,7 +313,8 @@ export class RcServerControl {
 		this.resetOutput();
 		this.update();
 		try {
-			this.daemon = await this.deps.launch(false);
+			this.launchedMode = "default";
+			this.daemon = await this.deps.launch("default");
 			await this.ensureWatch();
 		} catch (err) {
 			this.deps.fail(err instanceof Error ? err.message : String(err));

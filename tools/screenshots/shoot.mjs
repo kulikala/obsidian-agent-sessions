@@ -48,7 +48,8 @@ const efficiencyOnly = process.argv.includes("--efficiency");
 const dialogsOnly = process.argv.includes("--dialogs");
 // `--detail-state` shoots only the side panel's detail pane for one session per state (add `--light` for the light theme).
 const detailStateOnly = process.argv.includes("--detail-state");
-// `--rc` shoots the side panel's Remote Control toggle (off, starting, listening, down) with its tooltip, in the dark and the light theme.
+// `--rc` shoots the side panel's Remote Control toggle (off, starting, listening, down) with its tooltip, the start
+// confirmation (auto, ask) and the permission mode setting, in the dark and the light theme.
 const rcOnly = process.argv.includes("--rc");
 const lightTheme = process.argv.includes("--light");
 // `--loop` shoots the side panel with scheduled work: a session with a schedule, and one whose tab
@@ -592,6 +593,47 @@ async function rcScenes(page, box, look) {
 		});
 		await page.evaluate(`document.querySelectorAll('.tooltip').forEach((t) => t.remove())`);
 	}
+
+	// The start confirmation, as on a first start, in auto and in the "ask" mode. Cancelled, so
+	// nothing starts.
+	for (const mode of ["auto", "default"]) {
+		await page.evaluate(`(() => {
+			const c = ${control};
+			Object.assign(${PLUGIN}.settings, { rcServerEnabled: false, rcServerMode: "${mode}", rcServerAccepted: null });
+			c.daemon = null;
+			c.signal = null;
+			c.update();
+			void c.click();
+		})()`);
+		await page.waitFor(`document.querySelector('.modal.agent-sessions-dialog')`, { what: `the ${mode} start confirmation` });
+		await sleep(300);
+		await capture(page, `rc-confirm-${mode}-${theme}`, await dialogClip(page, look, ".modal.agent-sessions-dialog"));
+		await pressEscape(page);
+		await page.waitFor(`!document.querySelector('.modal.agent-sessions-dialog')`, { what: "the start confirmation to close" });
+	}
+	await page.evaluate(`Object.assign(${PLUGIN}.settings, { rcServerMode: "auto" })`);
+
+	// The permission mode in the settings' Claude Code block, with a made-up program path.
+	await page.evaluate(`(() => {
+		const claude = ${PLUGIN}.settings.agents.claude;
+		window.__realClaudePath = claude.path;
+		claude.path = ${JSON.stringify("/Users/demo/.local/bin/claude")};
+		app.setting.shouldUsePopout = () => false;
+		app.setting.open();
+		return 0;
+	})()`);
+	await page.waitFor(`document.querySelector('.modal.mod-settings')`, { what: "the settings dialog" });
+	await sleep(800);
+	await page.evaluate(`(app.setting.openTabById(${PLUGIN}.manifest.id), 0)`);
+	await page.waitFor(`document.querySelector('.agent-sessions-settings-agent')`, { what: "the agents settings" });
+	await page.evaluate(`document.querySelector(".agent-sessions-settings-agent").scrollIntoView({ block: "center" })`);
+	await sleep(300);
+	await capture(page, `rc-mode-setting-${theme}`, await dialogClip(page, look, ".agent-sessions-agents-desc + .agent-sessions-settings-agent"));
+	await page.evaluate(`(() => {
+		app.setting.close();
+		${PLUGIN}.settings.agents.claude.path = window.__realClaudePath;
+	})()`);
+	await sleep(300);
 }
 
 /**

@@ -61,13 +61,41 @@ export function rcServerClick(state: RcServerState): RcServerClick {
 }
 
 /**
- * `claude remote-control --spawn=same-dir [--permission-mode auto]`. Every session the server creates
- * works in the server's own folder. Started again in the same folder, the same command brings back the
- * sessions the server had (Claude Code keeps them for about four hours).
+ * The permission modes the server can give the sessions it creates (`--permission-mode`), in the
+ * order the settings list them. `default` asks before each tool. Claude Code also accepts
+ * `bypassPermissions` and `dontAsk`; they are not offered.
  */
-export function buildRcServerArgv(bin: string, autoMode: boolean): string[] {
-	const argv = [bin, "remote-control", "--spawn=same-dir"];
-	return autoMode ? [...argv, "--permission-mode", "auto"] : argv;
+export const RC_PERMISSION_MODES = ["default", "acceptEdits", "plan", "auto"] as const;
+export type RcPermissionMode = (typeof RC_PERMISSION_MODES)[number];
+
+export function isRcPermissionMode(value: unknown): value is RcPermissionMode {
+	return RC_PERMISSION_MODES.includes(value as RcPermissionMode);
+}
+
+/**
+ * `claude remote-control --spawn=same-dir --permission-mode <mode>`. Every session the server
+ * creates works in the server's own folder, in `mode`. Started again in the same folder, the same
+ * command brings back the sessions the server had (Claude Code keeps them for about four hours).
+ */
+export function buildRcServerArgv(bin: string, mode: RcPermissionMode): string[] {
+	return [bin, "remote-control", "--spawn=same-dir", "--permission-mode", mode];
+}
+
+/**
+ * Whether a start asks first. The first start always does; after that, only a start in `auto`
+ * whose last accepted mode was another one. `accepted` is the mode the user last accepted
+ * (`settings.rcServerAccepted`), `null` before the first time.
+ */
+export function rcStartNeedsConfirm(mode: RcPermissionMode, accepted: RcPermissionMode | null): boolean {
+	return accepted === null || (mode === "auto" && accepted !== "auto");
+}
+
+/**
+ * The accepted mode after the setting changes to `mode`. Leaving `auto` forgets that `auto` was
+ * accepted, so coming back to it asks again; other changes keep it.
+ */
+export function rcAcceptedAfterModeChange(mode: RcPermissionMode, accepted: RcPermissionMode | null): RcPermissionMode | null {
+	return accepted === "auto" && mode !== "auto" ? mode : accepted;
 }
 
 /**

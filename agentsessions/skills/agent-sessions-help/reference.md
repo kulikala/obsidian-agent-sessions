@@ -123,10 +123,11 @@ Change model, Restart session and End session appear for running sessions (held 
 
 ## Remote Control server
 
-- The `rc` switch in the side panel's top row (Claude Code only) runs one Remote Control server for the vault: `claude remote-control --spawn=same-dir --permission-mode auto` in the vault folder. While it is on, claude.ai and the Claude app (claude.ai/code) can start Claude Code sessions in this vault; each connection makes a session, which appears in the side panel.
+- The `rc` switch in the side panel's top row (Claude Code only) runs one Remote Control server for the vault: `claude remote-control --spawn=same-dir --permission-mode <mode>` in the vault folder. While it is on, claude.ai and the Claude app (claude.ai/code) can start Claude Code sessions in this vault; each connection makes a session, which appears in the side panel.
 - Off by default. Only a click turns it on: loading Obsidian or the plugin never starts it. Click again to stop it; if sessions started through it are working, the plugin asks first. Right-click opens the server's terminal.
 - The switch states: off; pulsing (starting); on (listening); on in the warning color (the server stopped; click to start it again, and sessions from the last four hours come back).
-- The server stays connected to Anthropic's servers while it runs. Sessions started from claude.ai or the Claude app run in auto permission mode when Claude Code accepts it, and in its default mode otherwise.
+- The server stays connected to Anthropic's servers while it runs. Anyone signed in to the user's Claude account can start sessions through it. The setting "Remote Control permission mode / Remote Control の権限モード" (under Claude Code, shown while Claude Code is enabled) picks how those sessions use tools: Ask before each tool / ツールごとに確認する, Edit files without asking / ファイルの編集は確認しない, Plan only, change nothing / 計画だけ（何も変えない）, Auto, without asking / 自動（確認しない） (the default). A change applies the next time the server starts. In auto, if Claude Code does not accept it, the server runs in its default mode.
+- The first time the switch is turned on, and the next start after the mode is changed to auto, a dialog names the mode and what it allows; "Start server / サーバーを起動" starts it, Cancel leaves it off.
 - `⋯` -> "Copy the connection link / 接続用のリンクをコピー" copies the link while the server is listening.
 - This is separate from the session names that Remote Control shares with Agent Sessions (renaming a session renames its Remote Control session too).
 
@@ -182,7 +183,7 @@ Settings -> Community plugins -> Agent Sessions. Sections and items (English / �
 - Other / その他: Recent count (side panel) / 最近の件数（サイドパネル）; Notify when waiting for input / 指示待ちの通知; agent-sessions location / agent-sessions の場所; Editor pane height (%) / 編集領域の高さ（%）; Scrollback lines / スクロールバック行数.
 - Stretch your usage limit / 利用枠を増やす: Usage limit threshold / 利用枠のしきい値 (50–95%); Budget / 予算 (weighted tokens); Model for the analysis / 解析のモデル (Sonnet, Opus).
 - Also in the settings tab: "agent-sessions program / agent-sessions プログラム" (state, Reinstall, Remove) and "Welcome guide / ようこそガイド" (continue or restart the guide, "Show the welcome guide after updates", "Load the guide's pictures from GitHub").
-- Agents / エージェント: for Claude Code, Codex and OpenCode, a toggle to enable it, "Executable / 実行ファイル" (empty = find automatically), "Environment variables / 環境変数" (one `KEY=VALUE` per line, passed at launch) and "Find again / もう一度探す". OpenCode also has "Launch with / 起動方法" and "Ollama model / Ollama のモデル". At least one agent must stay enabled.
+- Agents / エージェント: for Claude Code, Codex and OpenCode, a toggle to enable it, "Executable / 実行ファイル" (empty = find automatically), "Environment variables / 環境変数" (one `KEY=VALUE` per line, passed at launch) and "Find again / もう一度探す". Claude Code also has "Remote Control permission mode / Remote Control の権限モード" (see Remote Control server). OpenCode also has "Launch with / 起動方法" and "Ollama model / Ollama のモデル". At least one agent must stay enabled.
 
 ## Agents
 

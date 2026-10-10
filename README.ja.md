@@ -140,7 +140,7 @@ Obsidian とエージェントは、同じ OS で動かしてください。プ�
 ### ネットワーク
 
 - 次に述べる Remote Control サーバーを除き、プラグインとプログラムは、自分の処理のためにネットワークへ接続しません。プラグインは、同じマシンで動くプログラムの常駐プロセスとやりとりします。Unix ソケット（モード 0600）を使い、Windows では `127.0.0.1` のランダムなポートと秘密のトークンを使います。
-- Remote Control は、サイドパネルの **rc** トグルで入れたときだけ、vault のフォルダで `claude remote-control --spawn=same-dir --permission-mode auto` を動かします。この Claude Code のプロセスは Anthropic のサーバーにつながったままになり、claude.ai や Claude アプリから接続があるたびに、この vault でセッションを始めます。そのセッションは、Claude Code が受け付ければ auto の権限モードで、受け付けなければ既定のモードで動きます。トグルを押すまでオフで、Obsidian やプラグインを読み込んでも起動しません。
+- Remote Control は、サイドパネルの **rc** トグルで入れたときだけ、vault のフォルダで `claude remote-control --spawn=same-dir --permission-mode <モード>` を動かします。この Claude Code のプロセスは Anthropic のサーバーにつながったままになり、あなたの Claude アカウントにログインしている人が claude.ai や Claude アプリから接続するたびに、この vault でセッションを始めます。モードは設定の Claude Code の欄で選べます。既定は auto で、Claude は確認せずにツールを使います。Claude Code が auto を受け付けないときは、既定のモードで動きます。初めてトグルを入れるときと、設定を auto に変えたあとの次の起動では、そのモードで何ができるかをダイアログで示し、確かめてから起動します。トグルを押すまでオフで、Obsidian やプラグインを読み込んでも起動しません。
 - ようこそガイドを開いているあいだは、図を `raw.githubusercontent.com` から読み込みます。利用者のデータは送りません。GitHub には IP アドレスと、どの図を求めたかが伝わります。設定の **ガイドの図を GitHub から読み込む** で止められます。
 
 ### 起動するプログラム

@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { RcServerControl, type RcServerDeps } from "../../src/sessions/rc-server-control";
-import { RC_SERVER_ID } from "../../src/sessions/rc-server";
+import { RC_SERVER_ID, type RcPermissionMode } from "../../src/sessions/rc-server";
 import type { DaemonSession } from "../../src/types";
 
 function server(over: Partial<DaemonSession> = {}): DaemonSession {
@@ -16,21 +16,39 @@ interface Harness {
 	list: ReturnType<typeof vi.fn>;
 	kill: ReturnType<typeof vi.fn>;
 	confirmStop: ReturnType<typeof vi.fn>;
+	confirmStart: ReturnType<typeof vi.fn>;
 	revealTerminal: ReturnType<typeof vi.fn>;
 	announce: ReturnType<typeof vi.fn>;
 	/** Sends output from the server to the current watch. */
 	output(text: string): void;
 	/** Ends the server, as the daemon's `exit` event does. */
 	exit(): void;
-	settings: { enabled: boolean };
+	settings: { enabled: boolean; mode: RcPermissionMode; accepted: RcPermissionMode | null };
 }
 
 function harness(
-	opts: { enabled?: boolean; atWork?: number; confirm?: boolean; launched?: DaemonSession; listed?: DaemonSession[]; unsynced?: boolean } = {}
+	opts: {
+		enabled?: boolean;
+		atWork?: number;
+		confirm?: boolean;
+		launched?: DaemonSession;
+		listed?: DaemonSession[];
+		unsynced?: boolean;
+		mode?: RcPermissionMode;
+		/** The accepted mode; the default `"auto"` is a user who has already said yes. */
+		accepted?: RcPermissionMode | null;
+		/** The answer to the start confirmation. */
+		start?: boolean;
+	} = {}
 ): Harness {
 	const listed = opts.listed ?? [];
 	const list = vi.fn(async () => listed);
-	const settings = { enabled: opts.enabled ?? false };
+	const settings = {
+		enabled: opts.enabled ?? false,
+		mode: opts.mode ?? "auto",
+		accepted: opts.accepted === undefined ? ("auto" as RcPermissionMode) : opts.accepted,
+	};
+	const confirmStart = vi.fn(async () => opts.start ?? true);
 	let onOutput: (text: string) => void = () => undefined;
 	let onExit: () => void = () => undefined;
 	const launch = vi.fn(async () => opts.launched ?? server());
@@ -44,6 +62,12 @@ function harness(
 			settings.enabled = on;
 		},
 		list,
+		mode: () => settings.mode,
+		accepted: () => settings.accepted,
+		setAccepted: async (mode) => {
+			settings.accepted = mode;
+		},
+		confirmStart,
 		launch,
 		kill,
 		watch: async (out, exit) => {
@@ -68,6 +92,7 @@ function harness(
 		launch,
 		kill,
 		confirmStop,
+		confirmStart,
 		revealTerminal,
 		announce,
 		output: (text) => onOutput(text),
@@ -138,7 +163,7 @@ describe("RcServerControl: clicks", () => {
 		const h = harness();
 		await h.control.click();
 		expect(h.settings.enabled).toBe(true);
-		expect(h.launch).toHaveBeenCalledWith(true);
+		expect(h.launch).toHaveBeenCalledWith("auto");
 		expect(h.control.state()).toBe("starting");
 		h.output("space for QR code");
 		expect(h.control.state()).toBe("listening");
@@ -350,6 +375,84 @@ describe("RcServerControl: the terminal", () => {
 	});
 });
 
+describe("RcServerControl: permission mode and the start confirmation", () => {
+	it("starts in the mode the settings name", async () => {
+		const h = harness({ mode: "plan", accepted: "plan" });
+		await h.control.click();
+		expect(h.launch).toHaveBeenCalledWith("plan");
+	});
+
+	it("asks the first time, then never again", async () => {
+		const h = harness({ accepted: null });
+		await h.control.click();
+		expect(h.confirmStart).toHaveBeenCalledWith("auto");
+		expect(h.settings.accepted).toBe("auto");
+		expect(h.launch).toHaveBeenCalledTimes(1);
+		await h.control.click();
+		h.settings.enabled = false;
+		h.control.settingsChanged();
+		await h.control.click();
+		expect(h.confirmStart).toHaveBeenCalledTimes(1);
+		expect(h.launch).toHaveBeenCalledTimes(2);
+	});
+
+	it("asks the first time in a mode other than auto too", async () => {
+		const h = harness({ mode: "default", accepted: null });
+		await h.control.click();
+		expect(h.confirmStart).toHaveBeenCalledWith("default");
+		expect(h.settings.accepted).toBe("default");
+	});
+
+	it("stays off, records nothing and starts nothing when the user cancels", async () => {
+		const h = harness({ accepted: null, start: false });
+		await h.control.click();
+		expect(h.settings.enabled).toBe(false);
+		expect(h.settings.accepted).toBeNull();
+		expect(h.launch).not.toHaveBeenCalled();
+		expect(h.control.state()).toBe("off");
+	});
+
+	it("asks again on the next start after the mode changes to auto", async () => {
+		const h = harness({ mode: "default", accepted: "default" });
+		h.settings.mode = "auto";
+		await h.control.click();
+		expect(h.confirmStart).toHaveBeenCalledWith("auto");
+		expect(h.launch).toHaveBeenCalledWith("auto");
+	});
+
+	it("asks before waking a down server whose mode changed to auto", async () => {
+		const h = harness({ enabled: true, mode: "auto", accepted: "plan", start: false });
+		h.control.sync([]);
+		expect(h.control.state()).toBe("down");
+		await h.control.click();
+		expect(h.confirmStart).toHaveBeenCalledTimes(1);
+		expect(h.launch).not.toHaveBeenCalled();
+		expect(h.control.state()).toBe("down");
+	});
+
+	it("never asks before a stop", async () => {
+		const h = harness({ enabled: true, accepted: null });
+		h.control.sync([server()]);
+		await settle();
+		await h.control.click();
+		expect(h.confirmStart).not.toHaveBeenCalled();
+		expect(h.settings.enabled).toBe(false);
+	});
+
+	it("ignores clicks while the confirmation is open", async () => {
+		let answer: (yes: boolean) => void = () => undefined;
+		const h = harness({ accepted: null });
+		h.confirmStart.mockImplementationOnce(() => new Promise<boolean>((resolve) => (answer = resolve)));
+		const first = h.control.click();
+		await settle();
+		await h.control.click();
+		expect(h.confirmStart).toHaveBeenCalledTimes(1);
+		answer(true);
+		await first;
+		expect(h.launch).toHaveBeenCalledTimes(1);
+	});
+});
+
 describe("RcServerControl: auto mode refused", () => {
 	it("starts again without --permission-mode auto, once", async () => {
 		const h = harness();
@@ -357,12 +460,21 @@ describe("RcServerControl: auto mode refused", () => {
 		h.output("error: option '--permission-mode <mode>' argument 'auto' is invalid.");
 		h.exit();
 		await settle();
-		expect(h.launch).toHaveBeenNthCalledWith(2, false);
+		expect(h.launch).toHaveBeenNthCalledWith(2, "default");
 		h.output("error: option '--permission-mode <mode>' argument 'auto' is invalid.");
 		h.exit();
 		await settle();
 		expect(h.launch).toHaveBeenCalledTimes(2);
 		expect(h.control.state()).toBe("down");
+	});
+
+	it("does not start again when the refused start was not in auto", async () => {
+		const h = harness({ mode: "plan", accepted: "plan" });
+		await h.control.click();
+		h.output("error: option '--permission-mode <mode>' argument 'auto' is invalid.");
+		h.exit();
+		await settle();
+		expect(h.launch).toHaveBeenCalledTimes(1);
 	});
 
 	it("does not start again after any other failure", async () => {

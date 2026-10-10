@@ -11,6 +11,7 @@ import { t, type MessageKey } from "../i18n";
 import { applyChipEditResult, composeName, filterCategories, tokenizeNameInput } from "../sessions/name";
 import { AGENT_IDS, type AgentId } from "../settings";
 import { splitName } from "../sessions/tree";
+import type { RcPermissionMode } from "../sessions/rc-server";
 import { addGroups, effortLabel, modelAliasLabel } from "./modal-labels";
 import {
 	EFFORT_CHOICE_GROUPS,
@@ -773,6 +774,52 @@ export class ConfirmModal extends Modal {
 
 	onClose(): void {
 		this.contentEl.empty();
+	}
+}
+
+/**
+ * Asks before the Remote Control server starts (`RcServerDeps.confirmStart`): the permission mode,
+ * who can start sessions through it, and, for auto, that Claude uses tools without asking. Raised
+ * by the rc switch, so it has no title.
+ */
+export class RcServerStartModal extends Modal {
+	private started = false;
+
+	constructor(
+		app: App,
+		private mode: RcPermissionMode,
+		private onDone: (start: boolean) => void
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		markDialog(this);
+		const { contentEl } = this;
+		contentEl.createEl("p", { text: t("confirm.rcServerStart.mode", { mode: t(`settings.agents.rcMode.${this.mode}`) }) });
+		contentEl.createEl("p", { text: t("confirm.rcServerStart.who") });
+		if (this.mode === "auto") {
+			contentEl.createEl("p", { text: t("confirm.rcServerStart.auto") });
+		}
+		contentEl.createEl("p", { text: t("confirm.rcServerStart.change") });
+		dialogFooter(contentEl)
+			.addButton((button) => button.setButtonText(t("action.cancel")).onClick(() => this.close()))
+			.addButton((button) => {
+				button.setButtonText(t("action.rcServerStart")).onClick(() => {
+					this.started = true;
+					this.close();
+				});
+				if (this.mode === "auto") {
+					button.setWarning();
+				} else {
+					button.setCta();
+				}
+			});
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+		this.onDone(this.started);
 	}
 }
 

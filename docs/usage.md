@@ -375,7 +375,7 @@ Two skills are installed with the program, into the vault only:
 
 The **rc** switch in the side panel runs one Remote Control server for the vault. While it is on, claude.ai and the Claude app can start Claude Code sessions here. It needs Claude Code to be enabled.
 
-1. Click **rc** in the side panel's top row. The switch pulses while the server starts.
+1. Click **rc** in the side panel's top row. The first time, a dialog says the permission mode and what it allows; choose **Start server**. The switch pulses while the server starts.
 2. When the switch is on and a notice says Remote Control is listening, open the Claude app or claude.ai/code and choose this vault's folder. Each connection starts a Claude Code session in the vault, and it appears in the side panel.
 3. Click the switch again to stop the server. If sessions started through it are working, you are asked first, because stopping interrupts them.
 
@@ -389,7 +389,18 @@ Right-click the switch to open the server's terminal. **Copy the connection link
 | on, in the warning color | the server has stopped; click to start it again, and sessions from the last four hours come back |
 
 - The switch is off until you click it. Loading Obsidian, rescanning and the server ending never start it.
-- The server runs `claude remote-control --spawn=same-dir --permission-mode auto` in the vault folder and stays connected to Anthropic. Sessions started from claude.ai or the Claude app run in auto permission mode when Claude Code accepts it, and in its default mode otherwise.
+- The server runs `claude remote-control --spawn=same-dir --permission-mode <mode>` in the vault folder and stays connected to Anthropic. Anyone signed in to your Claude account can start a session through it from claude.ai or the Claude app.
+- **Remote Control permission mode**, under Claude Code in the settings, sets how those sessions use tools:
+
+  | Mode | Sessions |
+  |---|---|
+  | Ask before each tool | ask before each tool (`default`) |
+  | Edit files without asking | edit files without asking, ask for the rest (`acceptEdits`) |
+  | Plan only, change nothing | only read and plan (`plan`) |
+  | Auto, without asking (default) | use tools without asking; Claude Code's classifier blocks risky actions (`auto`) |
+
+  A change applies the next time the server starts. In auto, when Claude Code does not accept the mode, the server starts again in `default`.
+- The confirmation dialog appears the first time you turn the switch on, and again on the next start after you change the mode to auto from another mode. Otherwise the switch starts the server at once.
 
 ## Remote Control names
 
@@ -411,7 +422,7 @@ Separately from the server, a Claude Code session with Remote Control (started w
 | **Editor key** | Ctrl+G, Ctrl+Q, Option/Alt+G |
 | **Recent count (side panel)** | number of recent sessions |
 | **Notify when waiting for input** | on, off |
-| **Agents** | per agent: on/off, **Executable**, **Environment variables**, **Find again** |
+| **Agents** | per agent: on/off, **Executable**, **Environment variables**, **Find again**; Claude Code also has **Remote Control permission mode** ([Remote Control server](#remote-control-server)) |
 | **Launch with** (OpenCode) | `opencode` or `ollama launch opencode` |
 | **Ollama model** (OpenCode) | from `ollama list`, or typed |
 | **agent-sessions location** | path |
