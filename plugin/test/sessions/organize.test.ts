@@ -11,6 +11,7 @@ import {
 	finalizeSuggestion,
 	isHumanPrompt,
 	isIncomplete,
+	maskedCandidates,
 	parseSuggestions,
 	resolveSuggestions,
 	selectSessions,
@@ -138,6 +139,34 @@ describe("excerpt / toCandidate", () => {
 		expect(inside.folder).toBe("projects/alpha");
 		expect(toCandidate(row("s1", { cwd: "/v", folder: "v" }), null, "/v").folder).toBe("(vault root)");
 		expect(toCandidate(row("s1", { cwd: "/other/beta", folder: "beta" }), null, "/v").folder).toBe("beta");
+	});
+});
+
+describe("maskedCandidates", () => {
+	it("masks every conversation text in one call, before cutting it", async () => {
+		const calls: { texts: string[]; limit: number }[] = [];
+		const mask = async (texts: string[], limit: number): Promise<string[]> => {
+			calls.push({ texts, limit });
+			return texts.map((x) => x.replace(/sk-ant-\S+/g, "[secret]").slice(0, limit));
+		};
+		const secret = `sk-ant-${"a".repeat(400)}`;
+		const rows = [row("a", { label: `use ${secret}`, cwd: "/v/p", folder: "p" }), row("b", { label: "b" })];
+		const details = [
+			{ last_user: null, last_assistant: `reply ${secret}`, recent_user: [`now ${secret}`, "<task-notification>x</task-notification>"] },
+			null,
+		];
+		const [a, b] = await maskedCandidates(rows, details, "/v", mask);
+		expect(calls).toHaveLength(1);
+		expect(calls[0].limit).toBe(300);
+		expect(calls[0].texts).not.toContain("<task-notification>x</task-notification>");
+		expect(a).toMatchObject({ firstPrompt: "use [secret]", recentPrompts: ["now [secret]"], lastAssistant: "reply [secret]", folder: "p" });
+		expect(b).toMatchObject({ firstPrompt: "", recentPrompts: [], lastAssistant: "" });
+		expect(JSON.stringify([a, b])).not.toContain("sk-ant-");
+	});
+
+	it("fails rather than send unmasked texts", async () => {
+		await expect(maskedCandidates([row("a")], [null], undefined, () => Promise.reject(new Error("no")))).rejects.toThrow();
+		await expect(maskedCandidates([row("a")], [null], undefined, async () => [])).rejects.toThrow();
 	});
 });
 

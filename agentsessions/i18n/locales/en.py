@@ -83,7 +83,7 @@ MESSAGES = {
     'cmd.cannot_start_daemon': 'cannot start daemon: {error} ({path})',
 
     # cmd_json.py
-    'cmd.json_usage': 'usage: agent-sessions json scan|live|detail|usage|stats|activity|resolve|moved|ppid|efficiency ...',
+    'cmd.json_usage': 'usage: agent-sessions json scan|live|detail|usage|stats|activity|resolve|moved|ppid|efficiency|mask ...',
     'cmd.json_id_needs_value': '--only needs at least one ID',
     'cmd.json_detail_usage': 'usage: agent-sessions json detail ID',
     'cmd.json_usage_usage': 'usage: agent-sessions json usage ID [--from ISO] [--to ISO]',

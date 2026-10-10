@@ -173,8 +173,31 @@ def main(args: List[str]) -> int:
     if sub == 'efficiency':
         return _efficiency(rest)
 
+    if sub == 'mask':
+        return _mask()
+
     sys.stderr.write(i18n.t('cmd.json_unknown_subcommand', sub=sub) + '\n')
     return 2
+
+
+def _mask() -> int:
+    """`json mask`: reads `{"texts": [...], "limit": N}` on stdin and prints `{"texts": [...]}`,
+    each text masked as the digest masks it (`efficiency/excerpt.py`) and, with `limit`, at most
+    that many characters. The texts come on stdin, not in argv, which other processes can read."""
+    from .. import config
+    from ..efficiency import excerpt
+    try:
+        req = json.loads(sys.stdin.read())
+        texts, limit = req.get('texts'), req.get('limit')
+        if not isinstance(texts, list) or not all(isinstance(t, str) for t in texts) \
+                or not (limit is None or (isinstance(limit, int) and limit > 0)):
+            raise ValueError
+    except (ValueError, AttributeError):
+        sys.stderr.write(i18n.t('cmd.json_usage') + '\n')
+        return 2
+    mask = excerpt.Masker(vault=config.VAULT)
+    _print({'texts': [mask(t, limit) for t in texts]})
+    return 0
 
 
 def _efficiency(opts: List[str]) -> int:

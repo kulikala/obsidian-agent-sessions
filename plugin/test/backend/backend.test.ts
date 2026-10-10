@@ -8,12 +8,16 @@ import {
 	parseOllamaList,
 	defaultLoginShell,
 	envWithVault,
+	mask,
 	mergePath,
 	setAgentEnv,
 	sortVersionsDesc,
 	withBinDirOnPath,
 } from "../../src/backend/backend";
 import { DEFAULT_SETTINGS } from "../../src/settings";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 
 describe("envWithVault (ensures every code path that calls json… gets AGENT_SESSIONS_VAULT)", () => {
 	it("overlays AGENT_SESSIONS_VAULT onto the base env", () => {
@@ -363,5 +367,22 @@ describe("mergePath (the interactive shell's PATH merged onto the login shell's)
 
 	it("drops empty segments from either side (a stray leading/trailing/doubled delimiter)", () => {
 		expect(mergePath("/usr/bin::/bin", ":/a/bin:")).toBe("/usr/bin:/bin:/a/bin");
+	});
+});
+
+describe.skipIf(process.platform === "win32")("mask (json mask: the texts go on stdin, not in argv)", () => {
+	it("sends the texts on stdin and reads one text back per text", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "as-mask-"));
+		try {
+			const bin = join(dir, "agent-sessions");
+			// Echoes stdin as the reply, and fails if a text shows in argv.
+			writeFileSync(bin, '#!/bin/sh\ncase "$*" in *secret*) exit 3;; esac\ncat\n');
+			chmodSync(bin, 0o755);
+			expect(await mask(bin, "/v", ["a secret", "b"], 10)).toEqual(["a secret", "b"]);
+			writeFileSync(bin, '#!/bin/sh\necho \'{"texts": ["only one"]}\'\n');
+			await expect(mask(bin, "/v", ["a", "b"], 10)).rejects.toThrow();
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });

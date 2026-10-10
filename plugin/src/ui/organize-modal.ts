@@ -6,7 +6,7 @@
 
 import { Modal, Notice, Platform, Setting } from "obsidian";
 import type AgentSessionsPlugin from "../main";
-import { loginEnv, resolveAgentBinary, withBinDirOnPath } from "../backend/backend";
+import { loginEnv, mask, resolveAgentBinary, withBinDirOnPath } from "../backend/backend";
 import { runHeadless } from "../backend/headless";
 import { organizeDir } from "../backend/paths";
 import { t } from "../i18n";
@@ -20,8 +20,9 @@ import {
 	fullName,
 	ORGANIZE_BATCH_CAP,
 	resolveSuggestions,
+	maskedCandidates,
 	selectSessions,
-	toCandidate,
+	type CandidateDetail,
 	type CategoryProfile,
 	type OrganizeCandidate,
 	type Suggestion,
@@ -445,22 +446,25 @@ export class OrganizeModal extends Modal {
 		}
 	}
 
-	/** The excerpts, a few sessions at a time (each is one `json detail` process). */
+	/** The excerpts, read a few sessions at a time (each is one `json detail` process), then
+	 * masked in one `json mask` process. */
 	private async readCandidates(rows: Row[], signal: AbortSignal): Promise<OrganizeCandidate[]> {
-		const out: OrganizeCandidate[] = new Array<OrganizeCandidate>(rows.length);
+		const details: (CandidateDetail | null)[] = new Array<CandidateDetail | null>(rows.length).fill(null);
 		let next = 0;
 		const worker = async (): Promise<void> => {
 			while (next < rows.length && !signal.aborted) {
 				const i = next++;
-				const detail = await this.plugin.index.getDetail(rows[i].id).catch(() => null);
-				out[i] = toCandidate(rows[i], detail, this.plugin.vaultPath());
+				details[i] = await this.plugin.index.getDetail(rows[i].id).catch(() => null);
 			}
 		};
 		await Promise.all(Array.from({ length: Math.min(DETAIL_CONCURRENCY, rows.length) }, worker));
 		if (signal.aborted) {
 			throw new Error("aborted");
 		}
-		return out;
+		const vault = this.plugin.vaultPath();
+		return maskedCandidates(rows, details, vault, (texts, limit) =>
+			mask(this.plugin.agentSessionsPath(), vault, texts, limit)
+		);
 	}
 
 	// ---- Review -------------------------------------------------------------------

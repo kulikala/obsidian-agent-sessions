@@ -113,7 +113,7 @@ def _turn(sess: _Session, t: dict, ref: Optional[str], mask: Masker, texts) -> d
     out = {
         'ref': ref,
         'at': _iso(start),
-        'prompt': mask(texts.prompt(s, p['off']))[:PROMPT_CHARS] if p is not None else None,
+        'prompt': mask(texts.prompt(s, p['off']), PROMPT_CHARS) if p is not None else None,
         'w': round(sum(normalize.w_of(c) for c in ranged)),
         'calls': len(calls),
         'subagent_calls': len(t['sub']),
@@ -132,7 +132,7 @@ def _turn(sess: _Session, t: dict, ref: Optional[str], mask: Masker, texts) -> d
     }
     last = next((c for c in reversed(t['main']) if c.get('text_off') is not None), None)
     if last is not None and ref:
-        reply = mask(texts.reply(s, last['text_off']))[:REPLY_CHARS]
+        reply = mask(texts.reply(s, last['text_off']), REPLY_CHARS)
         if reply:
             out['reply'] = reply
             out['reply_ref'] = ref.replace('.p', '.r')

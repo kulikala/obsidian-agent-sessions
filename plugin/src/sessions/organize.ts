@@ -167,6 +167,54 @@ export function toCandidate(
 	};
 }
 
+/** Masks texts as the efficiency digest does (`agent-sessions json mask`), each cut to at most
+ * `limit` characters. Rejects rather than return them unmasked. */
+export type MaskTexts = (texts: string[], limit: number) => Promise<string[]>;
+
+/** The longest excerpt of a candidate: what `MaskTexts` keeps of each text. */
+const MASK_LIMIT = Math.max(FIRST_PROMPT_MAX, RECENT_PROMPT_MAX, ASSISTANT_MAX, FOLDER_MAX);
+
+export type CandidateDetail = { last_user: string | null; last_assistant: string | null; recent_user?: string[] };
+
+/**
+ * `toCandidate` for each row with what comes from the conversation (the first prompt, the latest
+ * prompts, the last reply, the folder) masked by `mask` in one call, before it is cut: what the
+ * headless agent sees is masked as the efficiency digest is.
+ */
+export async function maskedCandidates(
+	rows: Pick<Row, "id" | "agent" | "name" | "label" | "folder" | "cwd">[],
+	details: (CandidateDetail | null)[],
+	vaultPath: string | undefined,
+	mask: MaskTexts
+): Promise<OrganizeCandidate[]> {
+	const texts: string[] = [];
+	const put = (text: string): number => texts.push(text) - 1;
+	const slots = rows.map((row, i) => {
+		const detail = details[i];
+		const label = row.label ?? "";
+		const recent = detail?.recent_user?.length ? detail.recent_user : detail?.last_user ? [detail.last_user] : [];
+		return {
+			first: put(label === row.id || !isHumanPrompt(label) ? "" : label),
+			recent: recent.filter(isHumanPrompt).map(put),
+			assistant: put(detail?.last_assistant ?? ""),
+			folder: put(folderHint(row.cwd, row.folder, vaultPath)),
+		};
+	});
+	const masked = texts.length > 0 ? await mask(texts, MASK_LIMIT) : [];
+	if (masked.length !== texts.length) {
+		throw new Error("mask: wrong number of texts");
+	}
+	return rows.map((row, i) => {
+		const slot = slots[i];
+		const candidate = toCandidate(
+			{ ...row, label: masked[slot.first] },
+			{ last_user: null, recent_user: slot.recent.map((j) => masked[j]), last_assistant: masked[slot.assistant] },
+			vaultPath
+		);
+		return { ...candidate, folder: excerpt(masked[slot.folder], FOLDER_MAX) };
+	});
+}
+
 /**
  * The user's existing categories as the model should see them: how many sessions use each and a
  * few of their names, so it can tell what kind of thing each category is (a project, a client, an
