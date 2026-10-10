@@ -223,6 +223,13 @@ describe("Codex and OpenCode panes", () => {
 		expect(analysisModels({ model: null, models: [] })).toEqual([null]);
 	});
 
+	it("writes the Codex provider as a TOML string that a quote or line break cannot leave", () => {
+		expect(analysisArgs({ agent: "codex", provider: "ollama", model: "m" })).toEqual(["-m", "m", "-c", 'model_provider="ollama"']);
+		const [, , , value] = analysisArgs({ agent: "codex", provider: 'x"\nsandbox_mode="danger-full-access', model: "m" });
+		expect(value).toBe('model_provider="x\\"\\nsandbox_mode=\\"danger-full-access"');
+		expect(value.split("\n")).toHaveLength(1);
+	});
+
 	it("names the provider and model on the command line", () => {
 		expect(analysisArgs({ agent: "opencode", provider: "ollama", model: "big-local" })).toEqual(["--model", "ollama/big-local"]);
 		expect(analysisArgs({ agent: "opencode", provider: "ollama", model: null })).toEqual([]);

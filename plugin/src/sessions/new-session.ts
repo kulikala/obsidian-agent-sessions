@@ -43,9 +43,15 @@ export const OPENCODE_WINDOWS_PROMPT_MAX = 200;
 
 /** Whether a fresh session's first message is typed into the agent once it is ready, instead of
  * going on the command line: OpenCode on Windows, for a message over
- * `OPENCODE_WINDOWS_PROMPT_MAX` characters. */
+ * `OPENCODE_WINDOWS_PROMPT_MAX` characters or with a line break (npm's `opencode.cmd` runs
+ * through `cmd.exe`, which cannot pass one: `cmdShimArgument`). */
 export function typesFirstMessage(agent: AgentId, prompt: string | undefined, platform: string = process.platform): boolean {
-	return agent === "opencode" && platform === "win32" && !!prompt && prompt.length > OPENCODE_WINDOWS_PROMPT_MAX;
+	return (
+		agent === "opencode" &&
+		platform === "win32" &&
+		!!prompt &&
+		(prompt.length > OPENCODE_WINDOWS_PROMPT_MAX || /[\r\n]/.test(prompt))
+	);
 }
 
 /** Whether OpenCode's TUI is ready for input: its footer (`ctrl+p commands`) is on screen. */

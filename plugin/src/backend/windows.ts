@@ -110,12 +110,13 @@ export interface Invocation {
 /** Characters `cmd.exe` gives a meaning to (and space, which ends a word there). */
 const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
 
-/** One argument for a batch file run through `cmd.exe /d /s /c`: quoted the way the C runtime
+/** One argument for a batch file run through `cmd.exe /d /s /c`, its line breaks as spaces: quoted the way the C runtime
  * (Node, the program the batch file starts) reads it back, then every `cmd.exe` metacharacter
  * escaped with `^` twice, once for the `/c` line and once more for the batch file's own `%*` line,
  * which cmd parses again. The scheme cross-spawn uses for npm's shims. */
 export function cmdShimArgument(arg: string): string {
-	let quoted = arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, "$1$1");
+	// `cmd.exe` ends its line at a line break and drops the rest: line breaks go in as spaces.
+	let quoted = arg.replace(/[\r\n]+/g, " ").replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, "$1$1");
 	quoted = `"${quoted}"`;
 	return quoted.replace(CMD_META, "^$1").replace(CMD_META, "^$1");
 }
