@@ -30,9 +30,13 @@ Each session is the agent's command-line program in an Obsidian tab, with your s
 
 ### Switch between sessions in the side panel
 
-Open tabs, running sessions without a tab, and recent ones, each with an icon for its state, plus one for a Claude Code or Codex `/goal` while it is active and once it is met, until your next prompt. Click one to bring its tab to the front or open it again; an ended session resumes its conversation. Sessions keep running when you close the tab or quit Obsidian. [More](docs/usage.md#switch-between-sessions)
+Open tabs, running sessions without a tab, and recent ones, each with an icon for its state, plus one for a Claude Code or Codex `/goal` while it is active and once it is met, until your next prompt. A Claude Code session with scheduled work (`/loop`, a cron job or a wakeup) shows a schedule badge, and a scheduled run that finishes while you are elsewhere marks the row until you open its tab. The details below the list name the selected session's state and explain it in a sentence. Click one to bring its tab to the front or open it again; an ended session resumes its conversation. Sessions keep running when you close the tab or quit Obsidian. [More](docs/usage.md#switch-between-sessions)
 
 ![The side panel: open tabs, running and recent sessions with state icons and categories, and the Needs input and Needs review counts at the top](docs/onboarding/en/side-panel.png)
+
+### Remote Control from claude.ai and the Claude app
+
+The **rc** switch in the side panel starts one Remote Control server for the vault. While it is on, claude.ai and the Claude app can start Claude Code sessions in this vault, and they appear in the side panel like any other. The switch is off by default and only a click turns it on; see [Network](#network). **Copy the connection link** in the ⋯ menu copies the link to connect with. [More](docs/usage.md#remote-control-server)
 
 ### A built-in editor for prompts
 
@@ -135,12 +139,14 @@ No telemetry and no account. The agents have the same permissions as in your ter
 
 ### Network
 
-- The plugin and its program make no network connections for their own work. The plugin talks to the program's background process on this machine: a Unix socket (mode 0600), or on Windows `127.0.0.1` on a random port with a secret token.
+- Apart from the Remote Control server described next, the plugin and its program make no network connections for their own work. The plugin talks to the program's background process on this machine: a Unix socket (mode 0600), or on Windows `127.0.0.1` on a random port with a secret token.
+- Remote Control, when you switch it on with the **rc** toggle in the side panel, runs `claude remote-control --spawn=same-dir --permission-mode auto` in the vault folder. That Claude Code process stays connected to Anthropic's servers and starts a session in this vault for each connection made from claude.ai or the Claude app. Those sessions run in auto permission mode when Claude Code accepts it, and in its default mode otherwise. It is off until you click the toggle, and it is never started by loading Obsidian or the plugin.
 - While the welcome guide is open, it loads its pictures from `raw.githubusercontent.com`. No data of yours is sent; GitHub sees your IP address and which picture is requested. Turn this off with **Load the guide's pictures from GitHub** in the settings.
 
 ### Programs it starts
 
 - `agent-sessions`, with the Python found on your machine. It is written out from the plugin when you click Install; nothing is downloaded.
+- `claude remote-control`, only after you click the **rc** toggle.
 - The Claude Code, Codex and OpenCode CLIs you installed, or `ollama launch opencode` if you choose it. The settings run `ollama list` to offer your Ollama models.
 - Your shell, as a login shell and as an interactive shell (which reads `.zshrc` or `.bashrc`), to get the same `PATH` as a terminal.
 - On Windows: `reg.exe` (to read `PATH`), `py.exe` (to find Python), and `winget.exe` only when you click an install button.
@@ -210,7 +216,7 @@ What is sent is a digest of every task in the range: the masked session names an
 ### Other access
 
 - The vault's file list: only to complete `@` paths in the built-in editor.
-- The clipboard: only when you copy a session ID or an analysis table, or press Ctrl+Shift+C / Ctrl+Shift+V in a terminal tab (not on macOS).
+- The clipboard: only when you copy a session ID, an analysis table or the Remote Control connection link, or press Ctrl+Shift+C / Ctrl+Shift+V in a terminal tab (not on macOS).
 
 ## Development
 
