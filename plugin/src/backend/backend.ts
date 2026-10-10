@@ -12,7 +12,7 @@ import { locateWindowsProgram, programInvocation, windowsEnv } from "./windows";
 
 const IS_WINDOWS = process.platform === "win32";
 
-/** Thrown when a `json` subcommand fails. `message` is stderr's first line. */
+/** Thrown when a `json` subcommand fails. `message` is stderr's line that says why (`errorLine`). */
 export class BackendError extends Error {}
 
 /**
@@ -28,6 +28,16 @@ export function defaultLoginShell(isMac: boolean): string {
 function firstLine(text: string): string {
 	const line = text.split("\n").find((l) => l.trim().length > 0);
 	return (line ?? text).trim();
+}
+
+/** The line of a command's stderr that says why it failed: the first, or for a Python traceback
+ * (whose first line is "Traceback (most recent call last):") the last, the exception. */
+export function errorLine(stderr: string): string {
+	const lines = stderr.split(/\r?\n/).filter((l) => l.trim().length > 0);
+	if (lines.length > 1 && lines[0].startsWith("Traceback (most recent call last)")) {
+		return lines[lines.length - 1].trim();
+	}
+	return firstLine(stderr);
 }
 
 function execFileText(
@@ -161,7 +171,7 @@ export async function runJson(
 		return JSON.parse(stdout);
 	} catch (err) {
 		const stderr = (err as { stderr?: string }).stderr;
-		const message = stderr && stderr.trim().length > 0 ? firstLine(stderr) : (err as Error).message;
+		const message = stderr && stderr.trim().length > 0 ? errorLine(stderr) : (err as Error).message;
 		throw new BackendError(message);
 	}
 }

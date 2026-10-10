@@ -27,6 +27,9 @@ def load(path: str = config.CACHE_PATH) -> Dict[str, dict]:
 
 
 def save(cache: Dict[str, dict], path: str = config.CACHE_PATH) -> None:
+    """Writes the cache. A write that fails (on Windows, replacing the file fails while a scan
+    running at the same time has it open) is dropped: the cache is only a shortcut, and the
+    next scan writes it again."""
     dirpath = os.path.dirname(path) or '.'
     os.makedirs(dirpath, exist_ok=True)
     data = json.dumps(cache, ensure_ascii=False).encode('utf-8')
@@ -35,9 +38,8 @@ def save(cache: Dict[str, dict], path: str = config.CACHE_PATH) -> None:
         with os.fdopen(fd, 'wb') as f:
             f.write(data)
         os.replace(tmp, path)
-    except Exception:
+    except OSError:
         try:
             os.unlink(tmp)
         except OSError:
             pass
-        raise

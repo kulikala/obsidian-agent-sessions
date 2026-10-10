@@ -2,7 +2,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSyn
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BackendError, buildAgentArgv, runJson } from "../../src/backend/backend";
+import { BackendError, buildAgentArgv, errorLine, runJson } from "../../src/backend/backend";
 import { HeadlessError, runHeadless } from "../../src/backend/headless";
 import { inRunFolder, RunFolderBusyError } from "../../src/backend/run-folder";
 import { addUsage, headlessArgs, headlessUsage, usedTools } from "../../src/sessions/organize-agent";
@@ -259,6 +259,19 @@ describe.skipIf(IS_WINDOWS)("runHeadless and the run folder", { timeout: 30_000 
 		expect(readdirSync(base)).toEqual([]);
 		await inRunFolder(base, async (cwd) => expect(cwd).toBe(join(base, "current")));
 		expect(readdirSync(base)).toEqual([]);
+	});
+
+	it("errorLine takes a Python traceback's exception, and otherwise the first line", () => {
+		const traceback = [
+			"Traceback (most recent call last):",
+			'  File "cache.py", line 37, in save',
+			"    os.replace(tmp, path)",
+			"PermissionError: [WinError 5] Access is denied",
+			"",
+		].join("\r\n");
+		expect(errorLine(traceback)).toBe("PermissionError: [WinError 5] Access is denied");
+		expect(errorLine("agent-sessions: no vault\nmore\n")).toBe("agent-sessions: no vault");
+		expect(errorLine("\n  only line  \n")).toBe("only line");
 	});
 
 	it("runJson takes a larger buffer for big outputs", async () => {

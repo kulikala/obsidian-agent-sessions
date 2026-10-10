@@ -36,13 +36,16 @@ export function renameRoute(agent: string, unresolvedTab: boolean): RenameRoute 
  * - `composer`: Codex — `/rename` typed into its composer as soon as that is on screen and empty
  *   (Codex names its thread before the first message, and holds input typed before the thread has
  *   started until it has), checked again once the real id is linked.
+ * - `afterTurn`: Codex started with its first message — `/rename` once the real id is linked and
+ *   that first turn has ended, unless the session was renamed meanwhile. Typed at once, the line
+ *   would wait in Codex's queue behind the turn and land after a rename made during it.
  * - `pending`: OpenCode — kept in memory until the real id is linked, then written to `sessions.json`.
  */
-export type CreateNameRoute = "launch" | "composer" | "pending";
+export type CreateNameRoute = "launch" | "composer" | "afterTurn" | "pending";
 
-export function createNameRoute(agent: string): CreateNameRoute {
+export function createNameRoute(agent: string, withFirstMessage = false): CreateNameRoute {
 	if (agent === "codex") {
-		return "composer";
+		return withFirstMessage ? "afterTurn" : "composer";
 	}
 	return agent === "opencode" ? "pending" : "launch";
 }

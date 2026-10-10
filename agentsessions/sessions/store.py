@@ -51,22 +51,55 @@ def _from_dict(data: dict) -> Store:
     )
 
 
-def load(path: Optional[str] = config.STORE_PATH) -> Store:
+# How long a read or a replace of `sessions.json` keeps trying while Windows refuses it, and how
+# far apart: a reader that opened the file without delete sharing (Python's `open`) makes replacing
+# it fail, and a file being replaced can refuse to open, for a few milliseconds.
+SHARING_RETRY_SECONDS = 1.0
+SHARING_RETRY_INTERVAL = 0.02
+
+
+def _retrying(op: Callable[[], object]) -> object:
+    """`op()`, tried again for up to `SHARING_RETRY_SECONDS` while it raises `PermissionError`."""
+    deadline = time.monotonic() + SHARING_RETRY_SECONDS
+    while True:
+        try:
+            return op()
+        except PermissionError:
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(SHARING_RETRY_INTERVAL)
+
+
+def _read(path: str) -> object:
+    with open(path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def load(path: Optional[str] = config.STORE_PATH, strict: bool = False) -> Store:
     """Returns an empty Store if the file doesn't exist (including when
     `path` is `None`, meaning no vault is configured). If the file is
     corrupt, moves it aside to `path+'.broken-<YYYYmmddHHMMSS>'` and returns
-    an empty Store. A reader must never crash just because no vault is
+    an empty Store. A file that can't be read (still refused after
+    `SHARING_RETRY_SECONDS`) is left where it is: an empty Store for a reader,
+    the error with `strict` (a writer, which would otherwise save the empty
+    Store over it). A reader must never crash just because no vault is
     configured — `json scan` normally gets its env from the plugin, but if
     it doesn't, it should simply return empty rather than fail."""
     if not path or not os.path.exists(path):
         return Store()
     try:
-        with open(path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+        data = _retrying(lambda: _read(path))
+    except ValueError:
+        data = None
+    except OSError:
+        if strict and os.path.exists(path):
+            raise
+        return Store()
+    try:
         if not isinstance(data, dict):
             raise ValueError('sessions.json is not an object')
         return _from_dict(data)
-    except (OSError, ValueError):
+    except ValueError:
         broken = path + '.broken-' + time.strftime('%Y%m%d%H%M%S')
         try:
             os.replace(path, broken)
@@ -89,7 +122,7 @@ def save(store: Store, path: Optional[str] = config.STORE_PATH) -> None:
     try:
         with os.fdopen(fd, 'wb') as f:
             f.write(data)
-        os.replace(tmp, path)
+        _retrying(lambda: os.replace(tmp, path))
     except Exception:
         try:
             os.unlink(tmp)
@@ -156,7 +189,7 @@ def update(fn: Callable[[Store], None], path: Optional[str] = config.STORE_PATH,
         lock_path = path + '.lock'
     os.makedirs(os.path.dirname(lock_path) or '.', exist_ok=True)
     with Lock(lock_path):
-        store = load(path)
+        store = load(path, strict=True)
         fn(store)
         save(store, path)
     return store

@@ -123,7 +123,7 @@ function saveStore(storePath: string, store: Store): void {
 	const tmp = path.join(dir, `.sessions.${process.pid}.${Date.now()}.tmp`);
 	fs.writeFileSync(tmp, data, { encoding: "utf8", mode: PRIVATE_FILE_MODE });
 	try {
-		fs.renameSync(tmp, storePath);
+		renameReplacing(tmp, storePath);
 	} catch (err) {
 		try {
 			fs.unlinkSync(tmp);
@@ -146,10 +146,51 @@ const DEFAULT_LOCK: Required<LockOptions> = {
 	staleAfterMs: 10000,
 };
 
-/** Blocks synchronously via `Atomics.wait` (a busy-sleep while waiting for the lock). */
+/** Blocks synchronously for `ms`: `Atomics.wait` where it may block (Node, a worker), a spin on
+ * the clock where it may not (the renderer's main thread, Obsidian's, throws). The waits are
+ * tens of milliseconds. */
 function sleepSync(ms: number): void {
-	const view = new Int32Array(new SharedArrayBuffer(4));
-	Atomics.wait(view, 0, 0, ms);
+	const until = Date.now() + ms;
+	try {
+		Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+		return;
+	} catch {
+		// Not allowed on this thread.
+	}
+	while (Date.now() < until) {
+		// Spin.
+	}
+}
+
+/** How long `renameReplacing` keeps trying, and how far apart. */
+const RENAME_RETRY_MS = 1000;
+const RENAME_RETRY_INTERVAL_MS = 20;
+
+/**
+ * `rename(from, to)`, tried again for up to `RENAME_RETRY_MS` while it fails with `EPERM`, `EACCES`
+ * or `EBUSY`. On Windows a reader that opened `to` without delete sharing (Python's `open`, which
+ * the scan reads `sessions.json` with, holds no lock) makes replacing it fail for as long as it
+ * has it open, a few milliseconds.
+ */
+export function renameReplacing(
+	from: string,
+	to: string,
+	rename: (from: string, to: string) => void = fs.renameSync,
+	sleep: (ms: number) => void = sleepSync
+): void {
+	const deadline = Date.now() + RENAME_RETRY_MS;
+	for (;;) {
+		try {
+			rename(from, to);
+			return;
+		} catch (err) {
+			const code = (err as NodeJS.ErrnoException).code;
+			if ((code !== "EPERM" && code !== "EACCES" && code !== "EBUSY") || Date.now() >= deadline) {
+				throw err;
+			}
+			sleep(RENAME_RETRY_INTERVAL_MS);
+		}
+	}
 }
 
 function clearIfStale(lockPath: string, staleAfterMs: number): void {

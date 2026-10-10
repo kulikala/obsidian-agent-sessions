@@ -53,6 +53,15 @@ class TestCacheRoundTrip(unittest.TestCase):
         cache.save(loaded, path=self.path)
         self.assertEqual(cache.load(path=self.path), loaded)
 
+    def test_a_save_that_cannot_replace_the_file_is_dropped(self):
+        # Windows: another scan has the cache open while this one replaces it.
+        old = {'/a.jsonl': {'mtime': 1.0, 'size': 1, 'head': {}, 'last_activity': None}}
+        cache.save(old, path=self.path)
+        with mock.patch.object(cache.os, 'replace', side_effect=PermissionError(13, 'in use')):
+            cache.save({'/b.jsonl': {}}, path=self.path)
+        self.assertEqual(cache.load(path=self.path), old)
+        self.assertEqual(os.listdir(self.tmpdir), ['scan-cache.json'])
+
 
 class TestScanUsesCache(unittest.TestCase):
     """Verifies that when scan() is given a cache dict, a second call doesn't invoke

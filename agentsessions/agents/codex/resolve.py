@@ -11,8 +11,10 @@ Two strategies, tried in order:
    of its descendants (in case Codex re-execs or forks a wrapper before opening
    its rollout, which team-lead flagged as sometimes happening) has the rollout
    file open right now. macOS: `lsof -a -p <pid> -Fn`. Linux: `/proc/<pid>/fd/*`.
-   Exact when it works -- no ambiguity, no clock dependency. Windows has no
-   equivalent short of walking the system handle table, so there only step 2 runs.
+   Exact when it works -- no ambiguity, no clock dependency. Windows asks the
+   Restart Manager instead, file by file, which processes have each recent
+   rollout open (`procs.file_users`); a rollout another process has open is
+   left out of step 2 as well.
 2. **`session_meta` fallback**: the newest rollout whose `session_meta.timestamp
    >= since`, `cwd` matches (`paths.same_folder`: case- and separator-blind on
    Windows), `source == 'cli'`, and whose thread id isn't already linked
@@ -177,6 +179,7 @@ def resolve(pid: int, since: float, cwd: str, home: Optional[str] = None,
         if sid:
             return sid, path
 
+    already_linked = already_linked or set()
     candidates = []
     for p in rollout.list_transcripts(home):
         sid = rollout.session_id_of(p)
@@ -184,8 +187,33 @@ def resolve(pid: int, since: float, cwd: str, home: Optional[str] = None,
             continue
         ts, meta_cwd, source = _session_meta(p)
         candidates.append((sid, p, ts, meta_cwd, source))
-    picked = pick_fallback(candidates, since, cwd, already_linked or set())
+    if procs.IS_WINDOWS:
+        held, elsewhere = _windows_holders(candidates, pid, since, already_linked)
+        if held is not None:
+            return held
+        # Another Codex's thread, never this one's.
+        candidates = [c for c in candidates if c[1] not in elsewhere]
+    picked = pick_fallback(candidates, since, cwd, already_linked)
     return picked if picked else (None, None)
+
+
+def _windows_holders(candidates: List[Tuple[str, str, Optional[float], str, str]], pid: int,
+                     since: float, already_linked: Set[str]) -> Tuple[Optional[Tuple[str, str]], Set[str]]:
+    """Windows' stand-in for `rollout_open_by`, by the Restart Manager: `(thread_id, path)` of the
+    newest unlinked rollout begun at or after `since` that `pid` or a descendant has open (else
+    `None`), and the paths of those that other processes have open."""
+    tree = set(child_pids(pid, _ps_tree()))
+    elsewhere: Set[str] = set()
+    for sid, path, ts, _cwd, _source in sorted(candidates, key=lambda c: c[2] or 0.0, reverse=True):
+        if ts is None or ts < since or sid in already_linked:
+            continue
+        users = procs.file_users(path)
+        if not users:
+            continue
+        if any(u in tree for u in users):
+            return (sid, path), elsewhere
+        elsewhere.add(path)
+    return None, elsewhere
 
 
 # ---- A new thread in a linked tab's process ----------------------------------
