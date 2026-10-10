@@ -1,12 +1,24 @@
 [
 	{
 		"commit": "b4359fdc776f31754e4118d748402f4887ef554c",
-		"checks": ["commits"],
+		"checks": [
+			"commits"
+		],
 		"why": "Quotes Japanese UI strings in its message. Kept so the history before the audit is not rewritten."
 	},
 	{
 		"commit": "68b2aead064c2dcc68a6eb6d7f2837a35a750cf5",
-		"checks": ["commits"],
+		"checks": [
+			"commits"
+		],
 		"why": "Quotes the Japanese menu label in its message. Kept so the history before the audit is not rewritten."
+	},
+	{
+		"commit": "cabb590e60b021d5f0519cf3477c39b0da14e341",
+		"checks": [
+			"secrets",
+			"privacy"
+		],
+		"why": "Test fixtures for URL masking: a made-up password and host, not real credentials. The tree builds them at run time."
 	}
 ]

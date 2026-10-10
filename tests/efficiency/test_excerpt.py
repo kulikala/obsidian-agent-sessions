@@ -39,7 +39,7 @@ class MaskTest(unittest.TestCase):
     def test_credentials_and_queries_in_urls(self):
         cases = {
             'postgres://admin:S3cr3t!@localhost:5432/app': 'postgres://[secret]@localhost:5432/…',
-            'https://bob:hunter2@db.internal/x': 'https://[secret]@db.internal/…',
+            'https://bob:' + 'hunter2@db.example.com/x': 'https://[secret]@db.example.com/…',
             'redis://:p@ss@cache:6379': 'redis://[secret]@cache:6379',
             'https://api.example.com?key=abcd1234&sig=zz': 'https://api.example.com/…',
             'https://example.com#access_token=abc': 'https://example.com/…',

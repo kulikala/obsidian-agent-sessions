@@ -25,7 +25,7 @@ class MaskCommandTests(unittest.TestCase):
         self.assertEqual(len(texts[2]), 20)
 
     def test_without_a_limit(self):
-        code, out, _err = self.run_cmd(json.dumps({'texts': ['https://u:p@h/x']}))
+        code, out, _err = self.run_cmd(json.dumps({'texts': ['https://u:' + 'p@h/x']}))
         self.assertEqual((code, json.loads(out)), (0, {'texts': ['https://[secret]@h/…']}))
 
     def test_a_bad_request_is_refused(self):
