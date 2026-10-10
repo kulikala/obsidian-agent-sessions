@@ -2,11 +2,67 @@
 
 # Agent Sessions
 
-An [Obsidian](https://obsidian.md) plugin that runs [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex) and [OpenCode](https://opencode.ai) in terminal tabs next to your notes. One list shows every session's state and cost, plus each agent's usage limits.
+<!-- intro:start (tagline, introduction and "Who it is for" are one block) -->
+**A workbench for terminal agents, next to your notes.**
 
-Desktop only: macOS, Linux, and Windows.
+[![Release](https://img.shields.io/github/v/release/kulikala/obsidian-agent-sessions?style=flat-square)](https://github.com/kulikala/obsidian-agent-sessions/releases)
+[![License](https://img.shields.io/github/license/kulikala/obsidian-agent-sessions?style=flat-square)](LICENSE)
+![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square)
+
+[Install](#install) · [Docs](docs/usage.md) · [日本語](README.ja.md)
+
+Run [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex) and [OpenCode](https://opencode.ai) in terminal tabs next to your notes in [Obsidian](https://obsidian.md). One list shows which sessions are running, waiting for input or done, with usage and cost, and the sessions keep running when you close a tab or quit Obsidian.
+A helper program and hooks in the agents' settings make this work; both are listed below and removed with one button.
 
 ![A Claude Code session in a terminal tab, with the side panel listing open, running, and recent Claude Code and Codex sessions](docs/images/overview.png)
+
+- **Sessions keep running when you close a tab or quit Obsidian.** A small Python helper stays resident; you remove it in Settings. ([Programs it starts](#programs-it-starts))
+- **State, usage and cost of every session in one list.** Read on your machine from the agents' local files. ([Network](#network))
+- **The agent's own terminal, next to the document it writes.** Your settings, login and slash commands are the agent's own. Vault paths in the output open as links.
+
+## Who it is for
+
+For people who write documents with agents, several projects at a time.
+
+- You use Claude Code or Codex all day, to draft specs, proposals and notes.
+- You keep several projects going at once and want to see which session needs you.
+- You keep your documents in Obsidian and want its editor next to the terminal.
+
+**Not for:** a chat panel or inline editing of notes (you get the agent's own terminal), Obsidian mobile, and Windows with the agents in WSL.
+<!-- intro:end -->
+
+## What Install does
+
+![The Install agent-sessions dialog listing the install folder, Python, the hooks added to Claude Code's settings, and the two agent skills added to the vault](docs/onboarding/en/install.png)
+
+The dialog above is what the plugin shows before it installs anything.
+
+- No telemetry and no account. Apart from the Remote Control server and the welcome guide's pictures, both described under [Network](#network), the plugin makes no network connections.
+- Remote Control is off until you switch it on.
+- Writes four hooks and a status line to `~/.claude/settings.json`, backed up first. ([Files it writes](#files-it-writes))
+- Removes cleanly: **Settings → agent-sessions program → Remove**. ([Uninstall](#uninstall))
+
+## Requirements
+
+- Obsidian 1.8.7 or later, on desktop: macOS, Linux or Windows.
+- Python 3.9 or later, no extra packages. It runs the helper program.
+- Claude Code, Codex or OpenCode, installed and signed in. Your own subscription is used; the plugin needs no account or key.
+
+## Choose your agent
+
+Use the agent you already pay for. There is no separate account or key.
+
+| Agent | Opens in a tab | Listed with its state | Usage and cost |
+|---|---|---|---|
+| Claude Code | ✅ Yes | ✅ Yes | ✅ Yes |
+| Codex | ✅ Yes | ✅ Yes | ✅ Yes |
+| OpenCode | ✅ Yes | ✅ Yes | Cost only |
+
+## Why inside Obsidian
+
+- The prompt editor (Ctrl+G) is an Obsidian pane with `@` file completion, normal paste, undo and IME. [More](docs/usage.md#built-in-editor)
+- Vault paths in the agent's output open as links.
+- A session is an ordinary Obsidian tab, so it sits in a split beside a note.
 
 ## Features
 
@@ -24,87 +80,38 @@ The **Session manager** groups sessions named `Category: Name` and shows their c
 
 ### The agent's own CLI in a tab
 
-Each session is the agent's command-line program in an Obsidian tab, with your settings, login, slash commands, hooks, skills and MCP servers. Vault paths in the output open as links. [More](docs/usage.md#work-in-a-session-tab)
+Each session is the agent's command-line program in an Obsidian tab, with your settings, login, slash commands, hooks, skills and MCP servers. [More](docs/usage.md#work-in-a-session-tab)
 
 ![A Codex session in a terminal tab, asking whether to run a test command](docs/images/codex.png)
 
 ### Switch between sessions in the side panel
 
-Open tabs, running sessions without a tab, and recent ones, each with an icon for its state, plus one for a Claude Code or Codex `/goal` while it is active and once it is met, until your next prompt. A Claude Code session with scheduled work (`/loop`, a cron job or a wakeup) shows a schedule badge, and a scheduled run that finishes while you are elsewhere marks the row until you open its tab. The details below the list name the selected session's state and explain it in a sentence. Click one to bring its tab to the front or open it again; an ended session resumes its conversation. Sessions keep running when you close the tab or quit Obsidian. [More](docs/usage.md#switch-between-sessions)
+Open tabs, running sessions without a tab, and recent ones, each with an icon for its state. Click one to bring its tab to the front or open it again; an ended session resumes its conversation. The details below the list name the selected session's state in a sentence. [More](docs/usage.md#switch-between-sessions)
 
 ![The side panel: open tabs, running and recent sessions with state icons and categories, and the Needs input and Needs review counts at the top](docs/onboarding/en/side-panel.png)
 
-### Remote Control from claude.ai and the Claude app
+### And more
 
-The **rc** switch in the side panel starts one Remote Control server for the vault. While it is on, claude.ai and the Claude app can start Claude Code sessions in this vault, and they appear in the side panel like any other. The switch is off by default and only a click turns it on; see [Network](#network). **Copy the connection link** in the ⋯ menu copies the link to connect with. [More](docs/usage.md#remote-control-server)
+- **[Remote Control](docs/usage.md#remote-control-server)**: the **rc** switch lets claude.ai and the Claude app start Claude Code sessions in this vault. Off until you click it; see [Network](#network).
+- **[Rename and sort into categories](docs/usage.md#name-and-group-sessions)**: a name like `Docs: Release notes` puts a session in the Docs category.
+- **[Names and categories suggested by an agent](docs/usage.md#organize-names-and-categories)**: nothing is renamed until you press **Apply selected**. It sends session excerpts to that agent; see [What Organize sends](#what-organize-sends).
+- **[Compact, restart or change model](docs/usage.md#compact-restart-and-change-model)** from the session's ⋯ menu.
+- **[Stretch your usage limit](docs/usage.md#stretch-your-usage-limit)**: an agent looks through your recent work for wasted tokens in nine areas and says what to change. Statistics stay on this machine; see [What "Stretch your usage limit" sends](#what-stretch-your-usage-limit-sends).
+- **[Session analytics](docs/usage.md#session-analytics)**: one session's cost, tokens and turns, with each prompt's own cost.
+- **[Activity calendar](docs/usage.md#activity-calendar)**: when each agent was working, by 7-day window, week or day.
+- **[Welcome guide](docs/usage.md#welcome-guide)** and two [agent skills](docs/usage.md#agent-skills) that let an agent answer questions about your usage, your other sessions, or the plugin.
 
-### A built-in editor for prompts
-
-Press Ctrl+G to write the prompt in a pane under the terminal, with `@` file completion, normal paste, undo and IME, while the output stays visible. For Claude Code, the bar also sets model and effort. [More](docs/usage.md#built-in-editor)
-
-![The built-in editor under a Claude Code session: a multi-line prompt, with Model and Effort dropdowns and the Send and Back to prompt buttons above it](docs/onboarding/en/editor.png)
-
-### Rename and sort into categories
-
-Each session has a ⋯ menu, which a right-click also opens. Its **Rename** gives the session a name; a name like `Docs: Release notes` puts it in the Docs category, with its own color and group. **Move to category…** changes only the category. [More](docs/usage.md#name-and-group-sessions)
-
-![The Move to category dialog for Storefront: Checkout total flicker, with the list of existing categories](docs/onboarding/en/move-category.png)
-
-### Names and categories suggested by an agent
-
-**Organize names and categories** has one of your agents suggest a name and category for recent sessions. Nothing is renamed until you press **Apply selected**. It sends session excerpts to that agent; see [What Organize sends](#what-organize-sends). [More](docs/usage.md#organize-names-and-categories)
-
-![The Organize names and categories dialog: current and suggested names side by side, with one suggestion unchecked and a comment for the next try](docs/images/organize.png)
-
-### Compact, restart or change model from the session menu
-
-In the same menu, **Compact session** sends `/compact`, and **Restart session** picks up changed settings or skills and keeps the conversation. For Claude Code, **Change model…** switches model and effort. [More](docs/usage.md#compact-restart-and-change-model)
-
-![A session's menu in four groups: Rename, Move to category…, Suggest name and category…; Change model…, Compact session, Restart session; Session analytics, Copy ID; End session, Archive](docs/onboarding/en/row-menu.png)
-
-### Where tokens could be saved
-
-**Stretch your usage limit…**, in the ⋯ menu of the side panel and the Session manager, is for when your usage limit runs out too fast. It has the agent read your recent work and look for wasted tokens in nine areas: redoing the same fix, what the first request says, several tasks in one conversation, very long conversations, large output left in the conversation, cache rebuilds, repeated lookups, what every conversation loads first, and any other waste the agent finds. Each issue says what happened, why, what to do next and how many tokens fixing it could save; one a file can fix can be handed to an agent, which starts in plan mode and shows the change before writing it. Statistics stay on this machine; see [What "Stretch your usage limit" sends](#what-stretch-your-usage-limit-sends). [More](docs/usage.md#stretch-your-usage-limit)
-
-![Stretch your usage limit for Claude Code: the nine areas, four with an issue, the agent's own two issues open with how to fix each, what happened, its cause and a quote](docs/images/efficiency.png)
-
-### Setup with the welcome guide
-
-On first install, the welcome guide checks Python and your agents, shows what the helper program will write before installing it, and walks you through your first session. [More](docs/usage.md#welcome-guide)
-
-![The Install agent-sessions dialog listing the install folder, Python, the hooks added to Claude Code's settings, and the two agent skills added to the vault](docs/onboarding/en/install.png)
-
-### What a session cost, turn by turn
-
-**Session analytics** shows one session's cost, tokens, turns and duration, the tools it called, and each prompt with its own input, output and cost. Click the first and last row of a stretch of turns to count only those, and copy the result as Markdown. [More](docs/usage.md#session-analytics)
-
-![Session analytics for one session: cost, tokens, turns and duration at the top, input, output and tool-use bars below, and a table with one row per prompt](docs/images/analytics.png)
-
-### When each agent was working
-
-The **Activity calendar** shows working time as blocks, by 7-day window, week or day. Click a block to see its prompts and open the session. [More](docs/usage.md#activity-calendar)
-
-![The activity calendar: a week of sessions as colored blocks, one lane per agent in each day, with hours and concurrency per agent, and the details panel for one block with its prompts and Open session](docs/images/calendar.png)
-
-Two [agent skills](docs/usage.md#agent-skills) also let you ask an agent about your usage, your other sessions, or how to use the plugin. All features: [`docs/usage.md`](docs/usage.md).
-
-**Not included:** a chat panel, inline editing of notes, and Obsidian mobile. OpenCode has no usage windows, and its sub-agent sessions and `opencode run` sessions are not listed.
-
-## Requirements
-
-- Obsidian 1.8.7 or later, desktop.
-- Python 3.9 or later, no extra packages. It runs the helper program that keeps sessions alive.
-- Claude Code, Codex or OpenCode, installed.
+All features: [`docs/usage.md`](docs/usage.md).
 
 ## Supported environments
 
 | Obsidian runs on | Agent runs on | Supported |
 |---|---|---|
-| macOS | macOS | Yes |
-| Linux | Linux | Yes |
-| Windows 10 (1809+) or 11 | Windows | Yes |
-| Windows | WSL | No |
-| WSL2 through WSLg | the same WSL distribution | Yes |
+| macOS | macOS | ✅ Yes |
+| Linux | Linux | ✅ Yes |
+| Windows 10 (1809+) or 11 | Windows | ✅ Yes |
+| Windows | WSL | ❌ No |
+| WSL2 through WSLg | the same WSL distribution | ✅ Yes |
 
 Obsidian and the agent must run in the same operating system, because the plugin starts and follows the agent's processes and files. If your agents run in WSL, run Obsidian in WSL through WSLg, and keep the vault in the WSL file system rather than under `/mnt/c`.
 
@@ -132,6 +139,13 @@ Where the program goes, and installing from source: [`docs/installation.md`](doc
 3. If you want nothing left, delete `~/.agents/sessions/`, `<vault>/.agents/sessions/`, and the backups `~/.claude/settings.json.bak-*` and `~/.codex/config.toml.bak-*`.
 
 Source installs: [`docs/installation.md`](docs/installation.md#uninstall).
+
+## What it does not do
+
+- It has no chat panel and no inline editing of notes; you get the agent's own terminal.
+- It sends no conversation text anywhere, except when you press **Suggest** in Organize or **Analyze** in Stretch your usage limit.
+- It renames nothing until you press **Apply selected**.
+- OpenCode has no usage windows, and its sub-agent sessions and `opencode run` sessions are not listed.
 
 ## Disclosures
 
