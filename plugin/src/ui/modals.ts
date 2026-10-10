@@ -780,7 +780,7 @@ export class ConfirmModal extends Modal {
 /**
  * Asks before the Remote Control server starts (`RcServerDeps.confirmStart`): the permission mode,
  * who can start sessions through it, and, for auto, that Claude uses tools without asking. Raised
- * by the rc switch, so it has no title.
+ * by the rc switch, so its title is the switch's label (`rc.switch`).
  */
 export class RcServerStartModal extends Modal {
 	private started = false;
@@ -788,13 +788,14 @@ export class RcServerStartModal extends Modal {
 	constructor(
 		app: App,
 		private mode: RcPermissionMode,
+		private header: DialogHeaderSpec,
 		private onDone: (start: boolean) => void
 	) {
 		super(app);
 	}
 
 	onOpen(): void {
-		markDialog(this);
+		renderDialogHeader(this, this.header);
 		const { contentEl } = this;
 		contentEl.createEl("p", { text: t("confirm.rcServerStart.mode", { mode: t(`settings.agents.rcMode.${this.mode}`) }) });
 		contentEl.createEl("p", { text: t("confirm.rcServerStart.who") });

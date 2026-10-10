@@ -10,6 +10,7 @@ import { loginEnv, resolveAgentBinary, withBinDirOnPath } from "../backend/backe
 import { DaemonClient, ensureDaemon } from "../backend/daemon-client";
 import { t } from "../i18n";
 import { parseEnvLines } from "../settings";
+import { dialogHeaderSpec } from "../ui/dialog-header";
 import { ConfirmModal, RcServerStartModal } from "../ui/modals";
 import type { DaemonSession } from "../types";
 import { buildRcServerArgv, findRcServer, parseProcessLinks, RC_SERVER_ID, rcSessionsAtWork, type RcPermissionMode } from "./rc-server";
@@ -34,7 +35,7 @@ export function createRcServerControl(plugin: AgentSessionsPlugin): RcServerCont
 			plugin.settings.rcServerAccepted = mode;
 			await plugin.saveSettings();
 		},
-		confirmStart: (mode) => new Promise<boolean>((resolve) => new RcServerStartModal(plugin.app, mode, resolve).open()),
+		confirmStart: (mode) => new Promise<boolean>((resolve) => new RcServerStartModal(plugin.app, mode, dialogHeaderSpec(plugin, "rc.switch", null), resolve).open()),
 		launch: (mode) => launch(plugin, mode),
 		kill: async () => {
 			const client = new DaemonClient(plugin.sockPath());
