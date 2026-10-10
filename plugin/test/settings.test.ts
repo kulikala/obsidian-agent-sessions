@@ -51,6 +51,8 @@ describe("DEFAULT_SETTINGS", () => {
 			onboardingProgress: null,
 			onboardingImages: true,
 			rcServerEnabled: false,
+			rcServerMode: "auto",
+			rcServerAccepted: null,
 		});
 	});
 });
@@ -286,6 +288,12 @@ describe("mergeSettings (onboarding)", () => {
 		expect(mergeSettings({ rcServerEnabled: true }).rcServerEnabled).toBe(true);
 		expect(mergeSettings({ rcServerEnabled: "on" }).rcServerEnabled).toBe(false);
 		expect(mergeSettings({}).rcServerEnabled).toBe(false);
+		expect(mergeSettings({}).rcServerMode).toBe("auto");
+		expect(mergeSettings({ rcServerMode: "plan" }).rcServerMode).toBe("plan");
+		expect(mergeSettings({ rcServerMode: "bypassPermissions" }).rcServerMode).toBe("auto");
+		expect(mergeSettings({}).rcServerAccepted).toBeNull();
+		expect(mergeSettings({ rcServerAccepted: "default" }).rcServerAccepted).toBe("default");
+		expect(mergeSettings({ rcServerAccepted: "yes" }).rcServerAccepted).toBeNull();
 	});
 });
 

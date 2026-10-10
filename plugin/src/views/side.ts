@@ -230,7 +230,8 @@ export class SideView extends ItemView {
 		}
 		el.setAttr("aria-checked", state === "off" ? "false" : "true");
 		const tooltip = this.plugin.rcServer.asking() ? t("rc.tooltip.asking") : t(`rc.tooltip.${state}`);
-		el.setAttr("aria-label", tooltip);
+		el.setAttr("aria-label", t("rc.switch"));
+		el.setAttr("aria-description", tooltip);
 		setTooltip(el, tooltip);
 	}
 

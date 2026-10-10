@@ -39,6 +39,7 @@ const DIALOGS: { dialog: string; key: MessageKey; openers: string[] }[] = [
 	{ dialog: "Install", key: "action.installBackend", openers: ["main.ts", "views/side.ts", "ui/onboarding-modal.ts"] },
 	{ dialog: "Reinstall", key: "action.reinstall", openers: ["main.ts"] },
 	{ dialog: "Remove agent-sessions", key: "action.uninstallBackend", openers: ["main.ts"] },
+	{ dialog: "Remote Control server (start confirmation)", key: "rc.switch", openers: ["views/side.ts"] },
 ];
 
 /** The welcome guide opens by itself (first run, update) as well as from two commands that say
@@ -71,7 +72,7 @@ function titleKeys(): Map<string, string[]> {
 function opensWith(text: string, key: string): boolean {
 	const k = key.replace(/\./g, "\\.");
 	return new RegExp(
-		`(?:setTitle|setButtonText)\\(t\\("${k}"\\)|name: t\\("${k}"\\)|text: t\\("${k}"\\)|iconButton\\([^;]*?t\\("${k}"\\)`
+		`(?:setTitle|setButtonText)\\(t\\("${k}"\\)|name: t\\("${k}"\\)|text: t\\("${k}"\\)|iconButton\\([^;]*?t\\("${k}"\\)|"aria-label", t\\("${k}"\\)`
 	).test(text);
 }
 

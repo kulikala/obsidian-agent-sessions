@@ -10,9 +10,10 @@ import { loginEnv, resolveAgentBinary, withBinDirOnPath } from "../backend/backe
 import { DaemonClient, ensureDaemon } from "../backend/daemon-client";
 import { t } from "../i18n";
 import { parseEnvLines } from "../settings";
-import { ConfirmModal } from "../ui/modals";
+import { dialogHeaderSpec } from "../ui/dialog-header";
+import { ConfirmModal, RcServerStartModal } from "../ui/modals";
 import type { DaemonSession } from "../types";
-import { buildRcServerArgv, findRcServer, parseProcessLinks, RC_SERVER_ID, rcSessionsAtWork } from "./rc-server";
+import { buildRcServerArgv, findRcServer, parseProcessLinks, RC_SERVER_ID, rcSessionsAtWork, type RcPermissionMode } from "./rc-server";
 import { RcServerControl, type RcServerWatch } from "./rc-server-control";
 
 /** The size the server starts at, and the size its output watch asks for: the daemon sizes a PTY to
@@ -28,7 +29,14 @@ export function createRcServerControl(plugin: AgentSessionsPlugin): RcServerCont
 			await plugin.saveSettings();
 		},
 		list: () => listSessions(plugin),
-		launch: (autoMode) => launch(plugin, autoMode),
+		mode: () => plugin.settings.rcServerMode,
+		accepted: () => plugin.settings.rcServerAccepted,
+		setAccepted: async (mode) => {
+			plugin.settings.rcServerAccepted = mode;
+			await plugin.saveSettings();
+		},
+		confirmStart: (mode) => new Promise<boolean>((resolve) => new RcServerStartModal(plugin.app, mode, dialogHeaderSpec(plugin, "rc.switch", null), resolve).open()),
+		launch: (mode) => launch(plugin, mode),
 		kill: async () => {
 			const client = new DaemonClient(plugin.sockPath());
 			await client.connect();
@@ -89,7 +97,7 @@ async function listSessions(plugin: AgentSessionsPlugin): Promise<DaemonSession[
 }
 
 /** Starts the server unless one already runs, and returns its daemon session. */
-async function launch(plugin: AgentSessionsPlugin, autoMode: boolean): Promise<DaemonSession | null> {
+async function launch(plugin: AgentSessionsPlugin, mode: RcPermissionMode): Promise<DaemonSession | null> {
 	const settings = plugin.settings.agents.claude;
 	const bin = await resolveAgentBinary("claude", settings.path, Platform.isMacOS);
 	const launchEnv = await loginEnv(Platform.isMacOS);
@@ -116,7 +124,7 @@ async function launch(plugin: AgentSessionsPlugin, autoMode: boolean): Promise<D
 			id: RC_SERVER_ID,
 			agent: "claude",
 			cwd: plugin.vaultPath(),
-			argv: buildRcServerArgv(bin, autoMode),
+			argv: buildRcServerArgv(bin, mode),
 			env,
 			cols: SERVER_COLS,
 			rows: SERVER_ROWS,

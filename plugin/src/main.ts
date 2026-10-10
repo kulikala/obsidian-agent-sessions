@@ -142,7 +142,7 @@ import {
 } from "./sessions/terminal-status";
 import { claudeSettingsPath, readFullscreenTui } from "./terminal/tui-mode";
 import { resumeConnectsRemoteControl } from "./sessions/remote-control";
-import { RC_SERVER_ID } from "./sessions/rc-server";
+import { RC_PERMISSION_MODES, RC_SERVER_ID, rcAcceptedAfterModeChange, type RcPermissionMode } from "./sessions/rc-server";
 import type { RcServerControl } from "./sessions/rc-server-control";
 import { createRcServerControl } from "./sessions/rc-server-host";
 import type { ArchivedSession, DaemonSession, Detail, LiveResult, ScanResult } from "./types";
@@ -3470,6 +3470,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 							t("settings.agents.launchVia.name"),
 							t("settings.agents.ollamaModel.name"),
 							t("settings.agents.detect.name"),
+							t("settings.agents.rcMode.name"),
 						],
 						mount: (el) => this.renderAgentsSetting(el),
 					},
@@ -3563,6 +3564,9 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 				if (id === "opencode") {
 					this.renderOpencodeLaunch(bodyEl, agentSettings);
 				}
+				if (id === "claude" && agentSettings.enabled) {
+					this.renderRcModeSetting(bodyEl);
+				}
 
 				const resultSetting = new Setting(bodyEl);
 				if (id in detected) {
@@ -3617,6 +3621,26 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		};
 
 		redraw();
+	}
+
+	/** The Remote Control server's permission mode, shown with Claude Code enabled (as the rc
+	 * switch is). Applies from the next start; leaving auto means auto asks again (`rcAcceptedAfterModeChange`). */
+	private renderRcModeSetting(bodyEl: HTMLElement): void {
+		const settings = this.plugin.settings;
+		new Setting(bodyEl)
+			.setName(t("settings.agents.rcMode.name"))
+			.setDesc(t(this.plugin.rcServer.running() ? "settings.agents.rcMode.running" : "settings.agents.rcMode.desc"))
+			.addDropdown((dropdown) => {
+				for (const mode of RC_PERMISSION_MODES) {
+					dropdown.addOption(mode, t(`settings.agents.rcMode.${mode}`));
+				}
+				dropdown.setValue(settings.rcServerMode).onChange(async (value) => {
+					const mode = value as RcPermissionMode;
+					settings.rcServerMode = mode;
+					settings.rcServerAccepted = rcAcceptedAfterModeChange(mode, settings.rcServerAccepted);
+					await this.plugin.saveSettings();
+				});
+			});
 	}
 
 	/**

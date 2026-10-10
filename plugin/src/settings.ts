@@ -2,6 +2,7 @@
 
 import { allLangs, type Lang, type LanguageSetting } from "./i18n";
 import { MANAGER_STATUS_FILTERS, type ManagerStatusFilter } from "./sessions/terminal-status";
+import { isRcPermissionMode, type RcPermissionMode } from "./sessions/rc-server";
 import { sanitizeProgress, type OnboardingProgress } from "./ui/onboarding-model";
 
 export type Padding = "comfortable" | "compact" | "none";
@@ -252,6 +253,12 @@ export interface AgentSessionsSettings {
 	/** The side panel's Remote Control toggle: on keeps it on across restarts, but only a click
 	 * starts the server (`sessions/rc-server.ts`). Not shown in the settings tab. */
 	rcServerEnabled: boolean;
+	/** The permission mode the Remote Control server gives the sessions it creates. Applies from
+	 * the next start. */
+	rcServerMode: RcPermissionMode;
+	/** The mode the user last accepted in the server's start confirmation (`rcStartNeedsConfirm`);
+	 * `null` before the first start. Not shown in the settings tab. */
+	rcServerAccepted: RcPermissionMode | null;
 }
 
 export const DEFAULT_SETTINGS: AgentSessionsSettings = {
@@ -288,6 +295,8 @@ export const DEFAULT_SETTINGS: AgentSessionsSettings = {
 	onboardingProgress: null,
 	onboardingImages: true,
 	rcServerEnabled: false,
+	rcServerMode: "auto",
+	rcServerAccepted: null,
 };
 
 /** Validates a saved `agents` value, entry by entry — an invalid or missing field falls back to
@@ -413,6 +422,12 @@ export function mergeSettings(data: unknown, isMac = true): AgentSessionsSetting
 	}
 	if (typeof saved.rcServerEnabled !== "boolean") {
 		delete saved.rcServerEnabled;
+	}
+	if (!isRcPermissionMode(saved.rcServerMode)) {
+		delete saved.rcServerMode;
+	}
+	if (saved.rcServerAccepted !== null && !isRcPermissionMode(saved.rcServerAccepted)) {
+		delete saved.rcServerAccepted;
 	}
 	if (!SUBMIT_KEYS.includes(saved.submitKey as SubmitKey)) {
 		delete saved.submitKey;

@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
 	buildRcServerArgv,
+	isRcPermissionMode,
+	RC_PERMISSION_MODES,
+	rcAcceptedAfterModeChange,
+	rcStartNeedsConfirm,
 	descendantsOf,
 	findRcServer,
 	parseProcessLinks,
@@ -74,19 +78,19 @@ describe("findRcServer", () => {
 });
 
 describe("buildRcServerArgv", () => {
-	it("runs the server for the same folder, in auto mode when asked", () => {
-		expect(buildRcServerArgv("/bin/claude", true)).toEqual([
-			"/bin/claude",
-			"remote-control",
-			"--spawn=same-dir",
-			"--permission-mode",
-			"auto",
-		]);
-		expect(buildRcServerArgv("/bin/claude", false)).toEqual(["/bin/claude", "remote-control", "--spawn=same-dir"]);
+	it.each(RC_PERMISSION_MODES)("runs the server for the same folder in %s mode", (mode) => {
+		expect(buildRcServerArgv("/bin/claude", mode)).toEqual(["/bin/claude", "remote-control", "--spawn=same-dir", "--permission-mode", mode]);
+	});
+
+	it("offers the four modes, never one that skips every permission", () => {
+		expect([...RC_PERMISSION_MODES]).toEqual(["default", "acceptEdits", "plan", "auto"]);
+		expect(isRcPermissionMode("bypassPermissions")).toBe(false);
+		expect(isRcPermissionMode("dontAsk")).toBe(false);
+		expect(isRcPermissionMode("auto")).toBe(true);
 	});
 
 	it("never resumes a single session (`--continue`, `--session-id`)", () => {
-		const argv = buildRcServerArgv("claude", true);
+		const argv = buildRcServerArgv("claude", "auto");
 		expect(argv).not.toContain("--continue");
 		expect(argv).not.toContain("-c");
 		expect(argv).not.toContain("--session-id");
@@ -174,5 +178,34 @@ describe("process tree", () => {
 		];
 		expect(rcSessionsAtWork(100, links, entries)).toBe(2);
 		expect(rcSessionsAtWork(100, links, [{ pid: 101, status: "idle" }])).toBe(0);
+	});
+});
+
+describe("rcStartNeedsConfirm", () => {
+	it("asks the first time, in any mode", () => {
+		for (const mode of RC_PERMISSION_MODES) {
+			expect(rcStartNeedsConfirm(mode, null)).toBe(true);
+		}
+	});
+
+	it("asks again only for auto after another mode was accepted", () => {
+		expect(rcStartNeedsConfirm("auto", "auto")).toBe(false);
+		expect(rcStartNeedsConfirm("auto", "default")).toBe(true);
+		expect(rcStartNeedsConfirm("plan", "auto")).toBe(false);
+		expect(rcStartNeedsConfirm("acceptEdits", "default")).toBe(false);
+	});
+});
+
+describe("rcAcceptedAfterModeChange", () => {
+	it("forgets auto when the mode leaves it, so coming back asks again", () => {
+		const accepted = rcAcceptedAfterModeChange("default", "auto");
+		expect(accepted).toBe("default");
+		expect(rcStartNeedsConfirm("auto", rcAcceptedAfterModeChange("auto", accepted))).toBe(true);
+	});
+
+	it("keeps what was accepted otherwise", () => {
+		expect(rcAcceptedAfterModeChange("auto", "auto")).toBe("auto");
+		expect(rcAcceptedAfterModeChange("plan", "default")).toBe("default");
+		expect(rcAcceptedAfterModeChange("auto", null)).toBeNull();
 	});
 });
