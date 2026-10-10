@@ -113,6 +113,39 @@ class TestResolveEndToEnd(unittest.TestCase):
         self.assertIsNone(thread)
 
 
+class TestResolveOnWindows(unittest.TestCase):
+    """Windows has no open-fd listing: the Restart Manager says who has each rollout open."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = self.tmp.name
+        self.mine = self._rollout(ID1, '2026-09-24T01:30:30')
+        self.other = self._rollout(ID2, '2026-09-24T01:31:30')
+
+    def _rollout(self, sid, ts):
+        p = rollout_path(self.home, sid, ts=ts.replace(':', '-'))
+        write_rollout(p, [session_meta(sid, '/work/proj', source='cli', ts=ts + '.000Z'),
+                          user_message('hi', ts + 'Z')])
+        return p
+
+    def _resolve(self, holders):
+        with mock.patch.object(procs, 'IS_WINDOWS', True), \
+                mock.patch.object(resolve, '_ps_tree', return_value=[(78, 77)]), \
+                mock.patch.object(procs, 'file_users', side_effect=lambda path: holders.get(path)):
+            return resolve.resolve(77, since=1700000000.0, cwd='/work/proj', home=self.home)
+
+    def test_the_rollout_its_own_process_has_open_wins_over_a_newer_one(self):
+        self.assertEqual(self._resolve({self.mine: [78], self.other: [5]}), (ID1, self.mine))
+
+    def test_a_rollout_another_process_has_open_is_never_taken(self):
+        self.assertEqual(self._resolve({self.other: [5]}), (ID1, self.mine))
+        self.assertEqual(self._resolve({self.mine: [6], self.other: [5]}), (None, None))
+
+    def test_without_an_answer_it_falls_back_on_session_meta(self):
+        self.assertEqual(self._resolve({}), (ID2, self.other))
+
+
 class TestNewThread(unittest.TestCase):
     """`/new` or `/clear` in a linked tab: a thread the same process started after `since`."""
 
