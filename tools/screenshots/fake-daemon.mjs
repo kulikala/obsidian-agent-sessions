@@ -18,7 +18,8 @@ function frame(kind, payload) {
 
 /**
  * `sessions`: the scenario's sessions (with `cwd`). `look`: `{ lang, light }` for the transcripts.
- * Returns `{ close() }`.
+ * `look.onInput(session, text, { write, cols })`, when given, hears what is typed into a tab; `write`
+ * sends text to that tab's terminal. Returns `{ close() }`.
  */
 export function startFakeDaemon(sockPath, sessions, now, look = {}) {
 	rmSync(sockPath, { force: true });
@@ -27,6 +28,7 @@ export function startFakeDaemon(sockPath, sessions, now, look = {}) {
 		let buf = Buffer.alloc(0);
 		/** The session this connection is attached to — redrawn at the new width on resize. */
 		let attached = null;
+		let cols = 80;
 		socket.on("error", () => undefined);
 		socket.on("data", (chunk) => {
 			buf = Buffer.concat([buf, chunk]);
@@ -42,6 +44,10 @@ export function startFakeDaemon(sockPath, sessions, now, look = {}) {
 					const msg = JSON.parse(payload.toString("utf8"));
 					if (msg.op === "attach") {
 						attached = known.get(msg.id) ?? null;
+						cols = msg.cols ?? cols;
+					}
+					if (msg.op === "resize") {
+						cols = msg.cols ?? cols;
 					}
 					if (msg.op === "resize" && attached?.transcript) {
 						// Like a real TUI: clear and redraw at the new size.
@@ -51,6 +57,8 @@ export function startFakeDaemon(sockPath, sessions, now, look = {}) {
 						continue;
 					}
 					handle(socket, msg);
+				} else if (kind === KIND.D && attached && look.onInput) {
+					look.onInput(attached, payload.toString("utf8"), { write: (text) => socket.write(frame("D", text)), cols });
 				}
 			}
 		});

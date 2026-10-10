@@ -5,7 +5,7 @@
 // written, and no real agent is started. `--onboarding` shoots the welcome guide's scenes instead
 // (docs/onboarding/<lang>/<scene>.png). See README.md next to this file.
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer as createHttpServer } from "node:http";
 import { createServer } from "node:net";
@@ -16,7 +16,9 @@ import { connectPage, sleep } from "./cdp.mjs";
 import { efficiencyReply } from "./efficiency.mjs";
 import { startFakeDaemon } from "./fake-daemon.mjs";
 import { cwdOf, LIMITS, scenarioFor } from "./scenario.mjs";
+import { sceneScenario, specWithNewRow, SPEC_FILE } from "./scene.mjs";
 import { LANGUAGES, readOnboardingScenes } from "./scenes.mjs";
+import { sceneAnswer } from "./transcripts.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "..", "..");
@@ -51,6 +53,10 @@ const detailStateOnly = process.argv.includes("--detail-state");
 // `--rc` shoots the side panel's Remote Control toggle (off, starting, listening, down) with its tooltip, the start
 // confirmation (auto, ask) and the permission mode setting, in the dark and the light theme.
 const rcOnly = process.argv.includes("--rc");
+// `--readme-scene` shoots the README's hero image (overview.png) and recording (see-it-work.gif):
+// a spec being written in a terminal tab, the spec open beside it, the side panel on the right.
+// The recording needs ffmpeg on PATH.
+const readmeSceneOnly = process.argv.includes("--readme-scene");
 const lightTheme = process.argv.includes("--light");
 // `--loop` shoots the side panel with scheduled work: a session with a schedule, and one whose tab
 // turned "Scheduled run finished" after a scheduled turn ended in the background.
@@ -265,8 +271,6 @@ async function capture(page, name, clip) {
 async function readmeScenes(page, box, look) {
 	const flips = box.sessions.filter((s) => s.flipToIdle);
 	console.log("Scenes:");
-	await capture(page, "overview");
-
 	await page.evaluate(`(async () => {
 		app.workspace.rightSplit.collapse();
 		await app.commands.executeCommandById('agent-sessions:open-manager');
@@ -661,6 +665,110 @@ async function openOrganizeResult(page, look) {
 	})()`);
 }
 
+// ---- The README's scene: the hero image and the recording ---------------------------------
+
+const SCENE_WINDOW = { width: 1600, height: 1000 };
+const RECORDING_WINDOW = { width: 1440, height: 880 };
+
+/** Terminal tab on the left (about 40%), the spec beside it (about 35%), the side panel on the right. */
+async function sceneLayout(page, box, look) {
+	const spec = box.sessions.find((s) => s.id === look.scenario.specId);
+	await page.evaluate(`(async () => {
+		const term = ${leafOf(spec.id)};
+		const file = app.vault.getAbstractFileByPath(${JSON.stringify(look.scenario.specPath)});
+		const editor = app.workspace.createLeafBySplit(term, 'vertical');
+		await editor.openFile(file, { active: false });
+		if (editor.view.getMode() !== 'source') {
+			await editor.view.setMode(editor.view.editMode);
+		}
+		app.workspace.setActiveLeaf(term, { focus: true });
+		term.parent.setDimension(53);
+		editor.parent.setDimension(47);
+		app.workspace.rightSplit.setSize(${SIDEBAR_WIDTH});
+		app.workspace.onLayoutChange();
+	})()`);
+	await sleep(1500);
+	await front(page, spec.id);
+	await page.waitFor(`!!document.querySelector('.markdown-preview-view, .cm-content')`, { what: "the spec editor" });
+	await clearNotices(page);
+	return spec;
+}
+
+/** The hero image: the spec session running, the spec beside it, the panel listing three sessions. */
+async function heroScene(page, box, look) {
+	console.log("Scenes:");
+	await sceneLayout(page, box, look);
+	await sleep(1500);
+	await capture(page, "overview");
+}
+
+/** Frames of the window as they happen, until `state.stop`: `{ at, png }` (1x pixels). */
+async function recordFrames(page, look, frames, state) {
+	const clip = { x: 0, y: 0, width: look.window.width, height: look.window.height };
+	while (!state.stop) {
+		frames.push({ at: Date.now(), png: await page.screenshot(clip, 0.5) });
+	}
+}
+
+/**
+ * The recording: the session asks, the answer is typed, the state turns to Running, and the row
+ * appears in the spec beside it. Frames are timed as they are taken and played back at that pace.
+ */
+async function recordingScene(page, box, look) {
+	console.log("Scenes:");
+	const spec = await sceneLayout(page, box, look);
+	const ja = look.lang === "ja";
+	let typed = false;
+	look.handleInput = (_box, session, text, terminal) => {
+		if (typed || session.id !== spec.id || !/y/i.test(text)) {
+			return;
+		}
+		typed = true;
+		terminal.write(sceneAnswer("echo", ja));
+		setRegistry(box.home, box.ids, spec, "busy");
+		setTimeout(() => terminal.write(sceneAnswer("edit", ja)), 1500);
+		setTimeout(() => writeFileSync(join(box.vault, SPEC_FILE), specWithNewRow(look.lang)), 2200);
+		setTimeout(() => {
+			terminal.write(sceneAnswer("done", ja, terminal.cols));
+			setRegistry(box.home, box.ids, spec, "idle");
+		}, 4200);
+	};
+	await sleep(1200);
+	const frames = [];
+	const state = { stop: false };
+	const recording = recordFrames(page, look, frames, state);
+	await sleep(3000);
+	await page.type("y");
+	await sleep(8200);
+	state.stop = true;
+	await recording;
+	if (!typed) {
+		throw new Error("the answer never reached the terminal");
+	}
+	encodeRecording(frames, join(readmeOutDir, "see-it-work.gif"));
+}
+
+/** Writes the frames and encodes them with ffmpeg: a palette per recording, played at the pace they were taken. */
+function encodeRecording(frames, outFile) {
+	const dir = mkdtempSync(join(tmpdir(), "as-frames-"));
+	const list = [];
+	frames.forEach((f, i) => {
+		const name = join(dir, `f${String(i).padStart(4, "0")}.png`);
+		writeFileSync(name, f.png);
+		const next = frames[i + 1]?.at ?? f.at + 1500;
+		list.push(`file '${name}'`, `duration ${((next - f.at) / 1000).toFixed(3)}`);
+	});
+	list.push(`file '${join(dir, `f${String(frames.length - 1).padStart(4, "0")}.png`)}'`);
+	writeFileSync(join(dir, "frames.txt"), list.join("\n"));
+	mkdirSync(dirname(outFile), { recursive: true });
+	const filter =
+		"fps=8,scale=900:-1:flags=lanczos,split[a][b];[a]palettegen=max_colors=96:stats_mode=diff[p];" +
+		"[b][p]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle";
+	execFileSync("ffmpeg", ["-y", "-v", "error", "-f", "concat", "-safe", "0", "-i", join(dir, "frames.txt"), "-vf", filter, "-loop", "0", outFile]);
+	rmSync(dir, { recursive: true, force: true });
+	console.log(`  wrote ${outFile} (${(statSync(outFile).size / 1e6).toFixed(2)} MB, ${frames.length} frames)`);
+}
+
 // ---- The welcome guide's scenes -----------------------------------------------------------
 
 /** A UI string in `lang`, read from the plugin's own locale file so labels never drift. */
@@ -883,9 +991,13 @@ async function withObsidian(look, scenes) {
 	}
 	const now = Math.floor(Date.now() / 1000);
 	const root = mkdtempSync(join(tmpdir(), "as-shots-"));
-	look.scenario = await scenarioFor(look.lang);
+	look.scenario = look.scene ? sceneScenario(look.lang, look.scene) : await scenarioFor(look.lang);
 	const box = buildSandbox(root, now, look);
-	const daemon = startFakeDaemon(join(box.runtime, "daemon.sock"), box.sessions, now, { lang: look.lang, light: look.light });
+	const daemon = startFakeDaemon(join(box.runtime, "daemon.sock"), box.sessions, now, {
+		lang: look.lang,
+		light: look.light,
+		onInput: (session, text, terminal) => look.handleInput?.(box, session, text, terminal),
+	});
 	const port = await freePort();
 	const obsidian = spawn(
 		OBSIDIAN_BIN,
@@ -933,7 +1045,9 @@ async function withObsidian(look, scenes) {
 		// A session finishes in the background: its tab turns "Needs review".
 		const checkout = box.sessions.find((s) => s.transcript === "claude-checkout");
 		const flips = box.sessions.filter((s) => s.flipToIdle);
-		await front(page, checkout.id);
+		if (checkout) {
+			await front(page, checkout.id);
+		}
 		await sleep(1000);
 		for (const s of flips) {
 			setRegistry(box.home, box.ids, s, "idle");
@@ -975,6 +1089,12 @@ async function run() {
 			await withObsidian({ lang, light: true, window: ONBOARDING_WINDOW, scale: 2 }, onboardingScenes);
 		}
 		console.log(changed.length ? `Changed:\n${changed.map((f) => `  ${f}`).join("\n")}` : "No image changed.");
+	} else if (readmeSceneOnly) {
+		for (const lang of languages) {
+			readmeOutDir = lang === "en" ? README_OUT : join(README_OUT, lang);
+			await withObsidian({ lang, light: false, window: SCENE_WINDOW, scale: 2, scene: "hero" }, heroScene);
+			await withObsidian({ lang, light: false, window: RECORDING_WINDOW, scale: 2, scene: "gif" }, recordingScene);
+		}
 	} else {
 		// Serves docs/onboarding/ for the welcome guide's picture.
 		const server = createHttpServer((req, res) => {
