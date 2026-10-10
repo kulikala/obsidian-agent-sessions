@@ -47,6 +47,14 @@ class TestRecordHook(unittest.TestCase):
         self.assertIn('ts', lines[0])
         self.assertIsInstance(lines[0]['ts'], float)
 
+    @unittest.skipIf(os.name == 'nt', 'POSIX permissions')
+    def test_a_new_log_and_its_folder_are_this_users_only(self):
+        self.events_log = os.path.join(self.tmpdir, 'runtime', 'events.log')
+        with mock.patch.object(config, 'EVENTS_LOG', self.events_log):
+            hooks.record_hook(json.dumps({'session_id': 'x', 'hook_event_name': 'Stop'}).encode('utf-8'))
+        self.assertEqual(os.stat(self.events_log).st_mode & 0o777, 0o600)
+        self.assertEqual(os.stat(os.path.dirname(self.events_log)).st_mode & 0o777, 0o700)
+
     def test_records_reason_and_source(self):
         hooks.record_hook(json.dumps({
             'session_id': 'old', 'hook_event_name': 'SessionEnd', 'reason': 'clear',

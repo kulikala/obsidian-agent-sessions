@@ -35,7 +35,8 @@ function execFileText(
 	args: string[],
 	env?: NodeJS.ProcessEnv,
 	timeoutMs?: number,
-	maxBuffer?: number
+	maxBuffer?: number,
+	input?: string
 ): Promise<{ stdout: string; stderr: string }> {
 	// Windows: a launcher `.cmd` runs as `python script …` and an agent's npm shim through
 	// `cmd.exe` (execFile refuses `.cmd` files), with UTF-8 Python and no console window popping
@@ -52,7 +53,7 @@ function execFileText(
 			windowsHide: true,
 			windowsVerbatimArguments: call.verbatim,
 		};
-		execFile(call.file, call.args, options, (err, stdout, stderr) => {
+		const child = execFile(call.file, call.args, options, (err, stdout, stderr) => {
 			if (err) {
 				const e = err as NodeJS.ErrnoException & { stderr?: string };
 				e.stderr = stderr;
@@ -61,6 +62,10 @@ function execFileText(
 			}
 			resolve({ stdout, stderr });
 		});
+		if (input !== undefined) {
+			child.stdin?.on("error", () => undefined);
+			child.stdin?.end(input);
+		}
 	});
 }
 
@@ -133,6 +138,8 @@ export function envWithVault(vaultPath: string, base: NodeJS.ProcessEnv = proces
 export interface RunJsonOptions {
 	timeoutMs?: number;
 	maxBuffer?: number;
+	/** Written to stdin (texts that must not show in argv). */
+	input?: string;
 }
 
 /** Calls `agent-sessions json …` and returns stdout parsed as JSON. Throws `BackendError` on failure. */
@@ -148,7 +155,8 @@ export async function runJson(
 			["json", ...args],
 			envWithVault(vaultPath),
 			opts.timeoutMs,
-			opts.maxBuffer
+			opts.maxBuffer,
+			opts.input
 		);
 		return JSON.parse(stdout);
 	} catch (err) {
@@ -169,6 +177,18 @@ export async function live(agentSessionsPath: string, vaultPath: string): Promis
 
 export async function detail(agentSessionsPath: string, vaultPath: string, id: string): Promise<Detail> {
 	return runJson(agentSessionsPath, vaultPath, ["detail", id]) as Promise<Detail>;
+}
+
+/** `json mask`: `texts` masked as the efficiency digest masks them, each at most `limit`
+ * characters. The texts go on stdin. Throws `BackendError` when the reply is not one text per text. */
+export async function mask(agentSessionsPath: string, vaultPath: string, texts: string[], limit: number): Promise<string[]> {
+	const out = (await runJson(agentSessionsPath, vaultPath, ["mask"], { input: JSON.stringify({ texts, limit }) })) as {
+		texts?: unknown;
+	};
+	if (!Array.isArray(out?.texts) || out.texts.length !== texts.length || !out.texts.every((x) => typeof x === "string")) {
+		throw new BackendError("json mask: unexpected reply");
+	}
+	return out.texts as string[];
 }
 
 /** `json efficiency`'s arguments: the agents, the window threshold (%) and the budget (weighted
@@ -663,7 +683,7 @@ export function buildAgentArgv(
 		// OpenCode can't be told a new session's id either (like Codex): a fresh launch takes no
 		// id flag; a resume passes `--session <id>`. Plan mode is its built-in `plan` agent.
 		const mode = plan ? ["--agent", "plan"] : [];
-		const tail = fresh ? [...mode, ...(prompt ? ["--prompt", prompt] : [])] : ["--session", id];
+		const tail = fresh ? [...mode, ...(prompt ? [`--prompt=${prompt}`] : [])] : ["--session", id];
 		if (opencodeLaunch) {
 			return [opencodeLaunch.ollamaBin, "launch", "opencode", "--model", opencodeLaunch.model, "-y", "--", ...tail];
 		}
@@ -684,7 +704,8 @@ export function buildAgentArgv(
 /** How a fresh session starts: its first message, and the permission mode -- `plan` stops before
  * any file is written (Claude Code `--permission-mode plan`, Codex a read-only sandbox that asks
  * for approval, OpenCode its `plan` agent). The message goes in the same place as in
- * `launch.py`'s `build_argv`: Claude Code and Codex take it after `--`, OpenCode as `--prompt`. */
+ * `launch.py`'s `build_argv`: Claude Code and Codex take it after `--`, OpenCode as one `--prompt=<text>` argument (so a
+ * message starting with `-` is not read as a flag). */
 export interface LaunchStart {
 	prompt?: string;
 	permissionMode?: "plan";

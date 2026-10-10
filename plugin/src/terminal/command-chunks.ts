@@ -9,7 +9,25 @@ export const STASH = "\x13";
 export const PASTE_BEGIN = "\x1b[200~";
 export const PASTE_END = "\x1b[201~";
 
-/** Stash (Claude only) → command as bracketed paste → `submit` (the submit sequence: the configured
+/** `text` safe inside a bracketed paste: without C0 and C1 control characters (ESC, so it
+ * cannot end the paste with its own `ESC [201~`, Ctrl+U, DEL and the rest) but tabs and line
+ * breaks, which a paste takes as text. */
+export function pasteSafe(text: string): string {
+	return text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, "");
+}
+
+/** A name on one line: tabs and line breaks become spaces and the other C0 and C1 control
+ * characters are removed. */
+export function oneLineName(name: string): string {
+	return name.replace(/[\t\n\v\f\r]/g, " ").replace(/[\x00-\x1f\x7f-\x9f]/g, "");
+}
+
+/** The `/rename` command for `name` (`oneLineName`). */
+export function renameCommand(name: string): string {
+	return `/rename ${oneLineName(name)}`;
+}
+
+/** Stash (Claude only) → command as bracketed paste (`pasteSafe`) → `submit` (the submit sequence: the configured
  * submit key for Claude and Codex; always `\r` for OpenCode, see below). `draft`: whether the input
  * box holds a draft to stash first. */
 export function commandChunks(
@@ -19,6 +37,7 @@ export function commandChunks(
 	submit: string,
 	platform: string = process.platform
 ): string[] {
+	text = pasteSafe(text);
 	// Ctrl+S (`chat:stash`) only over a draft: on an empty box it brings a previously stashed
 	// draft back instead, and the command would be pasted after it.
 	const stash = agent === "claude" && draft ? STASH : "";

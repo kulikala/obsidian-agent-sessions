@@ -6,6 +6,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { ensurePrivateDir, PRIVATE_FILE_MODE } from "./paths";
 
 export interface VaultState {
 	vault: string;
@@ -13,12 +14,12 @@ export interface VaultState {
 
 /** Writes `vault.json` into `runtimeDir` (`~/.agents/sessions`). Called from `onload`. */
 export function writeVaultState(runtimeDir: string, vaultPath: string): void {
-	fs.mkdirSync(runtimeDir, { recursive: true });
+	ensurePrivateDir(runtimeDir);
 	const state: VaultState = { vault: vaultPath };
 	const data = JSON.stringify(state, null, 1);
 	const filePath = path.join(runtimeDir, "vault.json");
 	const tmp = path.join(runtimeDir, `.vault.${process.pid}.${Date.now()}.tmp`);
-	fs.writeFileSync(tmp, data, "utf8");
+	fs.writeFileSync(tmp, data, { encoding: "utf8", mode: PRIVATE_FILE_MODE });
 	try {
 		fs.renameSync(tmp, filePath);
 	} catch (err) {

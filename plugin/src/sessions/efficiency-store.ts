@@ -6,6 +6,7 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { join } from "path";
+import { PRIVATE_DIR_MODE, PRIVATE_FILE_MODE } from "../backend/paths";
 import type { EffHit, EffRange, EffTotals, Finding } from "./efficiency";
 import type { HeadlessUsage } from "./organize-agent";
 
@@ -65,13 +66,13 @@ function prevPath(dir: string, agent: string): string {
 
 /** Writes `result` as the pane's last result, moving the previous last one to `prev-`. */
 export function saveResult(dir: string, result: SavedResult): void {
-	mkdirSync(dir, { recursive: true });
+	mkdirSync(dir, { recursive: true, mode: PRIVATE_DIR_MODE });
 	const last = lastPath(dir, result.agent);
 	if (existsSync(last)) {
 		renameSync(last, prevPath(dir, result.agent));
 	}
 	const tmp = `${last}.tmp`;
-	writeFileSync(tmp, JSON.stringify(result), "utf8");
+	writeFileSync(tmp, JSON.stringify(result), { encoding: "utf8", mode: PRIVATE_FILE_MODE });
 	renameSync(tmp, last);
 }
 

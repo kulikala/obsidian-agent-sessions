@@ -93,12 +93,16 @@ describe("buildAgentArgv with a first message (same order as launch.py's build_a
 		]);
 		expect(buildAgentArgv("opencode", "/bin/oc", "abc", true, undefined, false, undefined, { prompt: "go" })).toEqual([
 			"/bin/oc",
-			"--prompt",
-			"go",
+			"--prompt=go",
+		]);
+		// One argument, so a message that starts with `-` is not read as a flag.
+		expect(buildAgentArgv("opencode", "/bin/oc", "abc", true, undefined, false, undefined, { prompt: "--model x/y hi" })).toEqual([
+			"/bin/oc",
+			"--prompt=--model x/y hi",
 		]);
 		expect(
 			buildAgentArgv("opencode", "/bin/oc", "abc", true, { ollamaBin: "/bin/ollama", model: "m" }, false, undefined, { prompt: "go" })
-		).toEqual(["/bin/ollama", "launch", "opencode", "--model", "m", "-y", "--", "--prompt", "go"]);
+		).toEqual(["/bin/ollama", "launch", "opencode", "--model", "m", "-y", "--", "--prompt=go"]);
 	});
 
 	it("plan mode: Codex a read-only sandbox that asks first, OpenCode its plan agent", () => {
@@ -117,8 +121,7 @@ describe("buildAgentArgv with a first message (same order as launch.py's build_a
 			"/bin/oc",
 			"--agent",
 			"plan",
-			"--prompt",
-			"Fix it",
+			"--prompt=Fix it",
 		]);
 		expect(buildAgentArgv("opencode", "/bin/oc", "abc", true, { ollamaBin: "/bin/ollama", model: "m" }, false, undefined, start)).toEqual([
 			"/bin/ollama",
@@ -130,8 +133,7 @@ describe("buildAgentArgv with a first message (same order as launch.py's build_a
 			"--",
 			"--agent",
 			"plan",
-			"--prompt",
-			"Fix it",
+			"--prompt=Fix it",
 		]);
 		expect(buildAgentArgv("codex", "/bin/codex", "abc", false, undefined, false, undefined, start)).toEqual(["/bin/codex", "resume", "abc"]);
 	});

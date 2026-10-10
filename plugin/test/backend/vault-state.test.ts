@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -15,6 +15,12 @@ describe("writeVaultState", () => {
 
 	afterEach(() => {
 		rmSync(dir, { recursive: true, force: true });
+	});
+
+	it.skipIf(process.platform === "win32")("writes vault.json for this user only, in a folder for this user only", () => {
+		writeVaultState(runtimeDir, "/tmp/some-vault");
+		expect(statSync(runtimeDir).mode & 0o777).toBe(0o700);
+		expect(statSync(join(runtimeDir, "vault.json")).mode & 0o777).toBe(0o600);
 	});
 
 	it("writes the vault path to vault.json", () => {

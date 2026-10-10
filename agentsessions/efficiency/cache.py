@@ -96,7 +96,7 @@ def _load(target: str) -> Optional[dict]:
 
 def _save(target: str, data: dict) -> None:
     folder = os.path.dirname(target)
-    os.makedirs(folder, exist_ok=True)
+    os.makedirs(folder, mode=0o700, exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=folder, prefix='.efficiency.', suffix='.tmp')
     try:
         with os.fdopen(fd, 'w', encoding='utf-8') as f:

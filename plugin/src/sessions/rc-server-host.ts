@@ -120,6 +120,9 @@ async function launch(plugin: AgentSessionsPlugin, autoMode: boolean): Promise<D
 			env,
 			cols: SERVER_COLS,
 			rows: SERVER_ROWS,
+			// Every session the server spawns inherits its environment: with the server's id, its
+			// `agent-sessions edit` (Ctrl+G) and `show` would act on the server's tab.
+			id_env: false,
 		});
 		if (!res.ok && res.error !== "exists") {
 			throw new Error(t("error.startFailed", { error: String(res.message ?? res.error ?? "unknown") }));

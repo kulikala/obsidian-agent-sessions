@@ -159,7 +159,7 @@ def build_argv(agent: str, bin_path: str, session_id: str, name: Optional[str] =
         own = [bin_path, '--no-daemon'] if codex_no_daemon else [bin_path]
         return own + (['--', prompt] if prompt else [])
     if agent == 'opencode':
-        tail = ['--prompt', prompt] if prompt else []
+        tail = ['--prompt=' + prompt] if prompt else []
         if ollama_bin:
             return [ollama_bin, 'launch', 'opencode', '--model', ollama_model, '-y', '--'] + tail
         return [bin_path] + tail

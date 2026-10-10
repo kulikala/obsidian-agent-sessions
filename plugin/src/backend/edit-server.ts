@@ -10,6 +10,7 @@ import * as fs from "node:fs";
 import * as net from "node:net";
 import * as path from "node:path";
 import { encodeFrame, FrameDecoder } from "./daemon-client";
+import { RC_SERVER_ID } from "../sessions/rc-server";
 import { listenEndpoint, TokenGate } from "./transport";
 
 export interface EditRequest {
@@ -52,6 +53,11 @@ export function submitsAfterEdit(file: string, agent: string): boolean {
  * the tab's `sessionId` once a Codex/OpenCode tab has been linked to its real thread id.
  */
 export function tabOwnsEditSession(tab: { sessionId: string; daemonId: string }, session: string): boolean {
+	// The Remote Control server takes no edits; a request with its id comes from a session it
+	// spawned under a daemon that still put its id in the environment.
+	if (session === RC_SERVER_ID) {
+		return false;
+	}
 	return tab.sessionId === session || tab.daemonId === session;
 }
 

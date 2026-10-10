@@ -278,6 +278,17 @@ class TestSessions(DaemonTestCase):
         out += c.read_output(lambda b: b'bar' in out + b)
         self.assertIn(b'xterm-256color/truecolor/e/bar', out)
 
+    def test_id_env_false_leaves_the_id_out(self):
+        c = self.h.client()
+        res = c.request('start', id='rc', agent='test', cwd=self.tmpdir,
+                        argv=['/bin/sh', '-c', 'echo "[${AGENT_SESSIONS_ID-unset}]/$FOO"'],
+                        env={'PATH': '/usr/bin:/bin', 'FOO': 'bar'}, cols=80, rows=24, id_env=False)
+        self.assertTrue(res['ok'])
+        c.request('attach', id='rc', cols=80, rows=24)
+        out = c.replay()
+        out += c.read_output(lambda b: b'bar' in out + b)
+        self.assertIn(b'[unset]/bar', out)
+
     def test_two_clients_get_min_size(self):
         a = self.h.client()
         b = self.h.client()
