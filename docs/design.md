@@ -910,11 +910,12 @@ Every dialog of the plugin is marked with `markDialog` (`ui/dialog-header.ts`, c
 | Space | Variable | Where |
 |---|---|---|
 | 4 px | `--size-4-1` | between the lines of one item (a name and its description, a value and its label) |
-| 8 px | `--size-4-2` | between a label and its field, between items inside a block, the title above a session line, a row's vertical inset |
-| 12 px | `--size-4-3` | the horizontal inset of every bordered or tinted block (rows, disclosures, summaries, panels) and the gap between the parts of an opened block |
-| 16 px | `--size-4-4` | between the blocks of a dialog, the title above the content, the modal's own padding |
+| 8 px | `--size-4-2` | between a label and its field, between small items side by side, the title above a session line |
+| 12 px | `--size-4-3` | between the lines of a list inside a block (a finding's "How to fix it", "What happened", "Cause"), a primary button and the line under it |
+| 16 px | `--size-4-4` | the inset of every bordered or tinted block (rows, disclosures, summaries, panels, cards), the gap between the parts of an opened block, the modal's own padding at the sides |
+| 24 px | `--size-4-6` | between the blocks of a dialog, the title above the content, each side of the divider above the button row, the modal's own padding above and below |
 
-The content (`.modal-content`, and each view of the organize dialog) is one column of blocks with a 16 px gap; the children's own margins are removed, so no gap is doubled. Fields (Obsidian `Setting` rows) have no dividers between them; a label beside its control is centred on it, and a label above its field (`agent-sessions-wide-setting`) sits 8 px above it. The button row that ends a dialog is made with `dialogFooter`: one divider above it, 16 px on each side. Corners of blocks are `--radius-m`. A dialog with its own header (Session analytics) uses the modal's padding as its inset and hides Obsidian's empty header, so no padding is added on top of the modal's. The token efficiency dialog keeps its scrollbar gutter (`scrollbar-gutter: stable`), every check row has a second line (the issues' titles, "Reading", or what the check looks for), so the rows are of one height, and below 480 px a row's state wraps under its text.
+The content (`.modal-content`, and each view of the organize dialog) is one column of blocks with a 24 px gap; the children's own margins are removed, so no gap is doubled. Fields (Obsidian `Setting` rows) have no dividers between them; a label beside its control is centred on it, and a label above its field (`agent-sessions-wide-setting`) sits 8 px above it. The button row that ends a dialog is made with `dialogFooter`: one divider above it, 24 px on each side. Corners of blocks are `--radius-m`. A dialog with its own header (Session analytics) uses the modal's padding as its inset and hides Obsidian's empty header, so no padding is added on top of the modal's. The token efficiency dialog keeps its scrollbar gutter (`scrollbar-gutter: stable`), every check row has a second line (the issues' titles, "Reading", or what the check looks for), so the rows are of one height, and below 480 px a row's state wraps under its text.
 
 ## 17. i18n
 
