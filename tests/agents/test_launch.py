@@ -28,11 +28,11 @@ class TestBuildArgv(unittest.TestCase):
 
     def test_opencode_direct_and_through_ollama(self):
         self.assertEqual(launch.build_argv('opencode', '/o', 'ID', name='N'), ['/o'])
-        self.assertEqual(launch.build_argv('opencode', '/o', 'ID', prompt='hi'), ['/o', '--prompt', 'hi'])
+        self.assertEqual(launch.build_argv('opencode', '/o', 'ID', prompt='hi'), ['/o', '--prompt=hi'])
         self.assertEqual(launch.build_argv('opencode', '/o', 'ID', ollama_bin='/ol', ollama_model='m'),
                          ['/ol', 'launch', 'opencode', '--model', 'm', '-y', '--'])
         self.assertEqual(launch.build_argv('opencode', '/o', 'ID', prompt='hi', ollama_bin='/ol', ollama_model='m'),
-                         ['/ol', 'launch', 'opencode', '--model', 'm', '-y', '--', '--prompt', 'hi'])
+                         ['/ol', 'launch', 'opencode', '--model', 'm', '-y', '--', '--prompt=hi'])
 
 
 class TestBuildEnv(unittest.TestCase):

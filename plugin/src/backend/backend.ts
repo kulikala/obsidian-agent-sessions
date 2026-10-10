@@ -683,7 +683,7 @@ export function buildAgentArgv(
 		// OpenCode can't be told a new session's id either (like Codex): a fresh launch takes no
 		// id flag; a resume passes `--session <id>`. Plan mode is its built-in `plan` agent.
 		const mode = plan ? ["--agent", "plan"] : [];
-		const tail = fresh ? [...mode, ...(prompt ? ["--prompt", prompt] : [])] : ["--session", id];
+		const tail = fresh ? [...mode, ...(prompt ? [`--prompt=${prompt}`] : [])] : ["--session", id];
 		if (opencodeLaunch) {
 			return [opencodeLaunch.ollamaBin, "launch", "opencode", "--model", opencodeLaunch.model, "-y", "--", ...tail];
 		}
@@ -704,7 +704,8 @@ export function buildAgentArgv(
 /** How a fresh session starts: its first message, and the permission mode -- `plan` stops before
  * any file is written (Claude Code `--permission-mode plan`, Codex a read-only sandbox that asks
  * for approval, OpenCode its `plan` agent). The message goes in the same place as in
- * `launch.py`'s `build_argv`: Claude Code and Codex take it after `--`, OpenCode as `--prompt`. */
+ * `launch.py`'s `build_argv`: Claude Code and Codex take it after `--`, OpenCode as one `--prompt=<text>` argument (so a
+ * message starting with `-` is not read as a flag). */
 export interface LaunchStart {
 	prompt?: string;
 	permissionMode?: "plan";
