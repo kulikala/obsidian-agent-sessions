@@ -19,6 +19,11 @@ export interface KeyLike {
 
 export type EnterClass = SubmitKey | "passthrough";
 
+/** True while an IME composition is in progress. */
+export function isComposing(ev: KeyLike): boolean {
+	return ev.isComposing === true || ev.keyCode === 229;
+}
+
 /**
  * `passthrough` when the key isn't Enter, or it's Enter during an IME composition.
  * Otherwise classifies by modifier, in priority order shift, ctrl, alt, cmd (metaKey), none (enter).
@@ -27,7 +32,7 @@ export function classifyEnter(ev: KeyLike): EnterClass {
 	if (ev.key !== "Enter") {
 		return "passthrough";
 	}
-	if (ev.isComposing || ev.keyCode === 229) {
+	if (isComposing(ev)) {
 		return "passthrough";
 	}
 	if (ev.shiftKey) {

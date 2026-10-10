@@ -25,7 +25,7 @@ describe("writeVaultState", () => {
 
 	it("writes the vault path to vault.json", () => {
 		writeVaultState(runtimeDir, "/tmp/some-vault");
-		const data = JSON.parse(readFileSync(join(runtimeDir, "vault.json"), "utf8"));
+		const data = JSON.parse(readFileSync(join(runtimeDir, "vault.json"), "utf8")) as Record<string, unknown>;
 		expect(data).toEqual({ vault: "/tmp/some-vault" });
 	});
 
@@ -44,7 +44,7 @@ describe("writeVaultState", () => {
 	it("overwrites the file when written again", () => {
 		writeVaultState(runtimeDir, "/tmp/vault-a");
 		writeVaultState(runtimeDir, "/tmp/vault-b");
-		const data = JSON.parse(readFileSync(join(runtimeDir, "vault.json"), "utf8"));
+		const data = JSON.parse(readFileSync(join(runtimeDir, "vault.json"), "utf8")) as Record<string, unknown>;
 		expect(data).toEqual({ vault: "/tmp/vault-b" });
 	});
 });

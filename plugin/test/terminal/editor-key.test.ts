@@ -56,8 +56,8 @@ describe("applyEditorKey (Claude Code keybindings.json)", () => {
 	afterEach(() => {
 		rmSync(dir, { recursive: true, force: true });
 	});
-	const read = () => JSON.parse(readFileSync(file, "utf8"));
-	const chat = () => read().bindings.find((b: { context: string }) => b.context === "Chat").bindings;
+	const read = () => JSON.parse(readFileSync(file, "utf8")) as { $schema?: string; bindings: { context: string; bindings: Record<string, string> }[] };
+	const chat = () => read().bindings.find((b) => b.context === "Chat")?.bindings;
 
 	it("writes nothing for Ctrl+G, Claude Code's own key", () => {
 		expect(applyEditorKey(file, "ctrl+g")).toEqual({ status: "unchanged" });

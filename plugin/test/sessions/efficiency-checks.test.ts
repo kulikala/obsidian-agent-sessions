@@ -154,8 +154,8 @@ describe("requests", () => {
 		expect(part.prompt.length).toBeLessThanOrEqual(MAX_REQUEST_CHARS);
 		expect(part.prompt).toContain("<<<DATA\n" + part.data + "\nDATA>>>");
 		expect(part.prompt).not.toContain("This is part");
-		const data = JSON.parse(part.data);
-		expect(data.tasks.map((t: DigestTask) => t.id)).toEqual(["t-a", "t-b"]);
+		const data = JSON.parse(part.data) as { tasks: DigestTask[] };
+		expect(data.tasks.map((t) => t.id)).toEqual(["t-a", "t-b"]);
 		expect(data.tasks[0]).not.toHaveProperty("saving");
 		expect(data.tasks[0]).not.toHaveProperty("ts");
 		expect(data).not.toHaveProperty("part");
@@ -200,10 +200,10 @@ describe("requests", () => {
 		expect(plan.parts.flatMap((p) => p.tasks.map((t) => t.id))).toEqual(tasks.map((t) => t.id));
 		expect(plan.parts.map((p) => [p.index, p.count])).toEqual(plan.parts.map((_, i) => [i, plan.parts.length]));
 		expect(plan.parts[1].prompt).toContain(`This is part 2 of ${plan.parts.length}`);
-		const first = JSON.parse(plan.parts[0].data);
+		const first = JSON.parse(plan.parts[0].data) as { part: unknown; hints: { id: string }[] };
 		expect(first.part).toMatchObject({ index: 1, of: plan.parts.length });
-		expect(first.hints.map((h: { id: string }) => h.id)).toEqual(["h-1"]);
-		expect(JSON.parse(plan.parts[1].data).hints).toEqual([]);
+		expect(first.hints.map((h) => h.id)).toEqual(["h-1"]);
+		expect((JSON.parse(plan.parts[1].data) as { hints: unknown[] }).hints).toEqual([]);
 		expect(plan.chars).toBe(plan.parts.reduce((n, p) => n + p.prompt.length, 0));
 	});
 
@@ -383,7 +383,7 @@ describe("one part, with its retry", () => {
 		const answers = ["not json", reply(ok())];
 		const run = await runPart(part, setup, ctx, async (p) => {
 			prompts.push(p);
-			return { text: answers[prompts.length - 1], usage: { usd: 0.25, input: 10, output: 5 } as never };
+			return { text: answers[prompts.length - 1], usage: { usd: 0.25, input: 10, output: 5 } };
 		});
 		expect(prompts).toHaveLength(2);
 		expect(prompts[1]).toContain("Your previous reply could not be used");

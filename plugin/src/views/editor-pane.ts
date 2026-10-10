@@ -13,7 +13,7 @@ import { applyCompletion, findAtQuery, relPathFor, type AtQuery } from "../termi
 import { SaveDebouncer } from "../terminal/autosave";
 import { t } from "../i18n";
 import { indentEdit } from "../terminal/indent";
-import { classifyEnter, submitKeyButtonLabel } from "../terminal/keys";
+import { classifyEnter, isComposing, submitKeyButtonLabel } from "../terminal/keys";
 import type { SubmitKey } from "../settings";
 import {
 	EFFORT_CHOICE_GROUPS,
@@ -311,7 +311,7 @@ export class EditorPane {
 	 */
 	private onKeyDown(ev: KeyboardEvent): void {
 		ev.stopImmediatePropagation();
-		if (ev.isComposing || ev.keyCode === 229) {
+		if (isComposing(ev)) {
 			return;
 		}
 		if (this.candidates.length > 0) {

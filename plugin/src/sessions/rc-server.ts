@@ -106,7 +106,7 @@ export function rcAcceptedAfterModeChange(mode: RcPermissionMode, accepted: RcPe
  */
 export type RcServerSignal = "question" | "ready" | null;
 
-// eslint-disable-next-line no-control-regex
+// eslint-disable-next-line no-control-regex -- ANSI escape sequences start with ESC
 const ANSI = /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1b[@-Z\\-_]/g;
 
 /** Terminal output as plain text: escape sequences and carriage returns removed. */

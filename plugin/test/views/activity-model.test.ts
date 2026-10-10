@@ -29,7 +29,6 @@ import {
 	summarizeByAgent,
 	unionSeconds,
 	weekStartOf,
-	type Interval,
 } from "../../src/views/activity-model";
 import type { ActivitySession, StatsResult, StatsWindow } from "../../src/types";
 
@@ -144,7 +143,7 @@ describe("pickResetAnchor", () => {
 				claude: { windows: { five_hour: win(300, 1, 10), seven_day: win(10080, 1000, claude) } },
 				codex: { windows: { five_hour: win(300, 1, null), seven_day: win(10080, 2000, codex) } },
 			},
-		}) as unknown as StatsResult;
+		});
 
 	it("prefers Claude's tracked 7-day window, then Codex's, else null", () => {
 		expect(pickResetAnchor(stats(5, 5), ["claude", "codex"])).toBe(1000);

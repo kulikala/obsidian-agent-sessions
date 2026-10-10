@@ -290,7 +290,9 @@ describe("createRowActions (showDetail/hideDetail/cancelHideDetail wiring)", () 
 
 	it("hideDetail/cancelHideDetail are undefined when not given (matches ManagerView, which has no revert-to-default concept)", () => {
 		const actions = createRowActions(fakePlugin, vi.fn());
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- only checks the property is absent, never calls it
 		expect(actions.hideDetail).toBeUndefined();
+		// eslint-disable-next-line @typescript-eslint/unbound-method -- only checks the property is absent, never calls it
 		expect(actions.cancelHideDetail).toBeUndefined();
 	});
 });

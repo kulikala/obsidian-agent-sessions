@@ -188,7 +188,7 @@ export async function mask(agentSessionsPath: string, vaultPath: string, texts: 
 	if (!Array.isArray(out?.texts) || out.texts.length !== texts.length || !out.texts.every((x) => typeof x === "string")) {
 		throw new BackendError("json mask: unexpected reply");
 	}
-	return out.texts as string[];
+	return out.texts;
 }
 
 /** `json efficiency`'s arguments: the agents, the window threshold (%) and the budget (weighted

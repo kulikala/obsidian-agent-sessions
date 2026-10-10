@@ -39,6 +39,7 @@ describe("control characters cannot leave the paste", () => {
 			expect(count(sent, PASTE_BEGIN)).toBe(1);
 			expect(count(sent, PASTE_END)).toBe(1);
 			expect(sent.indexOf(PASTE_END)).toBeGreaterThan(sent.indexOf("say hi"));
+			// eslint-disable-next-line no-control-regex -- the test deliberately matches the line-kill, DEL and CSI control characters
 			expect(sent).not.toMatch(/[\x15\x7f\x9b]/);
 		}
 	});

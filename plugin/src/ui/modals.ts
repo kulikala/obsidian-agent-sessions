@@ -3,7 +3,7 @@
 import { App, Modal, Setting, setIcon } from "obsidian";
 import type AgentSessionsPlugin from "../main";
 import { renderCategoryChip } from "./chip";
-import { dialogFooter, dialogHeaderSpec, markDialog, renderDialogHeader, type DialogHeaderSpec } from "./dialog-header";
+import { dialogFooter, dialogHeaderSpec, markDestructive, markDialog, renderDialogHeader, type DialogHeaderSpec } from "./dialog-header";
 import { dialogTitle } from "./dialog-title";
 import type { SessionTarget } from "./dialog-header-model";
 import { AGENT_ICON_ID } from "./icons";
@@ -762,9 +762,8 @@ export class ConfirmModal extends Modal {
 		dialogFooter(this.contentEl)
 			.addButton((button) => button.setButtonText(t("action.cancel")).onClick(() => this.close()))
 			.addButton((button) =>
-				button
+				markDestructive(button)
 					.setButtonText(this.confirmLabel)
-					.setWarning()
 					.onClick(() => {
 						this.onConfirm();
 						this.close();
@@ -811,7 +810,7 @@ export class RcServerStartModal extends Modal {
 					this.close();
 				});
 				if (this.mode === "auto") {
-					button.setWarning();
+					markDestructive(button);
 				} else {
 					button.setCta();
 				}

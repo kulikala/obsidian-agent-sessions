@@ -12,6 +12,16 @@ import {
 } from "../../src/terminal/keys";
 import { SUBMIT_KEYS } from "../../src/settings";
 
+interface KeyFile {
+	$schema?: string;
+	$docs?: string;
+	bindings: { context: string; bindings: Record<string, string> }[];
+}
+
+function readKeyFile(path: string): KeyFile {
+	return JSON.parse(readFileSync(path, "utf8")) as KeyFile;
+}
+
 describe("readEnterMode", () => {
 	let dir: string;
 	let filePath: string;
@@ -124,11 +134,11 @@ describe("applySubmitKey", () => {
 		const result = applySubmitKey(filePath, "cmd+enter");
 		expect(result).toEqual({ status: "written", warning: undefined });
 
-		const data = JSON.parse(readFileSync(filePath, "utf8"));
+		const data = readKeyFile(filePath);
 		expect(data.$schema).toBe("https://www.schemastore.org/claude-code-keybindings.json");
 		expect(data.$docs).toBe("https://code.claude.com/docs/en/keybindings");
-		const chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
-		expect(chat.bindings).toEqual({
+		const chat = data.bindings.find((b) => b.context === "Chat");
+		expect(chat?.bindings).toEqual({
 			enter: "chat:newline",
 			"meta+enter": "chat:submit",
 		});
@@ -145,8 +155,8 @@ describe("applySubmitKey", () => {
 		const result = applySubmitKey(filePath, "enter");
 		expect(result).toEqual({ status: "written", warning: undefined });
 
-		const data = JSON.parse(readFileSync(filePath, "utf8"));
-		expect(data.bindings.find((b: { context: string }) => b.context === "Chat")).toBeUndefined();
+		const data = readKeyFile(filePath);
+		expect(data.bindings.find((b) => b.context === "Chat")).toBeUndefined();
 	});
 
 	it("re-applying the same submit key is a no-op (status unchanged, nothing written)", () => {
@@ -169,17 +179,17 @@ describe("applySubmitKey", () => {
 		);
 
 		applySubmitKey(filePath, "cmd+enter");
-		let data = JSON.parse(readFileSync(filePath, "utf8"));
-		let chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
-		expect(chat.bindings["ctrl+j"]).toBe("chat:newline");
-		expect(chat.bindings.enter).toBe("chat:newline");
-		expect(data.bindings.find((b: { context: string }) => b.context === "Other").bindings).toEqual({ a: "b" });
+		let data = readKeyFile(filePath);
+		let chat = data.bindings.find((b) => b.context === "Chat");
+		expect(chat?.bindings["ctrl+j"]).toBe("chat:newline");
+		expect(chat?.bindings.enter).toBe("chat:newline");
+		expect(data.bindings.find((b) => b.context === "Other")?.bindings).toEqual({ a: "b" });
 
 		applySubmitKey(filePath, "enter");
-		data = JSON.parse(readFileSync(filePath, "utf8"));
-		chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
+		data = readKeyFile(filePath);
+		chat = data.bindings.find((b) => b.context === "Chat");
 		// ctrl+j wasn't added by us, so it survives; the Chat block survives too (it's not empty).
-		expect(chat.bindings).toEqual({ "ctrl+j": "chat:newline" });
+		expect(chat?.bindings).toEqual({ "ctrl+j": "chat:newline" });
 	});
 
 	it("returns a warning and leaves mismatched keys alone instead of deleting them", () => {
@@ -191,10 +201,10 @@ describe("applySubmitKey", () => {
 		const result = applySubmitKey(filePath, "enter");
 		expect(result.status).toBe("written");
 		expect(result.warning).toContain("enter");
-		const data = JSON.parse(readFileSync(filePath, "utf8"));
-		const chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
+		const data = readKeyFile(filePath);
+		const chat = data.bindings.find((b) => b.context === "Chat");
 		// enter had an unexpected value, so it's left in place; meta+enter matched, so it's removed.
-		expect(chat.bindings).toEqual({ enter: "chat:clear" });
+		expect(chat?.bindings).toEqual({ enter: "chat:clear" });
 	});
 
 	it("warns about a mismatched value on any owned key, not just enter/meta+enter", () => {
@@ -204,10 +214,10 @@ describe("applySubmitKey", () => {
 		);
 		const result = applySubmitKey(filePath, "enter");
 		expect(result.warning).toContain("ctrl+enter");
-		const data = JSON.parse(readFileSync(filePath, "utf8"));
-		const chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
+		const data = readKeyFile(filePath);
+		const chat = data.bindings.find((b) => b.context === "Chat");
 		// Not ours (a different action entirely), so it's left in place.
-		expect(chat.bindings).toEqual({ "ctrl+enter": "chat:externalEditor" });
+		expect(chat?.bindings).toEqual({ "ctrl+enter": "chat:externalEditor" });
 	});
 
 	it("doesn't write to malformed JSON, and returns status failed with a warning instead", () => {
@@ -221,9 +231,9 @@ describe("applySubmitKey", () => {
 	it("writes the same two keys for every non-enter submit key (alt+enter, shift+enter, ctrl+enter)", () => {
 		for (const submitKey of ["alt+enter", "shift+enter", "ctrl+enter"]) {
 			applySubmitKey(filePath, submitKey);
-			const data = JSON.parse(readFileSync(filePath, "utf8"));
-			const chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
-			expect(chat.bindings).toEqual({ enter: "chat:newline", "meta+enter": "chat:submit" });
+			const data = readKeyFile(filePath);
+			const chat = data.bindings.find((b) => b.context === "Chat");
+			expect(chat?.bindings).toEqual({ enter: "chat:newline", "meta+enter": "chat:submit" });
 			applySubmitKey(filePath, "enter");
 		}
 	});
@@ -239,9 +249,9 @@ describe("applySubmitKey", () => {
 		);
 		const result = applySubmitKey(filePath, "enter");
 		expect(result).toEqual({ status: "written", warning: undefined });
-		const data = JSON.parse(readFileSync(filePath, "utf8"));
+		const data = readKeyFile(filePath);
 		// Nothing left to remove leaves the Chat block itself removed too.
-		expect(data.bindings.find((b: { context: string }) => b.context === "Chat")).toBeUndefined();
+		expect(data.bindings.find((b) => b.context === "Chat")).toBeUndefined();
 	});
 
 	it("switching between two non-enter keys clears a stale alternate-submit binding left on a third key", () => {
@@ -256,9 +266,9 @@ describe("applySubmitKey", () => {
 		);
 		const result = applySubmitKey(filePath, "ctrl+enter");
 		expect(result).toEqual({ status: "written", warning: undefined });
-		const data = JSON.parse(readFileSync(filePath, "utf8"));
-		const chat = data.bindings.find((b: { context: string }) => b.context === "Chat");
-		expect(chat.bindings).toEqual({ enter: "chat:newline", "meta+enter": "chat:submit" });
+		const data = readKeyFile(filePath);
+		const chat = data.bindings.find((b) => b.context === "Chat");
+		expect(chat?.bindings).toEqual({ enter: "chat:newline", "meta+enter": "chat:submit" });
 	});
 });
 

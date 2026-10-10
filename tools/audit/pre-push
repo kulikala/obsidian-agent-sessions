@@ -4,7 +4,7 @@
 # Install (once per clone, from the repository root):
 #   ln -s ../../tools/audit/pre-push "$(git rev-parse --git-common-dir)/hooks/pre-push"
 #
-# AUDIT_SKIP_TESTS=1 leaves out the build and the test suites. `git push --no-verify` skips the
+# AUDIT_SKIP_TESTS=1 leaves out eslint, the build and the test suites. `git push --no-verify` skips the
 # hook altogether.
 
 root=$(git rev-parse --show-toplevel) || exit 1

@@ -2,7 +2,7 @@
 // the target session on line 2 — the agent's mark, the category chip, the name. No "Session:"
 // prefix: a session name can itself contain a colon, so the look alone tells the target apart.
 
-import { Setting, setIcon, setTooltip, type Modal } from "obsidian";
+import { Setting, requireApiVersion, setIcon, setTooltip, type ButtonComponent, type Modal } from "obsidian";
 import type AgentSessionsPlugin from "../main";
 import { t, type MessageKey } from "../i18n";
 import { renderCategoryChip } from "./chip";
@@ -32,6 +32,16 @@ export function dialogHeaderSpec(plugin: AgentSessionsPlugin, titleKey: MessageK
  * content is a column of blocks `--size-4-4` apart, with no divider between fields. */
 export function markDialog(modal: Modal): void {
 	modal.modalEl.addClass("agent-sessions-dialog");
+}
+
+/** Styles a button that does something hard to undo: `setDestructive()` on Obsidian 1.13+, and
+ * the warning style it replaces before that. */
+export function markDestructive(button: ButtonComponent): ButtonComponent {
+	if (requireApiVersion("1.13.0")) {
+		return button.setDestructive();
+	}
+	button.buttonEl.addClass("mod-warning");
+	return button;
 }
 
 /** The button row that ends a dialog: a divider above it, the buttons on the right. */

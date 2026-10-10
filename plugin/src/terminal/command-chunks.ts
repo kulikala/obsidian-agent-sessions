@@ -13,13 +13,13 @@ export const PASTE_END = "\x1b[201~";
  * cannot end the paste with its own `ESC [201~`, Ctrl+U, DEL and the rest) but tabs and line
  * breaks, which a paste takes as text. */
 export function pasteSafe(text: string): string {
-	return text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]/g, "");
+	return text.replace(/[^\P{Cc}\t\n\r]/gu, "");
 }
 
 /** A name on one line: tabs and line breaks become spaces and the other C0 and C1 control
  * characters are removed. */
 export function oneLineName(name: string): string {
-	return name.replace(/[\t\n\v\f\r]/g, " ").replace(/[\x00-\x1f\x7f-\x9f]/g, "");
+	return name.replace(/[\t\n\v\f\r]/g, " ").replace(/\p{Cc}/gu, "");
 }
 
 /** The `/rename` command for `name` (`oneLineName`). */
