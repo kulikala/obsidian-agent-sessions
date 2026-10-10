@@ -68,6 +68,61 @@ class TestStoreRoundTrip(unittest.TestCase):
         self.assertEqual(len(broken), 1)
 
 
+class TestSharingErrors(unittest.TestCase):
+    """Windows refuses to open a file being replaced, and to replace a file a reader holds open
+    without delete sharing, for a moment: `PermissionError`."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.path = os.path.join(self.tmpdir, 'sessions.json')
+        st = store.Store()
+        st.folded.append('a')
+        store.save(st, path=self.path)
+        self.real_read = store._read
+        self.real_replace = os.replace
+        self.real_retry = store.SHARING_RETRY_SECONDS
+
+    def tearDown(self):
+        store._read = self.real_read
+        store.os.replace = self.real_replace
+        store.SHARING_RETRY_SECONDS = self.real_retry
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def refuse(self, times, real):
+        state = {'left': times}
+
+        def op(*args):
+            if state['left'] != 0:
+                state['left'] -= 1
+                raise PermissionError(13, 'in use')
+            return real(*args)
+        return op
+
+    def test_a_refused_read_is_tried_again(self):
+        store._read = self.refuse(3, self.real_read)
+        self.assertEqual(store.load(path=self.path).folded, ['a'])
+
+    def test_a_file_that_stays_refused_is_not_moved_aside(self):
+        store.SHARING_RETRY_SECONDS = 0.05
+        store._read = self.refuse(-1, self.real_read)
+        self.assertEqual(store.load(path=self.path), store.Store())
+        self.assertEqual(os.listdir(self.tmpdir), ['sessions.json'])
+
+    def test_a_writer_does_not_save_over_a_file_it_could_not_read(self):
+        store.SHARING_RETRY_SECONDS = 0.05
+        store._read = self.refuse(-1, self.real_read)
+        with self.assertRaises(PermissionError):
+            store.update(lambda st: st.folded.append('b'), path=self.path)
+        store._read = self.real_read
+        self.assertEqual(store.load(path=self.path).folded, ['a'])
+
+    def test_a_refused_replace_is_tried_again(self):
+        store.os.replace = self.refuse(2, self.real_replace)
+        store.update(lambda st: st.folded.append('b'), path=self.path)
+        self.assertEqual(store.load(path=self.path).folded, ['a', 'b'])
+        self.assertEqual(sorted(os.listdir(self.tmpdir)), ['sessions.json'])
+
+
 class TestArchiveAndFold(unittest.TestCase):
     def test_archive_is_idempotent(self):
         st = store.Store()

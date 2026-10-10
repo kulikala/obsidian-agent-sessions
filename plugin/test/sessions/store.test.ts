@@ -15,7 +15,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildSync } from "esbuild";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { emptyStore, loadStore, migrateFromMarkdown, StoreLockError, updateStore } from "../../src/sessions/store";
+import { emptyStore, loadStore, migrateFromMarkdown, renameReplacing, StoreLockError, updateStore } from "../../src/sessions/store";
 
 const here = fileURLToPath(new URL(".", import.meta.url));
 const storeSrcPath = join(here, "..", "..", "src", "sessions", "store.ts");
@@ -97,6 +97,69 @@ describe("loadStore / updateStore round-trip", () => {
 		expect(loadStore(storePath)).toEqual(emptyStore());
 		const broken = readdirSync(dir).filter((n) => n.startsWith("sessions.json.broken-"));
 		expect(broken).toHaveLength(1);
+	});
+});
+
+describe("renameReplacing", () => {
+	const fail = (code: string) => Object.assign(new Error(code), { code });
+
+	it("tries again while the target is held open (Windows sharing errors)", () => {
+		const errors = [fail("EPERM"), fail("EACCES"), fail("EBUSY")];
+		const calls: string[] = [];
+		const naps: number[] = [];
+		renameReplacing(
+			"a.tmp",
+			"a.json",
+			(from, to) => {
+				calls.push(`${from}->${to}`);
+				const err = errors.shift();
+				if (err) {
+					throw err;
+				}
+			},
+			(ms) => naps.push(ms)
+		);
+		expect(calls).toHaveLength(4);
+		expect(naps).toHaveLength(3);
+	});
+
+	it("throws any other error at once", () => {
+		let calls = 0;
+		expect(() =>
+			renameReplacing(
+				"a.tmp",
+				"a.json",
+				() => {
+					calls++;
+					throw fail("ENOENT");
+				},
+				() => undefined
+			)
+		).toThrow("ENOENT");
+		expect(calls).toBe(1);
+	});
+
+	it("gives up with the last error once the retry time is over", () => {
+		let calls = 0;
+		const start = Date.now();
+		expect(() =>
+			renameReplacing(
+				"a.tmp",
+				"a.json",
+				() => {
+					calls++;
+					throw fail("EPERM");
+				},
+				(ms) => {
+					const until = Date.now() + ms * 10;
+					while (Date.now() < until) {
+						// spin
+					}
+				}
+			)
+		).toThrow("EPERM");
+		expect(calls).toBeGreaterThan(1);
+		expect(Date.now() - start).toBeLessThan(3000);
 	});
 });
 
