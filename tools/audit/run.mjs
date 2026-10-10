@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // The audit before a push or a release: privacy and secrets in the tree and in every commit about
 // to be pushed, the commit message rules, the language rule, the locales, the versions, the
-// documents' links, leftover debugging, and the build and tests.
+// documents' links, leftover debugging, Obsidian's review checks (eslint), and the build and tests.
 //
 //   node tools/audit/run.mjs [--range A..B] [--rev REV] [--skip-tests] [--only a,b]
 //
@@ -16,6 +16,7 @@ import { checkBuild } from "./lib/checks/build.mjs";
 import { checkCommits } from "./lib/checks/commits.mjs";
 import { checkDocs } from "./lib/checks/docs.mjs";
 import { checkI18n } from "./lib/checks/i18n.mjs";
+import { checkLint } from "./lib/checks/lint.mjs";
 import { checkTree, loadDenylist } from "./lib/checks/tree.mjs";
 import { checkVersions } from "./lib/checks/versions.mjs";
 import { git, gitText, openTree } from "./lib/git.mjs";
@@ -23,13 +24,13 @@ import { localNames, originOwner, privacyContext } from "./lib/privacy.mjs";
 import { Report } from "./lib/report.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const CHECKS = ["tree", "commits", "i18n", "versions", "docs", "build"];
+const CHECKS = ["tree", "commits", "i18n", "versions", "docs", "lint", "build"];
 
 const USAGE = `usage: node tools/audit/run.mjs [--range A..B] [--rev REV] [--skip-tests] [--only CHECKS] [--repo DIR]
 
   --range A..B    the commits to check (default origin/main..HEAD, or ..REV); "none" skips them
   --rev REV       check the tree of this commit instead of the working tree (implies --skip-tests)
-  --skip-tests    leave out the build, tsc, vitest and unittest
+  --skip-tests    leave out eslint, the build, tsc, vitest and unittest
   --only CHECKS   comma-separated, from: ${CHECKS.join(", ")}
   --repo DIR      the repository (default: the one this script is in)
 
@@ -108,6 +109,13 @@ function main() {
 	if (want("docs")) {
 		const { docs, links } = checkDocs({ tree, config, report });
 		report.ran("docs", `${docs} documents, ${links} relative links`);
+	}
+	if (want("lint")) {
+		if (args.skipTests || args.rev) report.skipped("lint", args.rev ? "--rev" : "--skip-tests");
+		else {
+			checkLint({ repo, report, log });
+			report.ran("lint");
+		}
 	}
 	if (want("build")) {
 		if (args.skipTests || args.rev) report.skipped("build", args.rev ? "--rev" : "--skip-tests");

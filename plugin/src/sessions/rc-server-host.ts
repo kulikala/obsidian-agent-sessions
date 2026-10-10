@@ -133,7 +133,8 @@ async function launch(plugin: AgentSessionsPlugin, mode: RcPermissionMode): Prom
 			id_env: false,
 		});
 		if (!res.ok && res.error !== "exists") {
-			throw new Error(t("error.startFailed", { error: String(res.message ?? res.error ?? "unknown") }));
+			const detail = typeof res.message === "string" ? res.message : (res.error ?? "unknown");
+			throw new Error(t("error.startFailed", { error: detail }));
 		}
 		return findRcServer(((await client.list()).sessions as DaemonSession[] | undefined) ?? []);
 	} finally {
@@ -183,7 +184,7 @@ async function watch(plugin: AgentSessionsPlugin, onOutput: (text: string) => vo
 
 function psLinks(): Promise<string> {
 	return new Promise((resolve, reject) => {
-		execFile("ps", ["-A", "-o", "pid=,ppid="], { maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => {
+		execFile("ps", ["-A", "-o", "pid=,ppid="], { maxBuffer: 8 * 1024 * 1024 }, (err: Error | null, stdout) => {
 			if (err) {
 				reject(err);
 			} else {

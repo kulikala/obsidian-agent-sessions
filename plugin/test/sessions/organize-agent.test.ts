@@ -78,17 +78,22 @@ describe("codexMcpServers", () => {
 	});
 });
 
+interface OpencodeConfig {
+	provider?: unknown;
+	agent: Record<string, { permission: Record<string, string> }>;
+}
+
 describe("headlessEnv", () => {
 	it("defines the OpenCode agent with every permission denied", () => {
 		const env = headlessEnv("opencode", { PATH: "/bin" });
 		expect(env.PATH).toBe("/bin");
-		const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT ?? "");
+		const config = JSON.parse(env.OPENCODE_CONFIG_CONTENT ?? "") as OpencodeConfig;
 		expect(config.agent[OPENCODE_HEADLESS_AGENT].permission).toEqual({ "*": "deny", external_directory: "deny" });
 	});
 
 	it("keeps a config the user passes the same way, and replaces their agent of that name", () => {
 		const user = JSON.stringify({ provider: { p: {} }, agent: { mine: {}, [OPENCODE_HEADLESS_AGENT]: { permission: { "*": "allow" } } } });
-		const config = JSON.parse(headlessEnv("opencode", { OPENCODE_CONFIG_CONTENT: user }).OPENCODE_CONFIG_CONTENT ?? "");
+		const config = JSON.parse(headlessEnv("opencode", { OPENCODE_CONFIG_CONTENT: user }).OPENCODE_CONFIG_CONTENT ?? "") as OpencodeConfig;
 		expect(config.provider).toEqual({ p: {} });
 		expect(Object.keys(config.agent)).toEqual(["mine", OPENCODE_HEADLESS_AGENT]);
 		expect(config.agent[OPENCODE_HEADLESS_AGENT].permission["*"]).toBe("deny");

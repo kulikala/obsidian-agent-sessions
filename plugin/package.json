@@ -9,6 +9,7 @@
     "dev": "node esbuild.config.mjs",
     "test": "vitest run",
     "typecheck": "tsc -noEmit -skipLibCheck",
+    "lint": "eslint --max-warnings 0 .",
     "version": "node version-bump.mjs && git add manifest.json ../manifest.json ../versions.json"
   },
   "dependencies": {
@@ -18,11 +19,15 @@
     "@xterm/xterm": "^5.5.0"
   },
   "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@eslint/json": "0.14.0",
     "@types/node": "^22.10.0",
-    "builtin-modules": "^4.0.0",
     "esbuild": "^0.24.0",
+    "eslint": "9.39.5",
+    "eslint-plugin-obsidianmd": "0.4.2",
     "obsidian": "latest",
     "typescript": "^5.7.0",
+    "typescript-eslint": "8.70.1",
     "vitest": "^2.1.0"
   },
   "repository": {

@@ -21,7 +21,7 @@ interface Fixture {
 
 // Written by `test/fixtures/make-activity-fixture.py` from the program's own join, so what is
 // compared here is the plugin's join against `join_turns` + `clip_spans`.
-const fixture: Fixture = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "fixtures", "activity-equivalence.json"), "utf8"));
+const fixture: Fixture = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "fixtures", "activity-equivalence.json"), "utf8")) as Fixture;
 
 const meta = { agent: "claude", name: null, label: null, category: null, child: false };
 const raw = (id: string, runs: [number, number, number | null][], turns: [number, string][] = []): RawSession => ({
@@ -233,7 +233,6 @@ describe("speed", () => {
 			}
 			best = Math.min(best, (performance.now() - t0) / 4);
 		}
-		console.log(`activity: building a 300-session week for one gap takes ${best.toFixed(1)} ms`);
 		expect(best).toBeLessThan(250);
 	});
 });

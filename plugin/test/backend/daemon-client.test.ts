@@ -63,7 +63,7 @@ function startMockServer(
 			socket.on("data", (chunk) => {
 				for (const frame of decoder.feed(chunk)) {
 					if (frame.kind !== "J") continue;
-					const { op, seq, ...args } = JSON.parse(frame.payload.toString("utf8"));
+					const { op, seq, ...args } = JSON.parse(frame.payload.toString("utf8")) as Record<string, unknown> & { op: string; seq: number };
 					const result = handle(op, args, socket);
 					const response = Buffer.from(JSON.stringify({ ok: true, seq, ...(result as object) }), "utf8");
 					socket.write(encodeFrame("J", response));
@@ -110,7 +110,7 @@ describe("DaemonClient", () => {
 				socket.on("data", (chunk) => {
 					for (const frame of decoder.feed(chunk)) {
 						if (frame.kind !== "J") continue;
-						const { op, seq } = JSON.parse(frame.payload.toString("utf8"));
+						const { op, seq } = JSON.parse(frame.payload.toString("utf8")) as { op: string; seq: number };
 						const write = () => socket.write(encodeFrame("J", Buffer.from(JSON.stringify({ ok: true, seq, op }))));
 						if (op === "hello") {
 							setTimeout(write, 20);

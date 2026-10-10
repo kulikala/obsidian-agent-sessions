@@ -62,6 +62,8 @@ jobs:
 
       - run: npm ci
       - run: npm run typecheck
+      # The checks Obsidian's community plugin review runs (eslint-plugin-obsidianmd).
+      - run: npm run lint
       - run: npm test
 
   # The smoke test's host side (tools/smoke): its pure helpers, with Node's built-in runner.

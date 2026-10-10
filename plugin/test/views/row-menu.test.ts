@@ -24,12 +24,12 @@ describe("rowMenuGroups", () => {
 	});
 
 	it("shows change model disabled for other agents", () => {
-		const groups = rowMenuGroups({ agent: "codex", daemon: true } as never, state);
+		const groups = rowMenuGroups({ agent: "codex", daemon: true }, state);
 		expect(groups[1][0]).toEqual({ id: "changeModel", enabled: false });
 	});
 
 	it("keeps the disabled states", () => {
-		const groups = rowMenuGroups({ agent: "claude", daemon: true } as never, { categorizable: false, justCompacted: true, canRestart: false });
+		const groups = rowMenuGroups({ agent: "claude", daemon: true }, { categorizable: false, justCompacted: true, canRestart: false });
 		const flat = Object.fromEntries(groups.flat().map((e) => [e.id, e.enabled]));
 		expect(flat).toMatchObject({ moveToCategory: false, suggestName: true, compact: false, restartSession: false, changeModel: true });
 	});

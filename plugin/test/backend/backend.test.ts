@@ -328,7 +328,8 @@ describe("withBinDirOnPath (a version-manager-resolved binary needs its own dir 
 	});
 
 	it("sets PATH to just bin's directory when there was none", () => {
-		const env = withBinDirOnPath({} as Record<string, string>, "/usr/local/bin/codex");
+		const base: Record<string, string> = {};
+		const env = withBinDirOnPath(base, "/usr/local/bin/codex");
 		expect(env.PATH).toBe("/usr/local/bin");
 	});
 

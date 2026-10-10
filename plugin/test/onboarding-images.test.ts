@@ -7,7 +7,8 @@ import { ONBOARDING_SCENES } from "../src/ui/onboarding-model";
 const REPO = resolve(__dirname, "..", "..");
 
 /** The shooting tool's scene reader, loaded by path: it lives outside the plugin's TypeScript project. */
-async function loadScenes(): Promise<{ LANGUAGES: string[]; readOnboardingScenes(): string[] }> {
+async function loadScenes(): Promise<{ LANGUAGES: string[]; readOnboardingScenes: () => string[] }> {
+	// eslint-disable-next-line no-unsanitized/method -- the module path is a fixed repo-relative file, not user input
 	return (await import(pathToFileURL(join(REPO, "tools", "screenshots", "scenes.mjs")).href)) as never;
 }
 

@@ -14,12 +14,14 @@ How to build, test, shoot screenshots, add a language, audit before a push, and 
 
 ```sh
 cd plugin && npm install
-npm test && npm run typecheck && npm run build   # plugin (vitest, tsc, esbuild)
+npm test && npm run typecheck && npm run lint && npm run build   # plugin (vitest, tsc, eslint, esbuild)
 AGENT_SESSIONS_BIN=$PWD/../bin/agent-sessions npm test   # also run the tests that exercise a real daemon
 
 cd ..
 python3 -W error -m unittest discover -s tests -t .   # Python (standard library only)
 ```
+
+`npm run lint` runs the checks Obsidian's community plugin review applies: [`eslint-plugin-obsidianmd`](https://github.com/obsidianmd/eslint-plugin)'s `recommendedWithLocalesEn` set (the guidelines' rules, typescript-eslint's type-checked rules and sentence case, including the English locale) over the source, the tests, `manifest.json` and `LICENSE`. Any error or warning fails. The project's settings are in `plugin/eslint.config.mjs`: the names the sentence-case check keeps as written (agents, models, programs, and the labels a sentence refers to), the strings it leaves out (fragments set inside another sentence, command lines, paths, the prompts sent to an agent), the one deprecated call the built-in editor needs (`execCommand("insertText")`, for undo), and the popout-window rules turned off for the tests, which run in Node.
 
 Beyond the unit tests, a smoke test drives the daemon, CLI and hooks inside a running Obsidian with a fake agent on a virtual machine per supported OS (`tools/smoke`), and a short UI checklist is run by hand before a release. How to run each, and the extra checks for WSLg, is in [`testing.md`](testing.md). The reasoning behind the design choices, including the platform scope, is in [`principles.md`](principles.md).
 
@@ -52,6 +54,7 @@ It prints each failure with its place (`file:line`, or the commit) and how to fi
 - **Versions.** The two manifests differ; `package.json`, `package-lock.json` or `versions.json` disagree with the manifest's version; `minAppVersion` is missing; a what's-new entry is newer than the version.
 - **Docs.** A relative link, anchor or picture in the READMEs, `docs/*.md` or a tool's README that does not resolve; `README.md` and `README.ja.md` with different sections, pictures or links ([`readme-guide.md`](readme-guide.md)).
 - **Hygiene.** `console.log`/`debug`/`trace` or `debugger` in `plugin/src`, `.only(` in a test, a file over 1 MB outside `docs/images` and `docs/onboarding`.
+- **Lint.** `npm run lint` in `plugin/` reports anything ([Build and test](#build-and-test)). Needs `npm ci` in `plugin/` first; `--skip-tests` leaves it out.
 - **Build.** `esbuild` (into a scratch file, never `plugin/main.js`), `tsc`, `vitest` and the Python suite. Needs `npm ci` in `plugin/` first.
 
 The lists the checks use, and why each entry is there, are in `tools/audit/config.json`. A finding in a commit that is already written and stays as it is goes into `tools/audit/accepted.json` (`commit`, `checks`, `why`); it is then reported as a warning.
@@ -62,7 +65,7 @@ To run the audit on every `git push`, link the hook once per clone, from the rep
 ln -s ../../tools/audit/pre-push "$(git rev-parse --git-common-dir)/hooks/pre-push"
 ```
 
-It audits the commits each push sends (a new branch: those not on `origin/main`). `AUDIT_SKIP_TESTS=1 git push` leaves out the build and suites; `git push --no-verify` skips the hook.
+It audits the commits each push sends (a new branch: those not on `origin/main`). `AUDIT_SKIP_TESTS=1 git push` leaves out eslint, the build and suites; `git push --no-verify` skips the hook.
 
 CI runs the static checks on every push and pull request (the `audit` job in `.github/workflows/test.yml`), on the commits that push or pull request brings.
 

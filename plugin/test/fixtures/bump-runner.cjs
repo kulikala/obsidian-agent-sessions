@@ -1,6 +1,7 @@
 // One side of two processes hammering updateStore concurrently. Appends `count`
 // entries to `folded`.
 // argv: [bundlePath, storePath, tag, count]
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- CommonJS child-process script; the bundle path arrives as an argument
 const { updateStore } = require(process.argv[2]);
 const storePath = process.argv[3];
 const tag = process.argv[4];

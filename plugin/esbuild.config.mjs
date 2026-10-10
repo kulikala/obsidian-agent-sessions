@@ -4,8 +4,9 @@ import { createHash } from "node:crypto";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import builtins from "builtin-modules";
+import { builtinModules } from "node:module";
 
+const builtins = builtinModules.filter((m) => !m.startsWith("node:"));
 const mode = process.argv[2];
 const production = mode === "production";
 // `dev` builds once, with the development flag on, and exits; no argument builds the same way and keeps

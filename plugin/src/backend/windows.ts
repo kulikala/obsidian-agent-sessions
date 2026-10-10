@@ -150,7 +150,7 @@ export function shimInShortDir(shim: string, shortDir: string): string {
 function run(cmd: string, args: string[], timeoutMs: number, env?: NodeJS.ProcessEnv, verbatim?: boolean): Promise<string> {
 	return new Promise((resolve, reject) => {
 		const options = { encoding: "utf8" as const, timeout: timeoutMs, windowsHide: true, env, windowsVerbatimArguments: verbatim };
-		execFile(cmd, args, options, (err, stdout) => {
+		execFile(cmd, args, options, (err: Error | null, stdout) => {
 			if (err) reject(err);
 			else resolve(stdout);
 		});

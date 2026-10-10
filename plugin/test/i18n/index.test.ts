@@ -125,7 +125,7 @@ describe("t (plural forms)", () => {
 		for (const lang of allLangs()) {
 			setLang(lang);
 			for (const key of Object.keys(en) as MessageKey[]) {
-				const out = t(key, new Proxy({}, { has: () => true, get: () => 1 }) as Record<string, number>);
+				const out = t(key, new Proxy({}, { has: () => true, get: () => 1 }));
 				expect(out).not.toMatch(/\{\w+\|/);
 			}
 		}

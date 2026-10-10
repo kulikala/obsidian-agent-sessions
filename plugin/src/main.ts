@@ -101,7 +101,7 @@ import { ConfirmModal, NewSessionModal } from "./ui/modals";
 import { AGENT_ICON_ID } from "./ui/icons";
 import { registerAgentIcons } from "./ui/register-icons";
 import { clearedName, sessionDisplayName } from "./sessions/name";
-import { dialogHeaderSpec } from "./ui/dialog-header";
+import { dialogHeaderSpec, markDestructive } from "./ui/dialog-header";
 import type { SessionTarget } from "./ui/dialog-header-model";
 import { restartDecision, type RestartDecision } from "./sessions/restart";
 import { resolveRowStatus } from "./sessions/terminal-status";
@@ -3036,7 +3036,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		const row = this.index.sessions.get(id);
 		const name = sessionDisplayName({ name: row?.name, label: row?.label, agent: row?.agent ?? "claude", id });
 		const notice = new Notice(t("notice.waitingForInput", { name }), 8000);
-		notice.noticeEl.addEventListener("click", () => void this.openSession(id));
+		notice.messageEl.addEventListener("click", () => void this.openSession(id));
 	}
 
 	private scheduleCleanupExited(): void {
@@ -3171,6 +3171,10 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 
 	/** Before Obsidian 1.13: the same sections, each under a heading row. */
 	display(): void {
+		this.renderSections();
+	}
+
+	private renderSections(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 		for (const section of this.sections()) {
@@ -3198,7 +3202,7 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 		if (requireApiVersion("1.13.0")) {
 			this.update();
 		} else {
-			this.display();
+			this.renderSections();
 		}
 	}
 
@@ -3759,9 +3763,8 @@ class AgentSessionsSettingTab extends PluginSettingTab {
 			button.setButtonText(t("action.reinstall")).onClick(() => plugin.openInstallBackend(() => this.redraw(), undefined, "action.reinstall"))
 		);
 		setting.addButton((button) =>
-			button
+			markDestructive(button)
 				.setButtonText(t("action.uninstallBackend"))
-				.setWarning()
 				.onClick(() => {
 					new ConfirmModal(this.app, t("uninstall.confirm", { dir: bundled.dir }), t("action.uninstallBackend"), () => {
 						void plugin.uninstallBackend().then(

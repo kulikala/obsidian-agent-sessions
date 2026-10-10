@@ -23,7 +23,7 @@ function connect(sockPath: string): Promise<Client> {
 		const responses = new Promise<Record<string, unknown>[]>((done) => {
 			socket.on("data", (chunk: Buffer) => {
 				for (const frame of decoder.feed(chunk)) {
-					received.push(JSON.parse(frame.payload.toString("utf8")));
+					received.push(JSON.parse(frame.payload.toString("utf8")) as Record<string, unknown>);
 				}
 			});
 			socket.on("close", () => done(received));

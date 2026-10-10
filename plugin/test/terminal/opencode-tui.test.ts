@@ -167,7 +167,7 @@ describe("editor_open", () => {
 		applyOpencodeTui(tui, backup, "alt+enter", "ctrl+g");
 		expect(applyOpencodeTui(tui, backup, "enter", "ctrl+g").status).toBe("written");
 		expect(read()).toEqual({ keybinds: { editor_open: "ctrl+g" }, ...line });
-		expect(JSON.parse(readFileSync(backup, "utf8")).managed).toEqual({ editor_open: "ctrl+g" });
+		expect((JSON.parse(readFileSync(backup, "utf8")) as { managed: unknown }).managed).toEqual({ editor_open: "ctrl+g" });
 		applyOpencodeTui(tui, backup, "shift+enter", "ctrl+q");
 		expect(read()).toEqual({ keybinds: { ...managedKeybinds("shift+enter", "ctrl+q") }, ...line });
 		restoreOpencodeTui(backup);

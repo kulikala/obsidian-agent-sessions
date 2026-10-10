@@ -222,7 +222,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"settings.agents.rcMode.auto": "自動（確認しない）",
 	"settings.agents.ollamaModel.name": "Ollama のモデル",
 	"settings.agents.ollamaModel.desc": "「ollama launch opencode --model」に渡すモデル。「ollama list」の一覧から選ぶか、名前を直接入力します。",
-	"settings.agents.ollamaModel.pick": "ollama list から選ぶ…",
+	"settings.agents.ollamaModel.pick": "「ollama list」から選ぶ…",
 	"settings.agents.ollamaModel.placeholder": "例：gpt-oss:20b",
 	"settings.agents.path.name": "実行ファイル",
 	"settings.agents.path.desc": "空欄のままにすると、自動で探します。",

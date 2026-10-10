@@ -94,7 +94,7 @@ export function listenEndpoint(server: net.Server, path: string): Promise<string
 				fs.writeFileSync(tmp, JSON.stringify({ port: address.port, token, pid: process.pid }), "utf8");
 				fs.renameSync(tmp, path);
 			} catch (err) {
-				reject(err);
+				reject(err instanceof Error ? err : new Error(String(err)));
 				return;
 			}
 			resolve(token);
