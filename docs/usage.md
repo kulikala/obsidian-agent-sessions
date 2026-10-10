@@ -19,7 +19,8 @@ How to do things with Agent Sessions, what each screen shows, and what to do whe
 - [Usage and limits](#usage-and-limits)
 - [Stretch your usage limit](#stretch-your-usage-limit)
 - [Agent skills](#agent-skills)
-- [Remote Control](#remote-control)
+- [Remote Control server](#remote-control-server)
+- [Remote Control names](#remote-control-names)
 - [Settings](#settings)
 - [CLI](#cli)
 - [More troubleshooting](#more-troubleshooting)
@@ -108,8 +109,20 @@ The side panel (right sidebar) lists sessions in three groups:
 
 ![The side panel: open tabs, running and recent sessions with state icons and categories, and the Needs input and Needs review counts at the top](onboarding/en/side-panel.png)
 
+- The top row has buttons for a new session, the Session manager and the ⋯ menu, and the **rc** switch for [Remote Control](#remote-control-server) (Claude Code only). The ⋯ menu holds:
+
+  | Item | Does |
+  |---|---|
+  | **Rescan** | reads the agents' files again |
+  | **Open activity calendar** | opens the [Activity calendar](#activity-calendar) |
+  | **Organize names and categories** | opens [Organize names and categories](#organize-names-and-categories) |
+  | **Stretch your usage limit…** | opens [Stretch your usage limit](#stretch-your-usage-limit) |
+  | **Copy the connection link** | copies the Remote Control link; shown while the server is listening |
+  | **Open settings** | opens the plugin's settings |
+
 - Each row has a state icon, an agent icon, a category chip and the name.
-- The **details pane** below shows the selected session's model, effort, connection status, context usage, total tokens and cost, and the last instruction and reply.
+- A Claude Code session with scheduled work (`/loop`, a cron job or a wakeup) shows a badge. Hover it for the tasks, each schedule in words and the next run. Only a session whose process is running counts.
+- The **details pane** below shows the selected session's state (its icon and name, a sentence on what it means, and a tag when it needs input or review), model, effort, connection status, context usage, total tokens and cost, and the last instruction and reply.
 - At the bottom, each enabled agent's 5-hour and 7-day usage bars count down to their reset.
 
 ## Session states
@@ -123,6 +136,7 @@ The tab, the side panel and the Session manager show the same icon, color and mo
 | **Running a command** | the agent is running a shell command |
 | **Waiting for your answer** | a question or permission prompt is open |
 | **Waiting for input** | it finished responding and you have not looked at the tab yet |
+| **Scheduled run finished** | a scheduled run (`/loop`, a cron job or a wakeup) finished while you were elsewhere; opening the tab clears it |
 | **Editing** | the built-in editor is open |
 | **Compacted (context was reset)** | `/compact` ran and nothing has been sent to the model since — renaming, changing the model or effort, `/reload-plugins` or ending and resuming the session keep this state |
 | **Idle** | nothing is happening |
@@ -132,7 +146,7 @@ The tab, the side panel and the Session manager show the same icon, color and mo
 
 - Animated states respect `prefers-reduced-motion`.
 - A small icon next to the state shows the agent (Claude Code, Codex or OpenCode), in one color like the rest of the UI.
-- States are grouped into **Needs input**, **Needs review**, **Running**, **Done**, plus **Archived**. The side panel shows the Needs input and Needs review counts, and the Session manager filters by these groups.
+- States are grouped into **Needs input**, **Needs review** (which includes finished scheduled runs), **Running**, **Done**, plus **Archived**. The side panel shows the Needs input and Needs review counts, and the Session manager filters by these groups.
 
 A Claude Code or Codex session with a `/goal` gets one more icon after its name, in the tab, the side panel and the Session manager. It sits beside the state icon and does not replace it:
 
@@ -357,9 +371,29 @@ Two skills are installed with the program, into the vault only:
 - `agent-sessions` works from a Claude Code, Codex or OpenCode session started in the vault. It reads the 5-hour and 7-day windows and a session's tokens and cost, lists other sessions with their status and last messages, and starts a new session only when you ask (in a folder, with a name, on any enabled agent; Claude Code optionally with Remote Control).
 - `agent-sessions-help` answers in the language you ask in: where something is, how to rename, organize or restart, how to use the built-in editor, what is supported.
 
-## Remote Control
+## Remote Control server
 
-A Claude Code session with Remote Control (started with it, or with "Enable Remote Control for all sessions" on in Claude Code's `/config`) shows the same name in Remote Control (claude.ai and the Claude app) as in Agent Sessions:
+The **rc** switch in the side panel runs one Remote Control server for the vault. While it is on, claude.ai and the Claude app can start Claude Code sessions here. It needs Claude Code to be enabled.
+
+1. Click **rc** in the side panel's top row. The switch pulses while the server starts.
+2. When the switch is on and a notice says Remote Control is listening, open the Claude app or claude.ai/code and choose this vault's folder. Each connection starts a Claude Code session in the vault, and it appears in the side panel.
+3. Click the switch again to stop the server. If sessions started through it are working, you are asked first, because stopping interrupts them.
+
+Right-click the switch to open the server's terminal. **Copy the connection link** in the side panel's ⋯ menu copies the link while the server is listening.
+
+| Switch | Means |
+|---|---|
+| off | the server is not running |
+| pulsing | the server is starting |
+| on | the server is listening |
+| on, in the warning color | the server has stopped; click to start it again, and sessions from the last four hours come back |
+
+- The switch is off until you click it. Loading Obsidian, rescanning and the server ending never start it.
+- The server runs `claude remote-control --spawn=same-dir --permission-mode auto` in the vault folder and stays connected to Anthropic. Sessions started from claude.ai or the Claude app run in auto permission mode when Claude Code accepts it, and in its default mode otherwise.
+
+## Remote Control names
+
+Separately from the server, a Claude Code session with Remote Control (started with it, or with "Enable Remote Control for all sessions" on in Claude Code's `/config`) shows the same name in Remote Control (claude.ai and the Claude app) as in Agent Sessions:
 
 - A session named when you create it starts with that name, so its Remote Control session is created under it.
 - Renaming a session sends `/rename`, which renames its Remote Control session too. For a session that is not running, Agent Sessions starts it in the background, waits for Remote Control to connect, renames it and ends it again.

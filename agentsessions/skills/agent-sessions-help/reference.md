@@ -13,7 +13,7 @@ Agent Sessions runs Claude Code, Codex and OpenCode sessions as terminal tabs in
 ## Where things are
 
 - Ribbon icon "Agent Sessions" (list icon) opens the side panel. The same is the command "Open session list / 一覧を開く".
-- Side panel (right sidebar): a list of sessions, a details pane, and the 5-hour/7-day usage bars. Its top row has three buttons: `+` (New session / 新規セッション), the grid icon (Session manager / セッションマネージャー) and `⋯` (menu: Rescan / 再走査, Organize names and categories / セッション名とカテゴリを整理, Open settings / 設定を開く).
+- Side panel (right sidebar): a list of sessions, a details pane, and the 5-hour/7-day usage bars. Its top row has three buttons: `+` (New session / 新規セッション), the grid icon (Session manager / セッションマネージャー) and `⋯` (menu: Rescan / 再走査, Open activity calendar / 稼働カレンダーを開く, Organize names and categories / セッション名とカテゴリを整理, Stretch your usage limit… / 利用枠を増やす…, Copy the connection link / 接続用のリンクをコピー while the Remote Control server is listening, Open settings / 設定を開く), and a switch labelled `rc` (Claude Code only; see Remote Control server below).
 - Session manager: a tab in the main area with the full session tree and the usage analytics. Open it from the side panel's grid button or the command "Session manager / セッションマネージャー". Opening it never starts a session.
 - Terminal tab: one session per Obsidian tab. Move, split or pin it like any tab.
 - Commands (command palette, shown as "Agent Sessions: ..."):
@@ -47,7 +47,7 @@ A walkthrough with pictures: it opens by itself on first install and, after an u
 
 - Closing it keeps the place; the next start shows a notice, and "Continue the welcome guide / ようこそガイドの続きから" (command palette or settings) resumes. "Start the welcome guide from the beginning / ようこそガイドを最初から始める" runs it again.
 - With Codex or OpenCode only the tab-switch step is offered in the hands-on part.
-- Settings: "Show the welcome guide after updates / アップデート後にようこそガイドを表示" stops it reopening; "Load the guide's pictures from GitHub / ガイドの図を GitHub から読み込む" turns the pictures off (descriptions are shown instead). The pictures are the only thing the plugin fetches from the network.
+- Settings: "Show the welcome guide after updates / アップデート後にようこそガイドを表示" stops it reopening; "Load the guide's pictures from GitHub / ガイドの図を GitHub から読み込む" turns the pictures off (descriptions are shown instead). The pictures are the only thing the plugin itself fetches from the network; the Remote Control server (see Privacy) is a Claude Code process that connects to Anthropic.
 
 ## Start and resume a session
 
@@ -113,12 +113,22 @@ Change model, Restart session and End session appear for running sessions (held 
 
 - Side panel sections: "Open tabs / 開いているタブ", "Running / 起動中" (held by the daemon, no tab), "Recent / 最近" (the number shown is Settings -> "Recent count (side panel) / 最近の件数（サイドパネル）", default 10). Each row: state icon, agent icon, category chip, name, last update, a mark if a tab exists, `⋯`.
 - A badge on the list heading counts "Needs input / 入力待ち" and "Needs review / レビュー待ち"; clicking it flashes those rows.
-- Hovering a row for a moment shows its details (model, effort, context use, tokens, cost, last prompt and reply) in the details pane.
-- States, shared by the tab, the side panel and the manager: Connecting / 接続中; Working / 処理中; Running a command / コマンド実行中; Waiting for your answer / 回答待ち (a question or permission prompt in the agent); Waiting for input / 指示待ち (finished, tab not yet looked at); Compacted / compact 済み; Editing / 編集中 (built-in editor open); Idle / 待機; Not connected / 未接続 (tab restored but not yet brought to the front); Exited / 終了; Error / エラー.
+- Hovering a row for a moment shows its details (the session's state with a sentence on what it means and, when it needs input or review, a tag; model, effort, context use, tokens, cost, last prompt and reply) in the details pane.
+- A Claude Code session with scheduled work (`/loop`, a cron job or a wakeup) and a running process shows a schedule badge on its row; hover it for the tasks, each schedule in words and the next run.
+- States, shared by the tab, the side panel and the manager: Connecting / 接続中; Working / 処理中; Running a command / コマンド実行中; Waiting for your answer / 回答待ち (a question or permission prompt in the agent); Waiting for input / 指示待ち (finished, tab not yet looked at); Scheduled run finished / 予約実行が完了 (a scheduled run finished while the tab was not in front; it counts as Needs review and clears when the tab is opened); Compacted / compact 済み; Editing / 編集中 (built-in editor open); Idle / 待機; Not connected / 未接続 (tab restored but not yet brought to the front); Exited / 終了; Error / エラー.
 - `/goal` (Claude Code and Codex): an extra icon after the name in the tab, the side panel and the manager, beside the state icon — "Goal active / ゴール進行中" (purple target; breathes while the session works), "Goal met / ゴール達成" (green trophy, until your next prompt; for Codex, the goal marked complete), "Goal judged unreachable / ゴール到達不能と判定" (grey flag, until your next prompt; Claude Code). A Codex goal the user paused shows "Goal paused / ゴール一時停止中" (grey pause sign). One Codex stopped shows the grey flag with its reason: "Goal stalled / ゴール停滞", "Goal stopped at the usage limit / 利用上限でゴール停止", "Goal stopped at its token budget / トークン予算でゴール停止"; `/goal resume` in Codex continues a paused or stopped goal, and its mark stays until then. The tooltip shows the condition and, for Claude Code, the evaluator's reason ("Evaluator / 判定"); the details pane shows them with when the goal was set ("Set … / … に設定"). `/goal clear` removes it; a new `/goal` replaces it. OpenCode sessions show none.
 - Status groups (filter in the Session manager): All / すべて, Needs input / 入力待ち, Needs review / レビュー待ち, Running / 実行中, Done / 完了, Archived / アーカイブ済み.
 - Notification: when a session that is not in front goes from working to waiting, a notice "<name>: waiting for input" appears for 8 seconds; clicking it opens the session. Turn off with Settings -> "Notify when waiting for input / 指示待ちの通知".
 - A row's agent is shown by a small icon (Claude Code, Codex or OpenCode). OpenCode sub-agent sessions and sessions started by `opencode run` are not listed.
+
+## Remote Control server
+
+- The `rc` switch in the side panel's top row (Claude Code only) runs one Remote Control server for the vault: `claude remote-control --spawn=same-dir --permission-mode auto` in the vault folder. While it is on, claude.ai and the Claude app (claude.ai/code) can start Claude Code sessions in this vault; each connection makes a session, which appears in the side panel.
+- Off by default. Only a click turns it on: loading Obsidian or the plugin never starts it. Click again to stop it; if sessions started through it are working, the plugin asks first. Right-click opens the server's terminal.
+- The switch states: off; pulsing (starting); on (listening); on in the warning color (the server stopped; click to start it again, and sessions from the last four hours come back).
+- The server stays connected to Anthropic's servers while it runs. Sessions started from claude.ai or the Claude app run in auto permission mode when Claude Code accepts it, and in its default mode otherwise.
+- `⋯` -> "Copy the connection link / 接続用のリンクをコピー" copies the link while the server is listening.
+- This is separate from the session names that Remote Control shares with Agent Sessions (renaming a session renames its Remote Control session too).
 
 ## Session manager
 
@@ -213,4 +223,4 @@ Through the `agent-sessions` skill (installed in the vault along with this one),
 
 ## Privacy
 
-No network use by the plugin or the program, except the welcome guide's pictures from GitHub (can be turned off). It reads the agents' own files to list sessions and compute usage, writes `~/.agents/sessions/` (daemon socket, logs, caches) and the vault's `.agents/sessions/sessions.json` (names, archive, category colors), and changes only the entries it marked in the agents' settings. Two features send session excerpts, each to an agent CLI under the user's own account and only on a press: "Organize names and categories" after "Suggest", and "Stretch your usage limit" after "Analyze / 解析する" (a masked digest of the range's tasks, at most 60,000 characters per request and at most ten requests, to the same agent and provider the conversations ran on; the run uses an empty folder that is removed afterwards). Full list: README, "Disclosures".
+No network use by the plugin or the program, except the welcome guide's pictures from GitHub (can be turned off) and the Remote Control server. The `rc` switch, off by default and started only by a click, runs `claude remote-control --spawn=same-dir --permission-mode auto` in the vault folder; that process stays connected to Anthropic and starts a session in this vault for each connection from claude.ai or the Claude app, in auto permission mode when Claude Code accepts it. It reads the agents' own files to list sessions and compute usage, writes `~/.agents/sessions/` (daemon socket, logs, caches) and the vault's `.agents/sessions/sessions.json` (names, archive, category colors), and changes only the entries it marked in the agents' settings. Two features send session excerpts, each to an agent CLI under the user's own account and only on a press: "Organize names and categories" after "Suggest", and "Stretch your usage limit" after "Analyze / 解析する" (a masked digest of the range's tasks, at most 60,000 characters per request and at most ten requests, to the same agent and provider the conversations ran on; the run uses an empty folder that is removed afterwards). Full list: README, "Disclosures".
