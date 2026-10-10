@@ -33,4 +33,10 @@ describe("createNameRoute", () => {
 		expect(createNameRoute("codex")).toBe("composer");
 		expect(createNameRoute("opencode")).toBe("pending");
 	});
+
+	it("names a Codex session started with its first message after that turn, not through its queue", () => {
+		expect(createNameRoute("codex", true)).toBe("afterTurn");
+		expect(createNameRoute("claude", true)).toBe("launch");
+		expect(createNameRoute("opencode", true)).toBe("pending");
+	});
 });

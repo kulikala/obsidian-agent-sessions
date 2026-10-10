@@ -211,6 +211,9 @@ const CLEAR_MATCH_MS = 60000;
 /** How long a new, named Codex tab waits for its composer to be on screen and empty before giving
  * up on the `/rename` at start (the check after the link still runs), and how often it looks. */
 const WAIT_CODEX_COMPOSER_MS = 120000;
+/** How long `confirmCodexName` waits for the first turn of a Codex session started with its first
+ * message to end before naming it. */
+const WAIT_CODEX_FIRST_TURN_MS = 30 * 60_000;
 const WAIT_FIRST_MESSAGE_MS = 90000;
 const CODEX_COMPOSER_POLL_MS = 300;
 /** `typeLine`: how long a pasted line gets to show in full, how often it is pasted, how long it
@@ -317,6 +320,9 @@ export default class AgentSessionsPlugin extends Plugin {
 	/** Names given to new Codex sessions at creation, by placeholder id, for the check once the real
 	 * id is linked (`confirmCodexName`). */
 	private codexCreateNames = new Map<string, string>();
+	/** Those of `codexCreateNames` whose session started with its first message: the name goes
+	 * only after that turn (`createNameRoute`'s `afterTurn`). */
+	private codexNamesAfterTurn = new Set<string>();
 	/** Names for new Claude sessions, by id, until their first launch passes them as `--name` (`launchArgv`). */
 	private launchNames = new Map<string, string>();
 	/** First messages and permission modes for new sessions, by id, until their first launch. */
@@ -1579,7 +1585,8 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * typed into its composer as soon as that is on screen and empty (`nameNewCodexSession`) — Codex
 	 * names its thread before the first message, and holds input typed before the thread has started
 	 * until it has — and once the tab is linked, `confirmCodexName` sends it again if Codex's own
-	 * title didn't take it.
+	 * title didn't take it. A Codex session started with its first message is named only by
+	 * `confirmCodexName`, after that turn (`createNameRoute`'s `afterTurn`).
 	 */
 	newSession(
 		name?: string,
@@ -1627,9 +1634,15 @@ export default class AgentSessionsPlugin extends Plugin {
 		if (!name) {
 			return id;
 		}
-		const route = createNameRoute(agent);
+		const route = createNameRoute(agent, Boolean(opts.prompt));
 		if (route === "pending") {
 			// OpenCode has no `/rename`: the name waits here until the session has its real id.
+			return id;
+		}
+		if (route === "afterTurn") {
+			// `confirmCodexName` sends it once the tab is linked and the first turn has ended.
+			this.codexCreateNames.set(id, name);
+			this.codexNamesAfterTurn.add(id);
 			return id;
 		}
 		if (route === "composer") {
@@ -1800,11 +1813,13 @@ export default class AgentSessionsPlugin extends Plugin {
 	 * Once a new Codex tab named at creation is linked to its real id (`resolveAgentSession`):
 	 * waits for its row to show the name, and when Codex's own title didn't take it (the `/rename`
 	 * at start was never sent, or this Codex version dropped it) sends `/rename` once more after
-	 * its turn has ended and its composer is empty. Does nothing when the session was renamed again
-	 * in the meantime (`renameSession` drops the entry).
+	 * its turn has ended and its composer is empty. A session started with its first message gets
+	 * its only `/rename` here, once that turn has ended (`codexNamesAfterTurn`). Does nothing when
+	 * the session was renamed again in the meantime (`renameSession` drops the entry).
 	 */
 	private async confirmCodexName(placeholderId: string, id: string): Promise<void> {
 		const name = this.codexCreateNames.get(placeholderId);
+		const afterTurn = this.codexNamesAfterTurn.delete(placeholderId);
 		if (name === undefined) {
 			return;
 		}
@@ -1825,7 +1840,8 @@ export default class AgentSessionsPlugin extends Plugin {
 			if (named()) {
 				return;
 			}
-			if (!(await this.waitCodexSettled(id))) {
+			const renamed = (): boolean => this.codexCreateNames.get(id) !== name;
+			if (!(await this.waitCodexSettled(id, afterTurn ? WAIT_CODEX_FIRST_TURN_MS : WAIT_CODEX_COMPOSER_MS, renamed))) {
 				return;
 			}
 			await this.index.rescan([id]);
@@ -1851,9 +1867,14 @@ export default class AgentSessionsPlugin extends Plugin {
 	/**
 	 * Waits until the Codex tab of `id` has ended its turn and its composer is empty. Codex reports
 	 * no status of its own to the registry; its tab does (the title's spinner, `titleStatus`).
-	 * `false` when that takes longer than `WAIT_CODEX_COMPOSER_MS`; `true` at once without a tab.
+	 * `false` when that takes longer than `timeoutMs` or `cancelled` turns true; `true` at once
+	 * without a tab.
 	 */
-	private async waitCodexSettled(id: string): Promise<boolean> {
+	private async waitCodexSettled(
+		id: string,
+		timeoutMs = WAIT_CODEX_COMPOSER_MS,
+		cancelled: () => boolean = () => false
+	): Promise<boolean> {
 		const view = this.findTerminalView(id);
 		if (!view) {
 			return true;
@@ -1862,8 +1883,11 @@ export default class AgentSessionsPlugin extends Plugin {
 			const status = this.terminalStatuses.get(id);
 			return status !== "working" && status !== "asking" && status !== "connecting" && view.promptHasDraft() === false;
 		};
-		const deadline = Date.now() + WAIT_CODEX_COMPOSER_MS;
+		const deadline = Date.now() + timeoutMs;
 		while (!settled() && Date.now() < deadline) {
+			if (cancelled()) {
+				return false;
+			}
 			await sleep(CODEX_COMPOSER_POLL_MS);
 		}
 		return settled();
