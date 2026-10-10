@@ -3,7 +3,7 @@
 # Agent Sessions
 
 <!-- intro:start (タグライン、導入、「こんな人のために」は 1 つのまとまりです) -->
-**仕事を本物のエージェントに預けて、閉じて、戻る。**
+**ノートの隣に置く、ターミナルエージェントの作業台。**
 
 [![Release](https://img.shields.io/github/v/release/kulikala/obsidian-agent-sessions?style=flat-square)](https://github.com/kulikala/obsidian-agent-sessions/releases)
 [![License](https://img.shields.io/github/license/kulikala/obsidian-agent-sessions?style=flat-square)](LICENSE)
@@ -22,7 +22,7 @@
 
 ## こんな人のために
 
-Claude Code・Codex・OpenCode を使っている、または入れる気のある人へ。ノートの隣から仕事を預けたい人。
+書類をエージェントと書く人へ。案件が何本あっても。
 
 - Claude Code や Codex を一日中使い、設計書・提案書・ノートを書かせている。
 - 複数の案件を並行して回し、どのセッションが自分を待っているかを知りたい。

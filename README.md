@@ -3,7 +3,7 @@
 # Agent Sessions
 
 <!-- intro:start (tagline, introduction and "Who it is for" are one block) -->
-**Hand a job to a real agent. Close the lid, and come back to it.**
+**A workbench for terminal agents, next to your notes.**
 
 [![Release](https://img.shields.io/github/v/release/kulikala/obsidian-agent-sessions?style=flat-square)](https://github.com/kulikala/obsidian-agent-sessions/releases)
 [![License](https://img.shields.io/github/license/kulikala/obsidian-agent-sessions?style=flat-square)](LICENSE)
@@ -22,7 +22,7 @@ A helper program and hooks in the agents' settings make this work; both are list
 
 ## Who it is for
 
-For people who already run (or are ready to install) Claude Code, Codex or OpenCode, and want to hand work over from next to their notes.
+For people who write documents with agents, several projects at a time.
 
 - You use Claude Code or Codex all day, to draft specs, proposals and notes.
 - You keep several projects going at once and want to see which session needs you.
