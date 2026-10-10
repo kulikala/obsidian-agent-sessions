@@ -309,7 +309,7 @@ For when your usage limit runs out too fast: has an agent read your recent work 
 
 1. Open the ⋯ menu of the side panel or the Session manager and choose **Stretch your usage limit…**, or run **Stretch your usage limit…** from the command palette.
 2. The dialog reads the records on this machine (nothing is sent) and lists the nine checks, with the range they cover ("Covers 42 sessions from the last 7 days (28.6M tokens)."). Codex and OpenCode are analysed for the provider their conversations used most.
-3. Press **Analyze**. **Details**, below it, says what is sent, how much and in how many requests, to which model, and which usage limit it counts toward; **Show what is sent** in it shows the exact text of every request.
+3. Press **Analyze**, at the bottom of the dialog (it stays in view while the list scrolls). **Details**, above it, says what is sent, how much and in how many requests, to which model, and which usage limit it counts toward; **Show what is sent** in it shows the exact text of every request.
 4. Every check shows **Analyzing** until the agent's reply is read ("Checking all 9 areas"). A range too large for one request is sent in several, by period ("Read 2 of 5 parts"); a check turns to **Issue found** as soon as one part finds it. The time so far and an estimate are shown; a spinner marks the tab being analysed. **Stop analysis**, or closing the dialog, stops it; nothing of that run is kept.
 5. In the result, click a row marked **Issue found** to open it. On an issue a file or setting can fix, press **Ask the agent to fix it**, check or edit the request, and press **Start**.
 

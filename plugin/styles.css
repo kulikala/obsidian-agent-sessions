@@ -4349,21 +4349,6 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 	gap: var(--size-4-2);
 }
 
-/* The one action of the empty screen. */
-.agent-sessions-efficiency-go {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: var(--size-4-3);
-	padding-block: var(--size-4-2);
-}
-
-.agent-sessions-efficiency-go > button.mod-cta {
-	height: auto;
-	padding: var(--size-4-3) var(--size-4-8);
-	font-size: var(--font-ui-medium);
-}
-
 /* Progress while analysing. */
 .agent-sessions-efficiency-prog {
 	display: flex;
@@ -4486,15 +4471,22 @@ button.agent-sessions-efficiency-disc-head:focus-visible {
 	font-size: var(--font-ui-smaller);
 }
 
-/* The bottom line: a note on the left, one button on the right. */
+/* The bottom line of every screen: a note on the left, its one button on the right (Analyze, Stop
+   analysis, Analyze again). It is pinned to the bottom of the dialog, over the modal's own bottom
+   padding, so the button is always in view and the rows scroll under it. */
 .agent-sessions-efficiency-foot {
+	position: sticky;
+	bottom: calc(-1 * var(--size-4-6));
+	z-index: 1;
 	display: flex;
 	flex-wrap: wrap;
 	align-items: center;
 	justify-content: space-between;
 	gap: var(--size-4-3);
-	padding-top: var(--size-4-6);
+	margin-bottom: calc(-1 * var(--size-4-6));
+	padding-block: var(--size-4-6);
 	border-top: 1px solid var(--background-modifier-border);
+	background-color: var(--modal-background, var(--background-primary));
 }
 
 .agent-sessions-efficiency-foot.is-end {

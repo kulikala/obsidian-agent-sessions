@@ -433,10 +433,20 @@ async function efficiencyScenes(page, box, look) {
 	};
 	await clearNotices(page);
 	await open();
-	await page.waitFor(`document.querySelector('${dialog} .agent-sessions-efficiency-go button')`, { what: "the empty screen" });
+	await page.waitFor(`document.querySelector('${dialog} .agent-sessions-efficiency-foot button.mod-cta')`, { what: "the empty screen" });
 	await capture(page, `efficiency-empty-${theme}`, await dialogClip(page, look, dialog));
+	// The same screen in a window about 440 px wide.
+	const narrow = { ...look, window: { ...look.window, width: 440 } };
+	const shootNarrow = async (name) => {
+		await page.setViewport(440, look.window.height);
+		await sleep(300);
+		await capture(page, name, await dialogClip(page, narrow, dialog));
+		await page.setViewport(look.window.width, look.window.height);
+		await sleep(300);
+	};
+	await shootNarrow(`efficiency-empty-narrow-${theme}`);
 
-	await page.evaluate(`document.querySelector('${dialog} .agent-sessions-efficiency-go button').click()`);
+	await page.evaluate(`document.querySelector('${dialog} .agent-sessions-efficiency-foot button.mod-cta').click()`);
 	await page.waitFor(`document.querySelectorAll('${dialog} .agent-sessions-efficiency-pt.is-running').length >= 8`, { what: "the analysis running" });
 	await capture(page, `efficiency-analyzing-${theme}`, await dialogClip(page, look, dialog));
 
@@ -510,6 +520,8 @@ async function efficiencyScenes(page, box, look) {
 		{ what: "the first part read", timeoutMs: 60_000 }
 	);
 	await capture(page, `efficiency-analyzing-split-${theme}`, await dialogClip(page, look, dialog));
+	// Analysing in a narrow window (the split run lasts long enough to catch it).
+	await shootNarrow(`efficiency-analyzing-narrow-${theme}`);
 	await page.waitFor(`document.querySelector('${dialog} .agent-sessions-efficiency-summary')`, { what: "the split result", timeoutMs: 120_000 });
 	writeJson(box.statePath, { ...JSON.parse(readFileSync(box.statePath, "utf8")), efficiencySplit: false });
 }

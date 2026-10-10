@@ -363,11 +363,6 @@ export class EfficiencyModal extends Modal {
 		if (!hasData(block)) {
 			return;
 		}
-		const go = pane.el.createDiv({ cls: `${CLS}-go` });
-		const analyze = go.createEl("button", { cls: "mod-cta", text: t("efficiency.analyze") });
-		analyze.disabled = !pane.plan || pane.plan.parts.length === 0;
-		analyze.addEventListener("click", () => void this.analyze(pane));
-		go.createDiv({ cls: `${CLS}-sub`, text: estimateText(pane.sent.requests) });
 		this.disclosure(pane, "details", t("efficiency.details"), t("efficiency.details.sub"), (body) => {
 			body.createDiv({ text: t("efficiency.details.lead") });
 			const local = pane.info.local;
@@ -402,6 +397,12 @@ export class EfficiencyModal extends Modal {
 				preview.createEl("pre", { text: prompts.join("\n\n----\n\n") });
 			}
 		});
+		// The action stays in view: the foot is pinned to the bottom of the dialog while the rows scroll.
+		const foot = pane.el.createDiv({ cls: `${CLS}-foot` });
+		foot.createDiv({ cls: `${CLS}-sub`, text: estimateText(pane.sent.requests) });
+		const analyze = foot.createEl("button", { cls: "mod-cta", text: t("efficiency.analyze") });
+		analyze.disabled = !pane.plan || pane.plan.parts.length === 0;
+		analyze.addEventListener("click", () => void this.analyze(pane));
 	}
 
 	// ---- Analyzing -------------------------------------------------------------------------------
