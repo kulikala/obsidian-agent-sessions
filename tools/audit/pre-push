@@ -1,0 +1,36 @@
+#!/bin/sh
+# Git pre-push hook: runs the audit on the commits about to be pushed and on the working tree.
+#
+# Install (once per clone, from the repository root):
+#   ln -s ../../tools/audit/pre-push "$(git rev-parse --git-common-dir)/hooks/pre-push"
+#
+# AUDIT_SKIP_TESTS=1 leaves out the build and the test suites. `git push --no-verify` skips the
+# hook altogether.
+
+root=$(git rev-parse --show-toplevel) || exit 1
+zero=0000000000000000000000000000000000000000
+status=0
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+	# A deleted branch pushes nothing.
+	[ "$local_sha" = "$zero" ] && continue
+	if [ "$remote_sha" = "$zero" ]; then
+		# A new branch: what it adds on top of what the remote already has.
+		if git rev-parse --verify --quiet origin/main >/dev/null; then
+			range="origin/main..$local_sha"
+		else
+			range="$local_sha"
+		fi
+	else
+		range="$remote_sha..$local_sha"
+	fi
+	echo "audit: $local_ref -> $remote_ref ($range)" >&2
+	set -- --range "$range"
+	[ -n "$AUDIT_SKIP_TESTS" ] && set -- "$@" --skip-tests
+	node "$root/tools/audit/run.mjs" "$@" || status=1
+done
+
+if [ "$status" -ne 0 ]; then
+	echo "audit: failed; fix the findings above, or push with --no-verify to skip the audit" >&2
+fi
+exit "$status"
