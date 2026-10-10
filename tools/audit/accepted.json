@@ -1,0 +1,12 @@
+[
+	{
+		"commit": "b4359fdc776f31754e4118d748402f4887ef554c",
+		"checks": ["commits"],
+		"why": "Quotes Japanese UI strings in its message. Kept so the history before the audit is not rewritten."
+	},
+	{
+		"commit": "68b2aead064c2dcc68a6eb6d7f2837a35a750cf5",
+		"checks": ["commits"],
+		"why": "Quotes the Japanese menu label in its message. Kept so the history before the audit is not rewritten."
+	}
+]

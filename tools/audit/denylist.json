@@ -1,0 +1,13 @@
+[
+	{
+		"pattern": "token[ -]efficiency",
+		"flags": "i",
+		"use": "Stretch your usage limit",
+		"why": "The feature is named for what the user gets. \"Token efficiency\" stays an internal name in code and design docs."
+	},
+	{
+		"pattern": "トークン効率",
+		"use": "利用枠を増やす",
+		"why": "The Japanese name of the same feature."
+	}
+]

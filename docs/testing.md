@@ -16,6 +16,7 @@ Agent Sessions is tested at three levels: automated unit tests that run on every
 | Type check | `cd plugin && npm run typecheck` | `tsc -noEmit` |
 | Program (Python) | `python3 -W error -m unittest discover -s tests -t .` | `tests/` (includes `tests/smoke`, the fake agent) |
 | Smoke tool helpers | `node --test "tools/smoke/test/*.test.mjs"` | `tools/smoke/lib` (Node 22+) |
+| Audit | `node tools/audit/run.mjs` | the tree, the commits about to be pushed, and the suites above; see [development.md](development.md#before-pushing-or-releasing) |
 
 `-W error` turns every Python warning into a failure.
 
@@ -27,6 +28,7 @@ CI (`.github/workflows/test.yml`) runs on every push and pull request:
 | `python-windows` | Windows | `tests/windows` (the ConPTY daemon, Windows process handling, and Codex's and OpenCode's process trees, folder matching and SQLite paths), `tests.test_transport` (the loopback transport), `tests.test_paths` and `tests.claude.test_setup`. The rest of the Python suite drives Unix sockets and PTYs directly and assumes Unix. |
 | `plugin` | Linux | `npm ci`, `npm run typecheck`, `npm test` (Node 20) |
 | `smoke-tools` | Linux | `node --check tools/smoke/inject.js` and the smoke tool's unit tests (Node 22) |
+| `audit` | Linux | the audit's unit tests and its static checks on the pushed commits and the tree (Node 22) |
 
 CI does not start Obsidian and does not run the smoke test or the UI checklist.
 
@@ -360,4 +362,5 @@ Before tagging a release:
 2. Re-shoot the guide's pictures: `node tools/screenshots/shoot.mjs --onboarding --plugin-js <path to the release build's main.js>`. Commit only the pictures that changed under `docs/onboarding/<lang>/`.
 3. Run `cd plugin && npx vitest run`; the picture check (every scene has an English and a Japanese picture) must be green.
 4. Run the UI checklist above, including "The guide's pictures match the current UI".
-5. Tag.
+5. Run `node tools/audit/run.mjs` on the commit you are about to tag; it must pass ([development.md](development.md#before-pushing-or-releasing)).
+6. Tag.

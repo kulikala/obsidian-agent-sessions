@@ -4,6 +4,9 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   python:
     strategy:
@@ -13,6 +16,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
@@ -29,6 +34,8 @@ jobs:
       PYTHONUTF8: "1"
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-python@v5
         with:
@@ -44,6 +51,8 @@ jobs:
         working-directory: plugin
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -60,6 +69,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -67,3 +78,38 @@ jobs:
 
       - run: node --check tools/smoke/inject.js
       - run: node --test "tools/smoke/test/*.test.mjs"
+
+  # The pre-push audit's static checks (tools/audit): privacy and secrets in the tree and in the
+  # pushed commits, commit messages, the language rule, the locales, versions and the documents'
+  # links. The build and the suites run in the jobs above.
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: node --test "tools/audit/test/*.test.mjs"
+
+      - name: audit
+        env:
+          BEFORE: ${{ github.event.before }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # The pushed commits: a pull request's own, a push's new ones, or a new branch's since main.
+          if [ -n "$BASE" ]; then
+            range="$BASE..$HEAD_SHA"
+          elif [ -n "$BEFORE" ] && git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            range="$BEFORE..HEAD"
+          elif git rev-parse --verify --quiet origin/main >/dev/null; then
+            range="origin/main..HEAD"
+          else
+            range=none
+          fi
+          node tools/audit/run.mjs --skip-tests --range "$range"

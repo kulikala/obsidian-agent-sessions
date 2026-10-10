@@ -1,0 +1,89 @@
+{
+	"privacy": {
+		"why": "Home folders in examples and tests use made-up names. New ones use alex or sam; the others are short placeholders already in the tests.",
+		"homePlaceholders": [
+			"alex", "sam", "a", "k", "u", "x", "z", "me", "jo", "pat", "jane", "john", "janedo",
+			"someone", "agent", "demo", "tester", "example", "name", "you", "username"
+		],
+		"allowedEmails": [
+			"noreply@anthropic\\.com",
+			"noreply@github\\.com",
+			"\\d+\\+[A-Za-z0-9-]+@users\\.noreply\\.github\\.com",
+			"[^@]+@(?:[A-Za-z0-9-]+\\.)*example\\.(com|org|net)",
+			"[^@]+@[^@]+\\.(example|invalid|test)"
+		]
+	},
+	"secrets": {
+		"why": "Shapes of real credentials. The masker's tests hold made-up ones, so their files are exempt.",
+		"exempt": ["tests/efficiency/test_excerpt.py", "tests/efficiency/test_report.py", "tools/audit/test/**"],
+		"patterns": [
+			{ "name": "an Anthropic API key", "pattern": "sk-ant-[a-z]+\\d*-[A-Za-z0-9_-]{20,}" },
+			{ "name": "an OpenAI-style API key", "pattern": "\\bsk-(?!ant-)(?:proj-)?[A-Za-z0-9_-]{32,}" },
+			{ "name": "a GitHub token", "pattern": "\\bgh[pousr]_[A-Za-z0-9]{30,}|\\bgithub_pat_[A-Za-z0-9_]{30,}" },
+			{ "name": "an AWS access key", "pattern": "\\bAKIA[0-9A-Z]{16}\\b" },
+			{ "name": "a Slack token", "pattern": "\\bxox[abeoprs]-[0-9A-Za-z-]{10,}|\\bxapp-\\d-[0-9A-Za-z-]{10,}" },
+			{ "name": "a Stripe key", "pattern": "\\b[sr]k_(?:live|test)_[0-9A-Za-z]{10,}" },
+			{ "name": "a URL with a password in it", "pattern": "\\b[a-z][a-z0-9+.-]*://[^/\\s:@'\"`]+:(?![<${*\\u2026])[^/\\s@'\"`]+@[^\\s/]" },
+			{ "name": "a Google API key", "pattern": "\\bAIza[0-9A-Za-z_-]{35}\\b" },
+			{ "name": "a private key", "pattern": "-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY" }
+		]
+	},
+	"language": {
+		"why": "Code, comments, docs and commits are English. Japanese is the content of these files.",
+		"japaneseFiles": [
+			{ "path": "plugin/src/i18n/locales/ja.ts", "why": "the Japanese UI strings" },
+			{ "path": "agentsessions/i18n/locales/ja.py", "why": "the Japanese CLI and TUI strings" },
+			{ "path": "README.ja.md", "why": "the Japanese README" },
+			{ "path": "plugin/test/**", "why": "tests of Japanese input, output and formatting" },
+			{ "path": "tests/**", "why": "tests of Japanese input, output and formatting" },
+			{ "path": "tools/*/test/**", "why": "tests of the tools, including this audit's language checks" },
+			{ "path": "tools/screenshots/**", "why": "the made-up sessions shown in the Japanese screenshots" },
+			{ "path": "tools/smoke/inject.js", "why": "types Japanese into the fake agent to check wide characters" },
+			{ "path": "agentsessions/skills/agent-sessions-help/reference.md", "why": "names every UI label in English and Japanese so the agent can answer in either" },
+			{ "path": "tools/audit/*.json", "why": "the audit's own lists name the Japanese they allow and deny" }
+		],
+		"why_words": "The language's own name, as the language menu and the README's language switch show it.",
+		"japaneseWords": ["日本語"],
+		"why_lines": "Elsewhere Japanese may appear only quoted (\"…\", `…`, 「…」), and in code only in a comment. These lines hold Japanese the program itself matches or writes.",
+		"japaneseLines": [
+			{ "path": "plugin/src/backend/windows.ts", "contains": "既にインストール", "why": "matches winget's Japanese output" },
+			{ "path": "plugin/src/sessions/efficiency.ts", "contains": "const NUMBER_RE", "why": "reads Japanese number units" },
+			{ "path": "plugin/src/sessions/efficiency.ts", "contains": "const SCALE", "why": "reads Japanese number units" },
+			{ "path": "plugin/src/sessions/efficiency.ts", "contains": "with a unit (12K, 1.2M, 3万)", "why": "names the units it reads" },
+			{ "path": "plugin/src/sessions/efficiency.ts", "contains": "text.split(", "why": "splits Japanese sentences" },
+			{ "path": "plugin/src/sessions/efficiency.ts", "contains": "return out.reduce(", "why": "joins Japanese sentences" },
+			{ "path": "plugin/src/sessions/name.ts", "contains": "const FULL_WIDTH_COLON_SPACE_RE", "why": "the full-width category separator" },
+			{ "path": "plugin/src/sessions/organize.ts", "contains": "const CJK", "why": "detects CJK names" },
+			{ "path": "plugin/src/sessions/organize.ts", "contains": ".replace(", "why": "strips Japanese punctuation from suggested names" },
+			{ "path": "plugin/src/sessions/tree.ts", "contains": "export const OTHER_GROUP", "why": "a persisted key, kept in Japanese on purpose" },
+			{ "path": "agentsessions/config.py", "contains": "OTHER_GROUP =", "why": "a persisted key, kept in Japanese on purpose" },
+			{ "path": "agentsessions/agents/opencode/plugin_js.py", "contains": "ja: {", "why": "the OpenCode plugin's own status labels" },
+			{ "path": "plugin/src/ui/efficiency-view.ts", "contains": "Japanese 万 and 億", "why": "names the units the dialog writes" }
+		]
+	},
+	"spacing": {
+		"why": "Japanese strings put a half-width space between Japanese and Latin letters. A digit may sit right before a counter or unit (5時間, 1つ); other digit contacts are warnings.",
+		"counters": "つ個件本回枚人行字分秒時日週月年枠番倍割度円歳点章節段位階通名台冊語文問社種"
+	},
+	"userVisible": {
+		"why": "Where the denylist applies: what users read in the plugin, the CLI, the README and the user docs, and what the agent skills say.",
+		"files": [
+			"plugin/src/i18n/locales/*.ts",
+			"agentsessions/i18n/locales/*.py",
+			"README.md",
+			"README.ja.md",
+			"docs/usage.md",
+			"docs/installation.md",
+			"agentsessions/skills/**/*.md"
+		]
+	},
+	"hygiene": {
+		"consoleAllowed": [],
+		"largeFileBytes": 1048576,
+		"largeFileExempt": ["docs/images/**", "docs/onboarding/**"]
+	},
+	"docs": {
+		"files": ["README.md", "README.ja.md", "docs/*.md", "tools/*/README.md"],
+		"mirror": ["README.md", "README.ja.md"]
+	}
+}
