@@ -289,7 +289,7 @@ describe("statusGroup", () => {
 	it("classifies each fine status into its group", () => {
 		expect(statusGroup("asking", false)).toBe("needs-input");
 		expect(statusGroup("waiting", false)).toBe("needs-review");
-		expect(statusGroup("compacted", false)).toBe("needs-review");
+		expect(statusGroup("compacted", false)).toBe("done");
 		expect(statusGroup("connecting", false)).toBe("running");
 		expect(statusGroup("working", false)).toBe("running");
 		expect(statusGroup("running-shell", false)).toBe("running");
@@ -333,7 +333,7 @@ describe("statusTooltip", () => {
 		setLang("en");
 		expect(statusTooltip("detached")).toBe("Done — Not connected");
 		expect(statusTooltip("asking")).toBe("Needs input — Waiting for your answer");
-		expect(statusTooltip("compacted")).toBe("Needs review — Compacted (context was reset)");
+		expect(statusTooltip("compacted")).toBe("Done — Compacted (context was reset)");
 	});
 
 	it("falls back to just the fine name for error (no group label of its own)", () => {

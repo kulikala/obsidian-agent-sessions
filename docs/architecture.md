@@ -180,7 +180,7 @@ Every terminal tab, side-panel row, and manager row computes the same fine-grain
 | `running-shell` | Ledger `status: "shell"` | `running` |
 | `working` | Ledger `status: "busy"` | `running` |
 | `waiting` | After `busy → idle`, before the tab has been brought to front | `needs-review` |
-| `compacted` | Just after `/compact` (manual or automatic), until a prompt the model answers (local commands keep it) | `needs-review` |
+| `compacted` | Just after `/compact` (manual or automatic), until a prompt the model answers (local commands keep it) | `done` |
 | `detached` | Tab exists but isn't connected | `done` |
 | `idle` | Connected and idle | `done` |
 

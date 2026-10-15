@@ -426,8 +426,8 @@ export const en = {
 
 	// ---- Attention markers (side panel badges, manager section headings) ----
 	"attention.asking": "Needs input {count}",
-	// This counts both `waiting` (turn ended, tab not yet viewed) and `compacted` (just
-	// /compact'd, no next instruction yet) — both are "needs review" now (statusGroup).
+	// Counts the needs-review group (statusGroup): `waiting` (turn ended, tab not yet viewed)
+	// and `looped`. A just-compacted session is in the done group, so it is not counted.
 	"attention.waiting": "Needs review {count}",
 	"attention.askingInGroup": "Has a session waiting for input",
 	"attention.waitingInGroup": "Has a session that needs review",

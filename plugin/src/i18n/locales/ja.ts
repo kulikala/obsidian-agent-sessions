@@ -427,8 +427,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 
 	// ---- Attention markers (side panel badges, manager section headings) ----
 	"attention.asking": "入力待ち {count}",
-	// waiting（応答が出てまだ見ていない）と compacted（compact 直後でまだ次の指示が
-	// 無い）の両方を数える——どちらも「レビュー待ち」（statusGroup）。
+	// 「レビュー待ち」（statusGroup の needs-review）を数える。waiting（応答が出てまだ
+	// 見ていない）と looped が入る。コンテキスト圧縮済み（compacted）は「完了」側で、数えない。
 	"attention.waiting": "レビュー待ち {count}",
 	"attention.askingInGroup": "入力待ちのセッションがあります",
 	"attention.waitingInGroup": "レビュー待ちのセッションがあります",
