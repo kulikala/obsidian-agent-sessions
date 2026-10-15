@@ -183,7 +183,7 @@ def build_resume_argv(agent: str, bin_path: str, session_id: str, remote_control
     goes last, as each CLI takes one."""
     if agent == 'codex':
         own = [bin_path, '--no-daemon'] if codex_no_daemon else [bin_path]
-        return own + ['resume', session_id] + ([prompt] if prompt else [])
+        return own + ['resume', session_id] + (['--', prompt] if prompt else [])
     if agent == 'opencode':
         tail = ['--session', session_id] + (['--prompt=' + prompt] if prompt else [])
         if ollama_bin:

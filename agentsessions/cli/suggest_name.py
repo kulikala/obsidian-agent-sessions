@@ -7,13 +7,14 @@ category** does, without calling another model: the agent that runs it proposes 
   (`naming.RULES`), the existing categories with example names, and, for another session, the start
   and the end of its conversation.
 - `--check` says whether a proposal meets the rules (exit 0) or what it breaks (exit 1).
-- `--apply` checks it, then renames the session. The running Obsidian plugin does the renaming
+- `--apply` checks it, then has the session renamed. The running Obsidian plugin does the renaming
   (`rename` on `plugin.sock`, `renameSession`), the same way its dialog does; a session in the middle
   of a turn, such as the caller's own, is renamed once that turn ends. Without Obsidian an OpenCode
   session's name is written to `sessions.json`, where the plugin keeps it; a Claude Code or Codex
   session is not renamed, and the `/rename` to type is printed instead.
 
-Exit codes: 0 = printed, meets the rules, or renamed (or queued); 1 = breaks a rule, or not renamed;
+Exit codes: 0 = printed, meets the rules, or renamed or taken by Obsidian to rename; 1 = breaks a rule, or
+not renamed;
 2 = no such session, or a bad request.
 """
 import argparse
@@ -122,22 +123,26 @@ def store_opencode_name(sid: str, cwd: str, name: str) -> None:
 
 
 def apply_name(row: Dict[str, Any], full: str) -> Dict[str, Any]:
-    """Renames the session; `{'renamed': bool, 'queued': bool, 'by': ..., 'note': ...}`."""
+    """Renames the session. `accepted`: Obsidian took the rename (it renames the session itself, after
+    the current turn when `queued`); `renamed`: the name is already written (an OpenCode session without
+    Obsidian); neither: not renamed, with the `/rename` to type in `command`."""
     reply = ask_plugin(row['id'], full)
     if reply is not None and reply.get('ok'):
         queued = bool(reply.get('queued'))
-        return {'renamed': True, 'queued': queued, 'by': 'obsidian',
+        return {'accepted': True, 'renamed': False, 'queued': queued,
                 'note': 'Obsidian renames it once its current turn ends' if queued else 'Obsidian is renaming it'}
     error = (reply or {}).get('error')
+    if error == 'unknown-op':
+        error = 'the Obsidian plugin is older than this program and cannot rename on request; update the plugin'
     if row['agent'] == 'opencode' and config.STORE_PATH:
         try:
             store_opencode_name(row['id'], row['cwd'], full)
-            return {'renamed': True, 'queued': False, 'by': 'sessions.json',
+            return {'accepted': False, 'renamed': True, 'queued': False,
                     'note': 'written to sessions.json; Obsidian shows it'}
         except Exception as e:  # noqa: BLE001
             error = str(e)
-    return {'renamed': False, 'queued': False, 'by': None,
-            'note': ('Obsidian could not rename it (%s)' % error) if error else 'Obsidian is not running',
+    return {'accepted': False, 'renamed': False, 'queued': False,
+            'note': ('Obsidian could not rename it: %s' % error) if error else 'Obsidian is not running',
             'command': '/rename %s' % full}
 
 
@@ -184,14 +189,13 @@ def main(args: List[str]) -> int:
         emit(result, 'Meets the rules: %s\n' % full)
         return 0
     if full == (row['name'] if row['named'] else ''):
-        result.update(renamed=False, note='the session already has this name')
+        result.update(accepted=False, renamed=False, note='the session already has this name')
         emit(result, 'Unchanged: the session already has this name\n')
         return 0
     done = apply_name(row, full)
     result.update(done)
-    if done['renamed']:
-        emit(result, ('Renaming to %s: %s\n' if done['by'] == 'obsidian' else 'Renamed to %s: %s\n')
-             % (full, done['note']))
+    if done['accepted'] or done['renamed']:
+        emit(result, ('Renaming to %s: %s\n' if done['accepted'] else 'Renamed to %s: %s\n') % (full, done['note']))
         return 0
     emit(result, 'Not renamed: %s. To rename it, type in that session: %s\n' % (done['note'], done['command']))
     return 1

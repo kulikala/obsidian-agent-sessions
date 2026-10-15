@@ -115,7 +115,7 @@ class TestResumeArgv(unittest.TestCase):
 
     def test_a_message_goes_last(self):
         self.assertEqual(launch.build_resume_argv('claude', 'c', 'S', prompt='-go'), ['c', '--resume', 'S', '--', '-go'])
-        self.assertEqual(launch.build_resume_argv('codex', 'x', 'T', prompt='go'), ['x', 'resume', 'T', 'go'])
+        self.assertEqual(launch.build_resume_argv('codex', 'x', 'T', prompt='-go'), ['x', 'resume', 'T', '--', '-go'])
         self.assertEqual(launch.build_resume_argv('opencode', 'o', 'ses', prompt='go'), ['o', '--session', 'ses', '--prompt=go'])
 
     def test_remote_control_on_resume(self):
@@ -185,7 +185,7 @@ class TestResume(NewTestCase):
         self.assertNotEqual(data['daemon_id'], 'thread-1')
         entry = store.load(path=self.store_path).sessions['thread-1']
         self.assertEqual(entry, {'agent': 'codex', 'cwd': self.work, 'daemon': data['daemon_id'], 'extra': 1})
-        self.assertEqual(self.argv(), ['resume', 'thread-1', 'carry on'])
+        self.assertEqual(self.argv(), ['resume', 'thread-1', '--', 'carry on'])
 
     def test_only_an_ended_session_and_never_the_callers_own(self):
         self.rows = [row('aaaa1111-2222', status='idle', cwd=self.work),
@@ -214,10 +214,12 @@ class TestResume(NewTestCase):
 
 
 class TestAnalyze(ListingTestCase):
-    DIGEST = {'agent': 'claude', 'context': {}, 'sessions': [],
-              'tasks': [{'id': 't-%d' % i, 'ts': i, 'turns': []} for i in range(5)],
+    DIGEST = {'agent': 'claude', 'context': {}, 'sessions': [{'id': 'ffff6666-0000', 'preamble': 900, 'tasks': 5}],
+              'tasks': [{'id': 't-%d' % i, 'ts': i, 'turn_count': 2,
+                         'turns': [{'prompt': 'p', 'tools': {'Bash': 1}}, {'prompt': 'q'}]} for i in range(5)],
               'hints': [{'id': 'h1', 'task': 't-0'}, {'id': 'h2', 'task': 't-4'}, {'id': 'h3', 'task': None}]}
-    BLOCK = {'range': {'start': NOW - 3600, 'end': NOW}, 'totals': {'calls': 7, 'w': 1234, 'usd': 0.5, 'cache_hit': 0.9},
+    BLOCK = {'range': {'start': NOW - 3600, 'end': NOW},
+             'totals': {'calls': 7, 'w': 1234, 'usd': 0.5, 'cache_hit': 0.9, 'cache_read': 10, 'cache_write': 1},
              'panes': [{'digest': DIGEST}]}
 
     def run_cmd(self, *args, block=BLOCK, own=None):
@@ -234,12 +236,20 @@ class TestAnalyze(ListingTestCase):
         self.assertEqual([h['id'] for h in d['hints']], ['h2', 'h3'])
         self.assertEqual((d['shown'], d['total']), (2, 5))
 
+    def test_checks_with_nothing_to_judge_are_left_out(self):
+        na = cmd_analyze.not_applicable
+        everything = {c for c, _ in cmd_analyze.CHECKS}
+        self.assertEqual(na({'tasks': []}, {}), everything)
+        self.assertEqual(na(self.DIGEST, self.BLOCK['totals']), {'repeatedLookups'})
+        bare = {'sessions': [{'id': 's', 'tasks': 1}], 'tasks': [{'id': 't', 'turn_count': 1, 'turns': [{}]}]}
+        self.assertEqual(na(bare, {}), everything - {'found', 'longContext'})
+
     def test_this_session_by_default_with_the_checks_and_the_data(self):
         rc, out, _, eff = self.run_cmd('--tasks', '2', own='ffff6666-0000')
         self.assertEqual(rc, 0)
         eff.assert_called_once_with('claude', 'ffff6666-0000')
         for check_id, _ in cmd_analyze.CHECKS:
-            self.assertIn('- %s: ' % check_id, out)
+            self.assertEqual('- %s: ' % check_id in out, check_id != 'repeatedLookups', check_id)
         self.assertIn('latest 2 of the session\'s 5 tasks', out)
         data = json.loads(out.split('<<<DATA\n')[1].split('\nDATA>>>')[0])
         self.assertEqual([t['id'] for t in data['tasks']], ['t-3', 't-4'])
@@ -399,6 +409,23 @@ class TestSuggestName(ListingTestCase):
         self.assertEqual((plugin.requests[0]['session'], plugin.requests[0]['name']),
                          ('aaaa1111-0000', 'Web: Sign-in redirect'))
         self.assertIn('once its current turn ends', out)
+        self.assertTrue(out.startswith('Renaming to Web: Sign-in redirect'))
+
+    def test_apply_reports_acceptance_not_a_rename(self):
+        plugin = FakePlugin(self.sock_path, {'ok': True})
+        self.addCleanup(plugin.close)
+        rc, out, _ = self.run_cmd('--apply', 'Web: Sign-in redirect', '--json')
+        plugin.thread.join(5)
+        data = json.loads(out)
+        self.assertEqual((rc, data['accepted'], data['renamed'], data['queued']), (0, True, False, False))
+
+    def test_an_older_plugin_is_named_as_the_reason(self):
+        plugin = FakePlugin(self.sock_path, {'ok': False, 'error': 'unknown-op'})
+        self.addCleanup(plugin.close)
+        rc, out, _ = self.run_cmd('--apply', 'Web: Sign-in redirect')
+        self.assertEqual(rc, 1)
+        self.assertIn('plugin is older than this program', out)
+        self.assertIn('/rename Web: Sign-in redirect', out)
 
     def test_apply_refuses_a_name_that_breaks_a_rule_and_skips_an_unchanged_one(self):
         rc, out, _ = self.run_cmd('--apply', 'Debug: Fixing it?')
@@ -411,7 +438,7 @@ class TestSuggestName(ListingTestCase):
         rc, out, _ = self.run_cmd('--apply', 'Web: Sign-in redirect', '--json')
         self.assertEqual(rc, 1)
         data = json.loads(out)
-        self.assertFalse(data['renamed'])
+        self.assertFalse(data['renamed'] or data['accepted'])
         self.assertEqual(data['command'], '/rename Web: Sign-in redirect')
 
     def test_without_obsidian_opencode_is_named_in_sessions_json(self):
@@ -424,7 +451,7 @@ class TestSuggestName(ListingTestCase):
         self.addCleanup(plugin.close)
         rc, out, _ = self.run_cmd('--apply', 'Web: Sign-in redirect')
         self.assertEqual(rc, 1)
-        self.assertIn('Obsidian could not rename it (no-session)', out)
+        self.assertIn('Obsidian could not rename it: no-session', out)
 
 
 if __name__ == '__main__':

@@ -62,6 +62,35 @@ GUIDE = (
 )
 
 
+def not_applicable(digest: Dict[str, Any], totals: Dict[str, Any]) -> set:
+    """The checks with nothing to judge in `digest`, as `notApplicable` in efficiency-checks.ts decides:
+    no task of two turns (rework), no prompt (firstRequest), no session with two tasks and no task of
+    two turns (mixedTasks), no tool call (largeOutput), nothing read from or written to a cache
+    (cacheRebuild), fewer than two sessions (repeatedLookups, so always for one session), no
+    conversation start on record (startupSize). Every check without tasks."""
+    tasks = digest.get('tasks') or []
+    if not tasks:
+        return {c for c, _ in CHECKS}
+    sessions = digest.get('sessions') or []
+    turns = [turn for t in tasks for turn in t.get('turns') or []]
+    out = set()
+    if not any((t.get('turn_count') or 0) > 1 for t in tasks):
+        out.add('rework')
+    if not any(turn.get('prompt') for turn in turns):
+        out.add('firstRequest')
+    if not any((t.get('turn_count') or 0) > 1 for t in tasks) and not any((x.get('tasks') or 0) > 1 for x in sessions):
+        out.add('mixedTasks')
+    if not any(isinstance(turn.get('tools'), dict) and turn['tools'] for turn in turns):
+        out.add('largeOutput')
+    if (totals.get('cache_read') or 0) + (totals.get('cache_write') or 0) <= 0:
+        out.add('cacheRebuild')
+    if len(sessions) < 2:
+        out.add('repeatedLookups')
+    if not any(isinstance(x.get('preamble'), (int, float)) and x['preamble'] > 0 for x in sessions):
+        out.add('startupSize')
+    return out
+
+
 def _when(ts: Any) -> str:
     return time.strftime('%Y-%m-%d %H:%M', time.localtime(ts)) if isinstance(ts, (int, float)) else '-'
 
@@ -85,13 +114,12 @@ def render(row: Dict[str, Any], block: Dict[str, Any], count: int = DEFAULT_TASK
             _when(rng.get('start')), _when(rng.get('end')), totals.get('calls', 0), totals.get('w', 0),
             ', about $%.2f' % totals['usd'] if isinstance(totals.get('usd'), (int, float)) else '',
             '%d%%' % round(totals['cache_hit'] * 100) if isinstance(totals.get('cache_hit'), (int, float)) else '-'),
-        '',
-        'Checks:',
     ]
-    lines += ['- %s: %s.' % c for c in CHECKS]
-    lines += [''] + list(GUIDE) + ['']
     panes = block.get('panes') or []
     digest = latest_tasks(panes[0].get('digest') or {}, count) if panes else {}
+    skip = not_applicable(digest, totals)
+    lines += ['', 'Checks:'] + (['- %s: %s.' % c for c in CHECKS if c[0] not in skip] or ['(none apply: no tasks)'])
+    lines += [''] + list(GUIDE) + ['']
     if digest.get('total', 0) > digest.get('shown', 0):
         lines.append('The data holds the latest %d of the session\'s %d tasks; --tasks N shows more.'
                      % (digest['shown'], digest['total']))

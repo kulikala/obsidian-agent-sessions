@@ -114,7 +114,7 @@ import { dialogHeaderSpec, markDestructive } from "./ui/dialog-header";
 import type { SessionTarget } from "./ui/dialog-header-model";
 import { restartDecision, type RestartDecision } from "./sessions/restart";
 import { resolveRowStatus } from "./sessions/terminal-status";
-import { createNameRoute, renameRoute, sessionAgentOf } from "./sessions/rename";
+import { createNameRoute, isInTurn, renameRoute, renameWhenTurnEnds, sessionAgentOf } from "./sessions/rename";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./sessions/open-session";
 import {
 	AGENT_IDS,
@@ -2468,26 +2468,21 @@ export default class AgentSessionsPlugin extends Plugin {
 		if (!this.index.sessions.has(id) && !this.findTerminalView(id)) {
 			return { ok: false, error: "no-session" };
 		}
-		const inTurn = (): boolean => {
-			const status = this.index.sessions.get(id)?.status;
-			return status === "busy" || status === "shell" || status === "waiting";
-		};
-		if (!inTurn()) {
-			void this.renameSession(id, req.name);
-			return { ok: true };
-		}
-		void (async () => {
-			const deadline = Date.now() + WAIT_TURN_END_MS;
-			while (inTurn() && Date.now() < deadline) {
-				await sleep(TURN_END_POLL_MS);
-			}
-			if (inTurn()) {
+		const inTurn = (): boolean => isInTurn(this.index.sessions.get(id)?.status);
+		const queued = inTurn();
+		void renameWhenTurnEnds({
+			inTurn,
+			now: () => Date.now(),
+			sleep,
+			timeoutMs: WAIT_TURN_END_MS,
+			pollMs: TURN_END_POLL_MS,
+			rename: () => this.renameSession(id, req.name),
+		}).then((outcome) => {
+			if (outcome === "timeout") {
 				new Notice(t("notice.renameFailed", { error: t("error.renameTurnWaitFailed") }));
-				return;
 			}
-			await this.renameSession(id, req.name);
-		})();
-		return { ok: true, queued: true };
+		});
+		return queued ? { ok: true, queued: true } : { ok: true };
 	}
 
 	/**
