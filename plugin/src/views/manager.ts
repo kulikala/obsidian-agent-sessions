@@ -14,6 +14,7 @@ import { NewSessionModal } from "../ui/modals";
 import { EfficiencyModal } from "../ui/efficiency-modal";
 import { OrganizeModal } from "../ui/organize-modal";
 import { AGENT_ICON_ID, moreIconId } from "../ui/icons";
+import { keepScroll } from "../ui/scroll";
 import { agentsWithLimits, type AgentId } from "../settings";
 import {
 	managerStatusFilterLabelKey,
@@ -928,9 +929,13 @@ export class ManagerView extends ItemView {
 		this.groupUrgency = urgencyByGroupKey(this.plugin, sessionRows, categoryKeyOf);
 
 		this.timeTicker.reset();
-		this.tableBodyEl.empty();
-		this.rowEls = this.rows.map((mrow, index) => this.renderRow(mrow, index));
-		this.applySelectionHighlight();
+		// A re-render follows every change in the sessions (status, activity), not the user: the list
+		// stays where it was scrolled to, and does not jump to the selected row.
+		keepScroll(this.wrapEl, () => {
+			this.tableBodyEl.empty();
+			this.rowEls = this.rows.map((mrow, index) => this.renderRow(mrow, index));
+		});
+		this.applySelectionHighlight(false);
 		this.refreshDetail();
 	}
 
@@ -1131,9 +1136,12 @@ export class ManagerView extends ItemView {
 		}
 	}
 
-	private applySelectionHighlight(): void {
+	/** Marks the selected row; `scroll` brings it into view, for a selection the user just made. */
+	private applySelectionHighlight(scroll = true): void {
 		this.rowEls.forEach((tr, i) => tr.toggleClass("is-selected", i === this.cursor));
-		this.rowEls[this.cursor]?.scrollIntoView({ block: "nearest" });
+		if (scroll) {
+			this.rowEls[this.cursor]?.scrollIntoView({ block: "nearest" });
+		}
 	}
 
 	private onListKeydown(evt: KeyboardEvent): void {
