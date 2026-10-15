@@ -8,6 +8,7 @@ import { dialogTitle } from "./dialog-title";
 import type { SessionTarget } from "./dialog-header-model";
 import { AGENT_ICON_ID } from "./icons";
 import { t, type MessageKey } from "../i18n";
+import { ignoreWhileComposing } from "./ime";
 import { applyChipEditResult, composeName, filterCategories, tokenizeNameInput } from "../sessions/name";
 import { AGENT_IDS, type AgentId } from "../settings";
 import { splitName } from "../sessions/tree";
@@ -227,30 +228,33 @@ function beginEditChip(
 
 	suggest.openFor(currentCategory);
 	editEl.addEventListener("input", () => suggest.openFor(editEl.value));
-	editEl.addEventListener("keydown", (evt) => {
-		if (evt.key === "ArrowDown") {
-			evt.preventDefault();
-			suggest.moveHighlight(1);
-			return;
-		}
-		if (evt.key === "ArrowUp") {
-			evt.preventDefault();
-			suggest.moveHighlight(-1);
-			return;
-		}
-		if (evt.key === "Enter" || evt.key === "Tab") {
-			evt.preventDefault();
-			if (suggest.isOpen() && suggest.confirmHighlighted()) {
+	editEl.addEventListener(
+		"keydown",
+		ignoreWhileComposing((evt: KeyboardEvent) => {
+			if (evt.key === "ArrowDown") {
+				evt.preventDefault();
+				suggest.moveHighlight(1);
 				return;
 			}
-			finish(editEl.value);
-			return;
-		}
-		if (evt.key === "Escape") {
-			evt.preventDefault();
-			cancel();
-		}
-	});
+			if (evt.key === "ArrowUp") {
+				evt.preventDefault();
+				suggest.moveHighlight(-1);
+				return;
+			}
+			if (evt.key === "Enter" || evt.key === "Tab") {
+				evt.preventDefault();
+				if (suggest.isOpen() && suggest.confirmHighlighted()) {
+					return;
+				}
+				finish(editEl.value);
+				return;
+			}
+			if (evt.key === "Escape") {
+				evt.preventDefault();
+				cancel();
+			}
+		})
+	);
 	// A suggestion's own mousedown (buildCategorySuggest) already calls finish() and
 	// preventDefault()s before blur would otherwise fire — same ordering this file's other
 	// suggest-driven inputs already rely on. The setTimeout lets that happen first.
@@ -375,45 +379,48 @@ function buildComposedNameField(
 		suggest.openFor(inputEl.value);
 	});
 
-	inputEl.addEventListener("keydown", (evt) => {
-		if (!category && suggest.isOpen()) {
-			if (evt.key === "ArrowDown") {
+	inputEl.addEventListener(
+		"keydown",
+		ignoreWhileComposing((evt: KeyboardEvent) => {
+			if (!category && suggest.isOpen()) {
+				if (evt.key === "ArrowDown") {
+					evt.preventDefault();
+					suggest.moveHighlight(1);
+					return;
+				}
+				if (evt.key === "ArrowUp") {
+					evt.preventDefault();
+					suggest.moveHighlight(-1);
+					return;
+				}
+				if (evt.key === "Enter" || evt.key === "Tab") {
+					evt.preventDefault();
+					suggest.confirmHighlighted();
+					return;
+				}
+				if (evt.key === "Escape") {
+					evt.preventDefault();
+					suggest.close();
+					return;
+				}
+			}
+			if (
+				evt.key === "Backspace" &&
+				category &&
+				inputEl.value === "" &&
+				inputEl.selectionStart === 0 &&
+				inputEl.selectionEnd === 0
+			) {
 				evt.preventDefault();
-				suggest.moveHighlight(1);
+				revertChip();
 				return;
 			}
-			if (evt.key === "ArrowUp") {
+			if (evt.key === "Enter") {
+				// Only the dialog's own button confirms the field (Enter while a suggestion is highlighted confirms the suggestion instead, handled above).
 				evt.preventDefault();
-				suggest.moveHighlight(-1);
-				return;
 			}
-			if (evt.key === "Enter" || evt.key === "Tab") {
-				evt.preventDefault();
-				suggest.confirmHighlighted();
-				return;
-			}
-			if (evt.key === "Escape") {
-				evt.preventDefault();
-				suggest.close();
-				return;
-			}
-		}
-		if (
-			evt.key === "Backspace" &&
-			category &&
-			inputEl.value === "" &&
-			inputEl.selectionStart === 0 &&
-			inputEl.selectionEnd === 0
-		) {
-			evt.preventDefault();
-			revertChip();
-			return;
-		}
-		if (evt.key === "Enter") {
-			// Only the dialog's own button confirms the field (Enter while a suggestion is highlighted confirms the suggestion instead, handled above).
-			evt.preventDefault();
-		}
-	});
+		})
+	);
 
 	inputEl.addEventListener("blur", () => {
 		window.setTimeout(() => suggest.close(), 0);
@@ -611,43 +618,46 @@ export class MoveToCategoryModal extends Modal {
 		inputEl.addEventListener("focus", () => suggest.openFor(inputEl.value));
 		inputEl.addEventListener("click", () => suggest.openFor(inputEl.value));
 		inputEl.addEventListener("input", () => suggest.openFor(inputEl.value));
-		inputEl.addEventListener("keydown", (evt) => {
-			if (suggest.isOpen()) {
-				if (evt.key === "ArrowDown") {
+		inputEl.addEventListener(
+			"keydown",
+			ignoreWhileComposing((evt: KeyboardEvent) => {
+				if (suggest.isOpen()) {
+					if (evt.key === "ArrowDown") {
+						evt.preventDefault();
+						suggest.moveHighlight(1);
+						return;
+					}
+					if (evt.key === "ArrowUp") {
+						evt.preventDefault();
+						suggest.moveHighlight(-1);
+						return;
+					}
+					if (evt.key === "Escape") {
+						evt.preventDefault();
+						suggest.close();
+						return;
+					}
+				}
+				if (
+					evt.key === "Backspace" &&
+					this.category &&
+					inputEl.value === "" &&
+					inputEl.selectionStart === 0 &&
+					inputEl.selectionEnd === 0
+				) {
 					evt.preventDefault();
-					suggest.moveHighlight(1);
+					this.revertChip();
 					return;
 				}
-				if (evt.key === "ArrowUp") {
+				if (evt.key === "Enter") {
 					evt.preventDefault();
-					suggest.moveHighlight(-1);
-					return;
+					if (suggest.isOpen() && suggest.confirmHighlighted()) {
+						return;
+					}
+					this.submit();
 				}
-				if (evt.key === "Escape") {
-					evt.preventDefault();
-					suggest.close();
-					return;
-				}
-			}
-			if (
-				evt.key === "Backspace" &&
-				this.category &&
-				inputEl.value === "" &&
-				inputEl.selectionStart === 0 &&
-				inputEl.selectionEnd === 0
-			) {
-				evt.preventDefault();
-				this.revertChip();
-				return;
-			}
-			if (evt.key === "Enter") {
-				evt.preventDefault();
-				if (suggest.isOpen() && suggest.confirmHighlighted()) {
-					return;
-				}
-				this.submit();
-			}
-		});
+			})
+		);
 		inputEl.addEventListener("blur", () => {
 			window.setTimeout(() => suggest.close(), 0);
 		});
