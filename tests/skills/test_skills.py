@@ -74,8 +74,13 @@ class TestTemplates(unittest.TestCase):
         self.assertIn('Only when the user explicitly asks for a new session', skills.render('agent-sessions', LAUNCHER))
 
     def test_the_body_covers_new_stats_and_other_sessions(self):
-        calls = set(re.findall(r'"%s" (\w+)' % re.escape(LAUNCHER), skills.render('agent-sessions', LAUNCHER)))
-        self.assertEqual(calls, {'new', 'stats', 'show', 'sessions'})
+        calls = set(re.findall(r'"%s" ([\w-]+)' % re.escape(LAUNCHER), skills.render('agent-sessions', LAUNCHER)))
+        self.assertEqual(calls, {'new', 'stats', 'show', 'sessions', 'resume', 'analyze', 'suggest-name'})
+
+    def test_resume_and_apply_wait_for_the_user(self):
+        text = skills.render('agent-sessions', LAUNCHER)
+        self.assertIn('Only when the user explicitly asks to wake up or resume a session', text)
+        self.assertIn('Rename with `--apply` only after the user agrees', text)
 
     def test_the_body_never_tells_the_agent_to_invent_a_prompt(self):
         text = skills.render('agent-sessions', LAUNCHER)
@@ -84,7 +89,7 @@ class TestTemplates(unittest.TestCase):
 
     def test_the_bodies_call_the_commands_that_exist(self):
         for name in skills.SKILL_NAMES:
-            calls = re.findall(r'"%s" (\w+)' % re.escape(LAUNCHER), skills.render(name, LAUNCHER))
+            calls = re.findall(r'"%s" ([\w-]+)' % re.escape(LAUNCHER), skills.render(name, LAUNCHER))
             self.assertEqual(bool(calls), name == 'agent-sessions', name)
             for cmd in calls:
                 self.assertIn(cmd, SUBCOMMANDS)
@@ -152,7 +157,7 @@ class TestRenderedForAgents(unittest.TestCase):
 
     def test_every_command_in_every_text_exists(self):
         for agents in self.combos():
-            for cmd in re.findall(r'"%s" (\w+)' % re.escape(LAUNCHER), skills.render('agent-sessions', LAUNCHER, agents)):
+            for cmd in re.findall(r'"%s" ([\w-]+)' % re.escape(LAUNCHER), skills.render('agent-sessions', LAUNCHER, agents)):
                 self.assertIn(cmd, SUBCOMMANDS)
 
     def test_no_agents_given_renders_for_all_three(self):

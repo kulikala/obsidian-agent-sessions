@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createNameRoute, renameRoute, sessionAgentOf } from "../../src/sessions/rename";
+import { createNameRoute, isInTurn, renameRoute, renameWhenTurnEnds, sessionAgentOf } from "../../src/sessions/rename";
 
 describe("sessionAgentOf", () => {
 	it("trusts the tab before the row or the store (a fresh tab has neither)", () => {
@@ -38,5 +38,54 @@ describe("createNameRoute", () => {
 		expect(createNameRoute("codex", true)).toBe("afterTurn");
 		expect(createNameRoute("claude", true)).toBe("launch");
 		expect(createNameRoute("opencode", true)).toBe("pending");
+	});
+});
+
+describe("renameWhenTurnEnds", () => {
+	function clock(statuses: (string | null)[]) {
+		let t = 0;
+		let i = 0;
+		const renamed: number[] = [];
+		return {
+			renamed,
+			wait: (timeoutMs = 10_000) =>
+				renameWhenTurnEnds({
+					inTurn: () => isInTurn(statuses[Math.min(i, statuses.length - 1)]),
+					now: () => t,
+					sleep: (ms) => {
+						t += ms;
+						i += 1;
+						return Promise.resolve();
+					},
+					timeoutMs,
+					pollMs: 1000,
+					rename: () => {
+						renamed.push(t);
+						return Promise.resolve();
+					},
+				}),
+		};
+	}
+
+	it("renames at once when the session is not in a turn", async () => {
+		const c = clock(["idle"]);
+		expect(await c.wait()).toBe("renamed");
+		expect(c.renamed).toEqual([0]);
+	});
+
+	it("waits while the session works, runs a command or asks, then renames", async () => {
+		const c = clock(["busy", "shell", "waiting", "idle"]);
+		expect(await c.wait()).toBe("renamed");
+		expect(c.renamed).toEqual([3000]);
+	});
+
+	it("gives up without renaming when the turn outlasts the wait", async () => {
+		const c = clock(["busy"]);
+		expect(await c.wait(5000)).toBe("timeout");
+		expect(c.renamed).toEqual([]);
+	});
+
+	it("a session with no status is not in a turn", () => {
+		expect([null, undefined, "", "idle"].map((s) => isInTurn(s))).toEqual([false, false, false, false]);
 	});
 });

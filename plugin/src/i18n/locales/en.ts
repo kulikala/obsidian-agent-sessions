@@ -141,6 +141,7 @@ export const en = {
 	"error.ollamaModelMissing": "Choose an Ollama model under Settings > Agents > OpenCode before starting OpenCode through Ollama.",
 	"error.replyWaitFailed": "Timed out waiting for a reply",
 	"error.renameWaitFailed": "Timed out waiting for the rename",
+	"error.renameTurnWaitFailed": "the session was still working after 30 minutes",
 	"confirm.endSession.message": "End this session?",
 	"notice.endFailed": "Failed to end: {error}",
 	"confirm.restartSession.message": "This session is busy. Restart it anyway? The current work will be interrupted.",

@@ -142,6 +142,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"error.ollamaModelMissing": "ollama 経由で OpenCode を起動するには、設定のエージェント > OpenCode で Ollama のモデルを選んでください。",
 	"error.replyWaitFailed": "応答を待てませんでした",
 	"error.renameWaitFailed": "名前の変更を待てませんでした",
+	"error.renameTurnWaitFailed": "30 分たってもセッションの作業が終わりませんでした",
 	"confirm.endSession.message": "このセッションを終了しますか？",
 	"notice.endFailed": "終了に失敗しました: {error}",
 	"confirm.restartSession.message": "このセッションは作業中です。再起動しますか？ 実行中の作業は中断されます。",

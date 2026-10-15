@@ -7,7 +7,16 @@ import * as net from "node:net";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { encodeFrame, FrameDecoder } from "../../src/backend/daemon-client";
-import { EditServer, editReplyFor, submitsAfterEdit, tabOwnsEditSession, type EditOutcome, type EditRequest, type EditReply } from "../../src/backend/edit-server";
+import {
+	EditServer,
+	editReplyFor,
+	submitsAfterEdit,
+	tabOwnsEditSession,
+	type EditOutcome,
+	type EditRequest,
+	type EditReply,
+	type RenameRequest,
+} from "../../src/backend/edit-server";
 
 interface Client {
 	socket: net.Socket;
@@ -154,6 +163,39 @@ describe("EditServer", () => {
 		expect(await client.responses).toEqual([{ ok: false, error: "cancel", seq: 1 }]);
 		expect(() => statSync(sockPath)).toThrow();
 		expect(server.listening).toBe(false);
+	});
+
+	it("a rename request gets the handler's answer, queued or not, and closes", async () => {
+		const seen: RenameRequest[] = [];
+		server.onRename((req) => {
+			seen.push(req);
+			return Promise.resolve(req.session === "busy" ? { ok: true, queued: true } : { ok: true });
+		});
+		await server.start(sockPath);
+		const first = await connect(sockPath);
+		first.send({ op: "rename", seq: 3, session: "s1", name: "Web: Login bug" });
+		expect(await first.responses).toEqual([{ ok: true, seq: 3 }]);
+		const second = await connect(sockPath);
+		second.send({ op: "rename", seq: 4, session: "busy", name: "Web: Docs" });
+		expect(await second.responses).toEqual([{ ok: true, queued: true, seq: 4 }]);
+		expect(seen).toEqual([
+			{ session: "s1", name: "Web: Login bug" },
+			{ session: "busy", name: "Web: Docs" },
+		]);
+	});
+
+	it("a rename with no session or name, with no handler, or whose handler fails is an error", async () => {
+		await server.start(sockPath);
+		const noHandler = await connect(sockPath);
+		noHandler.send({ op: "rename", seq: 1, session: "s1", name: "N" });
+		expect(await noHandler.responses).toEqual([{ ok: false, error: "unavailable", seq: 1 }]);
+		server.onRename(() => Promise.reject(new Error("boom")));
+		const bad = await connect(sockPath);
+		bad.send({ op: "rename", seq: 2, session: "s1", name: "  " });
+		expect(await bad.responses).toEqual([{ ok: false, error: "bad-request", seq: 2 }]);
+		const failing = await connect(sockPath);
+		failing.send({ op: "rename", seq: 5, session: "s1", name: "N" });
+		expect(await failing.responses).toEqual([{ ok: false, error: "boom", seq: 5 }]);
 	});
 
 	it("start() removes a stale socket file and listens again", async () => {

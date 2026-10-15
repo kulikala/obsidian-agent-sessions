@@ -135,20 +135,22 @@ def build(now: float, projects_dir: str, status_dir: str, stats_cache_path: str,
           budget: float = DEFAULT_BUDGET, explicit: Optional[Tuple[float, float]] = None,
           max_sessions: int = DEFAULT_MAX_SESSIONS, with_digest: bool = True,
           names: Optional[Dict[str, str]] = None, home: Optional[str] = None,
-          cache_folder: Optional[str] = None) -> dict:
+          cache_folder: Optional[str] = None, only: Optional[str] = None) -> dict:
     """The `agents.claude` block of `json efficiency` (D-8)."""
     src = sources.ClaudeSource(projects_dir, status_dir, stats_cache_path)
     return build_for(now, src, vault=vault, threshold=threshold, budget=budget, explicit=explicit,
                      max_sessions=max_sessions, with_digest=with_digest, names=names, home=home,
-                     cache_folder=cache_folder)
+                     cache_folder=cache_folder, only=only)
 
 
 def build_for(now: float, src, vault: Optional[str] = None, threshold: float = DEFAULT_THRESHOLD,
               budget: float = DEFAULT_BUDGET, explicit: Optional[Tuple[float, float]] = None,
               max_sessions: int = DEFAULT_MAX_SESSIONS, with_digest: bool = True,
               names: Optional[Dict[str, str]] = None, home: Optional[str] = None,
-              cache_folder: Optional[str] = None) -> dict:
-    """The `agents.<agent>` block of `json efficiency` (D-8) for the sessions of `src`."""
+              cache_folder: Optional[str] = None, only: Optional[str] = None) -> dict:
+    """The `agents.<agent>` block of `json efficiency` (D-8) for the sessions of `src`. With `only` (a
+    session id) the block covers that session alone, over its whole life (range rule `session`); the
+    baselines still come from every session read. `{"missing": true, ...}` when it is not among them."""
     folder = cache_folder or cache.cache_dir(src.agent)
     reader = cache.Reader(now, folder=folder)
     window_start = now - tasks.WINDOW_DAYS * DAY
@@ -157,18 +159,27 @@ def build_for(now: float, src, vault: Optional[str] = None, threshold: float = D
         sessions, limits = src.read(now, oldest, max_sessions, reader)
         src.prune(folder)
         return _block(now, src, sessions, limits, reader, vault, threshold, budget, explicit,
-                      with_digest, names or {}, home)
+                      with_digest, names or {}, home, only)
     finally:
         src.close()
 
 
 def _block(now, src, sessions, limits, reader, vault, threshold, budget, explicit,
-           with_digest, names, home) -> dict:
+           with_digest, names, home, only=None) -> dict:
     turns_by = {s['id']: tasks.turns_of(s) for s in sessions}
     base = tasks.baselines(sessions, now, turns_by_session=turns_by)
     all_calls = [c for s in sessions for c in s['calls']]
 
-    if explicit:
+    if only is not None:
+        target = next((s for s in sessions if s['id'] == only), None)
+        if target is None:
+            return {'missing': True, 'limits': dict(limits, sessions_read=len(sessions))}
+        start = min((c['ts'] for c in target['calls']), default=now)
+        rng_info = {'rule': 'session', 'start': start, 'end': now, 'used_percentage': None, 'exhausted': False}
+        windows = {}
+        sessions = [target]
+        all_calls = list(target['calls'])
+    elif explicit:
         rng_info = {'rule': 'explicit', 'start': explicit[0], 'end': explicit[1],
                     'used_percentage': None, 'exhausted': False}
         windows = {}
