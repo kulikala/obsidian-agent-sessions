@@ -838,7 +838,8 @@ describe("matchesStatusFilter", () => {
 		expect(matchesStatusFilter(row({ id: "a" }), "asking", "needs-input", false)).toBe(true);
 		expect(matchesStatusFilter(row({ id: "a" }), "idle", "needs-input", false)).toBe(false);
 		expect(matchesStatusFilter(row({ id: "a" }), "waiting", "needs-review", false)).toBe(true);
-		expect(matchesStatusFilter(row({ id: "a" }), "compacted", "needs-review", false)).toBe(true);
+		expect(matchesStatusFilter(row({ id: "a" }), "compacted", "needs-review", false)).toBe(false);
+		expect(matchesStatusFilter(row({ id: "a" }), "compacted", "done", false)).toBe(true);
 		expect(matchesStatusFilter(row({ id: "a" }), "working", "running", false)).toBe(true);
 		expect(matchesStatusFilter(row({ id: "a" }), "idle", "done", false)).toBe(true);
 	});

@@ -115,6 +115,13 @@ function renderBadges(
 		cls: "agent-sessions-badge",
 		text: statusInfo?.effort ?? sessionRow.effort ?? detail?.effort ?? t("common.default"),
 	});
+	if (agent === "claude" && statusInfo?.advisor) {
+		const advisorBadge = row.createSpan({
+			cls: "agent-sessions-badge",
+			text: t("status.advisor", { name: statusInfo.advisor.name }),
+		});
+		setTooltip(advisorBadge, t("detail.advisorTooltip", { id: statusInfo.advisor.id }));
+	}
 	const rcBadge = row.createSpan({ cls: "agent-sessions-badge" });
 	rcBadge.appendText("rc ");
 	// ○ both when there's no ledger entry (`null`) and when disconnected; only ● when connected (`true`).

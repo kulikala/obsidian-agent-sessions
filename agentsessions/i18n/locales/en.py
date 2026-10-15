@@ -41,6 +41,7 @@ MESSAGES = {
 
     # hooks.py: format_status_line
     'statusline.line': '{model} · {effort} · ctx {pct}% · rc {rc}',
+    'statusline.line_advisor': '{model} · {effort} · advisor {advisor} · ctx {pct}% · rc {rc}',
     'statusline.with_symbol': '{symbol} · {line}',
 
     # setup.py: `agent-sessions setup` change descriptions

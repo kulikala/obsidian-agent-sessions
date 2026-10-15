@@ -34,6 +34,7 @@ MESSAGES = {
     'list_separator': '、',
 
     'statusline.line': '{model} · {effort} · ctx {pct}% · rc {rc}',
+    'statusline.line_advisor': '{model} · {effort} · advisor {advisor} · ctx {pct}% · rc {rc}',
     'statusline.with_symbol': '{symbol} · {line}',
 
     'setup.hook_migrated': 'hooks.{event}: {old!r} → {new!r}',

@@ -48,6 +48,7 @@ describe("StatusLine.get", () => {
 		expect(status.get("a")).toEqual({
 			model: "Opus 5",
 			effort: "high",
+			advisor: null,
 			ctxPercent: 42.4,
 			fiveHour: 37,
 			sevenDay: 12,
@@ -60,10 +61,31 @@ describe("StatusLine.get", () => {
 		expect(status.get("a")).toEqual({
 			model: "Sonnet 5",
 			effort: null,
+			advisor: null,
 			ctxPercent: null,
 			fiveHour: null,
 			sevenDay: null,
 		});
+	});
+
+	it("reads the advisor agent-sessions adds next to Claude Code's own fields", () => {
+		writeFileSync(
+			join(dir, "a.json"),
+			JSON.stringify({
+				model: { display_name: "Sonnet 5" },
+				agent_sessions: { advisor: { id: "claude-opus-5-5", display_name: "Opus 5.5" } },
+			}),
+			"utf8"
+		);
+		expect(new StatusLine(dir).get("a")?.advisor).toEqual({ name: "Opus 5.5", id: "claude-opus-5-5" });
+	});
+
+	it("names the advisor by its id when the short name is missing, and ignores one with no id", () => {
+		writeFileSync(join(dir, "a.json"), JSON.stringify({ agent_sessions: { advisor: { id: "opus" } } }), "utf8");
+		writeFileSync(join(dir, "b.json"), JSON.stringify({ agent_sessions: { advisor: { display_name: "Opus" } } }), "utf8");
+		const status = new StatusLine(dir);
+		expect(status.get("a")?.advisor).toEqual({ name: "opus", id: "opus" });
+		expect(status.get("b")?.advisor).toBeNull();
 	});
 });
 
@@ -72,19 +94,26 @@ describe("formatStatus", () => {
 
 	it("when everything is present", () => {
 		expect(
-			formatStatus({ model: "Opus 5", effort: "high", ctxPercent: 42, fiveHour: 37, sevenDay: 12 }, true)
+			formatStatus({ model: "Opus 5", effort: "high", advisor: null, ctxPercent: 42, fiveHour: 37, sevenDay: 12 }, true)
 		).toBe("Opus 5 · high · ctx 42% · rc ● · 5h 37% · 7d 12%");
+	});
+
+	it("puts the advisor after the effort", () => {
+		const advisor = { name: "Opus 5.5", id: "claude-opus-5-5" };
+		expect(formatStatus({ model: "Sonnet 5", effort: "high", advisor, ctxPercent: 42, fiveHour: 37, sevenDay: 12 }, true)).toBe(
+			"Sonnet 5 · high · advisor Opus 5.5 · ctx 42% · rc ● · 5h 37% · 7d 12%"
+		);
 	});
 
 	it("shows ○ when rc is false", () => {
 		expect(
-			formatStatus({ model: "Opus 5", effort: "high", ctxPercent: 42, fiveHour: 37, sevenDay: 12 }, false)
+			formatStatus({ model: "Opus 5", effort: "high", advisor: null, ctxPercent: 42, fiveHour: 37, sevenDay: 12 }, false)
 		).toContain("rc ○");
 	});
 
 	it("shows ○ when rc is null, i.e. no ledger entry (● means actively connected only)", () => {
 		expect(
-			formatStatus({ model: "Opus 5", effort: "high", ctxPercent: 42, fiveHour: 37, sevenDay: 12 }, null)
+			formatStatus({ model: "Opus 5", effort: "high", advisor: null, ctxPercent: 42, fiveHour: 37, sevenDay: 12 }, null)
 		).toContain("rc ○");
 	});
 
@@ -96,7 +125,7 @@ describe("formatStatus", () => {
 
 	it("info is present but some fields are missing", () => {
 		setLang("ja");
-		expect(formatStatus({ model: "Sonnet 5", effort: null, ctxPercent: 10, fiveHour: null, sevenDay: null }, true)).toBe(
+		expect(formatStatus({ model: "Sonnet 5", effort: null, advisor: null, ctxPercent: 10, fiveHour: null, sevenDay: null }, true)).toBe(
 			"Sonnet 5 · デフォルト · ctx 10% · rc ● · 5h — · 7d —"
 		);
 	});

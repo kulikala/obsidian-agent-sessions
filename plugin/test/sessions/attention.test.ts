@@ -59,13 +59,13 @@ describe("attentionCounts", () => {
 		const rows = [row({ id: "a" }), row({ id: "b" }), row({ id: "c" }), row({ id: "d" })];
 		const counts = attentionCounts(source({ a: "waiting", b: "asking", c: "compacted", d: "asking" }), rows);
 		expect(counts.askingIds).toEqual(["b", "d"]);
-		expect(counts.waitingIds).toEqual(["a", "c"]);
+		expect(counts.waitingIds).toEqual(["a"]);
 	});
 
-	it("counts compacted as waiting too (both are the needs-review group)", () => {
+	it("does not count compacted (it is in the done group)", () => {
 		const rows = [row({ id: "a" }), row({ id: "b" })];
 		const counts = attentionCounts(source({ a: "waiting", b: "compacted" }), rows);
-		expect(counts.waiting).toBe(2);
+		expect(counts.waiting).toBe(1);
 	});
 
 	it("never counts an archived row, regardless of its status", () => {
@@ -89,10 +89,10 @@ describe("urgencyByGroupKey", () => {
 		expect(map.get("g2")).toBe("waiting");
 	});
 
-	it("treats compacted the same as waiting (both are needs-review)", () => {
+	it("does not mark a group whose only session is compacted", () => {
 		const rows = [row({ id: "a", folder: "g1" })];
 		const map = urgencyByGroupKey(source({ a: "compacted" }), rows, keyOf);
-		expect(map.get("g1")).toBe("waiting");
+		expect(map.has("g1")).toBe(false);
 	});
 
 	it("does not have a key for a group with no matching rows", () => {
