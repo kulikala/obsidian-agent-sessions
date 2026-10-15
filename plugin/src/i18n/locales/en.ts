@@ -489,6 +489,7 @@ export const en = {
 	"stats.noUsageYet": "No usage data for this window yet.",
 
 	// ---- Detail view (views/detail.ts) ----
+	"detail.advisorTooltip": "Advisor model (/advisor): {id}",
 	"detail.compacted": "Compacted",
 	"detail.totalTokens": "Total tokens",
 	"detail.totalCost": "Total cost",
@@ -529,6 +530,7 @@ export const en = {
 	"status.looped": "Scheduled run finished",
 	// Right after a /compact, before the next instruction has been sent. Ranks below "waiting
 	// for input" — kept as a distinct state so it's clear the context was just reset.
+	"status.advisor": "advisor {name}",
 	"status.compacted": "Compacted (context was reset)",
 	"status.editing": "Editing",
 	"status.idle": "Idle",

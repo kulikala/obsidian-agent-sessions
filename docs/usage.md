@@ -122,7 +122,7 @@ The side panel (right sidebar) lists sessions in three groups:
 
 - Each row has a state icon, an agent icon, a category chip and the name.
 - A Claude Code session with scheduled work (`/loop`, a cron job or a wakeup) shows a badge. Hover it for the tasks, each schedule in words and the next run. Only a session whose process is running counts.
-- The **details pane** below shows the selected session's state (its icon and name, a sentence on what it means, and a tag when it needs input or review), model, effort, connection status, context usage, total tokens and cost, and the last instruction and reply.
+- The **details pane** below shows the selected session's state (its icon and name, a sentence on what it means, and a tag when it needs input or review), model, effort, the advisor model when a Claude Code session has one set with `/advisor`, connection status, context usage, total tokens and cost, and the last instruction and reply.
 - At the bottom, each enabled agent's 5-hour and 7-day usage bars count down to their reset.
 
 ## Session states

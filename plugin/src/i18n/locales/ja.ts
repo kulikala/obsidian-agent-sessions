@@ -490,6 +490,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"stats.noUsageYet": "この枠の使用状況はまだありません。",
 
 	// ---- Detail view (views/detail.ts) ----
+	"detail.advisorTooltip": "アドバイザー（/advisor）のモデル: {id}",
 	"detail.compacted": "コンテキスト圧縮済み",
 	"detail.totalTokens": "総トークン",
 	"detail.totalCost": "総コスト",
@@ -529,6 +530,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"status.looped": "予約実行が完了",
 	// Right after a /compact, before the next instruction has been sent. Ranks below "waiting
 	// for input" — kept as a distinct state so it's clear the context was just reset.
+	"status.advisor": "advisor {name}",
 	"status.compacted": "コンテキスト圧縮済み",
 	"status.editing": "編集中",
 	"status.idle": "待機",
