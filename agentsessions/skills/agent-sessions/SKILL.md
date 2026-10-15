@@ -1,6 +1,6 @@
 ---
 name: agent-sessions
-description: Work with Agent Sessions from an agent session - show usage statistics ({{USAGE}}), list and inspect other sessions (names, {{AGENTS_WORD}}folders, status, last messages), and start a new session ({{NAMES}}) when the user explicitly asks for one. Use when the user asks about {{ASKS}}, about what other sessions exist or what one is doing, or to start a new session.
+description: Work with Agent Sessions from an agent session - show usage statistics ({{USAGE}}), list and inspect sessions (names, categories, {{AGENTS_WORD}}folders, status including ended ones, last messages), find where this session wasted tokens, propose a name and category for a session and rename it, and start a new session ({{NAMES}}) or resume an ended one when the user explicitly asks. Use when the user asks about {{ASKS}}, about what sessions exist or what one is doing, about this session's waste, to name a session, or to start or resume one.
 argument-hint: "[what to do]"
 ---
 {{MARKER}}
@@ -56,10 +56,41 @@ OpenCode has no usage windows, so there is no `stats` here; `show` gives tokens 
 ## Other sessions
 
 ```bash
-"{{LAUNCHER}}" sessions [--query '<text>']{{if multi}} [--agent {{IDS}}]{{endif}} [--limit <n>] [--all]
+"{{LAUNCHER}}" sessions [--query '<text>']{{if multi}} [--agent {{IDS}}]{{endif}} [--status running|asking|idle|ended] [--category '<category>'] [--limit <n>] [--all]
+"{{LAUNCHER}}" sessions --categories
 "{{LAUNCHER}}" show '<id, id prefix or name>'
 ```
 
-`sessions` prints one line per session, newest activity first: id, {{AGENT_WORD}}status, last activity, folder, name (this session ends with `<- this session`). Status: `running` (working or running a shell command), `asking` (waiting for the user's answer), `idle` (waiting for the next message), `ended` (no process; can be resumed). `--all` adds archived and sub-agent sessions.
+`sessions` prints one line per session, newest activity first: id, {{AGENT_WORD}}status, last activity, folder, name (this session ends with `<- this session`). Status: `running` (working or running a shell command), `asking` (waiting for the user's answer), `idle` (waiting for the next message), `ended` (no process; sleeping until resumed). Ended sessions are listed with the rest; `--status ended` keeps only them, and `--status` can be given more than once. A name `Category: Name` puts the session in that category: `--category` keeps one category's sessions (`''` for sessions without one), and `--categories` lists the categories with how many sessions each has. `--all` adds archived and sub-agent sessions, marked as such.
 
 `show` prints status, folder, usage and model, then the last user message, the last assistant message and the last command. If several sessions match it lists them; run it again with an id. Quote messages only as far as the user needs. These commands only read; they send nothing to a session.
+
+## Resume an ended session
+
+Only when the user explicitly asks to wake up or resume a session. Never resume one on your own initiative or to hand it work.
+
+```bash
+"{{LAUNCHER}}" resume '<id, id prefix or name>' [--prompt '<message>']
+```
+
+- It resumes a session whose status is `ended` in the background, with the settings Obsidian uses; it refuses any other status and this session itself. No tab opens: the session shows as running in Obsidian's list, which opens it.
+- `--prompt` is a message sent to it as it resumes. Use it only with text the user gave; never make one up.
+- Run it once. Exit 0: report what it printed. Exit 1: it started but was not confirmed; report that and do not run it again (that starts a second process). Exit 2: it could not start; report the error.
+
+## Waste in this session
+
+```bash
+"{{LAUNCHER}}" analyze [--tasks <n>]
+```
+
+It prints this session's token statistics, the checks to judge it by, and between `<<<DATA` and `DATA>>>` the latest tasks (each turn's prompt, the start of the reply and its numbers) with what local statistics found (`hints`). It calls no model: read the data yourself against the checks and report each issue you can point to in specific tasks, its cause and the next step, in the user's language; say so when there is none. Follow the rules printed with it. Give another session's id or name to analyse that one; `--tasks` reaches further back.
+
+## Name a session
+
+```bash
+"{{LAUNCHER}}" suggest-name ['<id, id prefix or name>']
+"{{LAUNCHER}}" suggest-name ['<id, id prefix or name>'] --check '<Category>: <Name>'
+"{{LAUNCHER}}" suggest-name ['<id, id prefix or name>'] --apply '<Category>: <Name>'
+```
+
+Without a session it is this one. The first form prints the current name, the folder, the rules a name follows and the existing categories with example names (and, for another session, the start and end of its conversation). Propose one `Category: Name` (prefer an existing category) and check it with `--check`; when it breaks a rule, fix it and check again. Show the user the proposal. Rename with `--apply` only after the user agrees: Obsidian renames the session, this one once your reply has ended. Exit 1 from `--apply` means it was not renamed; pass on the `/rename` it prints.

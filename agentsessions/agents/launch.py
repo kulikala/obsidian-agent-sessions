@@ -171,3 +171,42 @@ def build_argv(agent: str, bin_path: str, session_id: str, name: Optional[str] =
     if prompt:
         argv += ['--', prompt]
     return argv
+
+
+def build_resume_argv(agent: str, bin_path: str, session_id: str, remote_control_name: Optional[str] = None,
+                      prompt: Optional[str] = None, ollama_bin: Optional[str] = None, ollama_model: str = '',
+                      codex_no_daemon: bool = False) -> List[str]:
+    """argv that resumes `session_id`, as `buildAgentArgv(..., fresh=false)` in backend.ts builds it:
+    `claude --resume <id>` (with `--remote-control=<name>` for a session that resumes into Remote
+    Control, `resume_connects_remote_control`), `codex [--no-daemon] resume <id>`, `opencode --session
+    <id>` (through `ollama launch opencode` when set so). `prompt`, a message to send on resuming,
+    goes last, as each CLI takes one."""
+    if agent == 'codex':
+        own = [bin_path, '--no-daemon'] if codex_no_daemon else [bin_path]
+        return own + ['resume', session_id] + ([prompt] if prompt else [])
+    if agent == 'opencode':
+        tail = ['--session', session_id] + (['--prompt=' + prompt] if prompt else [])
+        if ollama_bin:
+            return [ollama_bin, 'launch', 'opencode', '--model', ollama_model, '-y', '--'] + tail
+        return [bin_path] + tail
+    argv = [bin_path, '--resume', session_id]
+    if remote_control_name:
+        argv.append('--remote-control=' + remote_control_name)
+    if prompt:
+        argv += ['--', prompt]
+    return argv
+
+
+def resume_connects_remote_control(settings_text: Optional[str], transcript_text: Optional[str]) -> bool:
+    """Whether resuming a Claude Code session connects Remote Control (`resumeConnectsRemoteControl` in
+    remote-control.ts): `remoteControlAtStartup: true` in Claude Code's `settings.json`, or a
+    `bridge-session` record in the transcript."""
+    at_startup = False
+    if settings_text is not None:
+        try:
+            data = json.loads(settings_text)
+            at_startup = isinstance(data, dict) and data.get('remoteControlAtStartup') is True
+        except ValueError:
+            pass
+    return at_startup or (transcript_text is not None
+                          and re.search(r'"type":\s*"bridge-session"', transcript_text) is not None)

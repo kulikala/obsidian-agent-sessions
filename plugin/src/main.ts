@@ -81,7 +81,16 @@ import {
 	type OpencodePluginStatus,
 } from "./backend/opencode-plugin";
 import { CONFIRM_KEY, isModelSwitchDialog, mayAskToConfirm } from "./terminal/model-switch";
-import { EditServer, editReplyFor, submitsAfterEdit, tabOwnsEditSession, type EditReply, type EditRequest } from "./backend/edit-server";
+import {
+	EditServer,
+	editReplyFor,
+	submitsAfterEdit,
+	tabOwnsEditSession,
+	type EditReply,
+	type EditRequest,
+	type RenameReply,
+	type RenameRequest,
+} from "./backend/edit-server";
 import { SessionIndex, type Row } from "./sessions/index";
 import { getLang, languageOptions, resolveLang, setLang, t, type MessageKey } from "./i18n";
 import { applyCodexConfig, codexProfileNeedsSync, defaultCodexConfigPath, type ApplyCodexConfigResult } from "./terminal/codex-config";
@@ -239,6 +248,10 @@ const WAIT_RC_CONNECT_MS = 120000;
 const CLOCK_SLACK_MS = 2000;
 /** How long a headless `/rename` waits for Remote Control to connect when the session is expected to (`resumeConnectsRemoteControl`). */
 const WAIT_RC_HEADLESS_MS = 30000;
+/** How long a `rename` request from the CLI waits for a working session to finish its turn. */
+const WAIT_TURN_END_MS = 30 * 60 * 1000;
+/** How often that wait looks at the session's status. */
+const TURN_END_POLL_MS = 2000;
 /** After a headless `/rename` on a session connected to Remote Control, how long before `/exit`, so
  * the new title reaches the server first. */
 const RC_TITLE_SETTLE_MS = 2000;
@@ -484,6 +497,7 @@ export default class AgentSessionsPlugin extends Plugin {
 		this.registerEvent(this.app.workspace.on("layout-change", () => this.scheduleCleanupExited()));
 
 		this.editServer.onEdit((req, reply) => this.handleEdit(req, reply));
+		this.editServer.onRename((req) => this.handleRenameRequest(req));
 		this.editServer.start(this.pluginSockPath()).catch((err) => {
 			console.warn("agent-sessions: couldn't open plugin.sock", err);
 		});
@@ -2441,6 +2455,39 @@ export default class AgentSessionsPlugin extends Plugin {
 		} catch (err) {
 			new Notice(t("notice.renameFailed", { error: messageOf(err) }));
 		}
+	}
+
+	/**
+	 * A `rename` request from `agent-sessions suggest-name --apply`: renames through `renameSession`,
+	 * as the dialog does. A session in the middle of a turn (working, running a command or asking)
+	 * — typically the one that asked — is renamed once that turn ends, so `/rename` never lands in
+	 * the middle of it: the reply says `queued` and comes before the rename.
+	 */
+	private async handleRenameRequest(req: RenameRequest): Promise<RenameReply> {
+		const id = req.session;
+		if (!this.index.sessions.has(id) && !this.findTerminalView(id)) {
+			return { ok: false, error: "no-session" };
+		}
+		const inTurn = (): boolean => {
+			const status = this.index.sessions.get(id)?.status;
+			return status === "busy" || status === "shell" || status === "waiting";
+		};
+		if (!inTurn()) {
+			void this.renameSession(id, req.name);
+			return { ok: true };
+		}
+		void (async () => {
+			const deadline = Date.now() + WAIT_TURN_END_MS;
+			while (inTurn() && Date.now() < deadline) {
+				await sleep(TURN_END_POLL_MS);
+			}
+			if (inTurn()) {
+				new Notice(t("notice.renameFailed", { error: t("error.renameTurnWaitFailed") }));
+				return;
+			}
+			await this.renameSession(id, req.name);
+		})();
+		return { ok: true, queued: true };
 	}
 
 	/**

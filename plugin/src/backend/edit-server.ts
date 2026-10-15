@@ -1,5 +1,6 @@
 // The plugin's own socket. Listens on `~/.agents/sessions/plugin.sock` and receives
-// `J {"op":"edit","seq","file","session","cwd"}` from `agent-sessions edit`. Frames share
+// `J {"op":"edit","seq","file","session","cwd"}` from `agent-sessions edit`, and
+// `J {"op":"rename","seq","session","name"}` from `agent-sessions suggest-name --apply`. Frames share
 // `daemon-client.ts`'s `encodeFrame`/`FrameDecoder` (using kind `J` only).
 //
 // One request per connection. Replies via `reply`, then closes the connection. If the other
@@ -63,6 +64,21 @@ export function tabOwnsEditSession(tab: { sessionId: string; daemonId: string },
 
 export type EditHandler = (req: EditRequest, reply: EditReply) => void;
 
+/** A `rename` request: the session's own id (as the list knows it) and its new full name. */
+export interface RenameRequest {
+	session: string;
+	name: string;
+}
+
+/** The answer to a `rename`: `queued` when the rename waits for the session to finish its turn. */
+export interface RenameReply {
+	ok: boolean;
+	error?: string;
+	queued?: boolean;
+}
+
+export type RenameHandler = (req: RenameRequest) => Promise<RenameReply>;
+
 interface Conn {
 	socket: net.Socket;
 	gate: TokenGate;
@@ -76,11 +92,16 @@ export class EditServer {
 	private server: net.Server | null = null;
 	private sockPath = "";
 	private handler: EditHandler | null = null;
+	private renameHandler: RenameHandler | null = null;
 	private conns = new Set<Conn>();
 	private token: string | null = null;
 
 	onEdit(handler: EditHandler): void {
 		this.handler = handler;
+	}
+
+	onRename(handler: RenameHandler): void {
+		this.renameHandler = handler;
 	}
 
 	/** Removes any stale socket, starts listening (a `0600` Unix socket, or loopback TCP plus a token on Windows — see `transport.ts`). */
@@ -183,6 +204,10 @@ export class EditServer {
 			conn.socket.end();
 			return;
 		}
+		if (msg.op === "rename") {
+			this.handleRename(conn, seq, msg);
+			return;
+		}
 		if (msg.op !== "edit") {
 			this.send(conn, { ok: false, error: "unknown-op", seq });
 			return;
@@ -207,6 +232,26 @@ export class EditServer {
 			return;
 		}
 		this.handler(conn.req, (ok, error) => this.reply(conn, ok, error));
+	}
+
+	/** A `rename` request: answered once the handler has taken it (or found it can't), then the connection closes. */
+	private handleRename(conn: Conn, seq: number, msg: Record<string, unknown>): void {
+		const finish = (body: RenameReply): void => {
+			conn.replied = true;
+			this.send(conn, { ...body, seq });
+			conn.socket.end();
+		};
+		if (typeof msg.session !== "string" || !msg.session || typeof msg.name !== "string" || !msg.name.trim()) {
+			finish({ ok: false, error: "bad-request" });
+			return;
+		}
+		if (!this.renameHandler) {
+			finish({ ok: false, error: "unavailable" });
+			return;
+		}
+		this.renameHandler({ session: msg.session, name: msg.name }).then(finish, (err: unknown) =>
+			finish({ ok: false, error: err instanceof Error ? err.message : String(err) })
+		);
 	}
 
 	/** Sends a reply and closes the connection. Does nothing if already replied or disconnected. */

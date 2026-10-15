@@ -140,6 +140,26 @@ def _daemon_session(daemon_id: str) -> Optional[dict]:
     return None
 
 
+def resolve_launch(agent: str, environ: Dict[str, str]) -> Tuple[dict, str, Optional[str], str]:
+    """The agent's launch settings (`launch.read_launch_config`), its binary, and ollama's binary and model
+    when OpenCode is set to start through it. Raises `Failure` when one is missing."""
+    cfg = launch.read_launch_config().get(agent, {})
+    try:
+        bin_path = launch.find_binary(agent, cfg.get('path', ''), environ.get('PATH'))
+        ollama_bin = None
+        model = cfg.get('ollamaModel', '')
+        if agent == 'opencode' and cfg.get('launchVia') == 'ollama':
+            if not model:
+                raise launch.LaunchError('OpenCode is set to start through ollama, but no model is chosen '
+                                         'in the Agent Sessions settings')
+            ollama_bin = shutil.which('ollama', path=environ.get('PATH'))
+            if not ollama_bin:
+                raise launch.LaunchError('ollama was not found on PATH')
+    except launch.LaunchError as e:
+        raise Failure(str(e))
+    return cfg, bin_path, ollama_bin, model
+
+
 # ---- The command -----------------------------------------------------------------------------
 
 def parse_args(argv: List[str]) -> argparse.Namespace:
@@ -213,21 +233,7 @@ def start(ns: argparse.Namespace, environ: Optional[Dict[str, str]] = None) -> D
     if name and agent == 'codex':
         warnings.append('Codex cannot be named at launch; use /rename in the session')
 
-    cfg = launch.read_launch_config().get(agent, {})
-    try:
-        bin_path = launch.find_binary(agent, cfg.get('path', ''), environ.get('PATH'))
-        ollama_bin = None
-        model = cfg.get('ollamaModel', '')
-        if agent == 'opencode' and cfg.get('launchVia') == 'ollama':
-            if not model:
-                raise launch.LaunchError('OpenCode is set to start through ollama, but no model is chosen '
-                                         'in the Agent Sessions settings')
-            ollama_bin = shutil.which('ollama', path=environ.get('PATH'))
-            if not ollama_bin:
-                raise launch.LaunchError('ollama was not found on PATH')
-    except launch.LaunchError as e:
-        raise Failure(str(e))
-
+    cfg, bin_path, ollama_bin, model = resolve_launch(agent, environ)
     daemon_id = str(uuid.uuid4())
     argv = launch.build_argv(agent, bin_path, daemon_id, name, rc, prompt, ollama_bin, model,
                              codex_no_daemon=agent == 'codex' and launch.codex_no_daemon(bin_path))

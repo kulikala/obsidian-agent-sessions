@@ -503,6 +503,26 @@ def efficiency_output(agent_names: Optional[List[str]] = None, threshold: float 
     return {'version': 1, 'agents': out}
 
 
+def session_efficiency_output(agent: str, session_id: str, now: Optional[float] = None,
+                              max_sessions: int = 200) -> dict:
+    """The `json efficiency` block of one session (`report.build_for(..., only=session_id)`): its whole
+    life, with the baselines of the agent's recent sessions. `{"missing": true, ...}` when it is not
+    among the sessions read (older than the look-back, or past `max_sessions`)."""
+    from ..efficiency import report, sources
+    now = time.time() if now is None else now
+    kw = dict(vault=config.VAULT, max_sessions=max_sessions, with_digest=True, only=session_id)
+    if agent == 'claude':
+        c = cache.load(path=config.CACHE_PATH)
+        paths = claude_agent.list_transcripts()
+        names = {s.id: s.name for s in claude_agent.scan(paths, cache=c).values() if s.name}
+        cache.save(c, path=config.CACHE_PATH)
+        return report.build(now, config.PROJECTS_DIR, config.STATUS_DIR, config.STATS_CACHE_PATH,
+                            names=names, **kw)
+    if agent == 'codex':
+        return report.build_for(now, sources.CodexSource(), names=_agent_names(codex_agent), **kw)
+    return report.build_for(now, sources.OpencodeSource(), names=_agent_names(opencode_agent), **kw)
+
+
 def _agent_names(module) -> Dict[str, str]:
     """Session names of Codex or OpenCode (best effort: none when the scan fails)."""
     try:

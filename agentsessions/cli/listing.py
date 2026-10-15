@@ -5,6 +5,7 @@ import os
 import time
 from typing import Any, Dict, List, Optional
 
+from ..sessions import model
 from . import json_output
 
 # The CLI's status words, from the raw `busy | shell | waiting | idle` a live entry carries. A session
@@ -39,7 +40,8 @@ def own_session_id(environ: Optional[Dict[str, str]] = None) -> Optional[str]:
 
 def collect(environ: Optional[Dict[str, str]] = None, include_children: bool = False,
             include_archived: bool = False) -> List[Dict[str, Any]]:
-    """Every session with `status` (running | asking | idle | ended), newest activity first."""
+    """Every session with `status` (running | asking | idle | ended), newest activity first. `category` is
+    the part of a given name before `: ` (the plugin's group), `None` without one."""
     scan = json_output.scan_output()
     live = json_output.live_output()
     archived = {a.get('id') for a in scan['store'].get('archived', []) if isinstance(a, dict)}
@@ -53,17 +55,21 @@ def collect(environ: Optional[Dict[str, str]] = None, include_children: bool = F
         if s['id'] in archived and not include_archived:
             continue
         entry = live['live'].get(s['id'])
+        category = model.split_name(s['name'])[0] if s['name'] else None
         row = {
             'id': s['id'],
             'agent': s['agent'],
             'name': s['name'] or s['label'],
             'named': bool(s['name']),
+            'category': category,
             'folder': s['folder'],
             'cwd': s['cwd'],
             'status': STATUS_OF_LIVE.get(entry['status'], 'idle') if entry else ENDED,
             'last_activity': s['last_activity'],
             'in_daemon': s['id'] in running_in_daemon,
             'self': s['id'] == own,
+            'archived': s['id'] in archived,
+            'child': bool(s['child']),
         }
         if entry and entry.get('waiting_for'):
             row['waiting_for'] = entry['waiting_for']
@@ -91,6 +97,29 @@ def find(rows: List[Dict[str, Any]], query: str) -> Dict[str, Any]:
         if len(hits) > 1:
             raise Ambiguous(q, hits)
     raise NotFound(q)
+
+
+def in_category(row: Dict[str, Any], category: str) -> bool:
+    """Whether the row's category is `category`, ignoring case and surrounding spaces. An empty
+    `category` means sessions with none."""
+    want = category.strip().lower()
+    have = (row.get('category') or '').lower()
+    return have == want
+
+
+def categories(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Each category among `rows` with how many sessions it has and how many of them are ended,
+    most sessions first (then by name). Sessions with no category are left out."""
+    counts: Dict[str, Dict[str, Any]] = {}
+    for r in rows:
+        c = r.get('category')
+        if not c:
+            continue
+        e = counts.setdefault(c, {'category': c, 'sessions': 0, 'ended': 0})
+        e['sessions'] += 1
+        if r['status'] == ENDED:
+            e['ended'] += 1
+    return sorted(counts.values(), key=lambda e: (-e['sessions'], e['category'].lower()))
 
 
 def matches(row: Dict[str, Any], query: str) -> bool:
