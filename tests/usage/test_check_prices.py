@@ -38,6 +38,23 @@ class CheckPricesTest(unittest.TestCase):
         self.assertIn('claude-opus-5: input is 5, the page says 6', diffs)
         self.assertTrue(any(d.startswith('claude-opus-6: not in the table') for d in diffs))
 
+    def test_suggest_prints_the_row_to_change_and_the_row_to_add(self):
+        extra = ('| Claude Opus 5 | $6 / MTok | $7.50 / MTok | $12 / MTok | $0.50 / MTok | $25 / MTok |\n'
+                 '| Claude Opus 6 | $4 / MTok | $5 / MTok | $8 / MTok | $0.20 / MTok | $20 / MTok |')
+        lines = check_prices.suggest(check_prices.page_rows(PAGE.format(extra=extra)))
+        self.assertTrue(any(l.startswith("change the row in PRICES: (('claude-opus-5', 'claude-opus-4-8'") and
+                            l.endswith('6, 25, 0.5),') for l in lines), lines)
+        self.assertIn("add to PRICES: (('claude-opus-6',), 4, 20, 0.2),", lines)
+
+    def test_suggest_covers_long_prompt_rows_and_odd_cache_writes(self):
+        extra = ('| Claude Haiku 6 (for prompts over 200,000 tokens) | $1 / MTok | $2 / MTok | $2 / MTok | $0.10 / MTok | $5 / MTok |')
+        lines = check_prices.suggest(check_prices.page_rows(PAGE.format(extra=extra)))
+        self.assertIn("add to LONG_PROMPT_PRICES: (('claude-haiku-6',), 200_000, 1, 5, 0.1),", lines)
+        self.assertTrue(any('not input x 1.25' in l for l in lines))
+
+    def test_suggest_is_empty_when_the_table_matches(self):
+        self.assertEqual(check_prices.suggest(check_prices.page_rows(PAGE.format(extra=''))), [])
+
     def test_no_table_reads_no_rows(self):
         self.assertEqual(check_prices.page_rows('# Pricing\n\nmoved'), [])
 
