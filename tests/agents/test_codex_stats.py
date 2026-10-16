@@ -336,3 +336,27 @@ class TestExhausted(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestBucketCachedInput(unittest.TestCase):
+    """Codex's `input_tokens` include the cached input: a bucket counts and prices
+    only the uncached part as input, so the cached part is not billed twice."""
+
+    def test_cached_input_is_not_counted_as_input_too(self):
+        from agentsessions.usage import pricing
+        with tempfile.TemporaryDirectory() as home:
+            p = rollout_path(home, ID1)
+            write_rollout(p, [
+                session_meta(ID1, '/work/one'),
+                turn_context(model='gpt-5.6-terra'),
+                token_count({'input_tokens': 10000, 'cached_input_tokens': 9000,
+                             'cache_write_input_tokens': 0, 'output_tokens': 100},
+                            '2026-09-24T01:30:31Z'),
+            ])
+            buckets, _ = stats._bucket_rollout(p)
+        (b,) = buckets.values()
+        self.assertEqual(b['input'], 1000)
+        self.assertEqual(b['cache_read'], 9000)
+        self.assertAlmostEqual(b['cost'], pricing.cost(
+            {'input_tokens': 1000, 'cache_read_input_tokens': 9000, 'output_tokens': 100},
+            'gpt-5.6-terra', agent='codex'))
