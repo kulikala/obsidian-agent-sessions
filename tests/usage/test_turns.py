@@ -174,6 +174,27 @@ class UsageTest(unittest.TestCase):
         self.assertEqual(turn1['tools'], {'Read': 2, 'Edit': 1})
         self.assertEqual(turns[2]['tools'], {})
 
+    def test_each_tool_call_of_a_response_split_over_lines_is_counted_once(self):
+        # Claude Code writes a response that calls two tools as two lines with the same
+        # message.id, one tool_use block on each; a repeated line repeats a block's id.
+        import json, os, tempfile
+        def line(block):
+            return {'type': 'assistant', 'timestamp': '2024-01-01T00:00:01.000Z',
+                    'message': {'id': 'm1', 'model': 'claude-opus-5-5', 'content': [block],
+                                'usage': {'input_tokens': 1, 'output_tokens': 1}}}
+        read = {'type': 'tool_use', 'id': 'toolu_1', 'name': 'Read', 'input': {}}
+        bash = {'type': 'tool_use', 'id': 'toolu_2', 'name': 'Bash', 'input': {}}
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, 't.jsonl')
+            with open(path, 'w') as f:
+                f.write(json.dumps({'type': 'user', 'timestamp': '2024-01-01T00:00:00.000Z',
+                                    'message': {'role': 'user', 'content': 'go'}}) + '\n')
+                for rec in (line(read), line(bash), line(bash)):
+                    f.write(json.dumps(rec) + '\n')
+            turns = usage.collect(path)
+        self.assertEqual(turns[-1]['tools'], {'Read': 1, 'Bash': 1})
+        self.assertEqual(turns[-1]['calls'], 1)
+
     def test_context_last_is_the_last_calls_input_plus_cache(self):
         turns = usage.collect(self.path)
         turn1 = turns[1]
