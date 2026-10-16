@@ -29,7 +29,8 @@ def prices(call: dict) -> Optional[Dict[str, Optional[float]]]:
     agent = call.get('agent') or 'claude'
     if agent == 'opencode':
         return None
-    p = pricing.price_of(call.get('model'), agent=agent)
+    p = pricing.price_of(call.get('model'), agent=agent,
+                         prompt_tokens=call.get('in', 0) + call.get('cr', 0) + call.get('cw', 0))
     return None if p.get('unknown') else p
 
 
