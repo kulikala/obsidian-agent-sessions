@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
 """Compares the Claude price table (`agentsessions/usage/pricing.py`) with Anthropic's pricing page.
 
-    python3 tools/prices/check_prices.py [--file pricing.md]
+    python3 tools/prices/check_prices.py [--file pricing.md] [--suggest]
 
 Reads the page's "Model pricing" table (fetched from `PAGE`, or `--file`), turns each model name
 into the id prefix the table matches (`Claude Opus 5.5` -> `claude-opus-5-5`) and prints every
 difference: a model the page lists that `PRICES` lacks, a price that differs (input, output,
 cache read, and the 5-minute and 1-hour cache writes, which `price_of` derives from the input
-price), and the long-prompt prices (`LONG_PROMPT_PRICES`). Retired models are skipped.
+price), and the long-prompt prices (`LONG_PROMPT_PRICES`). Retired models are skipped. `--suggest` then
+prints, for each model that differs, the `PRICES` / `LONG_PROMPT_PRICES` row to add or change.
 
 Exit codes: 0 = the table matches the page, 1 = differences (printed), 2 = the page could not be
 read or has no table.
@@ -85,9 +86,42 @@ def compare(rows: List[Dict]) -> List[str]:
     return out
 
 
+def _num(x: float) -> str:
+    return '%g' % x
+
+
+def suggest(rows: List[Dict]) -> List[str]:
+    """For each page row that differs from the table: the row to put in `pricing.py`."""
+    out = []
+    for r in rows:
+        ours = _ours(r['id'], r['long_over'])
+        if ours is not None and not compare([r]):
+            continue
+        if r['long_over'] is None:
+            table, name = pricing.PRICES, 'PRICES'
+            values = [_num(v) for v in (r['input'], r['output'], r['cache_read'])]
+        else:
+            table, name = pricing.LONG_PROMPT_PRICES, 'LONG_PROMPT_PRICES'
+            values = ['{:_}'.format(r['long_over'])] + [_num(v) for v in (r['input'], r['output'], r['cache_read'])]
+        existing = next((row for row in table if r['id'] in row[0]
+                         and (r['long_over'] is None or row[1] == r['long_over'])), None)
+        prefixes = tuple(existing[0]) if existing else (r['id'],)
+        row = '(%r, %s)' % (prefixes, ', '.join(values))
+        out.append('%s %s: %s,' % ('change the row in' if existing else 'add to', name, row))
+        if existing and len(prefixes) > 1:
+            out.append('  (this row covers %s; split the model out if the others keep their old prices)'
+                       % ', '.join(prefixes))
+        if abs(r['cache_5m'] - r['input'] * 1.25) > 1e-9 or abs(r['cache_1h'] - r['input'] * 2) > 1e-9:
+            out.append('  the page prices cache writes at %s (5m) / %s (1h), not input x 1.25 / x 2; '
+                       'price_of needs an exception' % (_num(r['cache_5m']), _num(r['cache_1h'])))
+    return out
+
+
 def main(argv: List[str]) -> int:
     p = argparse.ArgumentParser(description="Compare pricing.py with Anthropic's pricing page")
     p.add_argument('--file', help='a saved copy of the page (markdown) instead of fetching it')
+    p.add_argument('--suggest', action='store_true',
+                   help='for each difference, print the PRICES / LONG_PROMPT_PRICES row to add or change')
     ns = p.parse_args(argv)
     try:
         if ns.file:
@@ -107,6 +141,10 @@ def main(argv: List[str]) -> int:
     diffs = compare(rows)
     for d in diffs:
         print(d)
+    if ns.suggest and diffs:
+        print('\nSuggested rows for agentsessions/usage/pricing.py:')
+        for line in suggest(rows):
+            print(line)
     if not diffs:
         print('The price table matches the page (%d models).' % len(rows))
     return 1 if diffs else 0

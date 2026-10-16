@@ -1,0 +1,68 @@
+name: Price check
+
+# Compares the Claude price table (agentsessions/usage/pricing.py) with Anthropic's pricing page and
+# keeps one open issue while they differ. Run it by hand ("Run workflow") after an announcement.
+on:
+  schedule:
+    - cron: "17 6 1 * *"
+  workflow_dispatch:
+
+# Nothing by default; the job asks for what it needs.
+permissions: {}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: check prices
+        id: check
+        run: |
+          set +e
+          python3 tools/prices/check_prices.py --suggest > report.txt 2> errors.txt
+          echo "code=$?" >> "$GITHUB_OUTPUT"
+          cat report.txt errors.txt
+
+      - name: open or update the issue
+        if: steps.check.outputs.code != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CODE: ${{ steps.check.outputs.code }}
+        run: |
+          if [ "$CODE" = "1" ]; then
+            label="price-check"
+            title="Price table differs from the pricing page"
+            intro="The price table in agentsessions/usage/pricing.py differs from https://platform.claude.com/docs/en/about-claude/pricing:"
+            body_file=report.txt
+          else
+            label="price-check-broken"
+            title="Price check cannot read the pricing page"
+            intro="tools/prices/check_prices.py could not read the pricing page or its Model pricing table (the page may be down or its layout changed):"
+            body_file=errors.txt
+          fi
+          {
+            echo "$intro"
+            echo
+            echo '```'
+            cat "$body_file"
+            echo '```'
+            echo
+            echo "Found by the [${GITHUB_WORKFLOW} run](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}). How to update the table: docs/development.md, Updating the price table."
+          } > issue.md
+          gh label create "$label" --repo "$GITHUB_REPOSITORY" --color FBCA04 --description "Opened by the price check workflow" 2>/dev/null || true
+          number=$(gh issue list --repo "$GITHUB_REPOSITORY" --label "$label" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --repo "$GITHUB_REPOSITORY" --title "$title" --body-file issue.md
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --label "$label" --title "$title" --body-file issue.md
+          fi
