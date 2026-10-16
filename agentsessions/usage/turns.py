@@ -81,12 +81,25 @@ def _parse_ts(value) -> Optional[float]:
         return None
 
 
+def _apply_usage(target: Turn, usage: dict, model, sign: int) -> None:
+    """Add (`sign` 1) or take back (-1) one call's tokens and cost, not its call count."""
+    target.input += sign * _int(usage.get('input_tokens'))
+    target.cache_create += sign * _int(usage.get('cache_creation_input_tokens'))
+    target.cache_read += sign * _int(usage.get('cache_read_input_tokens'))
+    target.output += sign * _int(usage.get('output_tokens'))
+    details = usage.get('output_tokens_details')
+    if isinstance(details, dict):
+        target.thinking += sign * _int(details.get('thinking_tokens'))
+    target.cost += sign * pricing.cost(usage, model)
+
+
 def collect(path: str) -> List[dict]:
     """Read the transcript at `path` from the start and collect per-turn usage."""
     turns: List[Turn] = []
     before: Optional[Turn] = None
     current: Optional[Turn] = None
-    seen_ids: set = set()
+    # id -> (turn it was counted in, usage counted); see the repeat-line branch below
+    counted: Dict[str, tuple] = {}
 
     try:
         f = open(path, 'r', encoding='utf-8')
@@ -123,10 +136,15 @@ def collect(path: str) -> List[dict]:
             if not isinstance(usage, dict):
                 continue
             msg_id = message.get('id')
-            if msg_id is not None:
-                if msg_id in seen_ids:
-                    continue
-                seen_ids.add(msg_id)
+            if msg_id is not None and msg_id in counted:
+                # One response is written as several lines sharing the id, and the
+                # last line carries the final output_tokens (the first holds a
+                # streamed, partial count): swap its usage in rather than adding it.
+                old_target, old_usage = counted[msg_id]
+                _apply_usage(old_target, old_usage, message.get('model'), -1)
+                _apply_usage(old_target, usage, message.get('model'), 1)
+                counted[msg_id] = (old_target, usage)
+                continue
 
             target = current
             if target is None:
@@ -140,17 +158,11 @@ def collect(path: str) -> List[dict]:
             call_cache_read = _int(usage.get('cache_read_input_tokens'))
 
             target.calls += 1
-            target.input += call_input
-            target.cache_create += call_cache_create
-            target.cache_read += call_cache_read
-            target.output += _int(usage.get('output_tokens'))
-            details = usage.get('output_tokens_details')
-            if isinstance(details, dict):
-                target.thinking += _int(details.get('thinking_tokens'))
+            _apply_usage(target, usage, model, 1)
+            if msg_id is not None:
+                counted[msg_id] = (target, usage)
             if isinstance(model, str) and model:
                 target.models[model] = target.models.get(model, 0) + 1
-
-            target.cost += pricing.cost(usage, model)
             if pricing.price_of(model)['estimated']:
                 target.estimated = True
             _text, used_tools = detail._texts_and_tools(message.get('content'))
