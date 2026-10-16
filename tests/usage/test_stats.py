@@ -310,6 +310,59 @@ class SubagentAggregationTest(StatsTestBase):
         self.assertEqual(five['total']['calls'], 2)
 
 
+class DedupTest(StatsTestBase):
+    def setUp(self):
+        super().setUp()
+        self.now = 1_700_020_000.0
+        self._status('s.json', {
+            'five_hour': {'resets_at': self.now, 'used_percentage': 1},
+            'seven_day': {'resets_at': self.now, 'used_percentage': 1},
+        }, mtime=self.now)
+        self.ts = self.now - 100
+        self.model = 'claude-sonnet-5'
+
+    def test_last_line_of_a_message_id_wins(self):
+        path = os.path.join(self.proj, ID1 + '.jsonl')
+        _write(path, [
+            _assistant(self.ts, 'm1', self.model, {'input': 100, 'output': 3}),
+            _assistant(self.ts + 1, 'm1', self.model, {'input': 100, 'output': 500}),
+        ])
+        five = self.compute(now=self.now)['windows']['five_hour']
+        self.assertEqual(five['total']['calls'], 1)
+        self.assertEqual(five['total']['output'], 500)   # replaced, not 503
+        self.assertEqual(five['total']['input'], 100)
+
+    def test_last_line_wins_across_incremental_reads(self):
+        path = os.path.join(self.proj, ID1 + '.jsonl')
+        _write(path, [_assistant(self.ts, 'm1', self.model, {'input': 100, 'output': 3})])
+        self.compute(now=self.now)
+        _append(path, [_assistant(self.ts + 1, 'm1', self.model, {'input': 100, 'output': 500})])
+        five = self.compute(now=self.now)['windows']['five_hour']
+        self.assertEqual((five['total']['calls'], five['total']['output']), (1, 500))
+
+    def test_same_id_in_parent_and_subagent_file_is_counted_once(self):
+        _write(os.path.join(self.proj, PARENT_ID + '.jsonl'), [
+            _assistant(self.ts, 'shared', self.model, {'input': 100, 'output': 40}),
+            _assistant(self.ts + 5, 'p-only', self.model, {'input': 1, 'output': 1}),
+        ])
+        # a forked sub-agent copies the parent's history, with the partial first line
+        _write(os.path.join(self.proj, PARENT_ID, 'subagents', 'agent-x.jsonl'), [
+            _assistant(self.ts, 'shared', self.model, {'input': 100, 'output': 7}),
+            _assistant(self.ts + 9, 's-only', self.model, {'input': 2, 'output': 2}),
+        ])
+        five = self.compute(now=self.now)['windows']['five_hour']
+        self.assertEqual(five['total']['calls'], 3)
+        self.assertEqual(five['total']['output'], 40 + 1 + 2)   # the larger (final) copy of 'shared'
+        self.assertEqual(five['sessions'][PARENT_ID]['calls'], 3)
+
+    def test_lines_without_an_id_in_different_files_are_all_counted(self):
+        for sid in (ID1, PARENT_ID):
+            _write(os.path.join(self.proj, sid + '.jsonl'),
+                   [_assistant(self.ts, None, self.model, {'input': 10, 'output': 5})])
+        five = self.compute(now=self.now)['windows']['five_hour']
+        self.assertEqual(five['total']['calls'], 2)
+
+
 class IncrementalCacheTest(StatsTestBase):
     def setUp(self):
         super().setUp()
@@ -337,12 +390,12 @@ class IncrementalCacheTest(StatsTestBase):
         self.compute(now=self.now)
         cache = stats.load_cache(self.cache_path)
         bucket_key_1 = stats._bucket_key(self.ts1)
-        self.assertEqual(cache[self.path]['buckets'][str(bucket_key_1)]['calls'], 1)
+        self.assertEqual(cache[self.path]['calls']['m1'][0], bucket_key_1)
 
-        # Tamper with the existing bucket: if the next run re-read from the start,
-        # it would revert to the original value (calls=1). The tampered value
+        # Tamper with the existing record: if the next run re-read from the start,
+        # it would revert to the original value (input=10). The tampered value
         # surviving proves that only the appended part was read, from the saved offset.
-        cache[self.path]['buckets'][str(bucket_key_1)]['calls'] = 999
+        cache[self.path]['calls']['m1'][1] = 999
         stats.save_cache(cache, self.cache_path)
 
         # Append a new line at a timestamp that falls in a different bucket (more than 10 minutes away).
@@ -351,11 +404,11 @@ class IncrementalCacheTest(StatsTestBase):
 
         self.compute(now=self.now)
         cache2 = stats.load_cache(self.cache_path)
-        buckets = cache2[self.path]['buckets']
+        calls = cache2[self.path]['calls']
         bucket_key_2 = stats._bucket_key(ts2)
         self.assertNotEqual(bucket_key_1, bucket_key_2)
-        self.assertEqual(buckets[str(bucket_key_1)]['calls'], 999)   # tampered value survives == not re-read
-        self.assertEqual(buckets[str(bucket_key_2)]['calls'], 1)     # only the appended line was newly added
+        self.assertEqual(calls['m1'][1], 999)            # tampered value survives == not re-read
+        self.assertEqual(calls['m2'][0], bucket_key_2)   # only the appended line was newly added
         self.assertEqual(cache2[self.path]['offset'], os.path.getsize(self.path))
 
     def test_truncated_file_is_reread_from_scratch(self):
@@ -365,7 +418,7 @@ class IncrementalCacheTest(StatsTestBase):
         out = self.compute(now=self.now)
         cache = stats.load_cache(self.cache_path)
         self.assertEqual(cache[self.path]['offset'], 0)
-        self.assertEqual(cache[self.path]['buckets'], {})
+        self.assertEqual(cache[self.path]['calls'], {})
 
     def test_corrupted_cache_file_is_discarded(self):
         with open(self.cache_path, 'w', encoding='utf-8') as f:
@@ -386,14 +439,14 @@ class IncrementalCacheTest(StatsTestBase):
         bucket_key_1 = stats._bucket_key(self.ts1)
         # Tamper with both the bucket (to prove it gets discarded, not reused)
         # and the schema_version (to simulate an old, pre-upgrade cache entry).
-        cache[self.path]['buckets'][str(bucket_key_1)]['calls'] = 999
+        cache[self.path]['calls']['m1'][1] = 999
         cache[self.path]['schema_version'] = stats.STATS_SCHEMA_VERSION - 1
         stats.save_cache(cache, self.cache_path)
 
         self.compute(now=self.now)
         cache2 = stats.load_cache(self.cache_path)
         self.assertEqual(cache2[self.path]['schema_version'], stats.STATS_SCHEMA_VERSION)
-        self.assertEqual(cache2[self.path]['buckets'][str(bucket_key_1)]['calls'], 1)   # not 999: fully re-read
+        self.assertEqual(cache2[self.path]['calls']['m1'][1], 10)   # not 999: fully re-read
 
     def test_corrupted_entry_for_one_file_is_reread(self):
         self.compute(now=self.now)
@@ -403,8 +456,7 @@ class IncrementalCacheTest(StatsTestBase):
         out = self.compute(now=self.now)
         cache2 = stats.load_cache(self.cache_path)
         self.assertEqual(cache2[self.path]['offset'], os.path.getsize(self.path))
-        bucket_key_1 = stats._bucket_key(self.ts1)
-        self.assertEqual(cache2[self.path]['buckets'][str(bucket_key_1)]['calls'], 1)
+        self.assertEqual(cache2[self.path]['calls']['m1'][0], stats._bucket_key(self.ts1))
 
 
 def _limit_error(ts, text) -> dict:

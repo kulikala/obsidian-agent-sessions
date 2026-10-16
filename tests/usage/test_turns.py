@@ -120,6 +120,22 @@ class UsageTest(unittest.TestCase):
         self.assertEqual(turn1['cache_read'], 5)
         self.assertEqual(turn1['output'], 40)
 
+    def test_last_line_of_a_message_id_wins(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, 'x.jsonl')
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(_line(_user('2024-01-01T00:00:00.000Z', 'go')))
+                f.write(_line(_assistant('2024-01-01T00:00:01.000Z', 'm', 'claude-3-haiku',
+                                         {'input': 10, 'output': 2}, thinking=1)))
+                f.write(_line(_assistant('2024-01-01T00:00:02.000Z', 'm', 'claude-3-haiku',
+                                         {'input': 10, 'output': 90}, thinking=30)))
+            turn = usage.collect(path)[0]
+        self.assertEqual(turn['calls'], 1)
+        self.assertEqual(turn['output'], 90)
+        self.assertEqual(turn['thinking'], 30)
+        self.assertEqual(turn['input'], 10)
+        self.assertAlmostEqual(turn['cost'], _cost('claude-3-haiku', {'input': 10, 'output': 90}))
+
     def test_synthetic_model_is_not_counted(self):
         turns = usage.collect(self.path)
         turn1 = turns[1]
