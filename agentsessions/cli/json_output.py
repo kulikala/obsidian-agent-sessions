@@ -463,7 +463,8 @@ def stats_output() -> dict:
     top-level key can be dropped."""
     # Same reason as `_store_dict`: pass the config paths at call time.
     claude_windows = stats.compute(now=time.time(), projects_dir=config.PROJECTS_DIR,
-                                    status_dir=config.STATUS_DIR, cache_path=config.STATS_CACHE_PATH)
+                                    status_dir=config.STATUS_DIR, cache_path=config.STATS_CACHE_PATH,
+                                    usage_path=config.CLAUDE_USAGE_PATH if 'claude' in agents.enabled_agents() else None)
     result = dict(claude_windows)
     enabled = agents.enabled_agents()
     agents_out = {}

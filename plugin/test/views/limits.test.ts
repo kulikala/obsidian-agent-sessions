@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { setLang } from "../../src/i18n";
 import {
-	CLAUDE_NEAR_LIMIT_PCT,
 	FIVE_HOUR_SECONDS,
 	SEVEN_DAY_SECONDS,
-	claudeNearLimit,
 	formatCountdown,
 	fromStatsWindow,
 	isGroupStartRow,
+	isResetPending,
+	pickClaudeWindow,
 	pickLatestLimits,
 	realWindows,
 	rollForwardWindow,
@@ -43,8 +43,25 @@ describe("pickLatestLimits", () => {
 			{ mtimeMs: 200, rate_limits: { five_hour: { used_percentage: 20, resets_at: 1500 } } },
 		];
 		expect(pickLatestLimits(files)).toEqual({
-			fiveHour: { usedPercentage: 39, resetsAt: 2000 },
-			sevenDay: { usedPercentage: 7, resetsAt: 3000 },
+			fiveHour: { usedPercentage: 39, resetsAt: 2000, asOf: 0.3 },
+			sevenDay: { usedPercentage: 7, resetsAt: 3000, asOf: 0.3 },
+		});
+	});
+
+	it("takes each window from the newest file that has it (an idle session's file drops an expired window)", () => {
+		const files: RawLimitsFile[] = [
+			{
+				mtimeMs: 100_000,
+				rate_limits: {
+					five_hour: { used_percentage: 40, resets_at: 2000 },
+					seven_day: { used_percentage: 10, resets_at: 9000 },
+				},
+			},
+			{ mtimeMs: 200_000, rate_limits: { seven_day: { used_percentage: 11, resets_at: 9000 } } },
+		];
+		expect(pickLatestLimits(files)).toEqual({
+			fiveHour: { usedPercentage: 40, resetsAt: 2000, asOf: 100 },
+			sevenDay: { usedPercentage: 11, resetsAt: 9000, asOf: 200 },
 		});
 	});
 
@@ -54,7 +71,7 @@ describe("pickLatestLimits", () => {
 			{ mtimeMs: 100, rate_limits: { five_hour: { used_percentage: 5, resets_at: 10 } } },
 		];
 		expect(pickLatestLimits(files)).toEqual({
-			fiveHour: { usedPercentage: 5, resetsAt: 10 },
+			fiveHour: { usedPercentage: 5, resetsAt: 10, asOf: 0.1 },
 			sevenDay: null,
 		});
 	});
@@ -62,7 +79,7 @@ describe("pickLatestLimits", () => {
 	it("is null when resets_at is missing", () => {
 		const files: RawLimitsFile[] = [{ mtimeMs: 1, rate_limits: { five_hour: { used_percentage: 5 } } }];
 		expect(pickLatestLimits(files)).toEqual({
-			fiveHour: { usedPercentage: 5, resetsAt: null },
+			fiveHour: { usedPercentage: 5, resetsAt: null, asOf: 0.001 },
 			sevenDay: null,
 		});
 	});
@@ -84,13 +101,15 @@ describe("rollForwardWindow", () => {
 		expect(rollForwardWindow(w, FIVE_HOUR_SECONDS, 1000)).toEqual(w);
 	});
 
-	it("rolls forward by one period and nulls out usedPercentage when resetsAt is in the past", () => {
+	it("rolls forward by one period and nulls out usedPercentage, marked stale, when resetsAt is in the past", () => {
 		const resetsAt = 1_700_000_000;
 		const now = resetsAt + 60; // the reset time passed one minute ago
 		const w = { usedPercentage: 88, resetsAt };
 		expect(rollForwardWindow(w, FIVE_HOUR_SECONDS, now)).toEqual({
 			usedPercentage: null,
 			resetsAt: resetsAt + FIVE_HOUR_SECONDS,
+			stale: true,
+			asOf: null,
 		});
 	});
 
@@ -101,6 +120,8 @@ describe("rollForwardWindow", () => {
 		expect(rollForwardWindow(w, SEVEN_DAY_SECONDS, now)).toEqual({
 			usedPercentage: null,
 			resetsAt: resetsAt + 3 * SEVEN_DAY_SECONDS,
+			stale: true,
+			asOf: null,
 		});
 	});
 
@@ -121,17 +142,17 @@ describe("fromStatsWindow (a json stats StatsWindow, e.g. agents.codex.windows, 
 
 	it("maps used_percentage as-is and end to resetsAt", () => {
 		const w = statsWindow({ end: 12345, used_percentage: 42 });
-		expect(fromStatsWindow(w)).toEqual({ usedPercentage: 42, resetsAt: 12345, exhausted: false, exhaustedAt: null });
+		expect(fromStatsWindow(w)).toEqual({ usedPercentage: 42, resetsAt: 12345, exhausted: false, exhaustedAt: null, stale: false, asOf: null });
 	});
 
 	it("carries a null used_percentage through as-is (a real case: some Codex accounts track no 5h/7d quota at all) rather than dropping the whole window", () => {
 		const w = statsWindow({ end: 12345, used_percentage: null });
-		expect(fromStatsWindow(w)).toEqual({ usedPercentage: null, resetsAt: 12345, exhausted: false, exhaustedAt: null });
+		expect(fromStatsWindow(w)).toEqual({ usedPercentage: null, resetsAt: 12345, exhausted: false, exhaustedAt: null, stale: false, asOf: null });
 	});
 
 	it("reads 100% and carries the time for a used-up window", () => {
 		const w = statsWindow({ end: 12345, used_percentage: 99, exhausted: true, exhausted_at: 12000 });
-		expect(fromStatsWindow(w)).toEqual({ usedPercentage: 100, resetsAt: 12345, exhausted: true, exhaustedAt: 12000 });
+		expect(fromStatsWindow(w)).toEqual({ usedPercentage: 100, resetsAt: 12345, exhausted: true, exhaustedAt: 12000, stale: false, asOf: null });
 	});
 });
 
@@ -151,15 +172,43 @@ describe("withExhaustion (Claude's live 99% lifted to 100% when json stats says 
 	});
 });
 
-describe("claudeNearLimit", () => {
-	it("is true once either live reading reaches the threshold", () => {
-		expect(claudeNearLimit({ fiveHour: { usedPercentage: CLAUDE_NEAR_LIMIT_PCT, resetsAt: 1 }, sevenDay: null })).toBe(true);
-		expect(claudeNearLimit({ fiveHour: { usedPercentage: 10, resetsAt: 1 }, sevenDay: { usedPercentage: 99, resetsAt: 1 } })).toBe(true);
+describe("pickClaudeWindow (the newer of the live status-file reading and json stats')s)", () => {
+	const now = 10_000;
+	it("uses json stats when its reading (e.g. from /usage) is newer, numbers and all", () => {
+		const live = { usedPercentage: 5, resetsAt: now + 100, asOf: now - 900 };
+		const s = statsWindow({ end: now + 3000, used_percentage: 60, as_of: now - 30, source: "usage" });
+		expect(pickClaudeWindow(live, s, FIVE_HOUR_SECONDS, now)).toEqual({
+			usedPercentage: 60,
+			resetsAt: now + 3000,
+			exhausted: false,
+			exhaustedAt: null,
+			stale: false,
+			asOf: now - 30,
+		});
 	});
 
-	it("is false below it, or with nothing read", () => {
-		expect(claudeNearLimit({ fiveHour: { usedPercentage: CLAUDE_NEAR_LIMIT_PCT - 1, resetsAt: 1 }, sevenDay: { usedPercentage: null, resetsAt: 1 } })).toBe(false);
-		expect(claudeNearLimit(null)).toBe(false);
+	it("uses the live reading when it's newer, or json stats has no reading time", () => {
+		const live = { usedPercentage: 5, resetsAt: now + 100, asOf: now - 5 };
+		expect(pickClaudeWindow(live, statsWindow({ end: now + 3000, used_percentage: 60, as_of: now - 30 }), FIVE_HOUR_SECONDS, now)).toBe(live);
+		expect(pickClaudeWindow(live, statsWindow({ end: now + 3000, used_percentage: 60 }), FIVE_HOUR_SECONDS, now)).toBe(live);
+		expect(pickClaudeWindow(live, undefined, FIVE_HOUR_SECONDS, now)).toBe(live);
+	});
+
+	it("rolls a live reading past its reset forward as stale", () => {
+		const live = { usedPercentage: 99, resetsAt: now - 60, asOf: now - 3600 };
+		const w = pickClaudeWindow(live, undefined, FIVE_HOUR_SECONDS, now);
+		expect(w?.stale).toBe(true);
+		expect(w?.usedPercentage).toBeNull();
+		expect(isResetPending(w, now)).toBe(true);
+	});
+});
+
+describe("isResetPending", () => {
+	it("is true for a stale window or one whose reset has passed, false otherwise", () => {
+		expect(isResetPending({ usedPercentage: null, resetsAt: 200, stale: true }, 100)).toBe(true);
+		expect(isResetPending({ usedPercentage: 100, resetsAt: 100 }, 100)).toBe(true);
+		expect(isResetPending({ usedPercentage: 100, resetsAt: 101 }, 100)).toBe(false);
+		expect(isResetPending(null, 100)).toBe(false);
 	});
 });
 

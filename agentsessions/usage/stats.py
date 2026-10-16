@@ -5,10 +5,13 @@ buckets and returns totals for the 5-hour and 7-day reset windows. Sub-agent
 transcripts found under `<project>/<id>/` (anywhere below it, e.g. under
 `subagents/`, at any depth) are rolled up into the parent session's id.
 
-Windows are read from whichever file under `~/.agents/sessions/status/*.json`
-(written by `hooks.record_status`) has `rate_limits` and the newest mtime: `end`
-comes from `resets_at` (or now, if missing), `start` is `end - 5h/7d`, and
-`used_percentage` is `None` if missing.
+Each window comes from its newest reading: the newest file under
+`~/.agents/sessions/status/*.json` (written by `hooks.record_status`) that has it,
+or Claude Code's own `/usage` (`usage.claude_usage`), asked when the status files
+can't tell (`needs_usage`) -- whichever was taken later. `end` is that reading's
+`resets_at`, `start` is `end - 5h/7d`, and `used_percentage` its percentage; a
+reading whose reset has passed is stale (`current_window`). No reading at all: `end`
+is now and `used_percentage` is `None`.
 
 A window is *exhausted* (`exhausted: true`, `used_percentage` reported as 100)
 when Claude Code rejected a request for that window's limit inside it, or when
@@ -48,7 +51,7 @@ import tempfile
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
-from . import pricing
+from . import claude_usage, pricing
 from ..sessions.scan import UUID_RE
 
 BUCKET_SECONDS = 600          # 10 minutes
@@ -127,17 +130,16 @@ def _roll_forward(end: float, used_percentage: Optional[float], duration: float,
 
 
 def windows_from_status(status_dir: str, now: float) -> Dict[str, dict]:
-    """Returns `{'five_hour': {'end', 'used_percentage'}, 'seven_day': {...}}`.
+    """Returns `{'five_hour': R, 'seven_day': R}`, each window's latest reading in the
+    status files: `R = {'resets_at', 'used_percentage', 'as_of'}` (`as_of` the file's
+    mtime), or `None` when no file has that window.
 
-    Picks whichever `*.json` file in `status_dir` has `rate_limits` and the newest
-    mtime. If there's no such file, or a specific key is missing, defaults to
-    `end=now`, `used_percentage=None`. If `resets_at` is in the past (the reset
-    happened before a fresh `rate_limits` payload arrived), `_roll_forward` advances
-    it to the current window.
+    Each window is taken from the newest `*.json` file in `status_dir` that has it, not
+    from the newest file overall: at a reset Claude Code drops the expired window from
+    the payload, and every idle session rewrites its file then, so the newest file can
+    lack a window another file still has.
     """
-    best_path = None
-    best_mtime = -1.0
-    rate_limits: dict = {}
+    result: Dict[str, Optional[dict]] = {'five_hour': None, 'seven_day': None}
     try:
         entries = os.listdir(status_dir)
     except OSError:
@@ -150,32 +152,58 @@ def windows_from_status(status_dir: str, now: float) -> Dict[str, dict]:
             mtime = os.stat(p).st_mtime
         except OSError:
             continue
-        if mtime <= best_mtime:
+        if all(r is not None and r['as_of'] >= mtime for r in result.values()):
             continue
         try:
             with open(p, 'r', encoding='utf-8') as f:
                 data = json.load(f)
         except (OSError, ValueError):
             continue
-        if not isinstance(data, dict) or not isinstance(data.get('rate_limits'), dict):
+        rate_limits = data.get('rate_limits') if isinstance(data, dict) else None
+        if not isinstance(rate_limits, dict):
             continue
-        best_path = p
-        best_mtime = mtime
-        rate_limits = data['rate_limits']
-
-    durations = {'five_hour': FIVE_HOUR_SECONDS, 'seven_day': SEVEN_DAY_SECONDS}
-    result = {}
-    for key in ('five_hour', 'seven_day'):
-        rl = rate_limits.get(key) if best_path is not None else None
-        resets_at = _num(rl.get('resets_at')) if isinstance(rl, dict) else None
-        if resets_at is not None:
+        for key in result:
+            rl = rate_limits.get(key)
+            resets_at = _num(rl.get('resets_at')) if isinstance(rl, dict) else None
+            if resets_at is None or (result[key] is not None and result[key]['as_of'] >= mtime):
+                continue
             used = rl.get('used_percentage')
-            used = used if isinstance(used, (int, float)) and not isinstance(used, bool) else None
-            end, used = _roll_forward(resets_at, used, durations[key], now)
-            result[key] = {'end': end, 'used_percentage': used}
-        else:
-            result[key] = {'end': now, 'used_percentage': None}
+            used = float(used) if isinstance(used, (int, float)) and not isinstance(used, bool) else None
+            result[key] = {'resets_at': resets_at, 'used_percentage': used, 'as_of': mtime}
     return result
+
+
+# A status-file reading older than this sends `compute` to `/usage` for a fresher one.
+STATUS_STALE_SECONDS = 5 * 60
+
+
+def needs_usage(readings: Dict[str, Optional[dict]], now: float) -> bool:
+    """Whether the status files can't tell the current windows: a window has no reading,
+    a reading's reset has passed, or a reading is `STATUS_STALE_SECONDS` old."""
+    return any(r is None or r['resets_at'] < now or now - r['as_of'] >= STATUS_STALE_SECONDS
+               for r in readings.values())
+
+
+def current_window(local: Optional[dict], usage: Optional[dict], duration: float, now: float) -> dict:
+    """One window from the newer of its two readings -- the status files' (`local`) and
+    `/usage`'s (`usage`), both `{'resets_at', 'used_percentage', 'as_of'}` or `None` --
+    as `{'end', 'used_percentage', 'source', 'as_of', 'stale'}`. `end`, the percentage
+    and (in `compute`) `start` all come from that one reading.
+
+    A reading whose reset has passed is *stale*: the window it describes is over and
+    what's used since is unknown, so the percentage is `None` and `end` is rolled
+    forward by whole windows (`_roll_forward`). That `end` is the real next reset only
+    for the 7-day window, whose resets fall on a fixed weekly time; a new 5-hour window
+    starts at the first request after the reset, so a stale 5-hour `end` only bounds
+    the totals. No reading at all: `end` is now and the percentage `None`.
+    """
+    candidates = [(r, src) for r, src in ((local, 'status'), (usage, 'usage')) if r is not None]
+    if not candidates:
+        return {'end': now, 'used_percentage': None, 'source': None, 'as_of': None, 'stale': False}
+    reading, source = max(candidates, key=lambda c: c[0]['as_of'])
+    end, used = _roll_forward(reading['resets_at'], reading['used_percentage'], duration, now)
+    return {'end': end, 'used_percentage': used, 'source': source, 'as_of': reading['as_of'],
+            'stale': reading['resets_at'] < now}
 
 
 # ---- Exhausted windows -------------------------------------------------------
@@ -466,8 +494,20 @@ def _window_totals(files: List[Tuple[str, str, Dict[str, list]]],
 
 # ---- Main entry point ----------------------------------------------------------
 
-def compute(now: float, projects_dir: str, status_dir: str, cache_path: str) -> dict:
-    win = windows_from_status(status_dir, now)
+def compute(now: float, projects_dir: str, status_dir: str, cache_path: str,
+            usage_path: Optional[str] = None, usage_runner=None) -> dict:
+    """`{'windows': {'five_hour': W, 'seven_day': W}}`. With `usage_path`, a window the
+    status files can't tell (`needs_usage`) is read from `/usage` too
+    (`claude_usage.readings`); without it, from the status files alone."""
+    local = windows_from_status(status_dir, now)
+    usage: Dict[str, dict] = {}
+    if usage_path is not None:
+        got = claude_usage.readings(now, needs_usage(local, now), path=usage_path, runner=usage_runner)
+        if got:
+            usage = {key: dict(r, as_of=got['fetched_at']) for key, r in got['windows'].items()
+                     if isinstance(r, dict) and isinstance(r.get('resets_at'), (int, float))}
+    win = {key: current_window(local[key], usage.get(key), duration, now)
+           for key, duration in (('five_hour', FIVE_HOUR_SECONDS), ('seven_day', SEVEN_DAY_SECONDS))}
     five_end = win['five_hour']['end']
     seven_end = win['seven_day']['end']
     five_start = five_end - FIVE_HOUR_SECONDS
@@ -510,6 +550,11 @@ def compute(now: float, projects_dir: str, status_dir: str, cache_path: str) -> 
             'start': start,
             'end': end,
             'used_percentage': win[key]['used_percentage'],
+            # Where the reading came from ('status' / 'usage' / None), when it was
+            # taken, and whether its reset has passed (see `current_window`).
+            'source': win[key]['source'],
+            'as_of': win[key]['as_of'],
+            'stale': win[key]['stale'],
             'total': total,
             'sessions': sessions,
         }, hit_times[key])

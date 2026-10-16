@@ -514,6 +514,13 @@ export function displayedUsedPct(w: Pick<StatsWindow, "used_percentage" | "exhau
 	return w.used_percentage;
 }
 
+/** Whether a window's reading belongs to a window that's already over (`stale` from `json stats`,
+ * or `end` passed since the last fetch): shown as reset, with no percentage, countdown, pace or
+ * "used up". */
+export function windowResetPending(w: Pick<StatsWindow, "end" | "stale"> | null, now: number): boolean {
+	return !!w && (!!w.stale || w.end <= now);
+}
+
 /**
  * The line shown for a used-up window in place of the pace judgment: "Used up <when> (<N> before
  * reset)" (ja 「<when> に枠を使い切りました（リセットの N 前）」), the time formatted by

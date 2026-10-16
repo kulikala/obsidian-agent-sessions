@@ -478,6 +478,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"stats.pace.overPaceGuideHour": "上限内に収めるには、1 時間あたり {pct}（約 {cost}）まで",
 	"stats.pace.overPaceGuideHourNoCost": "上限内に収めるには、1 時間あたり {pct} まで",
 	"stats.pace.tooltip": "枠の経過 {elapsedPct}%・使用 {usedPct}%",
+	"stats.resetPending": "リセット済みです。新しい枠の使用率はまだ届いていません",
 	"stats.exhausted": "枠を使い切りました",
 	"stats.exhausted.at": "{when} に枠を使い切りました（{beforeReset}）",
 	"stats.exhausted.yesterday": "昨日 {time}",

@@ -477,6 +477,7 @@ export const en = {
 	"stats.pace.overPaceGuideHour": "To stay within the limit: up to {pct} per hour (about {cost})",
 	"stats.pace.overPaceGuideHourNoCost": "To stay within the limit: up to {pct} per hour",
 	"stats.pace.tooltip": "{elapsedPct}% of the window elapsed · {usedPct}% used",
+	"stats.resetPending": "Reset. The new window's usage hasn't come in yet",
 	"stats.exhausted": "Used up",
 	"stats.exhausted.at": "Used up {when} ({beforeReset})",
 	"stats.exhausted.yesterday": "yesterday {time}",

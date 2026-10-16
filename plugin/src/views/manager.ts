@@ -50,6 +50,7 @@ import {
 	sortRows,
 	topCategoryTotals,
 	weeklyPace,
+	windowResetPending,
 	windowLabel,
 	windowSummary,
 	windowsForAgent,
@@ -508,7 +509,8 @@ export class ManagerView extends ItemView {
 		if (!el) {
 			return;
 		}
-		const used = displayedUsedPct(realWindows(windowsForAgent(this.statsResult, agent))[0] ?? null);
+		const first = realWindows(windowsForAgent(this.statsResult, agent))[0] ?? null;
+		const used = windowResetPending(first, Date.now() / 1000) ? null : displayedUsedPct(first);
 		el.setText(used != null ? `${Math.round(used)}%` : "");
 	}
 
@@ -561,15 +563,17 @@ export class ManagerView extends ItemView {
 
 		const head = card.createDiv({ cls: "agent-sessions-manager-stats-head" });
 		head.createSpan({ cls: "agent-sessions-manager-stats-title", text: label });
-		const countdown = w ? formatCountdown(w.end - Date.now() / 1000) : null;
+		// past its reset with no newer reading: the old numbers belong to a window that's over
+		const pending = windowResetPending(w, Date.now() / 1000);
+		const countdown = w && !pending ? formatCountdown(w.end - Date.now() / 1000) : null;
 		head.createSpan({
 			cls: "agent-sessions-manager-stats-countdown",
 			text: countdown != null ? t("stats.resetsIn", { countdown }) : "—",
 		});
 
-		const used = displayedUsedPct(w);
+		const used = pending ? null : displayedUsedPct(w);
 		const barWrap = card.createDiv({ cls: "agent-sessions-manager-stats-bar" });
-		barWrap.toggleClass("is-exhausted", !!w?.exhausted);
+		barWrap.toggleClass("is-exhausted", !pending && !!w?.exhausted);
 		const pct = used != null ? Math.min(100, Math.max(0, used)) : 0;
 		barWrap.createDiv({ cls: "agent-sessions-manager-stats-bar-fill" }).style.width = `${pct}%`;
 
@@ -612,6 +616,11 @@ export class ManagerView extends ItemView {
 	 */
 	private renderPaceLine(card: HTMLElement, w: StatsWindow | null): void {
 		const lineEl = card.createDiv({ cls: "agent-sessions-manager-stats-pace" });
+		if (windowResetPending(w, Date.now() / 1000)) {
+			lineEl.addClass("is-muted");
+			lineEl.setText(t("stats.resetPending"));
+			return;
+		}
 		if (!w || w.used_percentage == null) {
 			lineEl.addClass("is-muted");
 			lineEl.setText(t("stats.pace.unknown"));
