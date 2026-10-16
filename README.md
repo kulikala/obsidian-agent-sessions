@@ -86,7 +86,7 @@ The **Activity calendar** shows working time as blocks, by 7-day window, week or
 
 ![The activity calendar: a week of sessions as colored blocks, one lane per agent in each day, with hours and concurrency per agent, and the details panel for one block with its prompts and Open session](docs/images/calendar.png)
 
-Two [agent skills](docs/usage.md#agent-skills) also let you ask an agent about your usage, your other sessions, or how to use the plugin. All features: [`docs/usage.md`](docs/usage.md).
+Two [agent skills](docs/usage.md#agent-skills) also let you ask an agent about your usage, your other sessions (ended ones too) or how to use the plugin, and have it resume an ended session, find where its session wasted tokens, or name a session. All features: [`docs/usage.md`](docs/usage.md).
 
 **Not included:** a chat panel, inline editing of notes, and Obsidian mobile. OpenCode has no usage windows, and its sub-agent sessions and `opencode run` sessions are not listed.
 
