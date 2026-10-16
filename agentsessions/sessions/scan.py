@@ -21,7 +21,7 @@ RACY_WINDOW = 2.0
 # so upgrading agent-sessions itself can't leave stale extracted data sitting
 # in scan-cache.json forever (see agents/codex/scan.py's SCAN_SCHEMA_VERSION
 # for the same mechanism on the codex side, versioned independently).
-SCAN_SCHEMA_VERSION = 4
+SCAN_SCHEMA_VERSION = 5
 
 UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
 TITLE_PATTERN = '^{"type": *"custom-title"'      # grep (BRE)
@@ -32,6 +32,9 @@ GOAL_PATTERN = '"attachment":{"type":"goal_status"'       # grep (BRE)
 GOAL_PATTERN_RG = r'"attachment":\{"type":"goal_status"'  # ripgrep / Python re
 _GOAL_MARK = '"attachment":{"type":"goal_status"'
 GOAL_REASON_CHARS = 1000   # the evaluator's reason is cut to this many characters
+# Where `rg` is often installed but not on the PATH Obsidian starts with (a GUI app on macOS gets
+# launchd's short PATH, without Homebrew's), so the scan would fall back to the slower `grep`.
+RG_DIRS = ('/opt/homebrew/bin', '/usr/local/bin', '/home/linuxbrew/.linuxbrew/bin', '~/.cargo/bin')
 HEAD_LIMIT = 2000   # max number of lines to scan for the first user message
 TAIL_CHUNK = 1 << 16   # unit size for reading from the end of the file
 TAIL_LIMIT = 1 << 24   # max bytes to scan backward from the end (fall back to mtime beyond this)
@@ -53,12 +56,21 @@ def list_transcripts(projects_dir: str) -> List[str]:
     return sorted(p for p in paths if UUID_RE.match(session_id_of(p)))
 
 
+def _rg_outside_path() -> Optional[str]:
+    """`rg` in one of `RG_DIRS`, for when it is installed but not on PATH."""
+    for d in RG_DIRS:
+        p = os.path.join(os.path.expanduser(d), 'rg')
+        if os.path.isfile(p) and os.access(p, os.X_OK):
+            return p
+    return None
+
+
 def _title_grep_cmd() -> Optional[List[str]]:
     """`rg`/`grep` invocation for `scan_names_and_goals` (custom-title and goal_status lines), found via PATH — never a hard-coded
     path, since not every environment has `grep` at `/usr/bin/grep` (or has `grep` at
-    all). `None` if neither is available; the caller falls back to reading the files
+    all); `rg` is also looked for in `RG_DIRS`. `None` if neither is available; the caller falls back to reading the files
     directly in that case."""
-    rg = shutil.which('rg')
+    rg = shutil.which('rg') or _rg_outside_path()
     if rg:
         return [rg, '-N', '-H', '--no-heading', '--no-config',
                 '-e', TITLE_PATTERN_RG, '-e', GOAL_PATTERN_RG, '--']
@@ -346,18 +358,35 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None) -> Dict[str,
     Files whose mtime is within `RACY_WINDOW` seconds of now aren't trusted from the
     cache: two rewrites within the same clock tick (same size if the content length is
     unchanged) can be indistinguishable by mtime alone, depending on clock granularity
-    (this shows up notably on tmpfs and in some container environments)."""
-    names, goals = scan_names_and_goals(paths)
+    (this shows up notably on tmpfs and in some container environments).
+
+    Names and goals (`scan_names_and_goals`) are cached the same way, so the `rg`/`grep` pass only
+    reads the files that changed since the last scan."""
     now = time.time()
-    out: Dict[str, Session] = {}
+    stats: Dict[str, os.stat_result] = {}
+    fresh: Dict[str, dict] = {}
     for p in paths:
-        sid = session_id_of(p)
         try:
             st = os.stat(p)
-            cached = cache.get(p) if cache is not None else None
-            racy = (now - st.st_mtime) < RACY_WINDOW
-            if cached and not racy and cached.get('mtime') == st.st_mtime and cached.get('size') == st.st_size \
-                    and cached.get('schema_version') == SCAN_SCHEMA_VERSION:
+        except OSError:
+            continue
+        stats[p] = st
+        cached = cache.get(p) if cache is not None else None
+        racy = (now - st.st_mtime) < RACY_WINDOW
+        if cached and not racy and cached.get('mtime') == st.st_mtime and cached.get('size') == st.st_size \
+                and cached.get('schema_version') == SCAN_SCHEMA_VERSION:
+            fresh[p] = cached
+    names, goals = scan_names_and_goals([p for p in stats if p not in fresh])
+    out: Dict[str, Session] = {}
+    for p, st in stats.items():
+        sid = session_id_of(p)
+        try:
+            cached = fresh.get(p)
+            if cached:
+                if cached.get('name'):
+                    names[sid] = cached['name']
+                if cached.get('goal'):
+                    goals[sid] = cached['goal']
                 head = cached.get('head') or {}
                 h = Head(cwd=head.get('cwd', ''), prompt=head.get('prompt', ''),
                          child=bool(head.get('child')))
@@ -371,7 +400,8 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None) -> Dict[str,
                 last_activity = read_last_activity(p)
                 last_human = read_last_human_prompt_ts(p)
                 after_compact = read_after_compact(p)
-                prior = cached.get('schedule_state') if cached and cached.get('schema_version') == SCAN_SCHEMA_VERSION else None
+                stale = cache.get(p) if cache is not None else None
+                prior = stale.get('schedule_state') if stale and stale.get('schema_version') == SCAN_SCHEMA_VERSION else None
                 sched_state = schedule_mod.fold(p, prior)
                 h = read_head_info(p)
                 if cache is not None:
@@ -384,6 +414,8 @@ def scan(paths: List[str], cache: Optional[Dict[str, dict]] = None) -> Dict[str,
                         'last_human_prompt': last_human,
                         'after_compact': after_compact,
                         'schedule_state': sched_state,
+                        'name': names.get(sid),
+                        'goal': goals.get(sid),
                     }
             mtime = last_activity or st.st_mtime
         except OSError:
