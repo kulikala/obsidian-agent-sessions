@@ -116,7 +116,8 @@ class TestScan(unittest.TestCase):
         self.assertFalse(sessions[ID2].child)
 
     def test_scan_names_pure_python_fallback_when_neither_rg_nor_grep_available(self):
-        with mock.patch('agentsessions.sessions.scan.shutil.which', return_value=None):
+        with mock.patch('agentsessions.sessions.scan.shutil.which', return_value=None), \
+                mock.patch.object(scan_module, 'RG_DIRS', ()):
             self.assertEqual(scan_names(list_transcripts(self.tmp.name)), {ID1: 'RIM: new name'})
 
     def test_title_grep_cmd_prefers_rg(self):
@@ -129,13 +130,27 @@ class TestScan(unittest.TestCase):
         # `grep` is found via PATH (shutil.which), never hard-coded to /usr/bin/grep —
         # some minimal environments have it somewhere else, or not at all.
         with mock.patch('agentsessions.sessions.scan.shutil.which',
-                        side_effect=lambda name: '/opt/bin/grep' if name == 'grep' else None):
+                        side_effect=lambda name: '/opt/bin/grep' if name == 'grep' else None), \
+                mock.patch.object(scan_module, 'RG_DIRS', ()):
             cmd = scan_module._title_grep_cmd()
         self.assertEqual(cmd[0], '/opt/bin/grep')
 
     def test_title_grep_cmd_none_when_neither_available(self):
-        with mock.patch('agentsessions.sessions.scan.shutil.which', return_value=None):
+        with mock.patch('agentsessions.sessions.scan.shutil.which', return_value=None), \
+                mock.patch.object(scan_module, 'RG_DIRS', ()):
             self.assertIsNone(scan_module._title_grep_cmd())
+
+    def test_title_grep_cmd_finds_rg_outside_path(self):
+        # Obsidian on macOS starts with launchd's PATH, which leaves out Homebrew's `rg`.
+        rg = os.path.join(self.tmp.name, 'rg')
+        with open(rg, 'w') as f:
+            f.write('#!/bin/sh\n')
+        os.chmod(rg, 0o755)
+        with mock.patch('agentsessions.sessions.scan.shutil.which',
+                        side_effect=lambda name: '/usr/bin/grep' if name == 'grep' else None), \
+                mock.patch.object(scan_module, 'RG_DIRS', ('/nonexistent', self.tmp.name)):
+            cmd = scan_module._title_grep_cmd()
+        self.assertEqual(cmd[0], rg)
 
 
 def goal_line(ts, **attachment):

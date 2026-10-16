@@ -7,9 +7,11 @@ import unittest
 from unittest import mock
 
 from agentsessions.sessions import cache
+from agentsessions.sessions import scan as scan_module
 from agentsessions.sessions.scan import SCAN_SCHEMA_VERSION, scan
 
 ID1 = '11111111-1111-1111-1111-111111111111'
+ID2 = '22222222-2222-2222-2222-222222222222'
 
 
 def write_jsonl(path, records):
@@ -101,6 +103,42 @@ class TestScanUsesCache(unittest.TestCase):
         self.assertEqual(second[ID1].cwd, first[ID1].cwd)
         self.assertEqual(second[ID1].first_prompt, first[ID1].first_prompt)
         self.assertEqual(second[ID1].mtime, first[ID1].mtime)
+
+    def test_names_and_goals_come_from_the_cache_for_unchanged_files(self):
+        with open(self.path, 'a') as f:
+            f.write(json.dumps({'type': 'custom-title', 'customTitle': 'Work: named'}) + '\n')
+            f.write(json.dumps({'type': 'attachment', 'timestamp': '2026-10-01T00:00:00Z',
+                                'attachment': {'type': 'goal_status', 'condition': 'tests pass',
+                                               'met': False, 'sentinel': True}},
+                               separators=(',', ':')) + '\n')
+        old = time.time() - 10.0
+        os.utime(self.path, (old, old))
+        c = {}
+        first = scan([self.path], cache=c)
+        self.assertEqual(first[ID1].name, 'Work: named')
+        self.assertEqual(first[ID1].goal['condition'], 'tests pass')
+
+        with mock.patch('agentsessions.sessions.scan.scan_names_and_goals',
+                        wraps=scan_module.scan_names_and_goals) as grep:
+            second = scan([self.path], cache=c)
+        grep.assert_called_once_with([])
+        self.assertEqual(second[ID1].name, 'Work: named')
+        self.assertEqual(second[ID1].goal, first[ID1].goal)
+
+    def test_only_changed_files_are_grepped_for_names(self):
+        other = os.path.join(self.proj, ID2 + '.jsonl')
+        write_jsonl(other, [{'type': 'user', 'cwd': '/b', 'message': {'role': 'user', 'content': 'q2'}}])
+        old = time.time() - 10.0
+        os.utime(other, (old, old))
+        c = {}
+        scan([self.path, other], cache=c)
+        with open(other, 'a') as f:
+            f.write(json.dumps({'type': 'custom-title', 'customTitle': 'Work: renamed'}) + '\n')
+        with mock.patch('agentsessions.sessions.scan.scan_names_and_goals',
+                        wraps=scan_module.scan_names_and_goals) as grep:
+            second = scan([self.path, other], cache=c)
+        grep.assert_called_once_with([other])
+        self.assertEqual(second[ID2].name, 'Work: renamed')
 
     def test_changed_file_is_reread(self):
         c = {}
