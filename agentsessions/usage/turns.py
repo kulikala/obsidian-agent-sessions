@@ -100,6 +100,23 @@ def collect(path: str) -> List[dict]:
     current: Optional[Turn] = None
     # id -> (turn it was counted in, usage counted); see the repeat-line branch below
     counted: Dict[str, tuple] = {}
+    # tool_use block ids already tallied: a response that calls several tools writes each call on
+    # its own line, all sharing the response's id
+    tools_seen: set = set()
+
+    def count_tools(target: Turn, content, first_line: bool) -> None:
+        for b in content if isinstance(content, list) else []:
+            if not isinstance(b, dict) or b.get('type') != 'tool_use' or not b.get('name'):
+                continue
+            tool_id = b.get('id')
+            if tool_id is None:
+                if not first_line:
+                    continue   # no id to tell a repeat from a new call: the first line only
+            elif tool_id in tools_seen:
+                continue
+            else:
+                tools_seen.add(tool_id)
+            target.tools[b['name']] = target.tools.get(b['name'], 0) + 1
 
     try:
         f = open(path, 'r', encoding='utf-8')
@@ -144,6 +161,7 @@ def collect(path: str) -> List[dict]:
                 _apply_usage(old_target, old_usage, message.get('model'), -1)
                 _apply_usage(old_target, usage, message.get('model'), 1)
                 counted[msg_id] = (old_target, usage)
+                count_tools(old_target, message.get('content'), first_line=False)
                 continue
 
             target = current
@@ -165,9 +183,7 @@ def collect(path: str) -> List[dict]:
                 target.models[model] = target.models.get(model, 0) + 1
             if pricing.price_of(model)['estimated']:
                 target.estimated = True
-            _text, used_tools = detail._texts_and_tools(message.get('content'))
-            for name in used_tools:
-                target.tools[name] = target.tools.get(name, 0) + 1
+            count_tools(target, message.get('content'), first_line=True)
             call_ts = _parse_ts(rec.get('timestamp'))
             if call_ts is not None:
                 target.last_ts = call_ts if target.last_ts is None else max(target.last_ts, call_ts)
