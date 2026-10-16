@@ -42,6 +42,8 @@ export interface RateLimitWindow {
 	exhaustedAt?: number | null;
 	/** The reading's reset has passed and no newer one has arrived (see `rollForwardWindow`). */
 	stale?: boolean;
+	/** Not running (no request since its reset, per Claude Code's `/usage`): no `resetsAt`. */
+	idle?: boolean;
 	/** When the reading was taken (epoch seconds): the status file's mtime, or `json stats`'s `as_of`. */
 	asOf?: number | null;
 }
@@ -197,10 +199,12 @@ export function fromStatsWindow(w: StatsWindow | null): RateLimitWindow | null {
 	}
 	return {
 		usedPercentage: displayedUsedPct(w),
-		resetsAt: w.end,
+		// an idle window's `end` is just when it was read, not a reset
+		resetsAt: w.idle ? null : w.end,
 		exhausted: !!w.exhausted,
 		exhaustedAt: w.exhausted_at ?? null,
 		stale: !!w.stale,
+		idle: !!w.idle,
 		asOf: w.as_of ?? null,
 	};
 }

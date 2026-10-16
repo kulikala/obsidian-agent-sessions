@@ -265,6 +265,9 @@ export interface StatsWindow {
 	/** The reading's reset has passed and no newer one has arrived: `used_percentage` is `null`
 	 * and the window shows as reset. Claude only. */
 	stale?: boolean;
+	/** Claude Code's `/usage` says the window isn't running (no request since its reset): its
+	 * percentage as read (0), `start === end`, no countdown. Claude only. */
+	idle?: boolean;
 }
 
 /**

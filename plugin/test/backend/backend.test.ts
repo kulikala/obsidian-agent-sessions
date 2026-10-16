@@ -82,6 +82,16 @@ describe("agentEnvFor", () => {
 		expect(agentEnvFor(settings).AGENT_SESSIONS_AGENTS).toBe("claude");
 	});
 
+	it("passes Claude Code's set path and the login PATH on, for json stats' /usage run", () => {
+		const settings = {
+			agents: { ...DEFAULT_SETTINGS.agents, claude: { enabled: true, path: "/opt/claude", env: "" } },
+		};
+		const vars = agentEnvFor(settings, { PATH: "/login/bin:/usr/bin" });
+		expect(vars.AGENT_SESSIONS_CLAUDE_BIN).toBe("/opt/claude");
+		expect(vars.AGENT_SESSIONS_LOGIN_PATH).toBe("/login/bin:/usr/bin");
+		expect(agentEnvFor({ agents: DEFAULT_SETTINGS.agents })).not.toHaveProperty("AGENT_SESSIONS_CLAUDE_BIN");
+	});
+
 	it("includes CODEX_HOME when codex's env setting has one", () => {
 		const settings = {
 			agents: {
@@ -121,6 +131,7 @@ describe("agentEnvFor", () => {
 		const settings = { agents: DEFAULT_SETTINGS.agents };
 		expect(agentEnvFor(settings, { XDG_DATA_HOME: "/login-d", PATH: "/bin" })).toEqual({
 			AGENT_SESSIONS_AGENTS: "claude",
+			AGENT_SESSIONS_LOGIN_PATH: "/bin",
 			XDG_DATA_HOME: "/login-d",
 		});
 		expect(agentEnvFor(settings, {})).toEqual({ AGENT_SESSIONS_AGENTS: "claude" });

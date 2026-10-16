@@ -142,17 +142,26 @@ describe("fromStatsWindow (a json stats StatsWindow, e.g. agents.codex.windows, 
 
 	it("maps used_percentage as-is and end to resetsAt", () => {
 		const w = statsWindow({ end: 12345, used_percentage: 42 });
-		expect(fromStatsWindow(w)).toEqual({ usedPercentage: 42, resetsAt: 12345, exhausted: false, exhaustedAt: null, stale: false, asOf: null });
+		expect(fromStatsWindow(w)).toEqual({ usedPercentage: 42, resetsAt: 12345, exhausted: false, exhaustedAt: null, stale: false, idle: false, asOf: null });
 	});
 
 	it("carries a null used_percentage through as-is (a real case: some Codex accounts track no 5h/7d quota at all) rather than dropping the whole window", () => {
 		const w = statsWindow({ end: 12345, used_percentage: null });
-		expect(fromStatsWindow(w)).toEqual({ usedPercentage: null, resetsAt: 12345, exhausted: false, exhaustedAt: null, stale: false, asOf: null });
+		expect(fromStatsWindow(w)).toEqual({ usedPercentage: null, resetsAt: 12345, exhausted: false, exhaustedAt: null, stale: false, idle: false, asOf: null });
 	});
 
 	it("reads 100% and carries the time for a used-up window", () => {
 		const w = statsWindow({ end: 12345, used_percentage: 99, exhausted: true, exhausted_at: 12000 });
-		expect(fromStatsWindow(w)).toEqual({ usedPercentage: 100, resetsAt: 12345, exhausted: true, exhaustedAt: 12000, stale: false, asOf: null });
+		expect(fromStatsWindow(w)).toEqual({ usedPercentage: 100, resetsAt: 12345, exhausted: true, exhaustedAt: 12000, stale: false, idle: false, asOf: null });
+	});
+});
+
+describe("fromStatsWindow for an idle window (not running per /usage)", () => {
+	it("has no reset time, so it never rolls forward or counts down", () => {
+		const w = fromStatsWindow(statsWindow({ start: 500, end: 500, used_percentage: 0, idle: true }));
+		expect(w).toMatchObject({ usedPercentage: 0, resetsAt: null, idle: true });
+		expect(rollForwardWindow(w, FIVE_HOUR_SECONDS, 10_000)).toBe(w);
+		expect(isResetPending(w, 10_000)).toBe(false);
 	});
 });
 
@@ -183,6 +192,7 @@ describe("pickClaudeWindow (the newer of the live status-file reading and json s
 			exhausted: false,
 			exhaustedAt: null,
 			stale: false,
+			idle: false,
 			asOf: now - 30,
 		});
 	});

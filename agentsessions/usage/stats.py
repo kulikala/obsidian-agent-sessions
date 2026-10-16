@@ -177,18 +177,33 @@ def windows_from_status(status_dir: str, now: float) -> Dict[str, dict]:
 STATUS_STALE_SECONDS = 5 * 60
 
 
-def needs_usage(readings: Dict[str, Optional[dict]], now: float) -> bool:
-    """Whether the status files can't tell the current windows: a window has no reading,
-    a reading's reset has passed, or a reading is `STATUS_STALE_SECONDS` old."""
-    return any(r is None or r['resets_at'] < now or now - r['as_of'] >= STATUS_STALE_SECONDS
+def _newer(local: Optional[dict], usage: Optional[dict]) -> Tuple[Optional[dict], Optional[str]]:
+    """The newer (by `as_of`) of a window's two readings, and where it came from."""
+    candidates = [(r, src) for r, src in ((local, 'status'), (usage, 'usage')) if r is not None]
+    if not candidates:
+        return None, None
+    return max(candidates, key=lambda c: c[0]['as_of'])
+
+
+def needs_usage(readings: Dict[str, Optional[dict]], now: float, check_age: bool = False) -> bool:
+    """Whether the current readings (`_newer` per window) can't tell the current windows: a
+    window has no reading or its reset has passed -- or, with `check_age`, a reading is
+    `STATUS_STALE_SECONDS` old. A window that isn't running (`resets_at` `None`) is told."""
+    return any(r is None or (r['resets_at'] is not None and r['resets_at'] < now)
+               or (check_age and now - r['as_of'] >= STATUS_STALE_SECONDS)
                for r in readings.values())
 
 
 def current_window(local: Optional[dict], usage: Optional[dict], duration: float, now: float) -> dict:
     """One window from the newer of its two readings -- the status files' (`local`) and
     `/usage`'s (`usage`), both `{'resets_at', 'used_percentage', 'as_of'}` or `None` --
-    as `{'end', 'used_percentage', 'source', 'as_of', 'stale'}`. `end`, the percentage
-    and (in `compute`) `start` all come from that one reading.
+    as `{'end', 'used_percentage', 'source', 'as_of', 'stale', 'idle'}`. `end`, the
+    percentage and (in `compute`) `start` all come from that one reading.
+
+    A reading with no `resets_at` (`/usage`'s for a window that isn't running: no
+    request since its reset) is *idle*: its percentage as read (0), and `end` now with
+    no length (`compute` gives it `start == end`), so it has no totals, countdown,
+    pace or "used up".
 
     A reading whose reset has passed is *stale*: the window it describes is over and
     what's used since is unknown, so the percentage is `None` and `end` is rolled
@@ -197,13 +212,15 @@ def current_window(local: Optional[dict], usage: Optional[dict], duration: float
     starts at the first request after the reset, so a stale 5-hour `end` only bounds
     the totals. No reading at all: `end` is now and the percentage `None`.
     """
-    candidates = [(r, src) for r, src in ((local, 'status'), (usage, 'usage')) if r is not None]
-    if not candidates:
-        return {'end': now, 'used_percentage': None, 'source': None, 'as_of': None, 'stale': False}
-    reading, source = max(candidates, key=lambda c: c[0]['as_of'])
+    reading, source = _newer(local, usage)
+    if reading is None:
+        return {'end': now, 'used_percentage': None, 'source': None, 'as_of': None, 'stale': False, 'idle': False}
+    if reading['resets_at'] is None:
+        return {'end': now, 'used_percentage': reading['used_percentage'], 'source': source,
+                'as_of': reading['as_of'], 'stale': False, 'idle': True}
     end, used = _roll_forward(reading['resets_at'], reading['used_percentage'], duration, now)
     return {'end': end, 'used_percentage': used, 'source': source, 'as_of': reading['as_of'],
-            'stale': reading['resets_at'] < now}
+            'stale': reading['resets_at'] < now, 'idle': False}
 
 
 # ---- Exhausted windows -------------------------------------------------------
@@ -494,24 +511,40 @@ def _window_totals(files: List[Tuple[str, str, Dict[str, list]]],
 
 # ---- Main entry point ----------------------------------------------------------
 
+def _usage_readings(got: Optional[dict]) -> Dict[str, dict]:
+    """`claude_usage.readings`'s windows as `{'resets_at', 'used_percentage', 'as_of'}`."""
+    out: Dict[str, dict] = {}
+    for key, r in ((got or {}).get('windows') or {}).items():
+        if not isinstance(r, dict):
+            continue
+        resets_at, used = r.get('resets_at'), r.get('used_percentage')
+        if resets_at is not None and not isinstance(resets_at, (int, float)):
+            continue
+        used = float(used) if isinstance(used, (int, float)) and not isinstance(used, bool) else None
+        out[key] = {'resets_at': resets_at, 'used_percentage': used, 'as_of': got['fetched_at']}
+    return out
+
+
 def compute(now: float, projects_dir: str, status_dir: str, cache_path: str,
-            usage_path: Optional[str] = None, usage_runner=None) -> dict:
-    """`{'windows': {'five_hour': W, 'seven_day': W}}`. With `usage_path`, a window the
-    status files can't tell (`needs_usage`) is read from `/usage` too
-    (`claude_usage.readings`); without it, from the status files alone."""
+            usage_path: Optional[str] = None, usage_runner=None, check_age: bool = False) -> dict:
+    """`{'windows': {'five_hour': W, 'seven_day': W}}`. With `usage_path`, `/usage`'s last
+    reading is weighed against the status files', and `/usage` is asked again when the
+    newer of the two can't tell the windows (`needs_usage`, `check_age` passed on);
+    without it, the status files alone count."""
     local = windows_from_status(status_dir, now)
     usage: Dict[str, dict] = {}
     if usage_path is not None:
-        got = claude_usage.readings(now, needs_usage(local, now), path=usage_path, runner=usage_runner)
-        if got:
-            usage = {key: dict(r, as_of=got['fetched_at']) for key, r in got['windows'].items()
-                     if isinstance(r, dict) and isinstance(r.get('resets_at'), (int, float))}
+        usage = _usage_readings(claude_usage.readings(now, False, path=usage_path))
+        newest = {key: _newer(local[key], usage.get(key))[0] for key in local}
+        if needs_usage(newest, now, check_age):
+            usage = _usage_readings(claude_usage.readings(now, True, path=usage_path, runner=usage_runner))
     win = {key: current_window(local[key], usage.get(key), duration, now)
            for key, duration in (('five_hour', FIVE_HOUR_SECONDS), ('seven_day', SEVEN_DAY_SECONDS))}
     five_end = win['five_hour']['end']
     seven_end = win['seven_day']['end']
-    five_start = five_end - FIVE_HOUR_SECONDS
-    seven_start = seven_end - SEVEN_DAY_SECONDS
+    # an idle window (no request since its reset) has no length, so no totals
+    five_start = five_end if win['five_hour']['idle'] else five_end - FIVE_HOUR_SECONDS
+    seven_start = seven_end if win['seven_day']['idle'] else seven_end - SEVEN_DAY_SECONDS
     min_mtime = min(five_start, seven_start)
 
     transcripts = list_transcripts_for_stats(projects_dir, min_mtime)
@@ -555,6 +588,7 @@ def compute(now: float, projects_dir: str, status_dir: str, cache_path: str,
             'source': win[key]['source'],
             'as_of': win[key]['as_of'],
             'stale': win[key]['stale'],
+            'idle': win[key]['idle'],
             'total': total,
             'sessions': sessions,
         }, hit_times[key])

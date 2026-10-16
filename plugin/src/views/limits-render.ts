@@ -267,6 +267,8 @@ export class LimitsView {
 		const exhausted = !pending && w?.resetsAt != null ? exhaustedText({ end: w.resetsAt, exhausted: w.exhausted, exhausted_at: w.exhaustedAt }, now) : null;
 		if (pending) {
 			setTooltip(pctEl, t("stats.resetPending"));
+		} else if (w?.idle) {
+			setTooltip(pctEl, t("stats.windowIdle"));
 		} else if (exhausted != null) {
 			setTooltip(pctEl, exhausted);
 		}

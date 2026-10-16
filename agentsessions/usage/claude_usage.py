@@ -7,7 +7,8 @@ the server instead and covers the whole account. Run as
 `claude -p /usage --no-session-persistence --output-format stream-json --verbose`, it calls no
 model (no cost, no usage), writes no transcript, and carries the readings in a synthetic assistant
 event's `usage_report.rate_limits.limits`: `{kind, percent, resets_at (ISO 8601)}`, where `kind`
-`session` is the 5-hour window and `weekly_all` the 7-day one. That shape isn't a published
+`session` is the 5-hour window and `weekly_all` the 7-day one; `resets_at` is null for a window
+that isn't running (no request since its last reset). That shape isn't a published
 interface, so anything unexpected reads as "no reading" and the status files stay the only source.
 
 A run takes a few seconds and starts Claude Code, so it's rate-limited: at most one attempt per
@@ -26,7 +27,10 @@ from .. import config
 
 MIN_INTERVAL_SECONDS = 5 * 60
 TIMEOUT_SECONDS = 30
-ARGS = ['-p', '/usage', '--no-session-persistence', '--output-format', 'stream-json', '--verbose']
+# No MCP servers and no user settings (their hooks): `/usage` needs neither, and they'd only slow
+# the run down or start something. `--bare` would skip them too, but it never reads the login.
+ARGS = ['-p', '/usage', '--no-session-persistence', '--output-format', 'stream-json', '--verbose',
+        '--strict-mcp-config', '--setting-sources', 'project']
 _KINDS = {'session': 'five_hour', 'weekly_all': 'seven_day'}
 
 
@@ -41,7 +45,8 @@ def _parse_iso(value) -> Optional[float]:
 
 def parse_limits(limits) -> Dict[str, dict]:
     """`{'five_hour': {'used_percentage', 'resets_at'}, 'seven_day': {...}}` from a
-    `rate_limits.limits` list, keeping only well-formed entries of the two known kinds."""
+    `rate_limits.limits` list, keeping only well-formed entries of the two known kinds.
+    `resets_at` is `None` for a window that isn't running."""
     out: Dict[str, dict] = {}
     if not isinstance(limits, list):
         return out
@@ -50,8 +55,10 @@ def parse_limits(limits) -> Dict[str, dict]:
             continue
         key = _KINDS.get(item.get('kind'))
         pct = item.get('percent')
-        resets_at = _parse_iso(item.get('resets_at'))
-        if key is None or isinstance(pct, bool) or not isinstance(pct, (int, float)) or resets_at is None:
+        raw_reset = item.get('resets_at')
+        resets_at = _parse_iso(raw_reset)
+        if key is None or isinstance(pct, bool) or not isinstance(pct, (int, float)) \
+                or (raw_reset is not None and resets_at is None):
             continue
         out.setdefault(key, {'used_percentage': float(pct), 'resets_at': resets_at})
     return out
@@ -74,18 +81,24 @@ def parse_stream(text: str) -> Dict[str, dict]:
     return {}
 
 
+def _login_path() -> Optional[str]:
+    """The login shell's PATH, as the plugin passes it (Obsidian's own PATH can lack it)."""
+    return os.environ.get('AGENT_SESSIONS_LOGIN_PATH') or None
+
+
 def find_claude() -> Optional[str]:
-    """Claude Code's executable: the path set in the plugin's settings, then PATH, then where its
-    installer puts it (the plugin's own PATH can lack the login shell's)."""
-    from ..agents import launch
-    configured = launch.read_launch_config().get('claude', {}).get('path', '')
+    """Claude Code's executable: the path set in the plugin's settings, then the login shell's
+    PATH, then this process's PATH, then where its installers put it."""
+    configured = os.environ.get('AGENT_SESSIONS_CLAUDE_BIN', '')
     if configured and os.path.isfile(configured):
         return configured
-    found = shutil.which('claude')
+    login = _login_path()
+    found = (shutil.which('claude', path=login) if login else None) or shutil.which('claude')
     if found:
         return found
     home = os.path.expanduser('~')
-    for candidate in (os.path.join(home, '.local', 'bin', 'claude'), os.path.join(home, '.claude', 'local', 'claude')):
+    for candidate in (os.path.join(home, '.local', 'bin', 'claude'), os.path.join(home, '.claude', 'local', 'claude'),
+                      '/opt/homebrew/bin/claude', '/usr/local/bin/claude'):
         if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
             return candidate
     return None
@@ -96,6 +109,8 @@ def run_usage(bin_path: str) -> str:
     and with only the login environment (none of a calling session's own variables)."""
     from ..agents import launch
     env = launch.inherited_env(os.environ)
+    if _login_path():
+        env['PATH'] = _login_path()
     with tempfile.TemporaryDirectory(prefix='agent-sessions-usage-') as cwd:
         return subprocess.run([bin_path] + ARGS, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
                               stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,

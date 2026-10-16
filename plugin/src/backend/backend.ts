@@ -118,6 +118,15 @@ export function agentEnvFor(
 ): Record<string, string> {
 	const enabled = AGENT_IDS.filter((id) => settings.agents[id].enabled);
 	const vars: Record<string, string> = { AGENT_SESSIONS_AGENTS: enabled.join(",") };
+	// `json stats` may run Claude Code's `/usage`: where to find it (the set path, else the login
+	// shell's PATH — Obsidian's own PATH can lack it), and a PATH it can run with (an npm install
+	// needs `node`).
+	if (settings.agents.claude.enabled && settings.agents.claude.path) {
+		vars.AGENT_SESSIONS_CLAUDE_BIN = settings.agents.claude.path;
+	}
+	if (settings.agents.claude.enabled && login.PATH) {
+		vars.AGENT_SESSIONS_LOGIN_PATH = login.PATH;
+	}
 	const codexEnv = parseEnvLines(settings.agents.codex.env);
 	for (const name of CODEX_LOCATION_VARS) {
 		if (codexEnv[name]) {
@@ -238,9 +247,11 @@ export async function usage(
 	return runJson(agentSessionsPath, vaultPath, args) as Promise<UsageResult>;
 }
 
-/** `json stats`: usage within the 5-hour and 7-day windows. */
-export async function stats(agentSessionsPath: string, vaultPath: string): Promise<StatsResult> {
-	return runJson(agentSessionsPath, vaultPath, ["stats"]) as Promise<StatsResult>;
+/** `json stats`: usage within the 5-hour and 7-day windows. `fresh` (the analysis view) also asks
+ * Claude Code's `/usage` when the status files' reading is merely old, not only when they can't
+ * tell at all (at most once every 5 minutes either way). */
+export async function stats(agentSessionsPath: string, vaultPath: string, fresh = false): Promise<StatsResult> {
+	return runJson(agentSessionsPath, vaultPath, fresh ? ["stats", "--fresh"] : ["stats"]) as Promise<StatsResult>;
 }
 
 /**

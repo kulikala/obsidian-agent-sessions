@@ -138,7 +138,7 @@ class CurrentWindowTest(unittest.TestCase):
 
     def test_no_reading_ends_now_with_unknown_usage(self):
         w = stats.current_window(None, None, stats.FIVE_HOUR_SECONDS, self.NOW)
-        self.assertEqual(w, {'end': self.NOW, 'used_percentage': None, 'source': None, 'as_of': None, 'stale': False})
+        self.assertEqual(w, {'end': self.NOW, 'used_percentage': None, 'source': None, 'as_of': None, 'stale': False, 'idle': False})
 
     def test_a_live_reading_is_used_as_is(self):
         local = {'resets_at': self.NOW + 600, 'used_percentage': 30.0, 'as_of': self.NOW - 10}
@@ -179,11 +179,17 @@ class NeedsUsageTest(unittest.TestCase):
     def test_fresh_live_readings_need_nothing(self):
         self.assertFalse(stats.needs_usage({'five_hour': self._r(600, 10), 'seven_day': self._r(9999, 10)}, self.NOW))
 
-    def test_missing_passed_or_old_readings_need_usage(self):
+    def test_missing_or_passed_readings_need_usage_and_old_ones_with_check_age(self):
         fresh = self._r(9999, 10)
         self.assertTrue(stats.needs_usage({'five_hour': None, 'seven_day': fresh}, self.NOW))
         self.assertTrue(stats.needs_usage({'five_hour': self._r(-1, 10), 'seven_day': fresh}, self.NOW))
-        self.assertTrue(stats.needs_usage({'five_hour': self._r(600, stats.STATUS_STALE_SECONDS), 'seven_day': fresh}, self.NOW))
+        old = {'five_hour': self._r(600, stats.STATUS_STALE_SECONDS), 'seven_day': fresh}
+        self.assertFalse(stats.needs_usage(old, self.NOW))
+        self.assertTrue(stats.needs_usage(old, self.NOW, check_age=True))
+
+    def test_an_idle_window_is_told(self):
+        idle = {'resets_at': None, 'used_percentage': 0.0, 'as_of': self.NOW - 10}
+        self.assertFalse(stats.needs_usage({'five_hour': idle, 'seven_day': self._r(9999, 10)}, self.NOW))
 
 
 class ComputeWithUsageTest(StatsTestBase):
@@ -244,6 +250,49 @@ class ComputeWithUsageTest(StatsTestBase):
                             usage_path=self.usage_path, usage_runner=lambda: runs.append(1) or '')
         self.assertEqual(runs, [])
         self.assertEqual(out['windows']['five_hour']['source'], 'status')
+
+    def _hit_line(self, ts):
+        return {'type': 'assistant', 'timestamp': _iso(ts), 'isApiErrorMessage': True, 'error': 'rate_limit',
+                'message': {'content': [{'type': 'text', 'text': "You've hit your session limit · resets 7:10pm"}]}}
+
+    def test_a_window_usage_reports_not_running_is_idle(self):
+        """After a reset with no request anywhere, `/usage` has no reset time for the 5-hour
+        window: it reads 0% with no length, and the limit hit before the reset doesn't count."""
+        now = 1_700_000_000.0
+        hit = now - 2 * 3600
+        self._status('s.json', {'five_hour': {'resets_at': now - 600, 'used_percentage': 99},
+                                'seven_day': {'resets_at': now + 86400, 'used_percentage': 30}}, mtime=hit + 60)
+        _write(os.path.join(self.proj, ID1 + '.jsonl'), [self._hit_line(hit)])
+        event = {'type': 'assistant', 'usage_report': {'rate_limits': {'limits': [
+            {'kind': 'session', 'percent': 0, 'resets_at': None, 'scope': None},
+            {'kind': 'weekly_all', 'percent': 31, 'resets_at': _iso(now + 86400), 'scope': None},
+        ]}}}
+        runs = []
+        runner = lambda: runs.append(1) or json.dumps(event) + '\n'
+        out = stats.compute(now, self.projects_dir, self.status_dir, self.cache_path,
+                            usage_path=self.usage_path, usage_runner=runner)
+        five = out['windows']['five_hour']
+        self.assertEqual((five['idle'], five['stale'], five['used_percentage'], five['exhausted']), (True, False, 0.0, False))
+        self.assertEqual((five['start'], five['end'], five['total']['calls']), (now, now, 0))
+        # told: the next call doesn't ask again, though the status file is still past its reset
+        stats.compute(now + stats.claude_usage.MIN_INTERVAL_SECONDS, self.projects_dir, self.status_dir,
+                      self.cache_path, usage_path=self.usage_path, usage_runner=runner)
+        self.assertEqual(len(runs), 1)
+
+    def test_an_old_reading_asks_usage_only_with_check_age(self):
+        now = 1_700_000_000.0
+        self._status('s.json', {
+            'five_hour': {'resets_at': now + 3600, 'used_percentage': 3},
+            'seven_day': {'resets_at': now + 86400, 'used_percentage': 4},
+        }, mtime=now - stats.STATUS_STALE_SECONDS)
+        runs = []
+        runner = lambda: runs.append(1) or ''
+        stats.compute(now, self.projects_dir, self.status_dir, self.cache_path,
+                      usage_path=self.usage_path, usage_runner=runner)
+        self.assertEqual(runs, [])
+        stats.compute(now, self.projects_dir, self.status_dir, self.cache_path,
+                      usage_path=self.usage_path, usage_runner=runner, check_age=True)
+        self.assertEqual(runs, [1])
 
     def test_without_usage_path_usage_is_never_asked(self):
         out = self.compute(1_700_000_000.0)

@@ -234,7 +234,7 @@ export class ManagerView extends ItemView {
 	/** `json stats`: re-read on open, on rescan, and every 60 seconds. Shows "—" on the bar if it fails. */
 	private async refreshStats(): Promise<void> {
 		try {
-			this.statsResult = await stats(this.plugin.agentSessionsPath(), this.plugin.vaultPath());
+			this.statsResult = await stats(this.plugin.agentSessionsPath(), this.plugin.vaultPath(), true);
 		} catch {
 			this.statsResult = null;
 		}
@@ -565,7 +565,7 @@ export class ManagerView extends ItemView {
 		head.createSpan({ cls: "agent-sessions-manager-stats-title", text: label });
 		// past its reset with no newer reading: the old numbers belong to a window that's over
 		const pending = windowResetPending(w, Date.now() / 1000);
-		const countdown = w && !pending ? formatCountdown(w.end - Date.now() / 1000) : null;
+		const countdown = w && !pending && !w.idle ? formatCountdown(w.end - Date.now() / 1000) : null;
 		head.createSpan({
 			cls: "agent-sessions-manager-stats-countdown",
 			text: countdown != null ? t("stats.resetsIn", { countdown }) : "—",
@@ -619,6 +619,11 @@ export class ManagerView extends ItemView {
 		if (windowResetPending(w, Date.now() / 1000)) {
 			lineEl.addClass("is-muted");
 			lineEl.setText(t("stats.resetPending"));
+			return;
+		}
+		if (w?.idle) {
+			lineEl.addClass("is-muted");
+			lineEl.setText(t("stats.windowIdle"));
 			return;
 		}
 		if (!w || w.used_percentage == null) {

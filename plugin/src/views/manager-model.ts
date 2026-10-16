@@ -515,10 +515,10 @@ export function displayedUsedPct(w: Pick<StatsWindow, "used_percentage" | "exhau
 }
 
 /** Whether a window's reading belongs to a window that's already over (`stale` from `json stats`,
- * or `end` passed since the last fetch): shown as reset, with no percentage, countdown, pace or
+ * or `end` passed since the last fetch; never an `idle` one, whose `end` is just when it was read): shown as reset, with no percentage, countdown, pace or
  * "used up". */
-export function windowResetPending(w: Pick<StatsWindow, "end" | "stale"> | null, now: number): boolean {
-	return !!w && (!!w.stale || w.end <= now);
+export function windowResetPending(w: Pick<StatsWindow, "end" | "stale" | "idle"> | null, now: number): boolean {
+	return !!w && !w.idle && (!!w.stale || w.end <= now);
 }
 
 /**
