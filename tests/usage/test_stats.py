@@ -179,13 +179,11 @@ class NeedsUsageTest(unittest.TestCase):
     def test_fresh_live_readings_need_nothing(self):
         self.assertFalse(stats.needs_usage({'five_hour': self._r(600, 10), 'seven_day': self._r(9999, 10)}, self.NOW))
 
-    def test_missing_or_passed_readings_need_usage_and_old_ones_with_check_age(self):
+    def test_missing_or_passed_readings_need_usage_but_old_ones_do_not(self):
         fresh = self._r(9999, 10)
         self.assertTrue(stats.needs_usage({'five_hour': None, 'seven_day': fresh}, self.NOW))
         self.assertTrue(stats.needs_usage({'five_hour': self._r(-1, 10), 'seven_day': fresh}, self.NOW))
-        old = {'five_hour': self._r(600, stats.STATUS_STALE_SECONDS), 'seven_day': fresh}
-        self.assertFalse(stats.needs_usage(old, self.NOW))
-        self.assertTrue(stats.needs_usage(old, self.NOW, check_age=True))
+        self.assertFalse(stats.needs_usage({'five_hour': self._r(600, 3600), 'seven_day': fresh}, self.NOW))
 
     def test_an_idle_window_is_told(self):
         idle = {'resets_at': None, 'used_percentage': 0.0, 'as_of': self.NOW - 10}
@@ -279,20 +277,30 @@ class ComputeWithUsageTest(StatsTestBase):
                       self.cache_path, usage_path=self.usage_path, usage_runner=runner)
         self.assertEqual(len(runs), 1)
 
-    def test_an_old_reading_asks_usage_only_with_check_age(self):
+    def test_ask_usage_asks_even_when_the_status_files_tell_but_not_twice_within_the_interval(self):
         now = 1_700_000_000.0
         self._status('s.json', {
             'five_hour': {'resets_at': now + 3600, 'used_percentage': 3},
             'seven_day': {'resets_at': now + 86400, 'used_percentage': 4},
-        }, mtime=now - stats.STATUS_STALE_SECONDS)
+        }, mtime=now - 10)
         runs = []
-        runner = lambda: runs.append(1) or ''
-        stats.compute(now, self.projects_dir, self.status_dir, self.cache_path,
-                      usage_path=self.usage_path, usage_runner=runner)
+        runner = lambda: runs.append(1) or self._usage_stream(20, now + 3000, 30, now + 80000)
+        out = stats.compute(now, self.projects_dir, self.status_dir, self.cache_path,
+                            usage_path=self.usage_path, usage_runner=runner)
         self.assertEqual(runs, [])
-        stats.compute(now, self.projects_dir, self.status_dir, self.cache_path,
-                      usage_path=self.usage_path, usage_runner=runner, check_age=True)
+        self.assertEqual(out['windows']['five_hour']['source'], 'status')
+        out = stats.compute(now, self.projects_dir, self.status_dir, self.cache_path,
+                            usage_path=self.usage_path, usage_runner=runner, ask_usage=True)
         self.assertEqual(runs, [1])
+        # the /usage reading is newer than the status file's, so it is the one shown
+        self.assertEqual((out['windows']['five_hour']['source'], out['windows']['five_hour']['used_percentage']),
+                         ('usage', 20.0))
+        stats.compute(now + stats.claude_usage.MIN_INTERVAL_SECONDS - 1, self.projects_dir, self.status_dir,
+                      self.cache_path, usage_path=self.usage_path, usage_runner=runner, ask_usage=True)
+        self.assertEqual(runs, [1])
+        stats.compute(now + stats.claude_usage.MIN_INTERVAL_SECONDS, self.projects_dir, self.status_dir,
+                      self.cache_path, usage_path=self.usage_path, usage_runner=runner, ask_usage=True)
+        self.assertEqual(runs, [1, 1])
 
     def test_without_usage_path_usage_is_never_asked(self):
         out = self.compute(1_700_000_000.0)

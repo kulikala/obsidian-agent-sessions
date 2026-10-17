@@ -108,8 +108,8 @@ def main(args: List[str]) -> int:
         return 0
 
     if sub == 'stats':
-        # --fresh: also ask Claude Code's /usage when the status files' reading is merely old
-        # (the analysis view), not only when they can't tell at all
+        # --fresh: the user clicked to refresh, so ask Claude Code's /usage even when the status
+        # files can tell (at most once every 5 minutes, like every /usage run)
         for opt in rest:
             if opt != '--fresh':
                 sys.stderr.write(i18n.t('cmd.json_unknown_option', option=opt) + '\n')

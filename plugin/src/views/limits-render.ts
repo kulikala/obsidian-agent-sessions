@@ -125,25 +125,26 @@ export class LimitsView {
 	}
 
 	/** Re-reads/re-fetches every currently-shown agent's source (called whenever the statusLine
-	 * changes or on every rescan, and by `refreshAgents` after a rebuild). */
-	reload(): void {
+	 * changes or on every rescan, and by `refreshAgents` after a rebuild); `fresh` on a click
+	 * (see `backend.stats`). */
+	reload(fresh = false): void {
 		if (this.agents.includes("claude")) {
 			this.claudeInfo = pickLatestLimits(readLimitsFiles(this.plugin.index.statusline.dir));
 		}
-		void this.reloadStatsAgents();
+		void this.reloadStatsAgents(fresh);
 		this.render();
 	}
 
 	/** Fetches `json stats` once and updates every enabled agent's windows from it — one call
 	 * covers all of them, rather than a separate `json stats` per agent. */
-	private async reloadStatsAgents(): Promise<void> {
+	private async reloadStatsAgents(fresh = false): Promise<void> {
 		const statsAgents = this.agents;
 		if (statsAgents.length === 0) {
 			return;
 		}
 		let result: Awaited<ReturnType<typeof stats>> | null;
 		try {
-			result = await stats(this.plugin.agentSessionsPath(), this.plugin.vaultPath());
+			result = await stats(this.plugin.agentSessionsPath(), this.plugin.vaultPath(), fresh);
 		} catch {
 			result = null;
 		}
@@ -156,8 +157,8 @@ export class LimitsView {
 	/**
 	 * Clicking re-reads/re-fetches every agent's source right away, rather than waiting for the
 	 * next automatic refresh — the status files are re-read as they are on disk, and `json stats`
-	 * is re-fetched (for Claude it asks `/usage` only when the status files can't tell, at most
-	 * once every few minutes).
+	 * is re-fetched, asking Claude Code's `/usage` too (at most once every 5 minutes), so usage
+	 * from elsewhere shows up.
 	 * Rapid clicks collapse into one (ignored while a refresh is already in progress); the brief
 	 * `is-refreshing` class gives visible feedback even though Claude's own read is effectively instant.
 	 */
@@ -167,7 +168,7 @@ export class LimitsView {
 		}
 		this.refreshing = true;
 		this.hostEl.addClass("is-refreshing");
-		this.reload();
+		this.reload(true);
 		this.refreshFlashTimer = window.setTimeout(() => {
 			this.refreshing = false;
 			this.hostEl.removeClass("is-refreshing");

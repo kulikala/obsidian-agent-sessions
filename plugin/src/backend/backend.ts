@@ -247,9 +247,9 @@ export async function usage(
 	return runJson(agentSessionsPath, vaultPath, args) as Promise<UsageResult>;
 }
 
-/** `json stats`: usage within the 5-hour and 7-day windows. `fresh` (the analysis view) also asks
- * Claude Code's `/usage` when the status files' reading is merely old, not only when they can't
- * tell at all (at most once every 5 minutes either way). */
+/** `json stats`: usage within the 5-hour and 7-day windows. Claude Code's `/usage` is asked when
+ * the status files can't tell; `fresh` (the user clicked to refresh) asks it even when they can,
+ * so usage from elsewhere shows up. At most once every 5 minutes either way. */
 export async function stats(agentSessionsPath: string, vaultPath: string, fresh = false): Promise<StatsResult> {
 	return runJson(agentSessionsPath, vaultPath, fresh ? ["stats", "--fresh"] : ["stats"]) as Promise<StatsResult>;
 }

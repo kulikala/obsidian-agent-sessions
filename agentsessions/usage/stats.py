@@ -8,7 +8,8 @@ transcripts found under `<project>/<id>/` (anywhere below it, e.g. under
 Each window comes from its newest reading: the newest file under
 `~/.agents/sessions/status/*.json` (written by `hooks.record_status`) that has it,
 or Claude Code's own `/usage` (`usage.claude_usage`), asked when the status files
-can't tell (`needs_usage`) -- whichever was taken later. `end` is that reading's
+can't tell (`needs_usage`) or when the user asks for the latest (`json stats --fresh`, a click
+on a usage view) -- whichever was taken later. `end` is that reading's
 `resets_at`, `start` is `end - 5h/7d`, and `used_percentage` its percentage; a
 reading whose reset has passed is stale (`current_window`). No reading at all: `end`
 is now and `used_percentage` is `None`.
@@ -173,10 +174,6 @@ def windows_from_status(status_dir: str, now: float) -> Dict[str, dict]:
     return result
 
 
-# A status-file reading older than this sends `compute` to `/usage` for a fresher one.
-STATUS_STALE_SECONDS = 5 * 60
-
-
 def _newer(local: Optional[dict], usage: Optional[dict]) -> Tuple[Optional[dict], Optional[str]]:
     """The newer (by `as_of`) of a window's two readings, and where it came from."""
     candidates = [(r, src) for r, src in ((local, 'status'), (usage, 'usage')) if r is not None]
@@ -185,12 +182,11 @@ def _newer(local: Optional[dict], usage: Optional[dict]) -> Tuple[Optional[dict]
     return max(candidates, key=lambda c: c[0]['as_of'])
 
 
-def needs_usage(readings: Dict[str, Optional[dict]], now: float, check_age: bool = False) -> bool:
+def needs_usage(readings: Dict[str, Optional[dict]], now: float) -> bool:
     """Whether the current readings (`_newer` per window) can't tell the current windows: a
-    window has no reading or its reset has passed -- or, with `check_age`, a reading is
-    `STATUS_STALE_SECONDS` old. A window that isn't running (`resets_at` `None`) is told."""
+    window has no reading or its reset has passed. A window that isn't running (`resets_at`
+    `None`) is told."""
     return any(r is None or (r['resets_at'] is not None and r['resets_at'] < now)
-               or (check_age and now - r['as_of'] >= STATUS_STALE_SECONDS)
                for r in readings.values())
 
 
@@ -526,17 +522,18 @@ def _usage_readings(got: Optional[dict]) -> Dict[str, dict]:
 
 
 def compute(now: float, projects_dir: str, status_dir: str, cache_path: str,
-            usage_path: Optional[str] = None, usage_runner=None, check_age: bool = False) -> dict:
+            usage_path: Optional[str] = None, usage_runner=None, ask_usage: bool = False) -> dict:
     """`{'windows': {'five_hour': W, 'seven_day': W}}`. With `usage_path`, `/usage`'s last
     reading is weighed against the status files', and `/usage` is asked again when the
-    newer of the two can't tell the windows (`needs_usage`, `check_age` passed on);
-    without it, the status files alone count."""
+    newer of the two can't tell the windows (`needs_usage`) or `ask_usage` (the user asked for
+    the latest) -- either way at most once per `claude_usage.MIN_INTERVAL_SECONDS`; without
+    `usage_path`, the status files alone count."""
     local = windows_from_status(status_dir, now)
     usage: Dict[str, dict] = {}
     if usage_path is not None:
         usage = _usage_readings(claude_usage.readings(now, False, path=usage_path))
         newest = {key: _newer(local[key], usage.get(key))[0] for key in local}
-        if needs_usage(newest, now, check_age):
+        if ask_usage or needs_usage(newest, now):
             usage = _usage_readings(claude_usage.readings(now, True, path=usage_path, runner=usage_runner))
     win = {key: current_window(local[key], usage.get(key), duration, now)
            for key, duration in (('five_hour', FIVE_HOUR_SECONDS), ('seven_day', SEVEN_DAY_SECONDS))}

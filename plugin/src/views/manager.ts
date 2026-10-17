@@ -231,10 +231,11 @@ export class ManagerView extends ItemView {
 		this.render();
 	}
 
-	/** `json stats`: re-read on open, on rescan, and every 60 seconds. Shows "—" on the bar if it fails. */
-	private async refreshStats(): Promise<void> {
+	/** `json stats`: re-read on open, on rescan, and every 60 seconds; `fresh` on a click (see
+	 * `backend.stats`). Shows "—" on the bar if it fails. */
+	private async refreshStats(fresh = false): Promise<void> {
 		try {
-			this.statsResult = await stats(this.plugin.agentSessionsPath(), this.plugin.vaultPath(), true);
+			this.statsResult = await stats(this.plugin.agentSessionsPath(), this.plugin.vaultPath(), fresh);
 		} catch {
 			this.statsResult = null;
 		}
@@ -245,7 +246,8 @@ export class ManagerView extends ItemView {
 
 	/**
 	 * Clicking the analytics area re-fetches `json stats` right away, rather than waiting for the
-	 * next scheduled fetch. Rapid clicks collapse into one (ignored while a fetch is already in
+	 * next scheduled fetch, and asks Claude Code's `/usage` too (at most once every 5 minutes), so
+	 * usage from elsewhere shows up. Rapid clicks collapse into one (ignored while a fetch is already in
 	 * progress), and `is-refreshing` gives visible feedback while the request is in flight —
 	 * unlike `views/limits.ts`'s equivalent, this is a real async round trip, not just a flash.
 	 */
@@ -256,7 +258,7 @@ export class ManagerView extends ItemView {
 		this.refreshingStats = true;
 		this.analysisBodyEl.addClass("is-refreshing");
 		try {
-			await this.refreshStats();
+			await this.refreshStats(true);
 		} finally {
 			this.refreshingStats = false;
 			this.analysisBodyEl.removeClass("is-refreshing");

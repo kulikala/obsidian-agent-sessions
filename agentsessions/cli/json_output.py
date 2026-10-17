@@ -460,13 +460,13 @@ def stats_output(fresh: bool = False) -> dict:
     (always Claude's, unconditionally -- pre-dating `agents` entirely) is kept
     exactly as before for backward compatibility with a plugin build that reads
     only that key; once the plugin reads `agents.claude.windows` instead, this
-    top-level key can be dropped. `fresh`: Claude's windows also ask `/usage` when the status
-    files' reading is merely old (`usage.stats.needs_usage`)."""
+    top-level key can be dropped. `fresh` (the user clicked to refresh): Claude's windows
+    ask `/usage` even when the status files can tell them (`usage.stats.compute`'s `ask_usage`)."""
     # Same reason as `_store_dict`: pass the config paths at call time.
     claude_windows = stats.compute(now=time.time(), projects_dir=config.PROJECTS_DIR,
                                     status_dir=config.STATUS_DIR, cache_path=config.STATS_CACHE_PATH,
                                     usage_path=config.CLAUDE_USAGE_PATH if 'claude' in agents.enabled_agents() else None,
-                                    check_age=fresh)
+                                    ask_usage=fresh)
     result = dict(claude_windows)
     enabled = agents.enabled_agents()
     agents_out = {}
