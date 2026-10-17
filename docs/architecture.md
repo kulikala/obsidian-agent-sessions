@@ -45,7 +45,7 @@ flowchart TB
     subgraph Files["Files"]
         Transcripts["~/.claude/projects/*/*.jsonl<br/>transcripts (source of truth)"]
         Ledger["~/.claude/sessions/&lt;pid&gt;.json<br/>live status ledger"]
-        Runtime2["~/.agents/sessions/<br/>status/ · compacted/ · events.log<br/>ui.json · vault.json · stats-cache.json<br/>daemon.sock · plugin.sock"]
+        Runtime2["~/.agents/sessions/<br/>status/ · compacted/ · events.log<br/>ui.json · vault.json · stats-cache.json · claude-usage.json<br/>daemon.sock · plugin.sock"]
         SessionsJSON["&lt;vault&gt;/.agents/sessions/sessions.json<br/>folded groups, archive, category colors"]
     end
 

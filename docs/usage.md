@@ -312,7 +312,7 @@ Shows when each agent was working. Open it from the Session manager toolbar, the
 
 ## Usage and limits
 
-- Each agent's account-wide 5-hour and 7-day windows, with the countdown to reset and a weekly-pace forecast, in the side panel and the Session manager.
+- Each agent's account-wide 5-hour and 7-day windows, with the countdown to reset and a weekly-pace forecast, in the side panel and the Session manager. Claude Code's are read from its status line; when that can't tell (you used Claude elsewhere, or a window has just reset), and when you click the usage display to refresh it, Agent Sessions runs Claude Code's `/usage` for the whole account at most once every 5 minutes. `/usage` calls no model, so it costs nothing and uses none of your limit.
 - A window whose limit has been reached reads 100% in red, and says when it ran out and how long before its reset ("Used up 3:26 PM (2h 12m before reset)").
 - One session's cost, tokens and tools, turn by turn: [Session analytics](#session-analytics).
 - They come from each agent's own local files.

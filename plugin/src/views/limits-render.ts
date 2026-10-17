@@ -14,16 +14,16 @@ import type AgentSessionsPlugin from "../main";
 import { AGENT_ICON_ID } from "../ui/icons";
 import { exhaustedText, windowLabel, windowShortLabel } from "./manager-model";
 import {
-	claudeNearLimit,
 	FIVE_HOUR_SECONDS,
 	formatCountdown,
 	fromStatsWindow,
 	isGroupStartRow,
+	isResetPending,
+	pickClaudeWindow,
 	pickLatestLimits,
 	realWindows,
 	rollForwardWindow,
 	SEVEN_DAY_SECONDS,
-	withExhaustion,
 	type LimitsInfo,
 	type RateLimitWindow,
 	type RawLimitsFile,
@@ -84,8 +84,8 @@ export class LimitsView {
 	 * `["claude"]` alone if somehow none is, so there's always at least one agent's rows. */
 	private agents: AgentId[] = [];
 	private claudeInfo: LimitsInfo | null = null;
-	/** Every non-Claude enabled agent's windows, fetched via `json stats` — plus Claude's, only while
-	 * one of its live readings is near the limit (`claudeNearLimit`), to tell whether it's used up. */
+	/** Every enabled agent's windows, fetched via `json stats`. Claude's tell whether a window is
+	 * used up, and carry `/usage`'s readings when the status files can't tell (`pickClaudeWindow`). */
 	private statsWindows: Partial<Record<AgentId, StatsWindows>> = {};
 	private tickTimer: number | null = null;
 	private statsFetchTimer: number | null = null;
@@ -125,30 +125,26 @@ export class LimitsView {
 	}
 
 	/** Re-reads/re-fetches every currently-shown agent's source (called whenever the statusLine
-	 * changes or on every rescan, and by `refreshAgents` after a rebuild). */
-	reload(): void {
+	 * changes or on every rescan, and by `refreshAgents` after a rebuild); `fresh` on a click
+	 * (see `backend.stats`). */
+	reload(fresh = false): void {
 		if (this.agents.includes("claude")) {
 			this.claudeInfo = pickLatestLimits(readLimitsFiles(this.plugin.index.statusline.dir));
 		}
-		void this.reloadStatsAgents();
+		void this.reloadStatsAgents(fresh);
 		this.render();
 	}
 
-	/** Fetches `json stats` once and updates every non-Claude enabled agent's windows from it —
-	 * one call covers all of them, rather than a separate `json stats` per agent. Claude is
-	 * included only while `claudeNearLimit`; otherwise its stale windows are dropped. */
-	private async reloadStatsAgents(): Promise<void> {
-		const claudeNear = this.agents.includes("claude") && claudeNearLimit(this.claudeInfo);
-		if (!claudeNear) {
-			delete this.statsWindows.claude;
-		}
-		const statsAgents = this.agents.filter((id) => id !== "claude" || claudeNear);
+	/** Fetches `json stats` once and updates every enabled agent's windows from it — one call
+	 * covers all of them, rather than a separate `json stats` per agent. */
+	private async reloadStatsAgents(fresh = false): Promise<void> {
+		const statsAgents = this.agents;
 		if (statsAgents.length === 0) {
 			return;
 		}
 		let result: Awaited<ReturnType<typeof stats>> | null;
 		try {
-			result = await stats(this.plugin.agentSessionsPath(), this.plugin.vaultPath());
+			result = await stats(this.plugin.agentSessionsPath(), this.plugin.vaultPath(), fresh);
 		} catch {
 			result = null;
 		}
@@ -160,9 +156,9 @@ export class LimitsView {
 
 	/**
 	 * Clicking re-reads/re-fetches every agent's source right away, rather than waiting for the
-	 * next automatic refresh — note that Claude's `rate_limits` values themselves only change
-	 * when its own statusLine hook next writes them (so that part just re-reads whatever is
-	 * currently on disk), while a non-Claude agent's really does re-fetch fresh `json stats`.
+	 * next automatic refresh — the status files are re-read as they are on disk, and `json stats`
+	 * is re-fetched, asking Claude Code's `/usage` too (at most once every 5 minutes), so usage
+	 * from elsewhere shows up.
 	 * Rapid clicks collapse into one (ignored while a refresh is already in progress); the brief
 	 * `is-refreshing` class gives visible feedback even though Claude's own read is effectively instant.
 	 */
@@ -172,7 +168,7 @@ export class LimitsView {
 		}
 		this.refreshing = true;
 		this.hostEl.addClass("is-refreshing");
-		this.reload();
+		this.reload(true);
 		this.refreshFlashTimer = window.setTimeout(() => {
 			this.refreshing = false;
 			this.hostEl.removeClass("is-refreshing");
@@ -215,12 +211,12 @@ export class LimitsView {
 				renderRow(
 					t("stats.fiveHour"),
 					t("stats.fiveHour.short"),
-					withExhaustion(rollForwardWindow(this.claudeInfo?.fiveHour ?? null, FIVE_HOUR_SECONDS, now), claudeStats?.five_hour)
+					pickClaudeWindow(this.claudeInfo?.fiveHour ?? null, claudeStats?.five_hour, FIVE_HOUR_SECONDS, now)
 				);
 				renderRow(
 					t("stats.sevenDay"),
 					t("stats.sevenDay.short"),
-					withExhaustion(rollForwardWindow(this.claudeInfo?.sevenDay ?? null, SEVEN_DAY_SECONDS, now), claudeStats?.seven_day)
+					pickClaudeWindow(this.claudeInfo?.sevenDay ?? null, claudeStats?.seven_day, SEVEN_DAY_SECONDS, now)
 				);
 				return;
 			}
@@ -258,18 +254,26 @@ export class LimitsView {
 		// the tooltip.
 		const labelEl = el.createSpan({ cls: "agent-sessions-limits-label", text: shortLabel });
 		setTooltip(labelEl, label);
+		const now = Date.now() / 1000;
+		// past its reset with no newer reading: the old numbers belong to a window that's over
+		const pending = isResetPending(w, now);
+		const used = pending ? null : (w?.usedPercentage ?? null);
 		const barWrap = el.createDiv({ cls: "agent-sessions-limits-bar" });
-		barWrap.toggleClass("is-exhausted", !!w?.exhausted);
-		const pct = w?.usedPercentage != null ? Math.min(100, Math.max(0, w.usedPercentage)) : 0;
+		barWrap.toggleClass("is-exhausted", !pending && !!w?.exhausted);
+		const pct = used != null ? Math.min(100, Math.max(0, used)) : 0;
 		const bar = barWrap.createDiv({ cls: "agent-sessions-limits-bar-fill" });
 		bar.style.width = `${pct}%`;
-		const pctEl = el.createSpan({ cls: "agent-sessions-limits-pct", text: w?.usedPercentage != null ? `${Math.round(w.usedPercentage)}%` : "—" });
+		const pctEl = el.createSpan({ cls: "agent-sessions-limits-pct", text: used != null ? `${Math.round(used)}%` : "—" });
 		// a used-up window says when it ran out, in the tooltip (the row has no room for it)
-		const exhausted = w?.resetsAt != null ? exhaustedText({ end: w.resetsAt, exhausted: w.exhausted, exhausted_at: w.exhaustedAt }, Date.now() / 1000) : null;
-		if (exhausted != null) {
+		const exhausted = !pending && w?.resetsAt != null ? exhaustedText({ end: w.resetsAt, exhausted: w.exhausted, exhausted_at: w.exhaustedAt }, now) : null;
+		if (pending) {
+			setTooltip(pctEl, t("stats.resetPending"));
+		} else if (w?.idle) {
+			setTooltip(pctEl, t("stats.windowIdle"));
+		} else if (exhausted != null) {
 			setTooltip(pctEl, exhausted);
 		}
-		const countdown = w?.resetsAt != null ? formatCountdown(w.resetsAt - Date.now() / 1000) : null;
+		const countdown = !pending && w?.resetsAt != null ? formatCountdown(w.resetsAt - now) : null;
 		el.createSpan({ cls: "agent-sessions-limits-countdown", text: countdown ?? "—" });
 	}
 }

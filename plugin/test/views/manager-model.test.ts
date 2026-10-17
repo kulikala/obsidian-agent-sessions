@@ -11,6 +11,7 @@ import {
 	codexShortModelName,
 	displayedUsedPct,
 	exhaustedText,
+	windowResetPending,
 	flattenTree,
 	formatBeforeReset,
 	formatExhaustTime,
@@ -854,5 +855,16 @@ describe("matchesStatusFilter", () => {
 		expect(matchesStatusFilter(row({ id: "a" }), "error", "running", false)).toBe(false);
 		expect(matchesStatusFilter(row({ id: "a" }), "error", "done", false)).toBe(false);
 		expect(matchesStatusFilter(row({ id: "a" }), "error", "all", false)).toBe(true);
+	});
+});
+
+describe("windowResetPending (a window past its reset shows as reset, not with the old numbers)", () => {
+	it("is true when json stats marks it stale, or its end has passed since the last fetch", () => {
+		expect(windowResetPending({ end: 200, stale: true }, 100)).toBe(true);
+		expect(windowResetPending({ end: 100 }, 100)).toBe(true);
+		expect(windowResetPending({ end: 101, stale: false }, 100)).toBe(false);
+		expect(windowResetPending(null, 100)).toBe(false);
+		// an idle window's end is when it was read, not a reset
+		expect(windowResetPending({ end: 50, idle: true }, 100)).toBe(false);
 	});
 });

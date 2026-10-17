@@ -4,10 +4,9 @@
 // class that needs real `obsidian` exports (`setIcon`/`setTooltip`), lives in `limits-render.ts`.
 //
 // Claude: `~/.agents/sessions/status/*.json` files each carry the account-wide `rate_limits`,
-// written in real time by Claude Code's own statusLine hook. Since each file's last-written time
-// (mtime) differs, this uses whichever file with `rate_limits` was written most recently (assumes
-// the account isn't being used from multiple places at once). Always exactly two rows (5h/7d) —
-// Claude's account always has both.
+// written in real time by Claude Code's own statusLine hook. Each window is read from the newest
+// file that has it (`pickLatestLimits`). Always exactly two rows (5h/7d) — Claude's account
+// always has both.
 // Codex: no statusLine-equivalent mechanism exists, so there's no live
 // file to read — instead this polls `json stats`'s `agents.codex.windows` (the same shape the
 // manager's per-agent analysis uses) every `STATS_FETCH_INTERVAL_MS`, converting each
@@ -17,10 +16,13 @@
 // can be the usual 5h/7d pair, a single non-standard window (e.g. a 30-day-only plan — a
 // confirmed real case), more than two, or occasionally none at all (nothing shown for that agent
 // in that case, rather than a permanently dashed-out placeholder row).
-// A used-up window (`json stats`'s `exhausted`) reads 100%: Claude's `rate_limits` snapshot stays
-// just below it (typically 99%) once the limit is hit, so while either Claude reading is at
-// `CLAUDE_NEAR_LIMIT_PCT` or more, Claude joins the `json stats` poll too and `withExhaustion`
-// lifts a used-up window to 100%.
+// Claude joins the `json stats` poll too: it knows whether a window is used up (`exhausted`, read
+// as 100% — Claude's `rate_limits` snapshot stays just below it, typically 99%, once the limit is
+// hit; `withExhaustion` lifts it), and when the status files can't tell (used elsewhere, or past a
+// reset) it asks Claude Code's own `/usage` for the account's readings. `pickClaudeWindow` shows
+// whichever reading is newer.
+// A window whose reset has passed with no newer reading yet is *stale*: no percentage, no
+// countdown, no "used up" — the old numbers belong to a window that's over.
 // Either way: updates the bars, usage percentage, and countdown to reset (shown as "—" when
 // `resetsAt` is absent) once per second, and re-reads/re-fetches immediately on click.
 
@@ -38,15 +40,18 @@ export interface RateLimitWindow {
 	exhausted?: boolean;
 	/** When it was reached (epoch seconds), `null` if unknown. */
 	exhaustedAt?: number | null;
+	/** The reading's reset has passed and no newer one has arrived (see `rollForwardWindow`). */
+	stale?: boolean;
+	/** Not running (no request since its reset, per Claude Code's `/usage`): no `resetsAt`. */
+	idle?: boolean;
+	/** When the reading was taken (epoch seconds): the status file's mtime, or `json stats`'s `as_of`. */
+	asOf?: number | null;
 }
 
-/** A Claude reading at or above this makes the side panel also fetch `json stats` for Claude, to
- * learn whether a window is used up (see `withExhaustion`). Below it, the live file alone is read. */
-export const CLAUDE_NEAR_LIMIT_PCT = 90;
-
-/** Whether either of Claude's live readings is close enough to its limit to check for exhaustion. */
-export function claudeNearLimit(info: LimitsInfo | null): boolean {
-	return [info?.fiveHour, info?.sevenDay].some((w) => w?.usedPercentage != null && w.usedPercentage >= CLAUDE_NEAR_LIMIT_PCT);
+/** Whether a window's reading belongs to a window that's already over: shown as reset, with no
+ * percentage, countdown or "used up". */
+export function isResetPending(w: RateLimitWindow | null, now: number): boolean {
+	return !!w && (!!w.stale || (w.resetsAt != null && w.resetsAt <= now));
 }
 
 /**
@@ -110,43 +115,72 @@ function num(value: unknown): number | null {
 	return typeof value === "number" ? value : null;
 }
 
-function windowOf(raw: { used_percentage?: unknown; resets_at?: unknown } | undefined): RateLimitWindow | null {
+function windowOf(raw: { used_percentage?: unknown; resets_at?: unknown } | undefined, mtimeMs: number): RateLimitWindow | null {
 	const used = num(raw?.used_percentage);
 	if (used == null) {
 		return null;
 	}
-	return { usedPercentage: used, resetsAt: num(raw?.resets_at) };
+	return { usedPercentage: used, resetsAt: num(raw?.resets_at), asOf: mtimeMs / 1000 };
+}
+
+/** The window `pick` reads from the newest file that has it. */
+function latestWindow(files: RawLimitsFile[], pick: (rl: NonNullable<RawLimitsFile["rate_limits"]>) => { used_percentage?: unknown; resets_at?: unknown } | undefined): RateLimitWindow | null {
+	let best: RateLimitWindow | null = null;
+	let bestMtime = -Infinity;
+	for (const f of files) {
+		const w = f.rate_limits ? windowOf(pick(f.rate_limits), f.mtimeMs) : null;
+		if (w && f.mtimeMs > bestMtime) {
+			best = w;
+			bestMtime = f.mtimeMs;
+		}
+	}
+	return best;
 }
 
 /**
- * Takes `five_hour`/`seven_day` from whichever file with `rate_limits` has the newest mtime.
- * `null` if there's no such file.
+ * Takes `five_hour` and `seven_day` each from the newest file that has it — not from the newest
+ * file overall: at a reset Claude Code drops the expired window from the payload, and every idle
+ * session rewrites its file then. `null` if no file has `rate_limits`.
  */
 export function pickLatestLimits(files: RawLimitsFile[]): LimitsInfo | null {
-	const candidates = files.filter((f) => f.rate_limits);
-	if (candidates.length === 0) {
+	if (!files.some((f) => f.rate_limits)) {
 		return null;
 	}
-	const latest = candidates.reduce((a, b) => (b.mtimeMs > a.mtimeMs ? b : a));
 	return {
-		fiveHour: windowOf(latest.rate_limits?.five_hour),
-		sevenDay: windowOf(latest.rate_limits?.seven_day),
+		fiveHour: latestWindow(files, (rl) => rl.five_hour),
+		sevenDay: latestWindow(files, (rl) => rl.seven_day),
 	};
+}
+
+/**
+ * One Claude window for the side panel: `stats` (`json stats`, which may come from Claude Code's
+ * `/usage`) when it's the newer reading, otherwise the live status-file reading `live` — marked
+ * used up from `stats` (`withExhaustion`). Either is rolled forward past a reset
+ * (`rollForwardWindow`).
+ */
+export function pickClaudeWindow(live: RateLimitWindow | null, stats: StatsWindow | undefined, durationSeconds: number, now: number): RateLimitWindow | null {
+	const statsAsOf = stats?.as_of ?? null;
+	if (stats && statsAsOf != null && (live?.asOf == null || statsAsOf > live.asOf)) {
+		return rollForwardWindow(fromStatsWindow(stats), durationSeconds, now);
+	}
+	return withExhaustion(rollForwardWindow(live, durationSeconds, now), stats);
 }
 
 /**
  * If `w.resetsAt` is in the past relative to `now`, rolls it forward in steps of
  * `durationSeconds` (the 5-hour/7-day window length) to get the current window's `resetsAt`
- * (same rule as `agentsessions/stats.py`'s `_roll_forward`). Right after a reset, while no fresh
- * `rate_limits` has arrived yet, sets `usedPercentage` to `null` (unknown). Returns `w` as-is if
- * it's `null` or has no `resetsAt` (nothing to roll forward).
+ * (same rule as `agentsessions/stats.py`'s `_roll_forward`), and marks it `stale`: right after a
+ * reset, while no fresh reading has arrived yet, what's used is unknown (`usedPercentage` `null`).
+ * The rolled `resetsAt` is the real next reset only for the 7-day window (a new 5-hour window
+ * starts at the first request after the reset). Returns `w` as-is if it's `null` or has no
+ * `resetsAt` (nothing to roll forward).
  */
 export function rollForwardWindow(w: RateLimitWindow | null, durationSeconds: number, now: number): RateLimitWindow | null {
 	if (!w || w.resetsAt == null || w.resetsAt >= now) {
 		return w;
 	}
 	const periods = Math.ceil((now - w.resetsAt) / durationSeconds);
-	return { usedPercentage: null, resetsAt: w.resetsAt + periods * durationSeconds };
+	return { usedPercentage: null, resetsAt: w.resetsAt + periods * durationSeconds, stale: true, asOf: w.asOf ?? null };
 }
 
 /**
@@ -165,9 +199,13 @@ export function fromStatsWindow(w: StatsWindow | null): RateLimitWindow | null {
 	}
 	return {
 		usedPercentage: displayedUsedPct(w),
-		resetsAt: w.end,
+		// an idle window's `end` is just when it was read, not a reset
+		resetsAt: w.idle ? null : w.end,
 		exhausted: !!w.exhausted,
 		exhaustedAt: w.exhausted_at ?? null,
+		stale: !!w.stale,
+		idle: !!w.idle,
+		asOf: w.as_of ?? null,
 	};
 }
 

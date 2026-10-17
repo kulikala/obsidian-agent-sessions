@@ -50,6 +50,7 @@ import {
 	sortRows,
 	topCategoryTotals,
 	weeklyPace,
+	windowResetPending,
 	windowLabel,
 	windowSummary,
 	windowsForAgent,
@@ -230,10 +231,11 @@ export class ManagerView extends ItemView {
 		this.render();
 	}
 
-	/** `json stats`: re-read on open, on rescan, and every 60 seconds. Shows "—" on the bar if it fails. */
-	private async refreshStats(): Promise<void> {
+	/** `json stats`: re-read on open, on rescan, and every 60 seconds; `fresh` on a click (see
+	 * `backend.stats`). Shows "—" on the bar if it fails. */
+	private async refreshStats(fresh = false): Promise<void> {
 		try {
-			this.statsResult = await stats(this.plugin.agentSessionsPath(), this.plugin.vaultPath());
+			this.statsResult = await stats(this.plugin.agentSessionsPath(), this.plugin.vaultPath(), fresh);
 		} catch {
 			this.statsResult = null;
 		}
@@ -244,7 +246,8 @@ export class ManagerView extends ItemView {
 
 	/**
 	 * Clicking the analytics area re-fetches `json stats` right away, rather than waiting for the
-	 * next scheduled fetch. Rapid clicks collapse into one (ignored while a fetch is already in
+	 * next scheduled fetch, and asks Claude Code's `/usage` too (at most once every 5 minutes), so
+	 * usage from elsewhere shows up. Rapid clicks collapse into one (ignored while a fetch is already in
 	 * progress), and `is-refreshing` gives visible feedback while the request is in flight —
 	 * unlike `views/limits.ts`'s equivalent, this is a real async round trip, not just a flash.
 	 */
@@ -255,7 +258,7 @@ export class ManagerView extends ItemView {
 		this.refreshingStats = true;
 		this.analysisBodyEl.addClass("is-refreshing");
 		try {
-			await this.refreshStats();
+			await this.refreshStats(true);
 		} finally {
 			this.refreshingStats = false;
 			this.analysisBodyEl.removeClass("is-refreshing");
@@ -508,7 +511,8 @@ export class ManagerView extends ItemView {
 		if (!el) {
 			return;
 		}
-		const used = displayedUsedPct(realWindows(windowsForAgent(this.statsResult, agent))[0] ?? null);
+		const first = realWindows(windowsForAgent(this.statsResult, agent))[0] ?? null;
+		const used = windowResetPending(first, Date.now() / 1000) ? null : displayedUsedPct(first);
 		el.setText(used != null ? `${Math.round(used)}%` : "");
 	}
 
@@ -561,15 +565,17 @@ export class ManagerView extends ItemView {
 
 		const head = card.createDiv({ cls: "agent-sessions-manager-stats-head" });
 		head.createSpan({ cls: "agent-sessions-manager-stats-title", text: label });
-		const countdown = w ? formatCountdown(w.end - Date.now() / 1000) : null;
+		// past its reset with no newer reading: the old numbers belong to a window that's over
+		const pending = windowResetPending(w, Date.now() / 1000);
+		const countdown = w && !pending && !w.idle ? formatCountdown(w.end - Date.now() / 1000) : null;
 		head.createSpan({
 			cls: "agent-sessions-manager-stats-countdown",
 			text: countdown != null ? t("stats.resetsIn", { countdown }) : "—",
 		});
 
-		const used = displayedUsedPct(w);
+		const used = pending ? null : displayedUsedPct(w);
 		const barWrap = card.createDiv({ cls: "agent-sessions-manager-stats-bar" });
-		barWrap.toggleClass("is-exhausted", !!w?.exhausted);
+		barWrap.toggleClass("is-exhausted", !pending && !!w?.exhausted);
 		const pct = used != null ? Math.min(100, Math.max(0, used)) : 0;
 		barWrap.createDiv({ cls: "agent-sessions-manager-stats-bar-fill" }).style.width = `${pct}%`;
 
@@ -612,6 +618,16 @@ export class ManagerView extends ItemView {
 	 */
 	private renderPaceLine(card: HTMLElement, w: StatsWindow | null): void {
 		const lineEl = card.createDiv({ cls: "agent-sessions-manager-stats-pace" });
+		if (windowResetPending(w, Date.now() / 1000)) {
+			lineEl.addClass("is-muted");
+			lineEl.setText(t("stats.resetPending"));
+			return;
+		}
+		if (w?.idle) {
+			lineEl.addClass("is-muted");
+			lineEl.setText(t("stats.windowIdle"));
+			return;
+		}
 		if (!w || w.used_percentage == null) {
 			lineEl.addClass("is-muted");
 			lineEl.setText(t("stats.pace.unknown"));

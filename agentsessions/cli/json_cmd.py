@@ -108,7 +108,13 @@ def main(args: List[str]) -> int:
         return 0
 
     if sub == 'stats':
-        _print(json_output.stats_output())
+        # --fresh: the user clicked to refresh, so ask Claude Code's /usage even when the status
+        # files can tell (at most once every 5 minutes, like every /usage run)
+        for opt in rest:
+            if opt != '--fresh':
+                sys.stderr.write(i18n.t('cmd.json_unknown_option', option=opt) + '\n')
+                return 2
+        _print(json_output.stats_output(fresh='--fresh' in rest))
         return 0
 
     if sub in ('resolve', 'moved'):
