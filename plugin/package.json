@@ -1,6 +1,6 @@
 {
   "name": "agent-sessions",
-  "version": "0.6.3",
+  "version": "0.6.4",
   "description": "Obsidian plugin: agent-sessions side panel, session manager, and terminal",
   "main": "main.js",
   "private": true,
