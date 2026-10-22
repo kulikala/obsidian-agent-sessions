@@ -749,7 +749,13 @@ export class MoveToCategoryModal extends Modal {
 	}
 }
 
-/** Confirm-then-run (e.g. ending a session). */
+/** An optional checkbox under a confirmation's message; unchecked to begin with. */
+export interface ConfirmCheckbox {
+	label: string;
+	onChange: (checked: boolean) => void;
+}
+
+/** Confirm-then-run (e.g. ending a session), with optional checkboxes for extra actions. */
 export class ConfirmModal extends Modal {
 	constructor(
 		app: App,
@@ -758,7 +764,8 @@ export class ConfirmModal extends Modal {
 		private onConfirm: () => void,
 		/** The title (the label of the item that opens it) and, for a per-session confirmation, the target session.
 		 * A confirmation raised by changing a control (a dropdown, a toggle) has none: the dialog is the message alone. */
-		private header?: DialogHeaderSpec
+		private header?: DialogHeaderSpec,
+		private checkboxes: readonly ConfirmCheckbox[] = []
 	) {
 		super(app);
 	}
@@ -769,6 +776,15 @@ export class ConfirmModal extends Modal {
 			renderDialogHeader(this, this.header);
 		}
 		this.contentEl.createEl("p", { text: this.message });
+		if (this.checkboxes.length > 0) {
+			const listEl = this.contentEl.createDiv({ cls: "agent-sessions-confirm-checks" });
+			for (const checkbox of this.checkboxes) {
+				const labelEl = listEl.createEl("label", { cls: "agent-sessions-confirm-check" });
+				const inputEl = labelEl.createEl("input", { type: "checkbox" });
+				inputEl.addEventListener("change", () => checkbox.onChange(inputEl.checked));
+				labelEl.createSpan({ text: checkbox.label });
+			}
+		}
 		dialogFooter(this.contentEl)
 			.addButton((button) => button.setButtonText(t("action.cancel")).onClick(() => this.close()))
 			.addButton((button) =>

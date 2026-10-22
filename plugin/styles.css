@@ -2923,6 +2923,24 @@ input.agent-sessions-name-input-field[type="text"]:is(:hover, :active, :focus, :
 	row-gap: var(--size-4-2);
 }
 
+/* Optional checkboxes under a confirmation's message (`ui/modals.ts`'s `ConfirmModal`). */
+.agent-sessions-confirm-checks {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-4-2);
+}
+
+.agent-sessions-confirm-check {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	cursor: pointer;
+}
+
+.agent-sessions-confirm-check input {
+	margin: 0;
+}
+
 /* The target-session line under a per-session dialog's title (`ui/dialog-header.ts`): agent mark,
    category chip, name. The name takes the leftover width and is cut with an ellipsis. */
 .agent-sessions-dialog-target {

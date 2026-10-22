@@ -143,6 +143,8 @@ export const en = {
 	"error.renameWaitFailed": "Timed out waiting for the rename",
 	"error.renameTurnWaitFailed": "the session was still working after 30 minutes",
 	"confirm.endSession.message": "End this session?",
+	"confirm.endSession.archive": "Archive the session",
+	"confirm.endSession.closeTab": "Close the tab",
 	"notice.endFailed": "Failed to end: {error}",
 	"confirm.restartSession.message": "This session is busy. Restart it anyway? The current work will be interrupted.",
 	"error.restartTimeout": "Timed out waiting for the session to end",
