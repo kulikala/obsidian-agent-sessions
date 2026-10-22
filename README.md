@@ -34,7 +34,7 @@ For people who have agents write documents, often for several projects at once.
 
 The plugin shows this dialog before it installs anything.
 
-- No telemetry and no account. Apart from the Remote Control server, Claude Code's `/usage` and the welcome guide's pictures, all described under [Network](#network), the plugin makes no network connections.
+- No telemetry and no account. Apart from the Remote Control server, Claude Code's `/usage`, the welcome guide's pictures and, on Windows, the install buttons, all described under [Network](#network), the plugin makes no network connections.
 - The plugin writes four hooks and a status line to `~/.claude/settings.json`, after backing up the file. ([Files it writes](#files-it-writes))
 - To remove the program and its entries in the agents' settings: **Settings → agent-sessions program → Remove**. ([Uninstall](#uninstall))
 
@@ -148,10 +148,11 @@ No telemetry and no account. The agents have the same permissions as in your ter
 
 ### Network
 
-- Apart from the Remote Control server, Claude Code's `/usage` and the welcome guide's pictures, all described below, the plugin and its program make no network connections for their own work. The plugin talks to the program's background process on this machine: a Unix socket (mode 0600), or on Windows `127.0.0.1` on a random port with a secret token.
+- Apart from the Remote Control server, Claude Code's `/usage`, the welcome guide's pictures and the Windows install buttons, all described below, the plugin and its program make no network connections for their own work. The plugin talks to the program's background process on this machine: a Unix socket (mode 0600), or on Windows `127.0.0.1` on a random port with a secret token.
 - Remote Control, when you switch it on with the **rc** toggle in the side panel, runs `claude remote-control --spawn=same-dir --permission-mode <mode>` in the vault folder. That Claude Code process stays connected to Anthropic's servers and starts a session in this vault for each connection made from claude.ai or the Claude app by anyone signed in to your Claude account. You choose the mode with **Remote Control permission mode** in the plugin's settings, under Claude Code. The default is auto, where Claude uses tools without asking; if Claude Code does not accept auto, the sessions run in its default mode. The first time you turn the toggle on, and again the first time after you change the mode to auto, a dialog says what the mode allows, and the server starts only if you confirm. It is off until you click the toggle, and it is never started by loading Obsidian or the plugin.
 - When Claude Code's status line can't tell your usage windows (you used Claude elsewhere, or a window has just reset), and when you click a usage display to refresh it, the program runs Claude Code's `/usage`, at most once every 5 minutes. Claude Code then asks Anthropic's servers for your account's current usage. It sends no prompt or file and calls no model.
 - While the welcome guide is open, it loads its pictures from `raw.githubusercontent.com`. No data of yours is sent; GitHub sees your IP address and which picture is requested. Turn this off with **Load the guide's pictures from GitHub** in the settings.
+- On Windows, an install button for Python or Claude Code runs `winget install` for your user only. WinGet downloads the package from its source on the internet. Nothing runs until you click the button.
 
 ### Programs it starts
 
@@ -196,7 +197,7 @@ For Stretch your usage limit, it reads the Claude Code transcripts, Codex rollou
 | `<vault>/.opencode/skills/` | the same skills | only OpenCode enabled |
 
 - `~/.claude/settings.json` and `~/.codex/config.toml` are backed up before they are changed. The previous `tui.json` values are kept in `~/.agents/sessions/opencode-tui-backup.json`.
-- The plugin's entries in these files are marked (Codex, OpenCode, skill files) or recognized by their command (Claude Code); nothing else in them is changed.
+- The plugin's entries in these files are marked (Codex, OpenCode, skill files) or recognized by their command (Claude Code); nothing else in them is changed. One exception: when the plugin writes `~/.claude/keybindings.json`, it adds `$schema` and `$docs` entries if they are missing and saves the whole file with two-space indentation.
 - `sessions.json` travels with the vault if you sync the vault.
 - Other folders the program may be installed in: [`docs/installation.md`](docs/installation.md#where-the-program-goes).
 
@@ -218,7 +219,7 @@ Opening **Stretch your usage limit…** computes statistics on this machine and 
 - Codex: `codex exec` with a read-only sandbox, without tools and no rollout saved, on a model Codex lists for your account (`$CODEX_HOME/models_cache.json`): in the newest generation, the model named Sol, else Terra, else Luna. If Codex refuses the model, the plugin tries the next of those three, then the next older generation, then the model in `config.toml`. A local provider (Ollama, LM Studio) uses its most used model in the range.
 - OpenCode: `opencode run` without tools, with the provider and its most used model in the range; the run's session is deleted afterwards. A provider on this machine (Ollama, LM Studio, or a `baseURL` on this machine) is analysed by its local model, so nothing leaves the machine.
 
-A conversation is never sent to another agent or provider, and a tab's statistics name only that provider's sessions. Before you press **Analyze**, **Details** below it shows where the request goes, about how much is sent and in how many requests. **Show what is sent**, inside **Details**, shows the exact text of every request.
+A conversation is never sent to another agent or provider, and a tab's statistics name only that provider's sessions. Before you press **Analyze**, **Details** above it shows where the request goes, about how much is sent and in how many requests. **Show what is sent**, inside **Details**, shows the exact text of every request.
 
 What is sent is a digest of every task in the range, in numbers and short excerpts: the masked session names and folders, the range's totals, the sizes of the instruction files and the number of skills, what the statistics noticed, and for each turn your prompt (up to 600 characters), the start of the agent's reply (200 characters) and the turn's numbers (tokens, tool calls by kind, the paths read, searched or edited, interrupts, pauses, time taken, context size, cache rewrites, models). Tool output and file contents are not sent. Paths, URLs (with any user name and password in them), e-mail addresses and anything that looks like a key or token are masked, and your home folder and user name are replaced wherever they appear (in a path of any system, or as a folder name of their own). At most 60,000 characters per request; a larger digest is split into requests by period, at most ten, and beyond that the prompts are shortened and then the oldest tasks left out. How many tokens a fix could save is worked out by the plugin from the records, not by the agent. The run starts in an empty folder, `~/.agents/sessions/efficiency-run/current/`, made fresh for each run and removed when it ends; Claude Code keeps one empty project folder for it under `~/.claude/projects/`. The statistics cache holds no conversation text; the last two results, with their masked quotes, stay in `~/.agents/sessions/efficiency/` until you delete them. Unless a local model does the analysis, the request goes to the agent's service under your account and counts toward that account's usage limits.
 
