@@ -4,15 +4,21 @@
 Starts a session the way the plugin does: registers it in `sessions.json`, makes sure the daemon is
 up, and asks it to `start` the agent with the argv and env the plugin would use
 (`agentsessions/agents/launch.py`). The session runs in the daemon, so it keeps going without any
-window and is opened from Obsidian's Agent Sessions list or with `agent-sessions attach <id>`.
+window; when Obsidian is running, the plugin opens a tab that attaches to it right away
+(`plugin.sock`'s `open` op). Without Obsidian the session is opened from the Agent Sessions list after
+its first message or with `agent-sessions attach <id>`.
 
-Claude Code takes its id, name and Remote Control as flags; the transcript then confirms the name
-(`custom-title`) and the Remote Control URL (`system/bridge_status`). Codex and OpenCode choose their
-own ids and only record a session once its first message is sent. With `--prompt` the command waits
-for `json resolve` to learn the real id and links it in `sessions.json` (design.md 3.3). Without it
-the command exits 0 once the process is up: the plugin sees the unlinked daemon session on its live
-refresh and resolves and links it after the first message. An OpenCode name waits in `sessions.json`'s
-`pendingRenames[<daemon id>]` for that link (Codex has no way to name a session at launch).
+Claude Code takes its id, name and Remote Control as flags, but writes no transcript before the first
+message. With `--prompt` the transcript then confirms the name (`custom-title`) and the Remote
+Control URL (`system/bridge_status`). Without it the session counts as started once it is still
+running after a moment; the name shows from the tab and reaches the transcript with the first
+message, and `--remote-control` only polls briefly for the URL to report it. Codex and OpenCode
+choose their own ids and only record a session once its first message is sent. With `--prompt` the
+command waits for `json resolve` to learn the real id and links it in `sessions.json` (design.md 3.3).
+Without it the command exits 0 once the process is up: the plugin sees the unlinked daemon session on
+its live refresh and resolves and links it after the first message. An OpenCode name waits in
+`sessions.json`'s `pendingRenames[<daemon id>]` for that link (Codex has no way to name a session at
+launch).
 
 Exit codes: 0 = started and confirmed, 1 = started but not confirmed in time (the session keeps
 running; never retry, or there will be two), 2 = could not start.
@@ -31,11 +37,12 @@ from .. import agents, config, paths
 from ..agents import claude as claude_agent
 from ..agents import launch
 from ..sessions import store
-from . import json_output
+from . import json_output, plugin_open
 
 DEFAULT_TIMEOUT = 60.0
 POLL_SECONDS = 1.0
 SETTLE_SECONDS = 2.0
+RC_URL_WAIT_SECONDS = 10.0
 DAEMON_START_ATTEMPTS = 8
 
 
@@ -250,11 +257,11 @@ def start(ns: argparse.Namespace, environ: Optional[Dict[str, str]] = None) -> D
 
     result: Dict[str, Any] = {
         'agent': agent, 'id': daemon_id, 'daemon_id': daemon_id, 'cwd': cwd, 'name': name,
-        'remote_control': None, 'confirmed': False, 'warnings': warnings,
+        'remote_control': None, 'confirmed': False, 'opened': False, 'warnings': warnings,
         'attach': '"%s" attach %s' % (launcher_path(), daemon_id),
     }
     if agent == 'claude':
-        _wait_claude(result, name, rc, ns.timeout)
+        _wait_claude(result, name, rc, prompt, ns.timeout)
     elif not prompt:
         _wait_running(result)
         result['warnings'].append(
@@ -262,21 +269,56 @@ def start(ns: argparse.Namespace, environ: Optional[Dict[str, str]] = None) -> D
             '(until then the ID above is the daemon id)')
     else:
         _wait_resolved(result, name, since, ns.timeout, warnings)
+    open_tab(result, name)
     result['exit'] = 0 if result['confirmed'] else 1
     return result
 
 
-def _wait_claude(result: Dict[str, Any], name: Optional[str], rc: bool, timeout: float) -> None:
+def open_tab(result: Dict[str, Any], name: Optional[str]) -> None:
+    """Asks Obsidian to open a tab for the session that now runs in the daemon. Never changes the
+    exit code: without a plugin the session still runs and is listed or attached like before."""
+    sid, daemon_id = result['id'], result['daemon_id']
+    reply = plugin_open.open_in_obsidian(sid, result['agent'], result['cwd'],
+                                        daemon=daemon_id if daemon_id != sid else None, name=name)
+    if reply is None:
+        result['opened'] = False
+        result['warnings'].append(
+            'Obsidian did not answer (not running, or its plugin is older), so no tab was opened; the session '
+            'runs in the daemon and shows in the list after its first message (Claude) / open it '
+            'with `attach`')
+    elif reply.get('ok'):
+        result['opened'] = True
+    else:
+        result['opened'] = False
+        result['warnings'].append('Obsidian could not open a tab: %s' % (reply.get('error') or 'unknown error'))
+
+
+def _wait_claude(result: Dict[str, Any], name: Optional[str], rc: bool, prompt: Optional[str],
+                 timeout: float) -> None:
     sid = result['id']
-    if not (name or rc):
-        # Nothing to read back from the transcript (Claude Code writes it with the first message):
-        # the session counts as started once it is still running after a moment.
+    if not prompt:
+        # Claude Code writes no transcript before the first message, so there is no title to read
+        # back: the session counts as started once it is still running after a moment. The name is
+        # shown from the open tab (`pendingNames`) and reaches the transcript with that message.
         time.sleep(SETTLE_SECONDS)
         s = _daemon_session(sid)
         if s is None or s.get('exited') is not None:
             raise Failure('the session ended right after it started (see %s)'
                           % os.path.join(config.RUNTIME_DIR, 'daemon.log'))
         result['confirmed'] = True
+        if rc:
+            deadline = time.monotonic() + min(timeout, RC_URL_WAIT_SECONDS)
+            url = None
+            while True:
+                path = claude_agent.find_transcript(sid)
+                if path:
+                    _, url = read_claude_progress(path)
+                if url or time.monotonic() >= deadline:
+                    break
+                time.sleep(POLL_SECONDS)
+            result['remote_control'] = url
+            if not url:
+                result['warnings'].append('Remote Control is still connecting; its URL was not reported in time')
         return
     deadline = time.monotonic() + timeout
     title = url = None
@@ -365,6 +407,7 @@ def render(result: Dict[str, Any]) -> str:
     lines.append('Name: %s' % (result['name'] or '(none)'))
     if result['agent'] == 'claude':
         lines.append('Remote Control: %s' % (result['remote_control'] or 'not confirmed'))
+    lines.append('Tab: %s' % ('opened in Obsidian' if result['opened'] else 'not opened'))
     lines.append('Open: the Agent Sessions list in Obsidian, or %s' % result['attach'])
     for w in result['warnings']:
         lines.append('Note: %s' % w)

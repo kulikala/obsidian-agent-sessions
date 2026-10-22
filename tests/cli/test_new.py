@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import signal
+import socket
 import tempfile
 import threading
 import time
@@ -17,7 +18,7 @@ from agentsessions import config
 from agentsessions.agents import launch
 from agentsessions.cli import json_output
 from agentsessions.cli import new as cmd_new
-from agentsessions.daemon import server as daemon
+from agentsessions.daemon import protocol, server as daemon
 from agentsessions.sessions import store
 
 TIMEOUT = 5.0
@@ -46,6 +47,40 @@ if [ -n "$sid" ] && [ -n "$FAKE_TRANSCRIPTS" ]; then
 fi
 exec sleep 30
 '''
+
+
+class FakePlugin:
+    """A `plugin.sock` that records the first request and answers it."""
+
+    def __init__(self, path, reply):
+        self.requests = []
+        self.reply = reply
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.bind(path)
+        self.sock.listen(1)
+        self.thread = threading.Thread(target=self.serve, daemon=True)
+        self.thread.start()
+
+    def serve(self):
+        conn, _ = self.sock.accept()
+        decoder = protocol.Decoder()
+        while True:
+            frames = decoder.feed(conn.recv(65536))
+            if frames:
+                req = protocol.decode_json(frames[0][1])
+                self.requests.append(req)
+                conn.sendall(protocol.encode_json(dict(self.reply, seq=req.get('seq'))))
+                conn.close()
+                return
+
+    def wait(self):
+        deadline = time.monotonic() + TIMEOUT
+        while time.monotonic() < deadline and not self.requests:
+            time.sleep(0.02)
+        return self.requests[0]
+
+    def close(self):
+        self.sock.close()
 
 
 class NewTestCase(unittest.TestCase):
@@ -83,6 +118,7 @@ class NewTestCase(unittest.TestCase):
             mock.patch.object(config, 'STORE_PATH', store_path),
             mock.patch.object(config, 'PROJECTS_DIR', self.projects),
             mock.patch.object(config, 'RUNTIME_DIR', self.runtime),
+            mock.patch.object(config, 'PLUGIN_SOCK_PATH', os.path.join(self.tmp, 'plugin.sock')),
             mock.patch.object(cmd_new, 'POLL_SECONDS', 0.05),
             mock.patch.object(cmd_new, 'SETTLE_SECONDS', 0.1),
             # The fake agent records its arguments; a `--help` probe would be recorded as a launch.
@@ -92,6 +128,7 @@ class NewTestCase(unittest.TestCase):
             p.start()
             self.addCleanup(p.stop)
         self.store_path = store_path
+        self.plugin_sock = os.path.join(self.tmp, 'plugin.sock')
 
     def stop_daemon(self):
         pids = [s.pid for s in self.daemon.sessions.values() if s.running and s.pid]
@@ -163,18 +200,59 @@ class TestClaude(NewTestCase):
         self.assertEqual(rc, 0)
         self.assertEqual(self.recorded('argv').split('\n')[0], '--session-id')
 
-    def test_a_name_that_never_shows_up_exits_1_and_leaves_the_session_running(self):
+    def test_a_named_session_without_a_prompt_is_confirmed_without_a_transcript(self):
         self.write_ui({'claude': {'path': self.agent, 'env': {'FAKE_OUT': self.rec}}})   # writes no transcript
-        rc, out, _ = self.run_new('--agent', 'claude', '--name', 'X', '--timeout', '0.5', '--json')
+        rc, out, _ = self.run_new('--agent', 'claude', '--name', 'X', '--json')
+        self.assertEqual(rc, 0)
+        result = json.loads(out)
+        self.assertTrue(result['confirmed'])
+        self.assertFalse(result['opened'])
+        self.assertTrue(any('Obsidian did not answer' in w for w in result['warnings']))
+        self.assertTrue(any(s.id == result['id'] and s.running for s in self.daemon.sessions.values()))
+
+    def test_with_a_prompt_a_name_that_never_shows_up_still_exits_1(self):
+        self.write_ui({'claude': {'path': self.agent, 'env': {'FAKE_OUT': self.rec}}})   # writes no transcript
+        rc, out, _ = self.run_new('--agent', 'claude', '--name', 'X', '--prompt', 'hi', '--timeout', '0.5', '--json')
         self.assertEqual(rc, 1)
         result = json.loads(out)
         self.assertFalse(result['confirmed'])
         self.assertIn('attach', result['attach'])
         self.assertTrue(any(s.id == result['id'] and s.running for s in self.daemon.sessions.values()))
 
+    def test_the_plugin_opens_a_tab_and_opened_is_true(self):
+        plugin = FakePlugin(self.plugin_sock, {'ok': True})
+        self.addCleanup(plugin.close)
+        rc, out, _ = self.run_new('--agent', 'claude', '--name', 'Web: Login', '--json')
+        self.assertEqual(rc, 0)
+        result = json.loads(out)
+        self.assertTrue(result['opened'])
+        req = plugin.wait()
+        self.assertEqual(req, {'op': 'open', 'seq': 1, 'session': result['id'], 'agent': 'claude',
+                               'cwd': self.work, 'name': 'Web: Login'})
+
+    def test_the_plugin_is_not_given_a_daemon_id_when_it_is_the_session(self):
+        plugin = FakePlugin(self.plugin_sock, {'ok': True})
+        self.addCleanup(plugin.close)
+        rc, out, _ = self.run_new('--agent', 'claude', '--json')
+        self.assertEqual(rc, 0)
+        req = plugin.wait()
+        self.assertEqual(req['session'], json.loads(out)['id'])
+        self.assertNotIn('daemon', req)
+        self.assertNotIn('name', req)
+
+    def test_a_plugin_error_is_a_warning_not_a_failure(self):
+        plugin = FakePlugin(self.plugin_sock, {'ok': False, 'error': 'agent-disabled'})
+        self.addCleanup(plugin.close)
+        rc, out, _ = self.run_new('--agent', 'claude', '--json')
+        self.assertEqual(rc, 0)
+        result = json.loads(out)
+        self.assertFalse(result['opened'])
+        self.assertTrue(any('agent-disabled' in w for w in result['warnings']))
+
     def test_the_first_message_is_passed_after_a_double_dash(self):
         rc, _, _ = self.run_new('--agent', 'claude', '--prompt', 'do the thing')
         self.assertEqual(rc, 0)
+        self.wait_recorded()
         self.assertEqual(self.recorded('argv').split('\n')[-3:-1], ['--', 'do the thing'])
 
     def test_the_default_agent_is_the_callers_own(self):
@@ -188,6 +266,7 @@ class TestClaude(NewTestCase):
         self.assertEqual(rc, 0)
         self.assertIn('ID: ', out)
         self.assertIn('Remote Control: https://claude.ai/code/session_x', out)
+        self.assertIn('Tab: not opened', out)
         self.assertIn(' attach ', out)
 
 
@@ -287,6 +366,18 @@ class TestResolvedAgents(NewTestCase):
         self.assertEqual(result['id'], result['daemon_id'])
         self.assertTrue(any('Obsidian links it' in w for w in result['warnings']))
         self.assertEqual(store.load(self.store_path).sessions, {})
+
+    def test_a_linked_opencode_session_is_opened_with_its_real_and_daemon_ids(self):
+        plugin = FakePlugin(self.plugin_sock, {'ok': True})
+        self.addCleanup(plugin.close)
+        with self.resolver('ses_real', after=3):
+            rc, out, _ = self.run_new('--agent', 'opencode', '--name', 'Docs', '--prompt', 'hi', '--json')
+        self.assertEqual(rc, 0)
+        result = json.loads(out)
+        self.assertTrue(result['opened'])
+        req = plugin.wait()
+        self.assertEqual((req['session'], req['daemon'], req['agent'], req['name']),
+                         ('ses_real', result['daemon_id'], 'opencode', 'Docs'))
 
     def test_without_a_prompt_it_exits_0_once_the_process_is_up_and_leaves_the_linking_to_obsidian(self):
         with mock.patch.object(cmd_new, 'SETTLE_SECONDS', 0.2), mock.patch.object(

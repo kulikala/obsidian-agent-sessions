@@ -2,9 +2,9 @@
 
 Starts an ended session again (one with no agent process, `ended` in `sessions`) in the daemon, the way
 the plugin resumes one: the same argv (`launch.build_resume_argv`, the counterpart of `buildAgentArgv`
-with `fresh=false`) and env (`launch.build_env`) as `new`. No tab opens; the session runs in the
-background, shows as running in Obsidian's Agent Sessions list and is opened from there or with
-`agent-sessions attach <daemon id>`.
+with `fresh=false`) and env (`launch.build_env`) as `new`. It asks the running Obsidian plugin to open
+a tab for the session; without a plugin the session still runs in the background, shows as running in
+Obsidian's Agent Sessions list and is opened from there or with `agent-sessions attach <daemon id>`.
 
 A Claude Code session runs under its own id in the daemon. A Codex or OpenCode session gets a new daemon
 id, linked to its real id in `sessions.json` (`sessions[id].daemon`), as the plugin's tab does when it
@@ -143,7 +143,7 @@ def start(query: str, prompt: Optional[str], environ: Optional[Dict[str, str]] =
 
     result: Dict[str, Any] = {
         'agent': agent, 'id': sid, 'daemon_id': daemon_id, 'cwd': cwd, 'name': row['name'],
-        'prompt_sent': bool(prompt), 'confirmed': False, 'warnings': warnings,
+        'prompt_sent': bool(prompt), 'confirmed': False, 'opened': False, 'warnings': warnings,
         'attach': '"%s" attach %s' % (new.launcher_path(), daemon_id),
     }
     time.sleep(new.SETTLE_SECONDS)
@@ -152,6 +152,7 @@ def start(query: str, prompt: Optional[str], environ: Optional[Dict[str, str]] =
         raise Failure('the session ended right after it started (see %s)'
                       % os.path.join(config.RUNTIME_DIR, 'daemon.log'))
     result['confirmed'] = s is not None
+    new.open_tab(result, None)  # the session already has its name; none is parked for the tab
     result['exit'] = 0 if result['confirmed'] else 1
     return result
 
@@ -165,6 +166,7 @@ def render(result: Dict[str, Any]) -> str:
     lines.append('Name: %s' % (result['name'] or '(none)'))
     if result['prompt_sent']:
         lines.append('Sent the message given with --prompt')
+    lines.append('Tab: %s' % ('opened in Obsidian' if result['opened'] else 'not opened'))
     lines.append('Open: the Agent Sessions list in Obsidian, or %s' % result['attach'])
     for w in result['warnings']:
         lines.append('Note: %s' % w)

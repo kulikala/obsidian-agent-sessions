@@ -15,6 +15,7 @@ import {
 	type EditOutcome,
 	type EditRequest,
 	type EditReply,
+	type OpenRequest,
 	type RenameRequest,
 } from "../../src/backend/edit-server";
 
@@ -195,6 +196,45 @@ describe("EditServer", () => {
 		expect(await bad.responses).toEqual([{ ok: false, error: "bad-request", seq: 2 }]);
 		const failing = await connect(sockPath);
 		failing.send({ op: "rename", seq: 5, session: "s1", name: "N" });
+		expect(await failing.responses).toEqual([{ ok: false, error: "boom", seq: 5 }]);
+	});
+
+	it("an open request gets the handler's answer and closes", async () => {
+		const seen: OpenRequest[] = [];
+		server.onOpen((req) => {
+			seen.push(req);
+			return Promise.resolve(req.session === "busy" ? { ok: false, error: "agent-disabled" } : { ok: true });
+		});
+		await server.start(sockPath);
+		const first = await connect(sockPath);
+		first.send({ op: "open", seq: 7, session: "s1", agent: "claude", cwd: "/v", name: "N", daemon: "d1" });
+		expect(await first.responses).toEqual([{ ok: true, seq: 7 }]);
+		const second = await connect(sockPath);
+		second.send({ op: "open", seq: 8, session: "busy", agent: "codex", cwd: "/v" });
+		expect(await second.responses).toEqual([{ ok: false, error: "agent-disabled", seq: 8 }]);
+		expect(seen).toEqual([
+			{ session: "s1", agent: "claude", cwd: "/v", daemon: "d1", name: "N" },
+			{ session: "busy", agent: "codex", cwd: "/v", daemon: undefined, name: undefined },
+		]);
+	});
+
+	it("an open request without a session or agent, with no handler, or whose handler fails is an error", async () => {
+		await server.start(sockPath);
+		const noHandler = await connect(sockPath);
+		noHandler.send({ op: "open", seq: 1, session: "s1", agent: "claude", cwd: "/v" });
+		expect(await noHandler.responses).toEqual([{ ok: false, error: "unavailable", seq: 1 }]);
+		server.onOpen(() => Promise.reject(new Error("boom")));
+		for (const [seq, body] of [
+			[2, { op: "open", seq: 2, agent: "claude", cwd: "/v" }],
+			[3, { op: "open", seq: 3, session: "s1", cwd: "/v" }],
+			[4, { op: "open", seq: 4, session: 1, agent: "claude", cwd: "/v" }],
+		] as const) {
+			const bad = await connect(sockPath);
+			bad.send(body);
+			expect(await bad.responses).toEqual([{ ok: false, error: "bad-request", seq }]);
+		}
+		const failing = await connect(sockPath);
+		failing.send({ op: "open", seq: 5, session: "s1", agent: "claude", cwd: "/v" });
 		expect(await failing.responses).toEqual([{ ok: false, error: "boom", seq: 5 }]);
 	});
 

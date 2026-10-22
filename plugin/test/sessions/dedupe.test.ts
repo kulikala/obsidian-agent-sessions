@@ -80,6 +80,29 @@ describe("SessionOpener (concurrent calls)", () => {
 		});
 	});
 
+	it("takes an explicit daemon id, but keeps the row's when it is absent or equal to id", async () => {
+		const ws = new FakeWorkspace();
+		const opener = new SessionOpener(ws, () => ({ agent: "codex", daemonId: "from-row" }));
+		expect((await opener.open("thread-1", { agent: "codex", daemonId: "from-request" })).getViewState().state).toEqual({
+			id: "thread-1",
+			agent: "codex",
+			cwd: "",
+			daemonId: "from-request",
+		});
+		expect((await opener.open("thread-2", { agent: "codex", daemonId: "thread-2" })).getViewState().state).toEqual({
+			id: "thread-2",
+			agent: "codex",
+			cwd: "",
+			daemonId: "from-row",
+		});
+		expect((await opener.open("thread-3", { agent: "codex" })).getViewState().state).toEqual({
+			id: "thread-3",
+			agent: "codex",
+			cwd: "",
+			daemonId: "from-row",
+		});
+	});
+
 	it("after opening, subsequent calls only call revealLeaf and don't create a new leaf", async () => {
 		const ws = new FakeWorkspace();
 		const opener = new SessionOpener(ws);

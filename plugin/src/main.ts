@@ -88,6 +88,8 @@ import {
 	tabOwnsEditSession,
 	type EditReply,
 	type EditRequest,
+	type OpenReply,
+	type OpenRequest,
 	type RenameReply,
 	type RenameRequest,
 } from "./backend/edit-server";
@@ -116,6 +118,7 @@ import { restartDecision, type RestartDecision } from "./sessions/restart";
 import { resolveRowStatus } from "./sessions/terminal-status";
 import { createNameRoute, isInTurn, renameRoute, renameWhenTurnEnds, sessionAgentOf } from "./sessions/rename";
 import { SessionOpener, VIEW_TYPE_TERMINAL, type OpenSessionOptions } from "./sessions/open-session";
+import { planOpenTab } from "./sessions/open-tab";
 import {
 	AGENT_IDS,
 	agentConfigDue,
@@ -498,6 +501,7 @@ export default class AgentSessionsPlugin extends Plugin {
 
 		this.editServer.onEdit((req, reply) => this.handleEdit(req, reply));
 		this.editServer.onRename((req) => this.handleRenameRequest(req));
+		this.editServer.onOpen((req) => this.handleOpenRequest(req));
 		this.editServer.start(this.pluginSockPath()).catch((err) => {
 			console.warn("agent-sessions: couldn't open plugin.sock", err);
 		});
@@ -2455,6 +2459,33 @@ export default class AgentSessionsPlugin extends Plugin {
 		} catch (err) {
 			new Notice(t("notice.renameFailed", { error: messageOf(err) }));
 		}
+	}
+
+	/** `open` on `plugin.sock`: a session `agent-sessions new`/`resume` already started in the daemon,
+	 * opened as a tab that attaches to it (never fresh — the PTY keeps running either way). */
+	private async handleOpenRequest(req: OpenRequest): Promise<OpenReply> {
+		const decision = planOpenTab(req, {
+			enabled: (agent) => this.settings.agents[agent].enabled,
+			tabExists: (id) => this.sessionTabLeaves(id).length > 0,
+		});
+		if (!decision.ok) {
+			return { ok: false, error: decision.error };
+		}
+		const plan = decision.plan;
+		if (plan.rememberName && plan.name) {
+			this.pendingNames.set(plan.session, plan.name);
+		}
+		await this.openSession(plan.session, { agent: plan.agent, cwd: plan.cwd, daemonId: plan.daemonId });
+		// A tab that already showed the session (an ended run) attaches to the PTY started now.
+		for (const view of this.terminalViews()) {
+			if (view.sessionId === plan.session) {
+				view.adoptRunning(plan.daemonId ?? plan.session);
+			}
+		}
+		if (plan.trackNewAgent) {
+			this.trackNewAgentSession(plan.agent, plan.session, plan.cwd);
+		}
+		return { ok: true };
 	}
 
 	/**

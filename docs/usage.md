@@ -370,7 +370,7 @@ Two skills are installed with the program, into the vault only:
 | `agent-sessions` | read usage and session details, list sessions and categories, find waste in a session, name a session, and start or resume one when you ask |
 | `agent-sessions-help` | answer questions about using the plugin |
 
-- `agent-sessions` works from a Claude Code, Codex or OpenCode session started in the vault. It reads the 5-hour and 7-day windows and a session's tokens and cost, lists sessions with their status, category and last messages (ended ones too), and starts a new session only when you ask (in a folder, with a name, on any enabled agent; Claude Code optionally with Remote Control) or resumes an ended one in the background.
+- `agent-sessions` works from a Claude Code, Codex or OpenCode session started in the vault. It reads the 5-hour and 7-day windows and a session's tokens and cost, lists sessions with their status, category and last messages (ended ones too), and starts a new session only when you ask (in a folder, with a name, on any enabled agent; Claude Code optionally with Remote Control) or resumes an ended one; either opens as a tab in Obsidian right away when Obsidian is running. Exit 0 means the session is running and registered, and the command never invents a first message.
 - Asked about the waste in its own session, it reads that session's statistics and conversation against the checks of **Stretch your usage limit** and says what to change. It calls no other model.
 - Asked to name a session, it proposes a `Category: Name` that follows the same rules as **Suggest name and category**, preferring your existing categories. Once you agree, Obsidian renames the session (the agent's own session after its reply ends). Without Obsidian running, it gives you the `/rename` to type instead (an OpenCode session is renamed directly).
 - `agent-sessions-help` answers in the language you ask in: where something is, how to rename, organize or restart, how to use the built-in editor, what is supported.
@@ -455,10 +455,10 @@ agent-sessions json scan|live|detail ID|usage ID [--from ISO --to ISO]|stats
 agent-sessions setup [--dry-run]
 agent-sessions setup --opencode   # install OpenCode's status plugin and status line only (--remove-opencode: remove just those files and restore the tui.json keybinds)
 agent-sessions setup --skills     # install the agent skills into the vault (--remove-skills: remove just those)
-agent-sessions new [--agent A] [--cwd DIR] [--name N] [--remote-control] [--prompt TEXT]   # start a session in the daemon (exit 0 confirmed, 1 unconfirmed, 2 failed)
+agent-sessions new [--agent A] [--cwd DIR] [--name N] [--remote-control] [--prompt TEXT]   # start a session in the daemon and open its tab (exit 0 confirmed, 1 unconfirmed, 2 failed)
 agent-sessions sessions [--query TEXT] [--agent A] [--status S] [--category C] [--limit N] [--json]   # list sessions with their status and category (ended ones too)
 agent-sessions sessions --categories   # the categories, with how many sessions each has
-agent-sessions resume ID|NAME [--prompt TEXT]   # resume an ended session in the daemon (exit 0 confirmed, 1 unconfirmed, 2 failed)
+agent-sessions resume ID|NAME [--prompt TEXT]   # resume an ended session in the daemon and open its tab (exit 0 confirmed, 1 unconfirmed, 2 failed)
 agent-sessions analyze [ID|NAME] [--tasks N]   # a session's token statistics and digest, for an agent to find waste in (default: this session)
 agent-sessions suggest-name [ID|NAME] [--check NAME | --apply NAME]   # naming rules and categories, check a name, or rename through Obsidian
 agent-sessions show [ID|NAME] [--json]   # one session's usage and last messages (default: this session)

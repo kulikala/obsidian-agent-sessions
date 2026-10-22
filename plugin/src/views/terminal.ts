@@ -799,6 +799,21 @@ export class TerminalView extends ItemView {
 		this.plugin.refreshTerminalStatus(newId);
 	}
 
+	/** `agent-sessions resume` started this session again under `daemonId`: a tab that shows an ended
+	 * run (or another PTY) attaches to that PTY. A tab already attached to it is left alone. */
+	adoptRunning(daemonId: string): void {
+		if (this.closed || (this.daemonId === daemonId && (this.attached || this.attaching))) {
+			return;
+		}
+		this.disconnect();
+		this.hideExit();
+		this.terminal.reset();
+		this.daemonId = daemonId;
+		this.linked = daemonId !== this.id;
+		this.app.workspace.requestSaveLayout();
+		this.maybeAttach();
+	}
+
 	/** Swaps this tab to a fresh placeholder id and starts looking for the real one (`main.ts`'s
 	 * `trackNewAgentSession`) — the tab of a new Codex/OpenCode session after "Start fresh". */
 	private becomePlaceholder(): void {

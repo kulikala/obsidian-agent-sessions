@@ -21,6 +21,9 @@ export interface OpenSessionOptions {
 	 * agent-appropriate fresh-launch argv (`backend.ts`'s `buildAgentArgv`; Claude's is
 	 * `--session-id`, Codex has no equivalent). */
 	fresh?: boolean;
+	/** The daemon id the session already runs under, when it differs from `id` (a linked Codex or
+	 * OpenCode session). The tab attaches to that PTY instead of starting a new run. */
+	daemonId?: string;
 }
 
 /** What the session index and `sessions.json` know about a session (`SessionOpener`'s `known`). */
@@ -75,8 +78,11 @@ export class SessionOpener<L extends LeafLike> {
 		const state: Record<string, unknown> = { id, agent: opts.agent ?? row?.agent ?? "claude", cwd: opts.cwd ?? row?.cwd ?? "" };
 		if (opts.fresh) {
 			state.fresh = true;
-		} else if (row?.daemonId && row.daemonId !== id) {
-			state.daemonId = row.daemonId;
+		} else {
+			const daemonId = opts.daemonId !== undefined && opts.daemonId !== id ? opts.daemonId : row?.daemonId;
+			if (daemonId && daemonId !== id) {
+				state.daemonId = daemonId;
+			}
 		}
 		await leaf.setViewState({ type: VIEW_TYPE_TERMINAL, state, active: true });
 		await this.workspace.revealLeaf(leaf);
