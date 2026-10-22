@@ -111,7 +111,7 @@ import { AGENT_ICON_ID } from "./ui/icons";
 import { registerAgentIcons } from "./ui/register-icons";
 import { clearedName, sessionDisplayName } from "./sessions/name";
 import { dialogHeaderSpec, markDestructive } from "./ui/dialog-header";
-import type { SessionTarget } from "./ui/dialog-header-model";
+import { endSessionDialogModel, runEndSessionOptions } from "./sessions/end-session";
 import { restartDecision, type RestartDecision } from "./sessions/restart";
 import { resolveRowStatus } from "./sessions/terminal-status";
 import { createNameRoute, isInTurn, renameRoute, renameWhenTurnEnds, sessionAgentOf } from "./sessions/rename";
@@ -2827,29 +2827,64 @@ export default class AgentSessionsPlugin extends Plugin {
 	}
 
 	/** End session: confirm → `kill`, addressed by the daemon's own id (`daemonIdFor` — a linked
-	 * Codex session's row id isn't one the daemon knows). */
-	endSession(id: string, target: SessionTarget | null = this.index.sessions.get(id) ?? null): void {
+	 * Codex session's row id isn't one the daemon knows). The confirmation can also archive the
+	 * session (not for a tab-only row) and, when a tab owns it, close that tab. */
+	endSession(id: string, target: Row | null = this.index.sessions.get(id) ?? null): void {
 		const header = dialogHeaderSpec(this, "action.endSession", target);
-		new ConfirmModal(this.app, t("confirm.endSession.message"), t("action.endSession"), () => {
-			void (async () => {
-				let client: DaemonClient | null = null;
-				try {
-					client = await ensureDaemon(this.sockPath(), this.agentSessionsPath());
-					await client.hello("plugin");
-					const list = await client.list();
-					const sessions = (list.sessions as DaemonSession[] | undefined) ?? [];
-					const res = await client.kill(this.daemonIdFor(id, sessions));
-					if (!res.ok) {
-						throw new Error(res.error ?? "unknown");
+		const openAsTab = this.sessionTabLeaves(id).length > 0;
+		const dialog = endSessionDialogModel(openAsTab, target?.tabOnly === true);
+		new ConfirmModal(
+			this.app,
+			t("confirm.endSession.message"),
+			t("action.endSession"),
+			() => {
+				void (async () => {
+					let client: DaemonClient | null = null;
+					try {
+						const daemon = await ensureDaemon(this.sockPath(), this.agentSessionsPath());
+						client = daemon;
+						await daemon.hello("plugin");
+						const list = await daemon.list();
+						const sessions = (list.sessions as DaemonSession[] | undefined) ?? [];
+						await runEndSessionOptions(openAsTab, dialog.choices, {
+							end: async () => {
+								const res = await daemon.kill(this.daemonIdFor(id, sessions));
+								if (!res.ok) {
+									throw new Error(res.error ?? "unknown");
+								}
+							},
+							archive: () => {
+								const row = target ?? this.index.sessions.get(id);
+								if (row) {
+									this.archive(id, sessionDisplayName(row), row.agent);
+								}
+							},
+							closeTab: () => this.closeSessionTabs(id),
+						});
+						const closedTab = openAsTab && dialog.choices.closeTab;
+						void this.refreshUntilExited(id).then(() => {
+							// The tab's detach also triggers this, but its 500 ms delay can fall inside the
+							// daemon's kill grace; run it once more now that the session has exited, as
+							// `TerminalView.closeTab(true)` does.
+							if (closedTab) {
+								this.scheduleCleanupExited();
+							}
+						});
+					} catch (err) {
+						new Notice(t("notice.endFailed", { error: messageOf(err) }));
+					} finally {
+						client?.close();
 					}
-					void this.refreshUntilExited(id);
-				} catch (err) {
-					new Notice(t("notice.endFailed", { error: messageOf(err) }));
-				} finally {
-					client?.close();
-				}
-			})();
-		}, header).open();
+				})();
+			},
+			header,
+			dialog.options.map((option) => ({
+				label: t(option.labelKey),
+				onChange: (checked) => {
+					dialog.choices[option.id] = checked;
+				},
+			}))
+		).open();
 	}
 
 	/** Whether "Restart session" is available for the row, and whether to confirm first
@@ -2990,10 +3025,29 @@ export default class AgentSessionsPlugin extends Plugin {
 			.filter((view): view is TerminalView => view instanceof TerminalView);
 	}
 
+	/** The leaves of the open terminal tabs that own `id` — normally one, but a split can show it
+	 * twice. A restored tab whose view hasn't loaded yet (`DeferredView`) is read from its state. */
+	private sessionTabLeaves(id: string): WorkspaceLeaf[] {
+		return this.app.workspace.getLeavesOfType(VIEW_TYPE_TERMINAL).filter((leaf) => {
+			if (leaf.view instanceof TerminalView) {
+				return leaf.view.sessionId === id || leaf.view.daemonSessionId === id;
+			}
+			const state = leaf.getViewState().state as { id?: unknown; daemonId?: unknown } | undefined;
+			return state?.id === id || state?.daemonId === id;
+		});
+	}
+
 	/** Whether an open terminal tab owns `id`. (A row in the index is not enough: the scan lists a
 	 * restarted agent's new session within seconds, before any tab has it.) */
 	knowsSession(id: string): boolean {
 		return this.terminalViews().some((v) => v.sessionId === id || v.daemonSessionId === id);
+	}
+
+	/** Closes every tab that owns `id`; "Close the tab" in the End session confirmation. */
+	private closeSessionTabs(id: string): void {
+		for (const leaf of this.sessionTabLeaves(id)) {
+			leaf.detach();
+		}
 	}
 
 	private findTerminalView(id: string): TerminalView | undefined {

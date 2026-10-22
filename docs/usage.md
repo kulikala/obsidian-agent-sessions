@@ -191,8 +191,10 @@ Open it with ⋯ on a row, or right-click the row, in the side panel or the Sess
 | **Restart session** | restarts the agent in the same conversation |
 | **Session analytics** | opens the turn-by-turn analysis |
 | **Copy ID** | copies the session ID |
-| **End session** | ends the agent |
+| **End session** | ends the agent; its confirmation can also archive the session |
 | **Archive** | moves the session to the archive |
+
+The "End session" confirmation has an "Archive the session" checkbox, plus "Close the tab" when the session is open in a tab. Both start unchecked, so the session ends as before unless you tick them.
 
 ## Name and group sessions
 
