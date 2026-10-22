@@ -9,6 +9,9 @@ class PriceOfTest(unittest.TestCase):
             ('claude-fable-5-1', 10, 50, 0.25),
             ('claude-mythos-5-1', 10, 50, 0.25),
             ('claude-fable-5', 10, 50, 1.0),
+            ('claude-opus-5-5', 4, 20, 0.2),
+            ('claude-sonnet-5-5', 2, 10, 0.1),
+            ('claude-haiku-5-5', 0.1, 0.5, 0.01),
             ('claude-mythos-5', 10, 50, 1.0),
             ('claude-opus-5', 5, 25, 0.5),
             ('claude-opus-4-8', 5, 25, 0.5),
@@ -105,6 +108,24 @@ class CostTest(unittest.TestCase):
         usage = {'input_tokens': 1_000_000}
         c = pricing.cost(usage, 'nonexistent-model')
         self.assertAlmostEqual(c, 5.0)
+
+    def test_haiku_5_5_long_prompt_prices_count_cache_tokens_in_the_prompt(self):
+        short = {'input_tokens': 1000, 'cache_read_input_tokens': 99_000, 'output_tokens': 1000}
+        self.assertAlmostEqual(pricing.cost(short, 'claude-haiku-5-5'),
+                               (1000 * 0.1 + 99_000 * 0.01 + 1000 * 0.5) / 1e6)
+        long = dict(short, cache_read_input_tokens=99_001)
+        self.assertAlmostEqual(pricing.cost(long, 'claude-haiku-5-5'),
+                               (1000 * 0.5 + 99_001 * 0.05 + 1000 * 2.5) / 1e6)
+
+    def test_long_prompt_does_not_change_other_models(self):
+        usage = {'input_tokens': 200_000, 'output_tokens': 0}
+        self.assertAlmostEqual(pricing.cost(usage, 'claude-opus-5-5'), 200_000 * 4 / 1e6)
+
+    def test_fast_mode_doubles_every_price(self):
+        usage = {'input_tokens': 1000, 'output_tokens': 1000, 'cache_read_input_tokens': 1000,
+                 'cache_creation_input_tokens': 1000}
+        self.assertAlmostEqual(pricing.cost(dict(usage, speed='fast'), 'claude-opus-5-5'),
+                               2 * pricing.cost(dict(usage, speed='standard'), 'claude-opus-5-5'))
 
     def test_non_dict_usage_is_zero(self):
         self.assertEqual(pricing.cost(None, 'claude-sonnet-5'), 0.0)

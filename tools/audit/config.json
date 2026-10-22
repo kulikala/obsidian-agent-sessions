@@ -3,7 +3,8 @@
 		"why": "Home folders in examples and tests use made-up names. New ones use alex or sam; the others are short placeholders already in the tests.",
 		"homePlaceholders": [
 			"alex", "sam", "a", "k", "u", "x", "z", "me", "jo", "pat", "jane", "john", "janedo",
-			"someone", "agent", "demo", "tester", "example", "name", "you", "username"
+			"someone", "agent", "demo", "tester", "example", "name", "you", "username",
+			"linuxbrew"
 		],
 		"allowedEmails": [
 			"noreply@anthropic\\.com",
@@ -55,6 +56,9 @@
 			{ "path": "plugin/src/sessions/name.ts", "contains": "const FULL_WIDTH_COLON_SPACE_RE", "why": "the full-width category separator" },
 			{ "path": "plugin/src/sessions/organize.ts", "contains": "const CJK", "why": "detects CJK names" },
 			{ "path": "plugin/src/sessions/organize.ts", "contains": ".replace(", "why": "strips Japanese punctuation from suggested names" },
+			{ "path": "agentsessions/sessions/naming.py", "contains": "CJK = re.compile(", "why": "detects CJK names, as organize.ts does" },
+			{ "path": "agentsessions/sessions/naming.py", "contains": "'調査|リサーチ", "why": "Japanese words for kinds of task, as in organize.ts" },
+			{ "path": "agentsessions/sessions/naming.py", "contains": "'(?:する|した", "why": "Japanese sentence endings, as in organize.ts" },
 			{ "path": "plugin/src/sessions/tree.ts", "contains": "export const OTHER_GROUP", "why": "a persisted key, kept in Japanese on purpose" },
 			{ "path": "agentsessions/config.py", "contains": "OTHER_GROUP =", "why": "a persisted key, kept in Japanese on purpose" },
 			{ "path": "agentsessions/agents/opencode/plugin_js.py", "contains": "ja: {", "why": "the OpenCode plugin's own status labels" },

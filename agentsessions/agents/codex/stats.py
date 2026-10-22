@@ -58,6 +58,7 @@ from ...usage.stats import (
     FIVE_HOUR_SECONDS, SEVEN_DAY_SECONDS, _bucket_key, _empty_totals, _roll_forward, with_exhaustion,
 )
 from . import rollout
+from .usage import split_input
 
 # Real `window_minutes` values wobble by a minute or two (299 vs. 300); classify
 # by nearest, not exact match.
@@ -255,15 +256,15 @@ def _bucket_rollout(path: str) -> Tuple[Dict[int, dict], List[Tuple[float, Optio
             continue
 
         bucket = buckets.setdefault(_bucket_key(ts), dict(_empty_totals(), unknown_cost=False, unpriced_calls=0))
+        uncached, cr, cw = split_input(delta)
         bucket['calls'] += 1
-        bucket['input'] += delta['input_tokens']
-        bucket['cache_read'] += delta['cached_input_tokens']
-        bucket['cache_create'] += delta['cache_write_input_tokens']
+        bucket['input'] += uncached
+        bucket['cache_read'] += cr
+        bucket['cache_create'] += cw
         bucket['output'] += delta['output_tokens']
         usage_like = {
-            'input_tokens': delta['input_tokens'], 'output_tokens': delta['output_tokens'],
-            'cache_read_input_tokens': delta['cached_input_tokens'],
-            'cache_creation_input_tokens': delta['cache_write_input_tokens'],
+            'input_tokens': uncached, 'output_tokens': delta['output_tokens'],
+            'cache_read_input_tokens': cr, 'cache_creation_input_tokens': cw,
         }
         cost = pricing.cost(usage_like, current_model, agent='codex')
         if cost is None:

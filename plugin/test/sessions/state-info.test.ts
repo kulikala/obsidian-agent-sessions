@@ -61,10 +61,9 @@ describe("attentionInfos", () => {
 		const [asking] = attentionInfos("asking", false);
 		expect(asking.icon).toBe("hand");
 		const [waiting] = attentionInfos("waiting", false);
-		const [compacted] = attentionInfos("compacted", false);
 		const [looped] = attentionInfos("looped", false);
 		expect(waiting.icon).toBe("eye");
-		expect(waiting.labelKey).toBe(compacted.labelKey);
+		expect(attentionInfos("compacted", false)).toEqual([]);
 		expect(looped.labelKey).toBe(waiting.labelKey);
 		expect("descKey" in waiting).toBe(false);
 	});

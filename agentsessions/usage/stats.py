@@ -5,10 +5,14 @@ buckets and returns totals for the 5-hour and 7-day reset windows. Sub-agent
 transcripts found under `<project>/<id>/` (anywhere below it, e.g. under
 `subagents/`, at any depth) are rolled up into the parent session's id.
 
-Windows are read from whichever file under `~/.agents/sessions/status/*.json`
-(written by `hooks.record_status`) has `rate_limits` and the newest mtime: `end`
-comes from `resets_at` (or now, if missing), `start` is `end - 5h/7d`, and
-`used_percentage` is `None` if missing.
+Each window comes from its newest reading: the newest file under
+`~/.agents/sessions/status/*.json` (written by `hooks.record_status`) that has it,
+or Claude Code's own `/usage` (`usage.claude_usage`), asked when the status files
+can't tell (`needs_usage`) or when the user asks for the latest (`json stats --fresh`, a click
+on a usage view) -- whichever was taken later. `end` is that reading's
+`resets_at`, `start` is `end - 5h/7d`, and `used_percentage` its percentage; a
+reading whose reset has passed is stale (`current_window`). No reading at all: `end`
+is now and `used_percentage` is `None`.
 
 A window is *exhausted* (`exhausted: true`, `used_percentage` reported as 100)
 when Claude Code rejected a request for that window's limit inside it, or when
@@ -21,9 +25,17 @@ assistant line (`isApiErrorMessage: true`, `error: "rate_limit"`) reading
 weekly limit ..." (the 7-day window). The earliest such line inside the window
 is `exhausted_at`; it is `None` when only the percentage says so.
 
-For each file, the read position (`offset`), 10-minute buckets, and the most recent
-`message.id`s (up to 200, for de-duplication) are carried over in
-`~/.agents/sessions/stats-cache.json`. Transcripts are append-only, so if a file has
+One API response is written as several lines sharing a `message.id`, and the
+`output_tokens` of the last one is the final count (the first holds a streamed,
+partial figure), so a later line *replaces* the usage recorded for its id. A forked
+sub-agent transcript also copies its parent's history, so the same id can appear in
+several files; the windows count each id once (the copy with the largest output, the
+shallowest file on a tie).
+
+For each file, the read position (`offset`) and one record per `message.id` (its
+10-minute bucket, token counts and cost, as of the latest line seen) are carried
+over in `~/.agents/sessions/stats-cache.json`; de-duplication across files happens
+when the windows are totalled. Transcripts are append-only, so if a file has
 grown, only the part after `offset` is read; if it has shrunk, it's read from
 scratch. A corrupted cache (whether the whole file or a single entry) is discarded
 and rebuilt from scratch -- same treatment as an entry whose `schema_version`
@@ -40,11 +52,10 @@ import tempfile
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
-from . import pricing
+from . import claude_usage, pricing
 from ..sessions.scan import UUID_RE
 
 BUCKET_SECONDS = 600          # 10 minutes
-RECENT_IDS_LIMIT = 200
 LIMIT_HITS_LIMIT = 50
 FIVE_HOUR_SECONDS = 5 * 3600
 SEVEN_DAY_SECONDS = 7 * 24 * 3600
@@ -60,9 +71,13 @@ SEVEN_DAY_SECONDS = 7 * 24 * 3600
 # mechanism as sessions.scan.SCAN_SCHEMA_VERSION / agents.codex.scan.SCAN_SCHEMA_VERSION,
 # versioned independently since this cache's shape (incremental, offset-based)
 # is unrelated to theirs (whole-head, mtime/size-based).
-STATS_SCHEMA_VERSION = 2
+STATS_SCHEMA_VERSION = 3
 
 TOTAL_KEYS = ('calls', 'input', 'output', 'cache_read', 'cache_create')
+
+# Layout of one per-`message.id` cache record (a list, to keep the cache small).
+CALL_FIELDS = ('bucket', 'input', 'output', 'cache_read', 'cache_create', 'cost')
+_OUTPUT = CALL_FIELDS.index('output')
 
 
 def _int(value) -> int:
@@ -116,17 +131,16 @@ def _roll_forward(end: float, used_percentage: Optional[float], duration: float,
 
 
 def windows_from_status(status_dir: str, now: float) -> Dict[str, dict]:
-    """Returns `{'five_hour': {'end', 'used_percentage'}, 'seven_day': {...}}`.
+    """Returns `{'five_hour': R, 'seven_day': R}`, each window's latest reading in the
+    status files: `R = {'resets_at', 'used_percentage', 'as_of'}` (`as_of` the file's
+    mtime), or `None` when no file has that window.
 
-    Picks whichever `*.json` file in `status_dir` has `rate_limits` and the newest
-    mtime. If there's no such file, or a specific key is missing, defaults to
-    `end=now`, `used_percentage=None`. If `resets_at` is in the past (the reset
-    happened before a fresh `rate_limits` payload arrived), `_roll_forward` advances
-    it to the current window.
+    Each window is taken from the newest `*.json` file in `status_dir` that has it, not
+    from the newest file overall: at a reset Claude Code drops the expired window from
+    the payload, and every idle session rewrites its file then, so the newest file can
+    lack a window another file still has.
     """
-    best_path = None
-    best_mtime = -1.0
-    rate_limits: dict = {}
+    result: Dict[str, Optional[dict]] = {'five_hour': None, 'seven_day': None}
     try:
         entries = os.listdir(status_dir)
     except OSError:
@@ -139,32 +153,70 @@ def windows_from_status(status_dir: str, now: float) -> Dict[str, dict]:
             mtime = os.stat(p).st_mtime
         except OSError:
             continue
-        if mtime <= best_mtime:
+        if all(r is not None and r['as_of'] >= mtime for r in result.values()):
             continue
         try:
             with open(p, 'r', encoding='utf-8') as f:
                 data = json.load(f)
         except (OSError, ValueError):
             continue
-        if not isinstance(data, dict) or not isinstance(data.get('rate_limits'), dict):
+        rate_limits = data.get('rate_limits') if isinstance(data, dict) else None
+        if not isinstance(rate_limits, dict):
             continue
-        best_path = p
-        best_mtime = mtime
-        rate_limits = data['rate_limits']
-
-    durations = {'five_hour': FIVE_HOUR_SECONDS, 'seven_day': SEVEN_DAY_SECONDS}
-    result = {}
-    for key in ('five_hour', 'seven_day'):
-        rl = rate_limits.get(key) if best_path is not None else None
-        resets_at = _num(rl.get('resets_at')) if isinstance(rl, dict) else None
-        if resets_at is not None:
+        for key in result:
+            rl = rate_limits.get(key)
+            resets_at = _num(rl.get('resets_at')) if isinstance(rl, dict) else None
+            if resets_at is None or (result[key] is not None and result[key]['as_of'] >= mtime):
+                continue
             used = rl.get('used_percentage')
-            used = used if isinstance(used, (int, float)) and not isinstance(used, bool) else None
-            end, used = _roll_forward(resets_at, used, durations[key], now)
-            result[key] = {'end': end, 'used_percentage': used}
-        else:
-            result[key] = {'end': now, 'used_percentage': None}
+            used = float(used) if isinstance(used, (int, float)) and not isinstance(used, bool) else None
+            result[key] = {'resets_at': resets_at, 'used_percentage': used, 'as_of': mtime}
     return result
+
+
+def _newer(local: Optional[dict], usage: Optional[dict]) -> Tuple[Optional[dict], Optional[str]]:
+    """The newer (by `as_of`) of a window's two readings, and where it came from."""
+    candidates = [(r, src) for r, src in ((local, 'status'), (usage, 'usage')) if r is not None]
+    if not candidates:
+        return None, None
+    return max(candidates, key=lambda c: c[0]['as_of'])
+
+
+def needs_usage(readings: Dict[str, Optional[dict]], now: float) -> bool:
+    """Whether the current readings (`_newer` per window) can't tell the current windows: a
+    window has no reading or its reset has passed. A window that isn't running (`resets_at`
+    `None`) is told."""
+    return any(r is None or (r['resets_at'] is not None and r['resets_at'] < now)
+               for r in readings.values())
+
+
+def current_window(local: Optional[dict], usage: Optional[dict], duration: float, now: float) -> dict:
+    """One window from the newer of its two readings -- the status files' (`local`) and
+    `/usage`'s (`usage`), both `{'resets_at', 'used_percentage', 'as_of'}` or `None` --
+    as `{'end', 'used_percentage', 'source', 'as_of', 'stale', 'idle'}`. `end`, the
+    percentage and (in `compute`) `start` all come from that one reading.
+
+    A reading with no `resets_at` (`/usage`'s for a window that isn't running: no
+    request since its reset) is *idle*: its percentage as read (0), and `end` now with
+    no length (`compute` gives it `start == end`), so it has no totals, countdown,
+    pace or "used up".
+
+    A reading whose reset has passed is *stale*: the window it describes is over and
+    what's used since is unknown, so the percentage is `None` and `end` is rolled
+    forward by whole windows (`_roll_forward`). That `end` is the real next reset only
+    for the 7-day window, whose resets fall on a fixed weekly time; a new 5-hour window
+    starts at the first request after the reset, so a stale 5-hour `end` only bounds
+    the totals. No reading at all: `end` is now and the percentage `None`.
+    """
+    reading, source = _newer(local, usage)
+    if reading is None:
+        return {'end': now, 'used_percentage': None, 'source': None, 'as_of': None, 'stale': False, 'idle': False}
+    if reading['resets_at'] is None:
+        return {'end': now, 'used_percentage': reading['used_percentage'], 'source': source,
+                'as_of': reading['as_of'], 'stale': False, 'idle': True}
+    end, used = _roll_forward(reading['resets_at'], reading['used_percentage'], duration, now)
+    return {'end': end, 'used_percentage': used, 'source': source, 'as_of': reading['as_of'],
+            'stale': reading['resets_at'] < now, 'idle': False}
 
 
 # ---- Exhausted windows -------------------------------------------------------
@@ -306,34 +358,22 @@ def _load_entry(raw_entry) -> Optional[dict]:
     offset = raw_entry.get('offset')
     size = raw_entry.get('size')
     mtime = raw_entry.get('mtime')
-    buckets_raw = raw_entry.get('buckets')
-    recent_raw = raw_entry.get('recent_ids')
+    calls_raw = raw_entry.get('calls')
     if not isinstance(offset, int) or isinstance(offset, bool) or offset < 0:
         return None
     if not isinstance(size, int) or isinstance(size, bool) or size < 0:
         return None
     if not isinstance(mtime, (int, float)) or isinstance(mtime, bool):
         return None
-    if not isinstance(buckets_raw, dict) or not isinstance(recent_raw, list):
+    if not isinstance(calls_raw, dict):
         return None
-    buckets: Dict[int, dict] = {}
-    try:
-        for k, v in buckets_raw.items():
-            bucket_start = int(k)
-            if not isinstance(v, dict):
-                return None
-            cost = v.get('cost')
-            buckets[bucket_start] = {
-                'calls': _int(v.get('calls')),
-                'input': _int(v.get('input')),
-                'output': _int(v.get('output')),
-                'cache_read': _int(v.get('cache_read')),
-                'cache_create': _int(v.get('cache_create')),
-                'cost': float(cost) if isinstance(cost, (int, float)) and not isinstance(cost, bool) else 0.0,
-            }
-    except (TypeError, ValueError):
-        return None
-    recent_ids = [i for i in recent_raw if isinstance(i, str)]
+    calls: Dict[str, list] = {}
+    for k, v in calls_raw.items():
+        if not isinstance(v, list) or len(v) != len(CALL_FIELDS):
+            return None
+        if any(not isinstance(x, (int, float)) or isinstance(x, bool) for x in v):
+            return None
+        calls[k] = v
     hits_raw = raw_entry.get('limit_hits')
     if not isinstance(hits_raw, list):
         return None
@@ -341,41 +381,42 @@ def _load_entry(raw_entry) -> Optional[dict]:
                   if isinstance(h, list) and len(h) == 2 and isinstance(h[0], (int, float))
                   and not isinstance(h[0], bool) and isinstance(h[1], str)]
     return {'mtime': float(mtime), 'size': size, 'offset': offset,
-            'recent_ids': recent_ids, 'buckets': buckets, 'limit_hits': limit_hits}
+            'calls': calls, 'limit_hits': limit_hits}
 
 
-def _update_file_buckets(path: str, raw_entry) -> dict:
+def _update_file_calls(path: str, raw_entry) -> dict:
     """Read `path` and, based on `raw_entry` (the previous cache entry; ignored if
-    corrupted), return updated buckets, offset, recent `message.id`s, and limit
-    hits (`[[timestamp, window key], ...]`, see `limit_hit_keys`). The file
-    is assumed to be append-only: if the size has shrunk, it's re-read from scratch;
-    if it has grown, only the part after `offset` is read.
+    corrupted), return the updated read offset, per-`message.id` records (see
+    `CALL_FIELDS`), and limit hits (`[[timestamp, window key], ...]`, see
+    `limit_hit_keys`). The file is assumed to be append-only: if the size has shrunk,
+    it's re-read from scratch; if it has grown, only the part after `offset` is read.
+
+    A later line with an id already recorded replaces that record's usage (the last
+    line carries the final `output_tokens`) but keeps the bucket of the first line.
+    A line without an id is recorded under `@<byte offset>`, which no other file shares.
     """
     try:
         st = os.stat(path)
     except OSError:
-        return {'mtime': 0.0, 'size': 0, 'offset': 0, 'recent_ids': [], 'buckets': {},
+        return {'mtime': 0.0, 'size': 0, 'offset': 0, 'calls': {},
                 'limit_hits': [], 'schema_version': STATS_SCHEMA_VERSION}
     mtime, size = st.st_mtime, st.st_size
 
     loaded = _load_entry(raw_entry)
     if loaded is None or loaded['size'] > size:
         offset = 0
-        buckets: Dict[int, dict] = {}
-        recent_ids: List[str] = []
+        calls: Dict[str, list] = {}
         limit_hits: List[list] = []
     elif loaded['size'] == size and loaded['mtime'] == mtime:
         # unchanged: skip opening the file
         return {'mtime': mtime, 'size': size, 'offset': loaded['offset'],
-                'recent_ids': loaded['recent_ids'], 'buckets': loaded['buckets'],
-                'limit_hits': loaded['limit_hits'], 'schema_version': STATS_SCHEMA_VERSION}
+                'calls': loaded['calls'], 'limit_hits': loaded['limit_hits'],
+                'schema_version': STATS_SCHEMA_VERSION}
     else:
         offset = loaded['offset']
-        buckets = loaded['buckets']
-        recent_ids = loaded['recent_ids']
+        calls = loaded['calls']
         limit_hits = loaded['limit_hits']
 
-    seen = set(recent_ids)
     new_offset = offset
     try:
         with open(path, 'rb') as f:
@@ -383,6 +424,7 @@ def _update_file_buckets(path: str, raw_entry) -> dict:
             for raw_line in f:
                 if not raw_line.endswith(b'\n'):
                     break   # the last line might be a partial write in progress; leave it for next time
+                line_offset = new_offset
                 new_offset += len(raw_line)
                 line = raw_line.decode('utf-8', errors='replace').strip()
                 if not line:
@@ -404,76 +446,115 @@ def _update_file_buckets(path: str, raw_entry) -> dict:
                 if not isinstance(usage, dict):
                     continue
                 msg_id = message.get('id')
-                if msg_id is not None:
-                    if msg_id in seen:
+                key = msg_id if isinstance(msg_id, str) and msg_id else '@%d' % line_offset
+                previous = calls.get(key)
+                if previous is not None:
+                    bucket = previous[0]
+                else:
+                    ts = _parse_ts(rec.get('timestamp'))
+                    if ts is None:
                         continue
-                    seen.add(msg_id)
-                    recent_ids.append(msg_id)
-                ts = _parse_ts(rec.get('timestamp'))
-                if ts is None:
-                    continue
-                bucket = buckets.setdefault(_bucket_key(ts), _empty_totals())
-                bucket['calls'] += 1
-                bucket['input'] += _int(usage.get('input_tokens'))
-                bucket['output'] += _int(usage.get('output_tokens'))
-                bucket['cache_read'] += _int(usage.get('cache_read_input_tokens'))
-                bucket['cache_create'] += _int(usage.get('cache_creation_input_tokens'))
-                bucket['cost'] += pricing.cost(usage, message.get('model'))
+                    bucket = _bucket_key(ts)
+                calls[key] = [bucket,
+                              _int(usage.get('input_tokens')),
+                              _int(usage.get('output_tokens')),
+                              _int(usage.get('cache_read_input_tokens')),
+                              _int(usage.get('cache_creation_input_tokens')),
+                              pricing.cost(usage, message.get('model'))]
     except OSError:
         pass
 
-    if len(recent_ids) > RECENT_IDS_LIMIT:
-        recent_ids = recent_ids[len(recent_ids) - RECENT_IDS_LIMIT:]
     if len(limit_hits) > LIMIT_HITS_LIMIT:
         limit_hits = limit_hits[len(limit_hits) - LIMIT_HITS_LIMIT:]
 
     return {'mtime': mtime, 'size': size, 'offset': new_offset,
-            'recent_ids': recent_ids, 'buckets': buckets, 'limit_hits': limit_hits,
+            'calls': calls, 'limit_hits': limit_hits,
             'schema_version': STATS_SCHEMA_VERSION}
 
 
 # ---- Window totals -----------------------------------------------------------
 
-def _window_totals(files: List[Tuple[str, str, Dict[int, dict]]],
+def _window_totals(files: List[Tuple[str, str, Dict[str, list]]],
                     start: float, end: float) -> Tuple[dict, Dict[str, dict]]:
+    """Sum the per-id records whose bucket is in [start, end). An id present in several
+    files (a forked sub-agent copies its parent's history) is counted once: the record
+    with the largest output wins, and `files` is walked shallowest first so that on a
+    tie the original, not a copy, owns it. Ids starting with '@' are per-file."""
+    best: Dict[str, Tuple[str, list]] = {}
+    for path, sid, calls in sorted(files, key=lambda f: (f[0].count(os.sep), f[0])):
+        for key, rec in calls.items():
+            if rec[0] < start or rec[0] >= end:
+                continue
+            if key[:1] == '@':
+                key = '%s%s' % (path, key)
+            kept = best.get(key)
+            if kept is None or rec[_OUTPUT] > kept[1][_OUTPUT]:
+                best[key] = (sid, rec)
+
     total = _empty_totals()
     sessions: Dict[str, dict] = {}
-    for _path, sid, buckets in files:
-        for bucket_start, b in buckets.items():
-            if bucket_start < start or bucket_start >= end:
-                continue
-            s = sessions.setdefault(sid, _empty_totals())
-            for key in TOTAL_KEYS:
-                v = b.get(key, 0)
-                s[key] += v
-                total[key] += v
-            s['cost'] += b.get('cost', 0.0)
-            total['cost'] += b.get('cost', 0.0)
-    sessions = {sid: s for sid, s in sessions.items() if s['calls'] > 0}
+    for sid, rec in best.values():
+        s = sessions.setdefault(sid, _empty_totals())
+        for t in (s, total):
+            t['calls'] += 1
+            t['input'] += rec[1]
+            t['output'] += rec[2]
+            t['cache_read'] += rec[3]
+            t['cache_create'] += rec[4]
+            t['cost'] += rec[5]
     return total, sessions
 
 
 # ---- Main entry point ----------------------------------------------------------
 
-def compute(now: float, projects_dir: str, status_dir: str, cache_path: str) -> dict:
-    win = windows_from_status(status_dir, now)
+def _usage_readings(got: Optional[dict]) -> Dict[str, dict]:
+    """`claude_usage.readings`'s windows as `{'resets_at', 'used_percentage', 'as_of'}`."""
+    out: Dict[str, dict] = {}
+    for key, r in ((got or {}).get('windows') or {}).items():
+        if not isinstance(r, dict):
+            continue
+        resets_at, used = r.get('resets_at'), r.get('used_percentage')
+        if resets_at is not None and not isinstance(resets_at, (int, float)):
+            continue
+        used = float(used) if isinstance(used, (int, float)) and not isinstance(used, bool) else None
+        out[key] = {'resets_at': resets_at, 'used_percentage': used, 'as_of': got['fetched_at']}
+    return out
+
+
+def compute(now: float, projects_dir: str, status_dir: str, cache_path: str,
+            usage_path: Optional[str] = None, usage_runner=None, ask_usage: bool = False) -> dict:
+    """`{'windows': {'five_hour': W, 'seven_day': W}}`. With `usage_path`, `/usage`'s last
+    reading is weighed against the status files', and `/usage` is asked again when the
+    newer of the two can't tell the windows (`needs_usage`) or `ask_usage` (the user asked for
+    the latest) -- either way at most once per `claude_usage.MIN_INTERVAL_SECONDS`; without
+    `usage_path`, the status files alone count."""
+    local = windows_from_status(status_dir, now)
+    usage: Dict[str, dict] = {}
+    if usage_path is not None:
+        usage = _usage_readings(claude_usage.readings(now, False, path=usage_path))
+        newest = {key: _newer(local[key], usage.get(key))[0] for key in local}
+        if ask_usage or needs_usage(newest, now):
+            usage = _usage_readings(claude_usage.readings(now, True, path=usage_path, runner=usage_runner))
+    win = {key: current_window(local[key], usage.get(key), duration, now)
+           for key, duration in (('five_hour', FIVE_HOUR_SECONDS), ('seven_day', SEVEN_DAY_SECONDS))}
     five_end = win['five_hour']['end']
     seven_end = win['seven_day']['end']
-    five_start = five_end - FIVE_HOUR_SECONDS
-    seven_start = seven_end - SEVEN_DAY_SECONDS
+    # an idle window (no request since its reset) has no length, so no totals
+    five_start = five_end if win['five_hour']['idle'] else five_end - FIVE_HOUR_SECONDS
+    seven_start = seven_end if win['seven_day']['idle'] else seven_end - SEVEN_DAY_SECONDS
     min_mtime = min(five_start, seven_start)
 
     transcripts = list_transcripts_for_stats(projects_dir, min_mtime)
     cache = load_cache(cache_path)
 
     used_paths = set()
-    per_file: List[Tuple[str, str, Dict[int, dict]]] = []
+    per_file: List[Tuple[str, str, Dict[str, list]]] = []
     hit_times: Dict[str, List[float]] = {'five_hour': [], 'seven_day': []}
     for path, sid, _mtime in transcripts:
         used_paths.add(path)
-        entry = _update_file_buckets(path, cache.get(path))
+        entry = _update_file_calls(path, cache.get(path))
         cache[path] = entry
-        per_file.append((path, sid, entry['buckets']))
+        per_file.append((path, sid, entry['calls']))
         for ts, key in entry['limit_hits']:
             if key in hit_times:
                 hit_times[key].append(ts)
@@ -499,6 +580,12 @@ def compute(now: float, projects_dir: str, status_dir: str, cache_path: str) -> 
             'start': start,
             'end': end,
             'used_percentage': win[key]['used_percentage'],
+            # Where the reading came from ('status' / 'usage' / None), when it was
+            # taken, and whether its reset has passed (see `current_window`).
+            'source': win[key]['source'],
+            'as_of': win[key]['as_of'],
+            'stale': win[key]['stale'],
+            'idle': win[key]['idle'],
             'total': total,
             'sessions': sessions,
         }, hit_times[key])

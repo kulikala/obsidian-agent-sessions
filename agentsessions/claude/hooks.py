@@ -7,6 +7,11 @@ import time
 
 from .. import config, i18n
 from ..sessions import live
+from . import advisor
+
+# The key `record_status` adds to the statusLine JSON it stores, for what the plugin reads
+# beyond Claude Code's own fields (`advisor`: `{id, display_name}`).
+EXTRA_KEY = 'agent_sessions'
 
 
 def record_hook(raw: bytes) -> None:
@@ -84,12 +89,13 @@ def _update_compacted(data: dict) -> None:
 
 
 def format_status_line(data: dict) -> str:
-    """One line: `[<submit-key symbol> · ]<model.display_name> · <effort> · ctx NN% · rc ●/○`.
+    """One line: `[<submit-key symbol> · ]<model.display_name> · <effort>[ · advisor <name>] · ctx NN% · rc ●/○`.
 
     `effort` is `effort.level` (when it's a dict), or `effort` itself (when it's a
     string), falling back to the "Default" label when neither is present. `rc` is
     whether the `~/.claude/sessions/*.json` entry matching `session_id` has a
     `bridgeSessionId` (via `live.live_sessions`; `○` if there's no matching entry). The
+    advisor part shows only when `record_status` found one (`EXTRA_KEY`). The
     submit-key symbol is prefixed only for a session launched by the plugin's daemon
     (`AGENT_SESSIONS_ID` is set) and only if it can be read from `config.UI_STATE_PATH`.
     """
@@ -115,11 +121,23 @@ def format_status_line(data: dict) -> str:
             rc = entry.rc
     rc_mark = '●' if rc else '○'
 
-    line = i18n.t('statusline.line', model=display_name, effort=effort_label, pct=pct, rc=rc_mark)
+    advisor_name = _advisor_name(data)
+    if advisor_name:
+        line = i18n.t('statusline.line_advisor', model=display_name, effort=effort_label,
+                      advisor=advisor_name, pct=pct, rc=rc_mark)
+    else:
+        line = i18n.t('statusline.line', model=display_name, effort=effort_label, pct=pct, rc=rc_mark)
     symbol = _submit_symbol()
     if symbol:
         line = i18n.t('statusline.with_symbol', symbol=symbol, line=line)
     return line
+
+
+def _advisor_name(data: dict) -> str:
+    extra = data.get(EXTRA_KEY)
+    entry = extra.get('advisor') if isinstance(extra, dict) else None
+    name = entry.get('display_name') if isinstance(entry, dict) else None
+    return name if isinstance(name, str) else ''
 
 
 def _submit_symbol() -> str:
@@ -141,10 +159,12 @@ def _submit_symbol() -> str:
 
 
 def record_status(raw: bytes) -> str:
-    """Writes the raw bytes from stdin as-is to `STATUS_DIR/<session_id>.json`
-    (tmp -> rename) and returns the one-line display string. Doesn't write anything if
-    there's no `session_id`. Returns the default display string if it doesn't parse as
-    JSON.
+    """Writes the statusLine JSON from stdin to `STATUS_DIR/<session_id>.json`
+    (tmp -> rename) and returns the one-line display string. The bytes go in as they came,
+    unless the session has an advisor (`advisor.current`, read from `transcript_path`): then
+    the JSON is written again with `EXTRA_KEY: {"advisor": {"id", "display_name"}}` added.
+    Doesn't write anything if there's no `session_id`. Returns the default display string
+    if it doesn't parse as JSON.
     """
     try:
         data = json.loads(raw.decode('utf-8'))
@@ -152,6 +172,14 @@ def record_status(raw: bytes) -> str:
         data = None
     if not isinstance(data, dict):
         return format_status_line({})
+
+    try:
+        advisor_id = advisor.current(data.get('transcript_path'))
+    except Exception:
+        advisor_id = None
+    if advisor_id:
+        data[EXTRA_KEY] = {'advisor': {'id': advisor_id, 'display_name': advisor.display_name(advisor_id)}}
+        raw = json.dumps(data, ensure_ascii=False).encode('utf-8')
 
     session_id = data.get('session_id')
     if session_id:

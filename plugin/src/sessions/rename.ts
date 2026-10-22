@@ -49,3 +49,32 @@ export function createNameRoute(agent: string, withFirstMessage = false): Create
 	}
 	return agent === "opencode" ? "pending" : "launch";
 }
+
+/** Whether a session's status means it is in the middle of a turn: working, running a command, or
+ * asking. A `/rename` typed then would land in the turn. */
+export function isInTurn(status: string | null | undefined): boolean {
+	return status === "busy" || status === "shell" || status === "waiting";
+}
+
+export interface TurnEndWait {
+	inTurn: () => boolean;
+	now: () => number;
+	sleep: (ms: number) => Promise<void>;
+	timeoutMs: number;
+	pollMs: number;
+	rename: () => Promise<void>;
+}
+
+/** Renames once the session is out of its turn (at once when it already is); gives up without
+ * renaming after `timeoutMs`. Pure apart from what it is given. */
+export async function renameWhenTurnEnds(w: TurnEndWait): Promise<"renamed" | "timeout"> {
+	const deadline = w.now() + w.timeoutMs;
+	while (w.inTurn()) {
+		if (w.now() >= deadline) {
+			return "timeout";
+		}
+		await w.sleep(w.pollMs);
+	}
+	await w.rename();
+	return "renamed";
+}

@@ -170,7 +170,7 @@ const STATUS_GROUP_OF: Record<TerminalStatus, StatusGroup> = {
 	asking: "needs-input",
 	looped: "needs-review",
 	waiting: "needs-review",
-	compacted: "needs-review",
+	compacted: "done",
 	connecting: "running",
 	working: "running",
 	"running-shell": "running",

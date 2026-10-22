@@ -1,5 +1,7 @@
 // Watches `~/.agents/sessions/status/<id>.json` and formats the status bar text. The file is
-// written by `agent-sessions status`, verbatim from the JSON it receives from Claude Code's statusLine.
+// written by `agent-sessions status` from the JSON it receives from Claude Code's statusLine, plus
+// `agent_sessions.advisor` (`{id, display_name}`) when the session has an advisor (`/advisor`):
+// Claude Code's own JSON doesn't carry it, so `agentsessions/claude/advisor.py` reads it from the transcript.
 
 import { EventEmitter } from "node:events";
 import * as fs from "node:fs";
@@ -9,6 +11,8 @@ import { t } from "../i18n";
 export interface StatusInfo {
 	model: string | null;
 	effort: string | null;
+	/** The advisor model (`/advisor`): its short name and its id, or null when there is none. */
+	advisor: { name: string; id: string } | null;
 	ctxPercent: number | null;
 	fiveHour: number | null;
 	sevenDay: number | null;
@@ -22,6 +26,16 @@ interface RawStatus {
 		seven_day?: { used_percentage?: unknown };
 	};
 	effort?: unknown;
+	agent_sessions?: { advisor?: { id?: unknown; display_name?: unknown } };
+}
+
+function advisorOf(raw: RawStatus): StatusInfo["advisor"] {
+	const advisor = raw.agent_sessions?.advisor;
+	const id = str(advisor?.id);
+	if (!id) {
+		return null;
+	}
+	return { name: str(advisor?.display_name) || id, id };
 }
 
 function num(value: unknown): number | null {
@@ -46,6 +60,7 @@ function readStatus(statusDir: string, id: string): StatusInfo | null {
 	return {
 		model: str(raw.model?.display_name),
 		effort: str(effortOf(raw.effort)),
+		advisor: advisorOf(raw),
 		ctxPercent: num(raw.context_window?.used_percentage),
 		fiveHour: num(raw.rate_limits?.five_hour?.used_percentage),
 		sevenDay: num(raw.rate_limits?.seven_day?.used_percentage),
@@ -115,7 +130,8 @@ export class StatusLine extends EventEmitter {
 }
 
 /**
- * `Opus 5 · high · ctx 42% · rc ● · 5h 37% · 7d 12%`. Model/effort fall back to the "Default"
+ * `Opus 5 · high · ctx 42% · rc ● · 5h 37% · 7d 12%`, with `advisor Opus 5.5` after the effort
+ * when the session has an advisor. Model/effort fall back to the "Default"
  * label when absent; the other values fall back to `—`. `rc` reflects whether
  * `~/.claude/sessions` has a `bridgeSessionId` (`registry.ts`'s `RegistryEntry.rc`) — pass
  * `null` when there's no ledger entry at all; only connected (`true`) shows `rc ●`, everything
@@ -136,5 +152,6 @@ export function formatStatus(info: StatusInfo | null, rc: boolean | null): strin
 	const rcMark = rc ? "rc ●" : "rc ○";
 	const five = info?.fiveHour != null ? `5h ${Math.round(info.fiveHour)}%` : "5h —";
 	const seven = info?.sevenDay != null ? `7d ${Math.round(info.sevenDay)}%` : "7d —";
-	return [model, effort, ctx, rcMark, five, seven].join(" · ");
+	const advisor = info?.advisor ? [t("status.advisor", { name: info.advisor.name })] : [];
+	return [model, effort, ...advisor, ctx, rcMark, five, seven].join(" · ");
 }

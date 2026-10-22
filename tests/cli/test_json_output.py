@@ -4,6 +4,7 @@ import shutil
 import socket
 import tempfile
 import threading
+import time
 import unittest
 from unittest import mock
 
@@ -119,12 +120,14 @@ class TestScanOutput(JsonoutTestBase):
         self.assertEqual(by_id[ID2]['after_compact'], 'clean')
 
     def test_schedule_and_scheduled_turn_reported_and_cached(self):
+        # Created an hour ago: a recurring job expires seven days after creation.
+        created = time.strftime('%Y-%m-%dT%H:%M:%S', time.gmtime(time.time() - 3600))
         recs = [
             {'type': 'user', 'cwd': '/Users/k/other', 'message': {'role': 'user', 'content': 'unnamed question'}},
-            {'type': 'assistant', 'timestamp': '2026-10-08T03:00:00.000Z', 'message': {'content': [
+            {'type': 'assistant', 'timestamp': created + '.000Z', 'message': {'content': [
                 {'type': 'tool_use', 'id': 't1', 'name': 'CronCreate',
                  'input': {'cron': '*/5 * * * *', 'prompt': 'p', 'recurring': True}}]}},
-            {'type': 'user', 'timestamp': '2026-10-08T03:00:01.000Z',
+            {'type': 'user', 'timestamp': created + '.500Z',
              'message': {'content': [{'type': 'tool_result', 'tool_use_id': 't1', 'content': 'ok'}]},
              'toolUseResult': {'id': 'abcd1234', 'humanSchedule': 'Every 5 minutes'}},
             {'type': 'user', 'isMeta': True, 'turnOrigin': 'scheduled', 'scheduledTaskId': 'abcd1234',

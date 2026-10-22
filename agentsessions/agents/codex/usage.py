@@ -27,7 +27,7 @@ tiering the way Claude has (`agentsessions.usage.pricing.price_of` prices Codex'
 `cache_5m`/`cache_1h` identically for exactly this reason).
 """
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from ...sessions.detail import clean_text
 from ...usage import pricing
@@ -70,6 +70,16 @@ class _Turn:
             'last_ts': self.last_ts, 'context_last': self.context_last,
             'models': dict(self.models), 'before_first': self.before_first,
         }
+
+
+def split_input(delta: Dict[str, int]) -> Tuple[int, int, int]:
+    """(uncached input, cache read, cache write) of one token_count delta. Codex's
+    `input_tokens` includes the cached and cache-written input (see efficiency/codex_read.py),
+    so the uncached part is what is left; priced separately, they are not billed twice."""
+    total_in = delta.get('input_tokens', 0)
+    cr = min(delta.get('cached_input_tokens', 0), total_in)
+    cw = min(delta.get('cache_write_input_tokens', 0), total_in - cr)
+    return total_in - cr - cw, cr, cw
 
 
 def collect(path: str) -> List[dict]:
@@ -133,20 +143,21 @@ def collect(path: str) -> List[dict]:
                 before = _Turn(index=-1, ts=None, prompt='', before_first=True)
             target = before
 
+        uncached, cr, cw = split_input(delta)
         target.calls += 1
-        target.input += delta['input_tokens']
-        target.cache_read += delta['cached_input_tokens']
-        target.cache_create += delta['cache_write_input_tokens']
+        target.input += uncached
+        target.cache_read += cr
+        target.cache_create += cw
         target.output += delta['output_tokens']
         target.thinking += delta['reasoning_output_tokens']
         if current_model:
             target.models[current_model] = target.models.get(current_model, 0) + 1
 
         usage_like = {
-            'input_tokens': delta['input_tokens'],
+            'input_tokens': uncached,
             'output_tokens': delta['output_tokens'],
-            'cache_read_input_tokens': delta['cached_input_tokens'],
-            'cache_creation_input_tokens': delta['cache_write_input_tokens'],
+            'cache_read_input_tokens': cr,
+            'cache_creation_input_tokens': cw,
         }
         call_cost = pricing.cost(usage_like, current_model, agent='codex')
         if call_cost is None:

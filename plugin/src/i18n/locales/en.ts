@@ -141,6 +141,7 @@ export const en = {
 	"error.ollamaModelMissing": "Choose an Ollama model under Settings > Agents > OpenCode before starting OpenCode through Ollama.",
 	"error.replyWaitFailed": "Timed out waiting for a reply",
 	"error.renameWaitFailed": "Timed out waiting for the rename",
+	"error.renameTurnWaitFailed": "the session was still working after 30 minutes",
 	"confirm.endSession.message": "End this session?",
 	"notice.endFailed": "Failed to end: {error}",
 	"confirm.restartSession.message": "This session is busy. Restart it anyway? The current work will be interrupted.",
@@ -426,8 +427,8 @@ export const en = {
 
 	// ---- Attention markers (side panel badges, manager section headings) ----
 	"attention.asking": "Needs input {count}",
-	// This counts both `waiting` (turn ended, tab not yet viewed) and `compacted` (just
-	// /compact'd, no next instruction yet) — both are "needs review" now (statusGroup).
+	// Counts the needs-review group (statusGroup): `waiting` (turn ended, tab not yet viewed)
+	// and `looped`. A just-compacted session is in the done group, so it is not counted.
 	"attention.waiting": "Needs review {count}",
 	"attention.askingInGroup": "Has a session waiting for input",
 	"attention.waitingInGroup": "Has a session that needs review",
@@ -476,6 +477,8 @@ export const en = {
 	"stats.pace.overPaceGuideHour": "To stay within the limit: up to {pct} per hour (about {cost})",
 	"stats.pace.overPaceGuideHourNoCost": "To stay within the limit: up to {pct} per hour",
 	"stats.pace.tooltip": "{elapsedPct}% of the window elapsed · {usedPct}% used",
+	"stats.resetPending": "Reset. The new window's usage hasn't come in yet",
+	"stats.windowIdle": "Not started yet. The window starts with your next request",
 	"stats.exhausted": "Used up",
 	"stats.exhausted.at": "Used up {when} ({beforeReset})",
 	"stats.exhausted.yesterday": "yesterday {time}",
@@ -489,6 +492,7 @@ export const en = {
 	"stats.noUsageYet": "No usage data for this window yet.",
 
 	// ---- Detail view (views/detail.ts) ----
+	"detail.advisorTooltip": "Advisor model (/advisor): {id}",
 	"detail.compacted": "Compacted",
 	"detail.totalTokens": "Total tokens",
 	"detail.totalCost": "Total cost",
@@ -529,6 +533,7 @@ export const en = {
 	"status.looped": "Scheduled run finished",
 	// Right after a /compact, before the next instruction has been sent. Ranks below "waiting
 	// for input" — kept as a distinct state so it's clear the context was just reset.
+	"status.advisor": "advisor {name}",
 	"status.compacted": "Compacted (context was reset)",
 	"status.editing": "Editing",
 	"status.idle": "Idle",

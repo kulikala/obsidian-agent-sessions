@@ -257,6 +257,17 @@ export interface StatsWindow {
 	/** When the limit was first hit inside the window (epoch seconds); `null` when only the
 	 * percentage says so. */
 	exhausted_at?: number | null;
+	/** Where the reading came from: Claude Code's status files (`status`) or its `/usage`
+	 * (`usage`); `null` when there's none. Claude only. */
+	source?: "status" | "usage" | null;
+	/** When the reading was taken (epoch seconds). Claude only. */
+	as_of?: number | null;
+	/** The reading's reset has passed and no newer one has arrived: `used_percentage` is `null`
+	 * and the window shows as reset. Claude only. */
+	stale?: boolean;
+	/** Claude Code's `/usage` says the window isn't running (no request since its reset): its
+	 * percentage as read (0), `start === end`, no countdown. Claude only. */
+	idle?: boolean;
 }
 
 /**

@@ -1,6 +1,6 @@
 {
   "name": "agent-sessions",
-  "version": "0.6.0",
+  "version": "0.6.3",
   "description": "Obsidian plugin: agent-sessions side panel, session manager, and terminal",
   "main": "main.js",
   "private": true,
@@ -9,6 +9,7 @@
     "dev": "node esbuild.config.mjs",
     "test": "vitest run",
     "typecheck": "tsc -noEmit -skipLibCheck",
+    "check-prices": "python3 ../tools/prices/check_prices.py",
     "lint": "eslint --max-warnings 0 .",
     "version": "node version-bump.mjs && git add manifest.json ../manifest.json ../versions.json"
   },

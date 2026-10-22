@@ -71,6 +71,8 @@ CACHE_PATH = os.path.join(RUNTIME_DIR, 'scan-cache.json')
 ACTIVITY_CACHE_PATH = os.path.join(RUNTIME_DIR, 'activity-cache.json')
 STATUS_DIR = os.path.join(RUNTIME_DIR, 'status')
 STATS_CACHE_PATH = os.path.join(RUNTIME_DIR, 'stats-cache.json')
+# The last `/usage` reading of the Claude account (usage/claude_usage.py).
+CLAUDE_USAGE_PATH = os.path.join(RUNTIME_DIR, 'claude-usage.json')
 # Per-session status files written by the OpenCode plugin that `setup --opencode`
 # installs (agents/opencode/plugin_js.py): `<ses_id>.json`.
 OPENCODE_STATUS_DIR = os.path.join(RUNTIME_DIR, 'opencode')

@@ -12,8 +12,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"action.insertNoteAt": "現在のノートを @ で挿入",
 	"action.more": "その他",
 	"action.organize": "セッション名とカテゴリを整理",
-	"organize.intro": "最近の会話をもとに、エージェントが各セッションのカテゴリと名前を提案します。適用を押すまで何も変わりません。",
-	"organize.introSingle": "エージェントが、このセッションの会話から、カテゴリと名前を提案します。適用を押すまで何も変わりません。",
+	"organize.intro": "最近の会話をもとに、エージェントが各セッションのカテゴリと名前を提案します。適用ボタンを押すまで反映しません。",
+	"organize.introSingle": "エージェントが、このセッションの会話から、カテゴリと名前を提案します。適用ボタンを押すまで反映しません。",
 	"organize.suggestSingleAgain": "もう一度提案",
 	"organize.unchanged": "今の名前とカテゴリのままでよさそうです。適用するものはありません。",
 	"organize.noSession": "このセッションは、もう一覧にありません。",
@@ -142,6 +142,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"error.ollamaModelMissing": "ollama 経由で OpenCode を起動するには、設定のエージェント > OpenCode で Ollama のモデルを選んでください。",
 	"error.replyWaitFailed": "応答を待てませんでした",
 	"error.renameWaitFailed": "名前の変更を待てませんでした",
+	"error.renameTurnWaitFailed": "30 分たってもセッションの作業が終わりませんでした",
 	"confirm.endSession.message": "このセッションを終了しますか？",
 	"notice.endFailed": "終了に失敗しました: {error}",
 	"confirm.restartSession.message": "このセッションは作業中です。再起動しますか？ 実行中の作業は中断されます。",
@@ -427,8 +428,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 
 	// ---- Attention markers (side panel badges, manager section headings) ----
 	"attention.asking": "入力待ち {count}",
-	// waiting（応答が出てまだ見ていない）と compacted（compact 直後でまだ次の指示が
-	// 無い）の両方を数える——どちらも「レビュー待ち」（statusGroup）。
+	// 「レビュー待ち」（statusGroup の needs-review）を数える。waiting（応答が出てまだ
+	// 見ていない）と looped が入る。コンテキスト圧縮済み（compacted）は「完了」側で、数えない。
 	"attention.waiting": "レビュー待ち {count}",
 	"attention.askingInGroup": "入力待ちのセッションがあります",
 	"attention.waitingInGroup": "レビュー待ちのセッションがあります",
@@ -477,6 +478,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"stats.pace.overPaceGuideHour": "上限内に収めるには、1 時間あたり {pct}（約 {cost}）まで",
 	"stats.pace.overPaceGuideHourNoCost": "上限内に収めるには、1 時間あたり {pct} まで",
 	"stats.pace.tooltip": "枠の経過 {elapsedPct}%・使用 {usedPct}%",
+	"stats.resetPending": "リセット済みです。新しい枠の使用率はまだ届いていません",
+	"stats.windowIdle": "枠はまだ始まっていません。次に使うと始まります",
 	"stats.exhausted": "枠を使い切りました",
 	"stats.exhausted.at": "{when} に枠を使い切りました（{beforeReset}）",
 	"stats.exhausted.yesterday": "昨日 {time}",
@@ -490,7 +493,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"stats.noUsageYet": "この枠の使用状況はまだありません。",
 
 	// ---- Detail view (views/detail.ts) ----
-	"detail.compacted": "compact 済み",
+	"detail.advisorTooltip": "アドバイザー（/advisor）のモデル: {id}",
+	"detail.compacted": "コンテキスト圧縮済み",
 	"detail.totalTokens": "総トークン",
 	"detail.totalCost": "総コスト",
 	"detail.lastUser": "直近の指示",
@@ -529,7 +533,8 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"status.looped": "予約実行が完了",
 	// Right after a /compact, before the next instruction has been sent. Ranks below "waiting
 	// for input" — kept as a distinct state so it's clear the context was just reset.
-	"status.compacted": "compact 済み（文脈がリセットされています）",
+	"status.advisor": "advisor {name}",
+	"status.compacted": "コンテキスト圧縮済み",
 	"status.editing": "編集中",
 	"status.idle": "待機",
 	"status.detached": "未接続",
@@ -552,7 +557,7 @@ export const ja: Partial<Record<MessageKey, string>> = {
 	"detail.state.asking": "エージェントが質問または許可を求めていて、あなたが答えるまで先に進めません。",
 	"detail.state.waiting": "エージェントが処理を終え、次の指示を待っています。",
 	"detail.state.looped": "予約された実行（/loop、cron、wakeup）が、あなたが別の作業をしている間に終わりました。タブを開いて内容を確認してください。",
-	"detail.state.compacted": "会話を compact した直後で、文脈がリセットされています。準備ができたら次の指示を送ってください。",
+	"detail.state.compacted": "会話のコンテキストを圧縮した直後です。準備ができたら次の指示を送ってください。",
 	"detail.state.editing": "このセッションで内蔵エディタを開いています。閉じるとエージェントに戻ります。",
 	"detail.state.idle": "接続済みで、次の指示を受け付けられます。",
 	"detail.state.detached": "このセッションは今は動いていません。行をクリックするとタブを開いて再開できます。",

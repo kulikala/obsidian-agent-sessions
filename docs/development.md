@@ -71,7 +71,7 @@ CI runs the static checks on every push and pull request (the `audit` job in `.g
 
 ## Release (maintainers)
 
-Run the audit first ([Before pushing or releasing](#before-pushing-or-releasing)), then:
+Run the audit first ([Before pushing or releasing](#before-pushing-or-releasing)) and the price check ([Updating the price table](#updating-the-price-table)), then:
 
 ```sh
 cd plugin && npm version minor --no-git-tag-version   # or patch / major; updates plugin/package.json, plugin/manifest.json, the root manifest.json, and versions.json
@@ -82,7 +82,31 @@ git push origin main X.Y.Z
 
 `npm version` runs inside `plugin/`, which is not the repository root, so it updates the files but does not commit or tag; the commit and tag are made by hand as above.
 
+With the pre-push hook linked, pushing a tag runs the price check itself: a difference blocks the push, an unreadable page (offline) only warns.
+
 Pushing the tag runs `.github/workflows/release.yml`, which builds the plugin and attaches `main.js`, `manifest.json`, and `styles.css` to a draft GitHub Release. Review the draft, then publish it.
+
+## Updating the price table
+
+`agentsessions/usage/pricing.py` holds Anthropic's Claude prices. `tools/prices/check_prices.py` compares them with the pricing page and exits 0 (they match), 1 (differences, printed) or 2 (the page or its "Model pricing" table could not be read).
+
+```sh
+python3 tools/prices/check_prices.py              # or: cd plugin && npm run check-prices
+python3 tools/prices/check_prices.py --suggest    # also prints the PRICES / LONG_PROMPT_PRICES row to add or change
+```
+
+It runs in three places:
+
+- Monthly (the 1st) in `.github/workflows/price-check.yml`. A difference opens an issue labelled `price-check`, or updates the one already open; a page that cannot be read does the same under `price-check-broken`. A match does nothing.
+- On demand, when a new model or a price change is announced: run the command above, or "Run workflow" on the Price check workflow in the Actions tab.
+- Before a release: the pre-push hook runs it for a pushed tag (`AUDIT_SKIP_PRICES=1` leaves it out).
+
+When it reports differences:
+
+1. Edit `PRICES` (and `LONG_PROMPT_PRICES`) in `agentsessions/usage/pricing.py` as `--suggest` shows. Cache writes are derived (input x 1.25 for 5 minutes, x 2 for 1 hour); if the page breaks that, `price_of` needs an exception.
+2. Add a row for the model to `tests/usage/test_pricing.py`.
+3. Rerun the check until it exits 0, and run the Python suite.
+4. Mention the change in the release notes.
 
 ## Where the other documents are
 

@@ -120,6 +120,22 @@ class UsageTest(unittest.TestCase):
         self.assertEqual(turn1['cache_read'], 5)
         self.assertEqual(turn1['output'], 40)
 
+    def test_last_line_of_a_message_id_wins(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, 'x.jsonl')
+            with open(path, 'w', encoding='utf-8') as f:
+                f.write(_line(_user('2024-01-01T00:00:00.000Z', 'go')))
+                f.write(_line(_assistant('2024-01-01T00:00:01.000Z', 'm', 'claude-3-haiku',
+                                         {'input': 10, 'output': 2}, thinking=1)))
+                f.write(_line(_assistant('2024-01-01T00:00:02.000Z', 'm', 'claude-3-haiku',
+                                         {'input': 10, 'output': 90}, thinking=30)))
+            turn = usage.collect(path)[0]
+        self.assertEqual(turn['calls'], 1)
+        self.assertEqual(turn['output'], 90)
+        self.assertEqual(turn['thinking'], 30)
+        self.assertEqual(turn['input'], 10)
+        self.assertAlmostEqual(turn['cost'], _cost('claude-3-haiku', {'input': 10, 'output': 90}))
+
     def test_synthetic_model_is_not_counted(self):
         turns = usage.collect(self.path)
         turn1 = turns[1]
@@ -157,6 +173,27 @@ class UsageTest(unittest.TestCase):
         # tools from a duplicate line (same message.id) aren't double-counted
         self.assertEqual(turn1['tools'], {'Read': 2, 'Edit': 1})
         self.assertEqual(turns[2]['tools'], {})
+
+    def test_each_tool_call_of_a_response_split_over_lines_is_counted_once(self):
+        # Claude Code writes a response that calls two tools as two lines with the same
+        # message.id, one tool_use block on each; a repeated line repeats a block's id.
+        import json, os, tempfile
+        def line(block):
+            return {'type': 'assistant', 'timestamp': '2024-01-01T00:00:01.000Z',
+                    'message': {'id': 'm1', 'model': 'claude-opus-5-5', 'content': [block],
+                                'usage': {'input_tokens': 1, 'output_tokens': 1}}}
+        read = {'type': 'tool_use', 'id': 'toolu_1', 'name': 'Read', 'input': {}}
+        bash = {'type': 'tool_use', 'id': 'toolu_2', 'name': 'Bash', 'input': {}}
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, 't.jsonl')
+            with open(path, 'w') as f:
+                f.write(json.dumps({'type': 'user', 'timestamp': '2024-01-01T00:00:00.000Z',
+                                    'message': {'role': 'user', 'content': 'go'}}) + '\n')
+                for rec in (line(read), line(bash), line(bash)):
+                    f.write(json.dumps(rec) + '\n')
+            turns = usage.collect(path)
+        self.assertEqual(turns[-1]['tools'], {'Read': 1, 'Bash': 1})
+        self.assertEqual(turns[-1]['calls'], 1)
 
     def test_context_last_is_the_last_calls_input_plus_cache(self):
         turns = usage.collect(self.path)

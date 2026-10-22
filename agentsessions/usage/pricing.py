@@ -4,8 +4,8 @@ Prices are in $/MTok (dollars per million tokens). Looked up by prefix match aga
 the model ID; when multiple prefixes match, the longest one wins. Cache-creation
 tokens are generally priced at the input price x 1.25 for the 5-minute tier and
 input price x 2 for the 1-hour tier, but cache-read tokens use the table value
-directly (`claude-fable-5-1`, `claude-mythos-5-1`, and `claude-3-haiku` are
-exceptions to the "input price x 0.1" rule of thumb for cache reads).
+directly (`claude-fable-5-1`, `claude-mythos-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5` and
+`claude-3-haiku` are exceptions to the "input price x 0.1" rule of thumb for cache reads).
 
 For `agent='claude'` (the default, for backward compatibility with every existing
 caller), an unknown model falls back to `claude-opus-5` pricing and is reported as
@@ -19,20 +19,35 @@ actively misleading rather than a rough ballpark.
 
 from typing import Dict, Optional, Sequence, Tuple
 
-# (prefixes to match, input, output, cache read). All in $/MTok.
+# (prefixes to match, input, output, cache read). All in $/MTok, from Anthropic's pricing page
+# (platform.claude.com/docs/en/about-claude/pricing; tools/check_prices.py compares the two).
+# Cache reads are input x 0.1 except Fable/Mythos 5.1 (x 0.025) and Opus/Sonnet 5.5 (x 0.05).
 PRICES: Tuple[Tuple[Sequence[str], float, float, float], ...] = (
     (('claude-fable-5-1', 'claude-mythos-5-1'), 10, 50, 0.25),
     (('claude-fable-5', 'claude-mythos-5'), 10, 50, 1.0),
+    (('claude-opus-5-5',), 4, 20, 0.2),
     (('claude-opus-5', 'claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-6',
       'claude-opus-4-5'), 5, 25, 0.5),
     (('claude-opus-4-1', 'claude-opus-4'), 15, 75, 1.5),
+    (('claude-sonnet-5-5',), 2, 10, 0.1),
     (('claude-sonnet-5',), 2, 10, 0.2),
     (('claude-sonnet-4-6', 'claude-sonnet-4-5', 'claude-sonnet-4',
       'claude-3-7-sonnet'), 3, 15, 0.3),
+    (('claude-haiku-5-5',), 0.1, 0.5, 0.01),
     (('claude-haiku-4-5',), 1, 5, 0.1),
     (('claude-3-5-haiku',), 0.8, 4, 0.08),
     (('claude-3-haiku',), 0.25, 1.25, 0.03),
 )
+
+# Models whose prices rise for a long prompt: (prefixes, prompt tokens above which the second
+# prices apply, input, output, cache read). A request's prompt counts all its input tokens,
+# cache reads and writes included, and each request is priced on its own.
+LONG_PROMPT_PRICES: Tuple[Tuple[Sequence[str], int, float, float, float], ...] = (
+    (('claude-haiku-5-5',), 100_000, 0.5, 2.5, 0.05),
+)
+
+# `usage.speed == 'fast'` (fast mode) doubles every price, cache multipliers on top.
+FAST_MULTIPLIER = 2
 
 # Unknown Claude models are estimated using these (claude-opus-5's prices).
 _UNKNOWN_INPUT, _UNKNOWN_OUTPUT, _UNKNOWN_CACHE_READ = 5, 25, 0.5
@@ -71,7 +86,20 @@ def _match(model: Optional[str], table) -> Optional[Tuple[float, float, float]]:
     return best
 
 
-def price_of(model: Optional[str], agent: str = 'claude') -> Dict[str, Optional[float]]:
+def _long_prompt(model: Optional[str], prompt_tokens: float) -> Optional[Tuple[float, float, float]]:
+    best_len = -1
+    best = None
+    if isinstance(model, str) and model:
+        for prefixes, threshold, input_price, output_price, cache_read in LONG_PROMPT_PRICES:
+            for prefix in prefixes:
+                if model.startswith(prefix) and len(prefix) > best_len:
+                    best_len = len(prefix)
+                    best = (input_price, output_price, cache_read) if prompt_tokens > threshold else None
+    return best
+
+
+def price_of(model: Optional[str], agent: str = 'claude', prompt_tokens: float = 0,
+             fast: bool = False) -> Dict[str, Optional[float]]:
     """Return `model`'s prices: `{input, output, cache_5m, cache_1h, cache_read,
     estimated, unknown}` (all in $/MTok, or `None` when `unknown`). Picks the longest
     matching prefix.
@@ -82,6 +110,8 @@ def price_of(model: Optional[str], agent: str = 'claude') -> Dict[str, Optional[
     `agent='codex'`: matched against `OPENAI_PRICES` instead; a non-matching model
     returns `unknown: True` and every price is `None` -- no dollar figure, since
     there's no same-vendor ballpark to fall back to (see module docstring).
+    `prompt_tokens` (a request's input, cache reads and writes) picks a model's long-prompt
+    prices (`LONG_PROMPT_PRICES`); `fast` applies fast mode's `FAST_MULTIPLIER`.
     """
     if agent == 'codex':
         best = _match(model, OPENAI_PRICES)
@@ -99,13 +129,16 @@ def price_of(model: Optional[str], agent: str = 'claude') -> Dict[str, Optional[
             'unknown': False,
         }
 
-    best = _match(model, PRICES)
+    best = _long_prompt(model, prompt_tokens) or _match(model, PRICES)
     if best is None:
         input_price, output_price, cache_read = _UNKNOWN_INPUT, _UNKNOWN_OUTPUT, _UNKNOWN_CACHE_READ
         estimated = True
     else:
         input_price, output_price, cache_read = best
         estimated = False
+    if fast:
+        input_price, output_price, cache_read = (input_price * FAST_MULTIPLIER, output_price * FAST_MULTIPLIER,
+                                                 cache_read * FAST_MULTIPLIER)
 
     return {
         'input': input_price,
@@ -137,14 +170,14 @@ def cost(usage: dict, model: Optional[str], agent: str = 'claude') -> Optional[f
     """
     if not isinstance(usage, dict):
         return 0.0
-    prices = price_of(model, agent=agent)
-    if prices['unknown']:
-        return None
-
     input_tokens = _num(usage.get('input_tokens'))
     output_tokens = _num(usage.get('output_tokens'))
     cache_read_tokens = _num(usage.get('cache_read_input_tokens'))
     cache_total_tokens = _num(usage.get('cache_creation_input_tokens'))
+    prices = price_of(model, agent=agent, prompt_tokens=input_tokens + cache_read_tokens + cache_total_tokens,
+                      fast=usage.get('speed') == 'fast')
+    if prices['unknown']:
+        return None
 
     cache_1h_tokens = 0.0
     cache_creation = usage.get('cache_creation')

@@ -65,8 +65,8 @@ export interface AttentionInfo {
 
 /**
  * The attention kinds that apply — the same classification the side panel's badge counts
- * (`statusGroup`): `needs-input` for a session asking, `needs-review` for one waiting or just
- * compacted. Empty for everything else, and for archived rows. The detail pane shows a kind as a
+ * (`statusGroup`): `needs-input` for a session asking, `needs-review` for one waiting or
+ * looped. Empty for everything else, and for archived rows. The detail pane shows a kind as a
  * small tag beside the state's name; the state's own explanation is the only sentence.
  */
 export function attentionInfos(status: TerminalStatus, archived: boolean): AttentionInfo[] {

@@ -6,7 +6,7 @@ import unittest
 from unittest import mock
 
 from agentsessions import config, i18n
-from agentsessions.claude import hooks
+from agentsessions.claude import advisor, hooks
 from agentsessions.sessions import live
 
 
@@ -17,6 +17,10 @@ def setUpModule():
     patcher.start()
     os.environ.pop('AGENT_SESSIONS_ID', None)
     unittest.addModuleCleanup(patcher.stop)
+    # Nor may the user's own Claude Code settings (`advisorModel`) reach them.
+    config_dir = tempfile.mkdtemp()
+    unittest.addModuleCleanup(shutil.rmtree, config_dir, ignore_errors=True)
+    os.environ['CLAUDE_CONFIG_DIR'] = config_dir
 
 
 class TestRecordHook(unittest.TestCase):
@@ -319,6 +323,121 @@ class TestRecordStatus(unittest.TestCase):
     def test_invalid_json_returns_default_line(self):
         line = hooks.record_status(b'not json')
         self.assertEqual(line, f'{i18n.t("default")} · {i18n.t("default")} · ctx —% · rc ○')
+
+    def _transcript(self, *records):
+        path = os.path.join(self.tmpdir, 't.jsonl')
+        with open(path, 'w', encoding='utf-8') as f:
+            for r in records:
+                f.write(json.dumps(r, separators=(',', ':')) + '\n')  # as Claude Code writes them
+        return path
+
+    def test_adds_the_advisor_from_the_transcript(self):
+        path = self._transcript(
+            {'type': 'user', 'message': {'content': 'hi'}},
+            {'type': 'assistant', 'advisorModel': 'claude-opus-5-5',
+             'message': {'model': 'claude-sonnet-5', 'content': []}},
+        )
+        raw = json.dumps({'session_id': 'abc', 'transcript_path': path,
+                          'model': {'display_name': 'Sonnet 5'}}).encode('utf-8')
+        line = hooks.record_status(raw)
+        self.assertEqual(line, f'Sonnet 5 · {i18n.t("default")} · advisor Opus 5.5 · ctx —% · rc ○')
+        with open(os.path.join(self.status_dir, 'abc.json'), encoding='utf-8') as f:
+            stored = json.load(f)
+        self.assertEqual(stored[hooks.EXTRA_KEY], {'advisor': {'id': 'claude-opus-5-5', 'display_name': 'Opus 5.5'}})
+        self.assertEqual(stored['model'], {'display_name': 'Sonnet 5'})
+
+    def test_no_advisor_keeps_the_bytes_as_they_came(self):
+        path = self._transcript({'type': 'assistant', 'message': {'model': 'claude-sonnet-5', 'content': []}})
+        raw = json.dumps({'session_id': 'abc', 'transcript_path': path}).encode('utf-8')
+        line = hooks.record_status(raw)
+        self.assertNotIn('advisor', line)
+        with open(os.path.join(self.status_dir, 'abc.json'), 'rb') as f:
+            self.assertEqual(f.read(), raw)
+
+
+class TestAdvisor(unittest.TestCase):
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmpdir, ignore_errors=True)
+        patcher = mock.patch.dict(os.environ, {'CLAUDE_CONFIG_DIR': self.tmpdir})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _transcript(self, *records, raw_tail=b''):
+        path = os.path.join(self.tmpdir, 't.jsonl')
+        with open(path, 'wb') as f:
+            for r in records:
+                f.write(json.dumps(r, separators=(',', ':')).encode('utf-8') + b'\n')
+            f.write(raw_tail)
+        return path
+
+    def _settings(self, data):
+        with open(os.path.join(self.tmpdir, 'settings.json'), 'w', encoding='utf-8') as f:
+            json.dump(data, f)
+
+    def test_latest_assistant_line_wins(self):
+        path = self._transcript(
+            {'type': 'assistant', 'advisorModel': 'claude-opus-5', 'message': {'model': 'm'}},
+            {'type': 'assistant', 'advisorModel': 'claude-opus-5-5', 'message': {'model': 'm'}},
+        )
+        self.assertEqual(advisor.current(path), 'claude-opus-5-5')
+
+    def test_a_line_without_the_field_means_no_advisor(self):
+        self._settings({'advisorModel': 'opus'})
+        path = self._transcript(
+            {'type': 'assistant', 'advisorModel': 'claude-opus-5-5', 'message': {'model': 'm'}},
+            {'type': 'assistant', 'message': {'model': 'm'}},
+        )
+        self.assertIsNone(advisor.current(path))
+
+    def test_synthetic_and_sidechain_lines_are_skipped(self):
+        path = self._transcript(
+            {'type': 'assistant', 'advisorModel': 'claude-opus-5-5', 'message': {'model': 'm'}},
+            {'type': 'assistant', 'isSidechain': True, 'message': {'model': 'm'}},
+            {'type': 'assistant', 'isApiErrorMessage': True, 'message': {'model': '<synthetic>'}},
+        )
+        self.assertEqual(advisor.current(path), 'claude-opus-5-5')
+
+    def test_the_field_text_inside_other_lines_is_not_read(self):
+        path = self._transcript(
+            {'type': 'assistant', 'message': {'model': 'm'}},
+            {'type': 'user', 'message': {'content': '"advisorModel":"claude-opus-5-5" "type":"assistant"'}},
+        )
+        self.assertIsNone(advisor.current(path))
+
+    def test_a_long_line_after_the_assistant_line_is_read_past(self):
+        path = self._transcript(
+            {'type': 'assistant', 'advisorModel': 'claude-opus-5-5', 'message': {'model': 'm'}},
+            {'type': 'user', 'message': {'content': 'x' * 300000}},
+        )
+        self.assertEqual(advisor.current(path), 'claude-opus-5-5')
+
+    def test_a_partial_last_line_is_skipped(self):
+        path = self._transcript(
+            {'type': 'assistant', 'advisorModel': 'claude-opus-5-5', 'message': {'model': 'm'}},
+            raw_tail=b'{"type":"assistant","advisorModel":"claude-haiku',
+        )
+        self.assertEqual(advisor.current(path), 'claude-opus-5-5')
+
+    def test_settings_stand_in_before_the_first_reply(self):
+        self._settings({'advisorModel': 'opus'})
+        path = self._transcript({'type': 'user', 'message': {'content': 'hi'}})
+        self.assertEqual(advisor.current(path), 'opus')
+        self.assertEqual(advisor.current(os.path.join(self.tmpdir, 'missing.jsonl')), 'opus')
+        self.assertEqual(advisor.current(None), 'opus')
+
+    def test_none_without_transcript_or_settings(self):
+        self.assertIsNone(advisor.current(None))
+        self._settings({'advisorModel': ''})
+        self.assertIsNone(advisor.current(None))
+
+    def test_display_name(self):
+        self.assertEqual(advisor.display_name('claude-opus-5-5'), 'Opus 5.5')
+        self.assertEqual(advisor.display_name('claude-opus-5'), 'Opus 5')
+        self.assertEqual(advisor.display_name('claude-sonnet-4-5-20250929[1m]'), 'Sonnet 4.5')
+        self.assertEqual(advisor.display_name('claude-3-5-haiku-20241022'), 'Haiku 3.5')
+        self.assertEqual(advisor.display_name('opus'), 'Opus')
+        self.assertEqual(advisor.display_name('gpt-5.6-luna'), 'gpt-5.6-luna')
 
 
 if __name__ == '__main__':

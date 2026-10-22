@@ -46,17 +46,22 @@ class TestCodexUsage(unittest.TestCase):
         self.assertEqual(len(turns), 2)
         first, second = turns
         self.assertEqual(first['prompt'], 'first prompt')
-        self.assertEqual(first['input'], 1000)
+        # `input` is the uncached part: Codex's input_tokens include the cached input
+        self.assertEqual(first['input'], 800)
         self.assertEqual(first['cache_read'], 200)
         self.assertEqual(first['output'], 50)
         self.assertEqual(first['thinking'], 10)
         # second turn is a DELTA against the running total, not the raw cumulative value
         self.assertEqual(second['prompt'], 'second prompt')
-        self.assertEqual(second['input'], 800)
+        self.assertEqual(second['input'], 500)
         self.assertEqual(second['cache_read'], 300)
         self.assertEqual(second['output'], 40)
         self.assertGreater(first['cost'], 0)
         self.assertFalse(first['unknown_cost'])
+        # the cached input is priced once, at the cache-read rate
+        self.assertAlmostEqual(first['cost'], pricing.cost(
+            {'input_tokens': 800, 'cache_read_input_tokens': 200, 'output_tokens': 50},
+            'gpt-5.6-terra', agent='codex'))
 
     def test_injected_response_item_does_not_create_an_extra_turn(self):
         # The bug this covers: real data shows task_started firing BEFORE a
@@ -80,7 +85,7 @@ class TestCodexUsage(unittest.TestCase):
         turns = usage.collect(p)
         self.assertEqual(len(turns), 1)
         self.assertEqual(turns[0]['prompt'], 'Reply with the single word: ok')
-        self.assertEqual(turns[0]['input'], 14565)
+        self.assertEqual(turns[0]['input'], 14565 - 5888)
 
     def test_totals_are_unchanged_regardless_of_how_many_turns_the_data_splits_into(self):
         # Same total token/cost sums whether one task_started fires (one turn)

@@ -451,7 +451,7 @@ def ppid_output(pids: List[int]) -> dict:
     return {'parents': {str(p): table[p] for p in pids if p in table}}
 
 
-def stats_output() -> dict:
+def stats_output(fresh: bool = False) -> dict:
     """`{"windows": W2, "agents": {"claude": {"windows": W2}, "codex": {"windows": W2}}}`
     -- `W2 = {"five_hour": W, "seven_day": W}`, `W = {start, end,
     used_percentage, total, sessions}`, the same shape for both agents so the
@@ -460,10 +460,13 @@ def stats_output() -> dict:
     (always Claude's, unconditionally -- pre-dating `agents` entirely) is kept
     exactly as before for backward compatibility with a plugin build that reads
     only that key; once the plugin reads `agents.claude.windows` instead, this
-    top-level key can be dropped."""
+    top-level key can be dropped. `fresh` (the user clicked to refresh): Claude's windows
+    ask `/usage` even when the status files can tell them (`usage.stats.compute`'s `ask_usage`)."""
     # Same reason as `_store_dict`: pass the config paths at call time.
     claude_windows = stats.compute(now=time.time(), projects_dir=config.PROJECTS_DIR,
-                                    status_dir=config.STATUS_DIR, cache_path=config.STATS_CACHE_PATH)
+                                    status_dir=config.STATUS_DIR, cache_path=config.STATS_CACHE_PATH,
+                                    usage_path=config.CLAUDE_USAGE_PATH if 'claude' in agents.enabled_agents() else None,
+                                    ask_usage=fresh)
     result = dict(claude_windows)
     enabled = agents.enabled_agents()
     agents_out = {}
@@ -501,6 +504,26 @@ def efficiency_output(agent_names: Optional[List[str]] = None, threshold: float 
     if 'opencode' in wanted:
         out['opencode'] = report.build_for(now, sources.OpencodeSource(), names=_agent_names(opencode_agent), **kw)
     return {'version': 1, 'agents': out}
+
+
+def session_efficiency_output(agent: str, session_id: str, now: Optional[float] = None,
+                              max_sessions: int = 200) -> dict:
+    """The `json efficiency` block of one session (`report.build_for(..., only=session_id)`): its whole
+    life, with the baselines of the agent's recent sessions. `{"missing": true, ...}` when it is not
+    among the sessions read (older than the look-back, or past `max_sessions`)."""
+    from ..efficiency import report, sources
+    now = time.time() if now is None else now
+    kw = dict(vault=config.VAULT, max_sessions=max_sessions, with_digest=True, only=session_id)
+    if agent == 'claude':
+        c = cache.load(path=config.CACHE_PATH)
+        paths = claude_agent.list_transcripts()
+        names = {s.id: s.name for s in claude_agent.scan(paths, cache=c).values() if s.name}
+        cache.save(c, path=config.CACHE_PATH)
+        return report.build(now, config.PROJECTS_DIR, config.STATUS_DIR, config.STATS_CACHE_PATH,
+                            names=names, **kw)
+    if agent == 'codex':
+        return report.build_for(now, sources.CodexSource(), names=_agent_names(codex_agent), **kw)
+    return report.build_for(now, sources.OpencodeSource(), names=_agent_names(opencode_agent), **kw)
 
 
 def _agent_names(module) -> Dict[str, str]:

@@ -262,6 +262,24 @@ class OutputTest(unittest.TestCase):
         self.assertTrue(os.path.exists(cache.entry_path(os.path.join(folder, 'agent-fresh.jsonl'))))
         self.assertFalse(os.path.exists(cache.entry_path(old_path)))
 
+    def test_one_session_over_its_whole_life(self):
+        everything = self.claude()
+        sid = everything['sessions'][-1]['id']
+        with mock.patch('time.time', return_value=sc.NOW):
+            one = json_output.session_efficiency_output('claude', sid, now=sc.NOW)
+        self.assertEqual(one['range']['rule'], 'session')
+        self.assertEqual(one['range']['end'], sc.NOW)
+        self.assertEqual([s['id'] for s in one['sessions']], [sid])
+        self.assertTrue(all(t['session'] == sid for t in one['tasks']))
+        self.assertTrue(all(h['session'] == sid for h in one['hits']))
+        self.assertEqual([s['id'] for s in one['panes'][0]['digest']['sessions']], [sid])
+        self.assertEqual(one['baselines'], everything['baselines'])
+
+    def test_one_session_that_was_not_read(self):
+        with mock.patch('time.time', return_value=sc.NOW):
+            one = json_output.session_efficiency_output('claude', 'no-such-session', now=sc.NOW)
+        self.assertTrue(one['missing'])
+
     def test_max_sessions(self):
         c = self.claude('--max-sessions', '5')
         self.assertEqual(c['limits']['truncated'], True)

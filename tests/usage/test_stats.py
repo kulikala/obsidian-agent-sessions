@@ -83,12 +83,9 @@ class StatsTestBase(unittest.TestCase):
 
 
 class WindowsFromStatusTest(StatsTestBase):
-    def test_no_status_files_defaults_to_now_and_none(self):
-        now = 1_700_000_000.0
-        win = stats.windows_from_status(self.status_dir, now)
-        for key in ('five_hour', 'seven_day'):
-            self.assertEqual(win[key]['end'], now)
-            self.assertIsNone(win[key]['used_percentage'])
+    def test_no_status_files_has_no_readings(self):
+        win = stats.windows_from_status(self.status_dir, 1_700_000_000.0)
+        self.assertEqual(win, {'five_hour': None, 'seven_day': None})
 
     def test_reads_from_most_recent_file_with_rate_limits(self):
         now = 1_700_000_000.0
@@ -107,21 +104,24 @@ class WindowsFromStatusTest(StatsTestBase):
         os.utime(newest_no_rl, (now, now))
 
         win = stats.windows_from_status(self.status_dir, now)
-        self.assertEqual(win['five_hour']['end'], 1_700_030_000)
-        self.assertEqual(win['five_hour']['used_percentage'], 9)
-        self.assertEqual(win['seven_day']['end'], 1_700_040_000)
-        self.assertEqual(win['seven_day']['used_percentage'], 8)
+        self.assertEqual(win['five_hour'], {'resets_at': 1_700_030_000, 'used_percentage': 9, 'as_of': now - 10})
+        self.assertEqual(win['seven_day'], {'resets_at': 1_700_040_000, 'used_percentage': 8, 'as_of': now - 10})
 
-    def test_missing_individual_window_defaults_independently(self):
+    def test_each_window_comes_from_the_newest_file_that_has_it(self):
+        """At a reset Claude Code drops the expired window, and idle sessions rewrite their files
+        then: the newest file lacks the 5-hour window an older one still has."""
         now = 1_700_000_000.0
-        self._status('s.json', {
-            'seven_day': {'resets_at': 1_700_050_000, 'used_percentage': 3},
-        }, mtime=now)
+        self._status('active.json', {
+            'five_hour': {'resets_at': now + 3600, 'used_percentage': 40},
+            'seven_day': {'resets_at': now + 86400, 'used_percentage': 10},
+        }, mtime=now - 120)
+        self._status('idle.json', {
+            'seven_day': {'resets_at': now + 86400, 'used_percentage': 11},
+        }, mtime=now - 60)
         win = stats.windows_from_status(self.status_dir, now)
-        self.assertEqual(win['five_hour']['end'], now)
-        self.assertIsNone(win['five_hour']['used_percentage'])
-        self.assertEqual(win['seven_day']['end'], 1_700_050_000)
-        self.assertEqual(win['seven_day']['used_percentage'], 3)
+        self.assertEqual(win['five_hour']['used_percentage'], 40)
+        self.assertEqual(win['five_hour']['as_of'], now - 120)
+        self.assertEqual(win['seven_day']['used_percentage'], 11)
 
     def test_broken_status_file_is_skipped(self):
         now = 1_700_000_000.0
@@ -130,45 +130,182 @@ class WindowsFromStatusTest(StatsTestBase):
             f.write('{not json')
         os.utime(p, (now, now))
         win = stats.windows_from_status(self.status_dir, now)
-        self.assertEqual(win['five_hour']['end'], now)
-        self.assertIsNone(win['five_hour']['used_percentage'])
+        self.assertIsNone(win['five_hour'])
 
-    def test_resets_at_just_past_rolls_forward_one_period(self):
-        """Right after a reset has passed, but before a fresh rate_limits payload arrives,
-        the window must not stay stuck in the past (with `end` still before now) — it
-        should roll forward by exactly one period, with usage marked unknown."""
-        now = 1_700_000_000.0
-        resets_at = now - 60  # the reset happened 1 minute ago
-        self._status('s.json', {
-            'five_hour': {'resets_at': resets_at, 'used_percentage': 42},
-            'seven_day': {'resets_at': resets_at, 'used_percentage': 77},
-        }, mtime=now)
-        win = stats.windows_from_status(self.status_dir, now)
-        self.assertEqual(win['five_hour']['end'], resets_at + stats.FIVE_HOUR_SECONDS)
-        self.assertIsNone(win['five_hour']['used_percentage'])
-        self.assertEqual(win['seven_day']['end'], resets_at + stats.SEVEN_DAY_SECONDS)
-        self.assertIsNone(win['seven_day']['used_percentage'])
 
-    def test_resets_at_far_in_past_rolls_forward_multiple_periods(self):
-        now = 1_700_000_000.0
-        resets_at = now - 2 * stats.FIVE_HOUR_SECONDS - 100
-        self._status('s.json', {
-            'five_hour': {'resets_at': resets_at, 'used_percentage': 50},
-        }, mtime=now)
-        win = stats.windows_from_status(self.status_dir, now)
-        # 2 full periods plus a 100-second remainder → roll forward 3 periods.
-        self.assertEqual(win['five_hour']['end'], resets_at + 3 * stats.FIVE_HOUR_SECONDS)
-        self.assertGreaterEqual(win['five_hour']['end'], now)
-        self.assertIsNone(win['five_hour']['used_percentage'])
+class CurrentWindowTest(unittest.TestCase):
+    NOW = 1_700_000_000.0
 
-    def test_resets_at_exactly_now_does_not_roll(self):
+    def test_no_reading_ends_now_with_unknown_usage(self):
+        w = stats.current_window(None, None, stats.FIVE_HOUR_SECONDS, self.NOW)
+        self.assertEqual(w, {'end': self.NOW, 'used_percentage': None, 'source': None, 'as_of': None, 'stale': False, 'idle': False})
+
+    def test_a_live_reading_is_used_as_is(self):
+        local = {'resets_at': self.NOW + 600, 'used_percentage': 30.0, 'as_of': self.NOW - 10}
+        w = stats.current_window(local, None, stats.FIVE_HOUR_SECONDS, self.NOW)
+        self.assertEqual((w['end'], w['used_percentage'], w['source'], w['stale']), (self.NOW + 600, 30.0, 'status', False))
+
+    def test_resets_at_exactly_now_is_not_stale(self):
+        local = {'resets_at': self.NOW, 'used_percentage': 10.0, 'as_of': self.NOW}
+        w = stats.current_window(local, None, stats.FIVE_HOUR_SECONDS, self.NOW)
+        self.assertEqual((w['end'], w['used_percentage'], w['stale']), (self.NOW, 10.0, False))
+
+    def test_a_passed_reset_is_stale_with_unknown_usage(self):
+        """Right after a reset, before a fresh reading: no leftover percentage, and `end` moves
+        past now (by whole windows) instead of sticking at the old reset."""
+        resets_at = self.NOW - 2 * stats.FIVE_HOUR_SECONDS - 100
+        local = {'resets_at': resets_at, 'used_percentage': 99.0, 'as_of': resets_at - 60}
+        w = stats.current_window(local, None, stats.FIVE_HOUR_SECONDS, self.NOW)
+        self.assertTrue(w['stale'])
+        self.assertIsNone(w['used_percentage'])
+        self.assertEqual(w['end'], resets_at + 3 * stats.FIVE_HOUR_SECONDS)
+
+    def test_the_newer_of_status_and_usage_wins(self):
+        local = {'resets_at': self.NOW + 600, 'used_percentage': 5.0, 'as_of': self.NOW - 900}
+        usage = {'resets_at': self.NOW + 900, 'used_percentage': 60.0, 'as_of': self.NOW - 30}
+        w = stats.current_window(local, usage, stats.FIVE_HOUR_SECONDS, self.NOW)
+        self.assertEqual((w['end'], w['used_percentage'], w['source'], w['as_of']), (self.NOW + 900, 60.0, 'usage', self.NOW - 30))
+        local['as_of'] = self.NOW - 5
+        w = stats.current_window(local, usage, stats.FIVE_HOUR_SECONDS, self.NOW)
+        self.assertEqual((w['end'], w['used_percentage'], w['source']), (self.NOW + 600, 5.0, 'status'))
+
+
+class NeedsUsageTest(unittest.TestCase):
+    NOW = 1_700_000_000.0
+
+    def _r(self, resets_in, age):
+        return {'resets_at': self.NOW + resets_in, 'used_percentage': 1.0, 'as_of': self.NOW - age}
+
+    def test_fresh_live_readings_need_nothing(self):
+        self.assertFalse(stats.needs_usage({'five_hour': self._r(600, 10), 'seven_day': self._r(9999, 10)}, self.NOW))
+
+    def test_missing_or_passed_readings_need_usage_but_old_ones_do_not(self):
+        fresh = self._r(9999, 10)
+        self.assertTrue(stats.needs_usage({'five_hour': None, 'seven_day': fresh}, self.NOW))
+        self.assertTrue(stats.needs_usage({'five_hour': self._r(-1, 10), 'seven_day': fresh}, self.NOW))
+        self.assertFalse(stats.needs_usage({'five_hour': self._r(600, 3600), 'seven_day': fresh}, self.NOW))
+
+    def test_an_idle_window_is_told(self):
+        idle = {'resets_at': None, 'used_percentage': 0.0, 'as_of': self.NOW - 10}
+        self.assertFalse(stats.needs_usage({'five_hour': idle, 'seven_day': self._r(9999, 10)}, self.NOW))
+
+
+class ComputeWithUsageTest(StatsTestBase):
+    def setUp(self):
+        super().setUp()
+        self.usage_path = os.path.join(self.tmp, 'claude-usage.json')
+
+    def _usage_stream(self, five_pct, five_reset, week_pct, week_reset):
+        iso = lambda ts: datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+        event = {'type': 'assistant', 'usage_report': {'rate_limits': {'limits': [
+            {'kind': 'session', 'percent': five_pct, 'resets_at': iso(five_reset), 'scope': None},
+            {'kind': 'weekly_all', 'percent': week_pct, 'resets_at': iso(week_reset), 'scope': None},
+            {'kind': 'weekly_scoped', 'percent': 0, 'resets_at': iso(week_reset), 'scope': {'model': {}}},
+        ]}}}
+        return '{"type":"system","subtype":"init"}\n' + json.dumps(event) + '\n'
+
+    def test_stale_status_files_are_replaced_by_usage(self):
+        """Used elsewhere: the status files still show the window before the reset, `/usage`
+        has the account's current one, and every number comes from `/usage`."""
+        now = 1_700_000_000.0
+        hit = now - 2 * 3600
+        self._status('s.json', {
+            'five_hour': {'resets_at': now - 600, 'used_percentage': 99},
+            'seven_day': {'resets_at': now + 86400, 'used_percentage': 30},
+        }, mtime=hit + 60)
+        _write(os.path.join(self.proj, ID1 + '.jsonl'), [{
+            'type': 'assistant', 'timestamp': _iso(hit), 'isApiErrorMessage': True, 'error': 'rate_limit',
+            'message': {'content': [{'type': 'text', 'text': "You've hit your session limit · resets 7:10pm"}]},
+        }])
+        runs = []
+        stream = self._usage_stream(40, now + 4 * 3600, 35, now + 86400)
+        out = stats.compute(now, self.projects_dir, self.status_dir, self.cache_path,
+                            usage_path=self.usage_path, usage_runner=lambda: runs.append(1) or stream)
+        five = out['windows']['five_hour']
+        self.assertEqual(len(runs), 1)
+        self.assertEqual((five['used_percentage'], five['end'], five['start']), (40.0, now + 4 * 3600, now - 3600))
+        self.assertEqual((five['source'], five['as_of'], five['stale'], five['exhausted']), ('usage', now, False, False))
+        self.assertEqual(out['windows']['seven_day']['used_percentage'], 35.0)
+
+    def test_usage_is_asked_at_most_once_per_interval(self):
+        now = 1_700_000_000.0
+        runs = []
+        runner = lambda: runs.append(1) or ''
+        for t in (now, now + 60, now + stats.claude_usage.MIN_INTERVAL_SECONDS):
+            out = stats.compute(t, self.projects_dir, self.status_dir, self.cache_path,
+                                usage_path=self.usage_path, usage_runner=runner)
+        self.assertEqual(len(runs), 2)
+        self.assertIsNone(out['windows']['five_hour']['used_percentage'])
+
+    def test_fresh_status_files_do_not_ask_usage(self):
         now = 1_700_000_000.0
         self._status('s.json', {
-            'five_hour': {'resets_at': now, 'used_percentage': 10},
-        }, mtime=now)
-        win = stats.windows_from_status(self.status_dir, now)
-        self.assertEqual(win['five_hour']['end'], now)
-        self.assertEqual(win['five_hour']['used_percentage'], 10)
+            'five_hour': {'resets_at': now + 600, 'used_percentage': 3},
+            'seven_day': {'resets_at': now + 86400, 'used_percentage': 4},
+        }, mtime=now - 10)
+        runs = []
+        out = stats.compute(now, self.projects_dir, self.status_dir, self.cache_path,
+                            usage_path=self.usage_path, usage_runner=lambda: runs.append(1) or '')
+        self.assertEqual(runs, [])
+        self.assertEqual(out['windows']['five_hour']['source'], 'status')
+
+    def _hit_line(self, ts):
+        return {'type': 'assistant', 'timestamp': _iso(ts), 'isApiErrorMessage': True, 'error': 'rate_limit',
+                'message': {'content': [{'type': 'text', 'text': "You've hit your session limit · resets 7:10pm"}]}}
+
+    def test_a_window_usage_reports_not_running_is_idle(self):
+        """After a reset with no request anywhere, `/usage` has no reset time for the 5-hour
+        window: it reads 0% with no length, and the limit hit before the reset doesn't count."""
+        now = 1_700_000_000.0
+        hit = now - 2 * 3600
+        self._status('s.json', {'five_hour': {'resets_at': now - 600, 'used_percentage': 99},
+                                'seven_day': {'resets_at': now + 86400, 'used_percentage': 30}}, mtime=hit + 60)
+        _write(os.path.join(self.proj, ID1 + '.jsonl'), [self._hit_line(hit)])
+        event = {'type': 'assistant', 'usage_report': {'rate_limits': {'limits': [
+            {'kind': 'session', 'percent': 0, 'resets_at': None, 'scope': None},
+            {'kind': 'weekly_all', 'percent': 31, 'resets_at': _iso(now + 86400), 'scope': None},
+        ]}}}
+        runs = []
+        runner = lambda: runs.append(1) or json.dumps(event) + '\n'
+        out = stats.compute(now, self.projects_dir, self.status_dir, self.cache_path,
+                            usage_path=self.usage_path, usage_runner=runner)
+        five = out['windows']['five_hour']
+        self.assertEqual((five['idle'], five['stale'], five['used_percentage'], five['exhausted']), (True, False, 0.0, False))
+        self.assertEqual((five['start'], five['end'], five['total']['calls']), (now, now, 0))
+        # told: the next call doesn't ask again, though the status file is still past its reset
+        stats.compute(now + stats.claude_usage.MIN_INTERVAL_SECONDS, self.projects_dir, self.status_dir,
+                      self.cache_path, usage_path=self.usage_path, usage_runner=runner)
+        self.assertEqual(len(runs), 1)
+
+    def test_ask_usage_asks_even_when_the_status_files_tell_but_not_twice_within_the_interval(self):
+        now = 1_700_000_000.0
+        self._status('s.json', {
+            'five_hour': {'resets_at': now + 3600, 'used_percentage': 3},
+            'seven_day': {'resets_at': now + 86400, 'used_percentage': 4},
+        }, mtime=now - 10)
+        runs = []
+        runner = lambda: runs.append(1) or self._usage_stream(20, now + 3000, 30, now + 80000)
+        out = stats.compute(now, self.projects_dir, self.status_dir, self.cache_path,
+                            usage_path=self.usage_path, usage_runner=runner)
+        self.assertEqual(runs, [])
+        self.assertEqual(out['windows']['five_hour']['source'], 'status')
+        out = stats.compute(now, self.projects_dir, self.status_dir, self.cache_path,
+                            usage_path=self.usage_path, usage_runner=runner, ask_usage=True)
+        self.assertEqual(runs, [1])
+        # the /usage reading is newer than the status file's, so it is the one shown
+        self.assertEqual((out['windows']['five_hour']['source'], out['windows']['five_hour']['used_percentage']),
+                         ('usage', 20.0))
+        stats.compute(now + stats.claude_usage.MIN_INTERVAL_SECONDS - 1, self.projects_dir, self.status_dir,
+                      self.cache_path, usage_path=self.usage_path, usage_runner=runner, ask_usage=True)
+        self.assertEqual(runs, [1])
+        stats.compute(now + stats.claude_usage.MIN_INTERVAL_SECONDS, self.projects_dir, self.status_dir,
+                      self.cache_path, usage_path=self.usage_path, usage_runner=runner, ask_usage=True)
+        self.assertEqual(runs, [1, 1])
+
+    def test_without_usage_path_usage_is_never_asked(self):
+        out = self.compute(1_700_000_000.0)
+        self.assertEqual(out['windows']['five_hour']['source'], None)
+        self.assertFalse(os.path.exists(self.usage_path))
 
 
 class WindowBucketingTest(StatsTestBase):
@@ -310,6 +447,59 @@ class SubagentAggregationTest(StatsTestBase):
         self.assertEqual(five['total']['calls'], 2)
 
 
+class DedupTest(StatsTestBase):
+    def setUp(self):
+        super().setUp()
+        self.now = 1_700_020_000.0
+        self._status('s.json', {
+            'five_hour': {'resets_at': self.now, 'used_percentage': 1},
+            'seven_day': {'resets_at': self.now, 'used_percentage': 1},
+        }, mtime=self.now)
+        self.ts = self.now - 100
+        self.model = 'claude-sonnet-5'
+
+    def test_last_line_of_a_message_id_wins(self):
+        path = os.path.join(self.proj, ID1 + '.jsonl')
+        _write(path, [
+            _assistant(self.ts, 'm1', self.model, {'input': 100, 'output': 3}),
+            _assistant(self.ts + 1, 'm1', self.model, {'input': 100, 'output': 500}),
+        ])
+        five = self.compute(now=self.now)['windows']['five_hour']
+        self.assertEqual(five['total']['calls'], 1)
+        self.assertEqual(five['total']['output'], 500)   # replaced, not 503
+        self.assertEqual(five['total']['input'], 100)
+
+    def test_last_line_wins_across_incremental_reads(self):
+        path = os.path.join(self.proj, ID1 + '.jsonl')
+        _write(path, [_assistant(self.ts, 'm1', self.model, {'input': 100, 'output': 3})])
+        self.compute(now=self.now)
+        _append(path, [_assistant(self.ts + 1, 'm1', self.model, {'input': 100, 'output': 500})])
+        five = self.compute(now=self.now)['windows']['five_hour']
+        self.assertEqual((five['total']['calls'], five['total']['output']), (1, 500))
+
+    def test_same_id_in_parent_and_subagent_file_is_counted_once(self):
+        _write(os.path.join(self.proj, PARENT_ID + '.jsonl'), [
+            _assistant(self.ts, 'shared', self.model, {'input': 100, 'output': 40}),
+            _assistant(self.ts + 5, 'p-only', self.model, {'input': 1, 'output': 1}),
+        ])
+        # a forked sub-agent copies the parent's history, with the partial first line
+        _write(os.path.join(self.proj, PARENT_ID, 'subagents', 'agent-x.jsonl'), [
+            _assistant(self.ts, 'shared', self.model, {'input': 100, 'output': 7}),
+            _assistant(self.ts + 9, 's-only', self.model, {'input': 2, 'output': 2}),
+        ])
+        five = self.compute(now=self.now)['windows']['five_hour']
+        self.assertEqual(five['total']['calls'], 3)
+        self.assertEqual(five['total']['output'], 40 + 1 + 2)   # the larger (final) copy of 'shared'
+        self.assertEqual(five['sessions'][PARENT_ID]['calls'], 3)
+
+    def test_lines_without_an_id_in_different_files_are_all_counted(self):
+        for sid in (ID1, PARENT_ID):
+            _write(os.path.join(self.proj, sid + '.jsonl'),
+                   [_assistant(self.ts, None, self.model, {'input': 10, 'output': 5})])
+        five = self.compute(now=self.now)['windows']['five_hour']
+        self.assertEqual(five['total']['calls'], 2)
+
+
 class IncrementalCacheTest(StatsTestBase):
     def setUp(self):
         super().setUp()
@@ -337,12 +527,12 @@ class IncrementalCacheTest(StatsTestBase):
         self.compute(now=self.now)
         cache = stats.load_cache(self.cache_path)
         bucket_key_1 = stats._bucket_key(self.ts1)
-        self.assertEqual(cache[self.path]['buckets'][str(bucket_key_1)]['calls'], 1)
+        self.assertEqual(cache[self.path]['calls']['m1'][0], bucket_key_1)
 
-        # Tamper with the existing bucket: if the next run re-read from the start,
-        # it would revert to the original value (calls=1). The tampered value
+        # Tamper with the existing record: if the next run re-read from the start,
+        # it would revert to the original value (input=10). The tampered value
         # surviving proves that only the appended part was read, from the saved offset.
-        cache[self.path]['buckets'][str(bucket_key_1)]['calls'] = 999
+        cache[self.path]['calls']['m1'][1] = 999
         stats.save_cache(cache, self.cache_path)
 
         # Append a new line at a timestamp that falls in a different bucket (more than 10 minutes away).
@@ -351,11 +541,11 @@ class IncrementalCacheTest(StatsTestBase):
 
         self.compute(now=self.now)
         cache2 = stats.load_cache(self.cache_path)
-        buckets = cache2[self.path]['buckets']
+        calls = cache2[self.path]['calls']
         bucket_key_2 = stats._bucket_key(ts2)
         self.assertNotEqual(bucket_key_1, bucket_key_2)
-        self.assertEqual(buckets[str(bucket_key_1)]['calls'], 999)   # tampered value survives == not re-read
-        self.assertEqual(buckets[str(bucket_key_2)]['calls'], 1)     # only the appended line was newly added
+        self.assertEqual(calls['m1'][1], 999)            # tampered value survives == not re-read
+        self.assertEqual(calls['m2'][0], bucket_key_2)   # only the appended line was newly added
         self.assertEqual(cache2[self.path]['offset'], os.path.getsize(self.path))
 
     def test_truncated_file_is_reread_from_scratch(self):
@@ -365,7 +555,7 @@ class IncrementalCacheTest(StatsTestBase):
         out = self.compute(now=self.now)
         cache = stats.load_cache(self.cache_path)
         self.assertEqual(cache[self.path]['offset'], 0)
-        self.assertEqual(cache[self.path]['buckets'], {})
+        self.assertEqual(cache[self.path]['calls'], {})
 
     def test_corrupted_cache_file_is_discarded(self):
         with open(self.cache_path, 'w', encoding='utf-8') as f:
@@ -386,14 +576,14 @@ class IncrementalCacheTest(StatsTestBase):
         bucket_key_1 = stats._bucket_key(self.ts1)
         # Tamper with both the bucket (to prove it gets discarded, not reused)
         # and the schema_version (to simulate an old, pre-upgrade cache entry).
-        cache[self.path]['buckets'][str(bucket_key_1)]['calls'] = 999
+        cache[self.path]['calls']['m1'][1] = 999
         cache[self.path]['schema_version'] = stats.STATS_SCHEMA_VERSION - 1
         stats.save_cache(cache, self.cache_path)
 
         self.compute(now=self.now)
         cache2 = stats.load_cache(self.cache_path)
         self.assertEqual(cache2[self.path]['schema_version'], stats.STATS_SCHEMA_VERSION)
-        self.assertEqual(cache2[self.path]['buckets'][str(bucket_key_1)]['calls'], 1)   # not 999: fully re-read
+        self.assertEqual(cache2[self.path]['calls']['m1'][1], 10)   # not 999: fully re-read
 
     def test_corrupted_entry_for_one_file_is_reread(self):
         self.compute(now=self.now)
@@ -403,8 +593,7 @@ class IncrementalCacheTest(StatsTestBase):
         out = self.compute(now=self.now)
         cache2 = stats.load_cache(self.cache_path)
         self.assertEqual(cache2[self.path]['offset'], os.path.getsize(self.path))
-        bucket_key_1 = stats._bucket_key(self.ts1)
-        self.assertEqual(cache2[self.path]['buckets'][str(bucket_key_1)]['calls'], 1)
+        self.assertEqual(cache2[self.path]['calls']['m1'][0], stats._bucket_key(self.ts1))
 
 
 def _limit_error(ts, text) -> dict:

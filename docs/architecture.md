@@ -45,7 +45,7 @@ flowchart TB
     subgraph Files["Files"]
         Transcripts["~/.claude/projects/*/*.jsonl<br/>transcripts (source of truth)"]
         Ledger["~/.claude/sessions/&lt;pid&gt;.json<br/>live status ledger"]
-        Runtime2["~/.agents/sessions/<br/>status/ · compacted/ · events.log<br/>ui.json · vault.json · stats-cache.json<br/>daemon.sock · plugin.sock"]
+        Runtime2["~/.agents/sessions/<br/>status/ · compacted/ · events.log<br/>ui.json · vault.json · stats-cache.json · claude-usage.json<br/>daemon.sock · plugin.sock"]
         SessionsJSON["&lt;vault&gt;/.agents/sessions/sessions.json<br/>folded groups, archive, category colors"]
     end
 
@@ -160,7 +160,7 @@ If Obsidian isn't running, the tab is closed, or the socket connection fails for
 
 ### 3.5 Usage and stats
 
-Both the row menu's "Session analysis" and the side panel's/manager's 5-hour/7-day cards work the same way: the plugin spawns `agent-sessions json usage ID` or `agent-sessions json stats`, which read directly from `~/.claude/projects/*/*.jsonl` (never from `sessions.json` or the daemon), de-duplicate by `message.id`, and price each call from a per-model table. `json stats` additionally maintains `~/.agents/sessions/stats-cache.json` (10-minute buckets, a per-file read offset, and recent `message.id`s) so a repeat run only reads the bytes appended since the last one. Neither command touches the daemon or any running `claude` process — this is read-only aggregation over transcripts that exist regardless of whether a session is currently attached. Full formulas: [`design.md` §13](design.md#13-aggregation).
+Both the row menu's "Session analysis" and the side panel's/manager's 5-hour/7-day cards work the same way: the plugin spawns `agent-sessions json usage ID` or `agent-sessions json stats`, which read directly from `~/.claude/projects/*/*.jsonl` (never from `sessions.json` or the daemon), de-duplicate by `message.id` (the last line of an id carries its final usage; an id copied into several files of a session counts once), and price each call from a per-model table. `json stats` additionally maintains `~/.agents/sessions/stats-cache.json` (a per-file read offset and one record per `message.id` with its 10-minute bucket) so a repeat run only reads the bytes appended since the last one. Neither command touches the daemon or any running `claude` process — this is read-only aggregation over transcripts that exist regardless of whether a session is currently attached. Full formulas: [`design.md` §13](design.md#13-aggregation).
 
 ### 3.6 Install and uninstall
 
@@ -180,7 +180,7 @@ Every terminal tab, side-panel row, and manager row computes the same fine-grain
 | `running-shell` | Ledger `status: "shell"` | `running` |
 | `working` | Ledger `status: "busy"` | `running` |
 | `waiting` | After `busy → idle`, before the tab has been brought to front | `needs-review` |
-| `compacted` | Just after `/compact` (manual or automatic), until a prompt the model answers (local commands keep it) | `needs-review` |
+| `compacted` | Just after `/compact` (manual or automatic), until a prompt the model answers (local commands keep it) | `done` |
 | `detached` | Tab exists but isn't connected | `done` |
 | `idle` | Connected and idle | `done` |
 

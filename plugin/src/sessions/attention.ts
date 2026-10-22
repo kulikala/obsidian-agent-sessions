@@ -1,7 +1,7 @@
 // Tallies sessions that need the user's attention (pure functions). Priority order, highest
 // first: needs-input (asking — Claude is waiting on an answer: AskUserQuestion, a permission
 // prompt, etc.) then needs-review (waiting — went busy→idle but that tab hasn't been brought to
-// front yet — or compacted — just /compact'd, nothing sent to the model since). Grouped via
+// front yet — or looped). A just-compacted session is in the done group. Grouped via
 // `terminal-status.ts`'s `statusGroup`, the same classification the manager's status filter
 // uses. No dependency on `obsidian` (tested in test/attention.test.ts).
 
@@ -11,7 +11,7 @@ import { resolveRowStatus, statusGroup, type TerminalStatusSource } from "./term
 export interface AttentionCounts {
 	/** Sessions in the `needs-input` group (asking). */
 	asking: number;
-	/** Sessions in the `needs-review` group (waiting or just-compacted). Named `waiting` for
+	/** Sessions in the `needs-review` group (waiting or looped). Named `waiting` for
 	 * historical reasons — it's the badge's second count, "needs review". */
 	waiting: number;
 	/** The needs-input sessions' ids, in list order — what clicking the first count highlights. */

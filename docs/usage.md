@@ -122,7 +122,7 @@ The side panel (right sidebar) lists sessions in three groups:
 
 - Each row has a state icon, an agent icon, a category chip and the name.
 - A Claude Code session with scheduled work (`/loop`, a cron job or a wakeup) shows a badge. Hover it for the tasks, each schedule in words and the next run. Only a session whose process is running counts.
-- The **details pane** below shows the selected session's state (its icon and name, a sentence on what it means, and a tag when it needs input or review), model, effort, connection status, context usage, total tokens and cost, and the last instruction and reply.
+- The **details pane** below shows the selected session's state (its icon and name, a sentence on what it means, and a tag when it needs input or review), model, effort, the advisor model when a Claude Code session has one set with `/advisor`, connection status, context usage, total tokens and cost, and the last instruction and reply.
 - At the bottom, each enabled agent's 5-hour and 7-day usage bars count down to their reset.
 
 ## Session states
@@ -312,7 +312,7 @@ Shows when each agent was working. Open it from the Session manager toolbar, the
 
 ## Usage and limits
 
-- Each agent's account-wide 5-hour and 7-day windows, with the countdown to reset and a weekly-pace forecast, in the side panel and the Session manager.
+- Each agent's account-wide 5-hour and 7-day windows, with the countdown to reset and a weekly-pace forecast, in the side panel and the Session manager. Claude Code's are read from its status line; when that can't tell (you used Claude elsewhere, or a window has just reset), and when you click the usage display to refresh it, Agent Sessions runs Claude Code's `/usage` for the whole account at most once every 5 minutes. `/usage` calls no model, so it costs nothing and uses none of your limit.
 - A window whose limit has been reached reads 100% in red, and says when it ran out and how long before its reset ("Used up 3:26 PM (2h 12m before reset)").
 - One session's cost, tokens and tools, turn by turn: [Session analytics](#session-analytics).
 - They come from each agent's own local files.
@@ -365,10 +365,12 @@ Two skills are installed with the program, into the vault only:
 
 | Skill | Lets an agent |
 |---|---|
-| `agent-sessions` | read usage and session details, list sessions, and start one when you ask |
+| `agent-sessions` | read usage and session details, list sessions and categories, find waste in a session, name a session, and start or resume one when you ask |
 | `agent-sessions-help` | answer questions about using the plugin |
 
-- `agent-sessions` works from a Claude Code, Codex or OpenCode session started in the vault. It reads the 5-hour and 7-day windows and a session's tokens and cost, lists other sessions with their status and last messages, and starts a new session only when you ask (in a folder, with a name, on any enabled agent; Claude Code optionally with Remote Control).
+- `agent-sessions` works from a Claude Code, Codex or OpenCode session started in the vault. It reads the 5-hour and 7-day windows and a session's tokens and cost, lists sessions with their status, category and last messages (ended ones too), and starts a new session only when you ask (in a folder, with a name, on any enabled agent; Claude Code optionally with Remote Control) or resumes an ended one in the background.
+- Asked about the waste in its own session, it reads that session's statistics and conversation against the checks of **Stretch your usage limit** and says what to change. It calls no other model.
+- Asked to name a session, it proposes a `Category: Name` that follows the same rules as **Suggest name and category**, preferring your existing categories. Once you agree, Obsidian renames the session (the agent's own session after its reply ends). Without Obsidian running, it gives you the `/rename` to type instead (an OpenCode session is renamed directly).
 - `agent-sessions-help` answers in the language you ask in: where something is, how to rename, organize or restart, how to use the built-in editor, what is supported.
 
 ## Remote Control server
@@ -452,7 +454,11 @@ agent-sessions setup [--dry-run]
 agent-sessions setup --opencode   # install OpenCode's status plugin and status line only (--remove-opencode: remove just those files and restore the tui.json keybinds)
 agent-sessions setup --skills     # install the agent skills into the vault (--remove-skills: remove just those)
 agent-sessions new [--agent A] [--cwd DIR] [--name N] [--remote-control] [--prompt TEXT]   # start a session in the daemon (exit 0 confirmed, 1 unconfirmed, 2 failed)
-agent-sessions sessions [--query TEXT] [--agent A] [--limit N] [--json]   # list sessions with their status
+agent-sessions sessions [--query TEXT] [--agent A] [--status S] [--category C] [--limit N] [--json]   # list sessions with their status and category (ended ones too)
+agent-sessions sessions --categories   # the categories, with how many sessions each has
+agent-sessions resume ID|NAME [--prompt TEXT]   # resume an ended session in the daemon (exit 0 confirmed, 1 unconfirmed, 2 failed)
+agent-sessions analyze [ID|NAME] [--tasks N]   # a session's token statistics and digest, for an agent to find waste in (default: this session)
+agent-sessions suggest-name [ID|NAME] [--check NAME | --apply NAME]   # naming rules and categories, check a name, or rename through Obsidian
 agent-sessions show [ID|NAME] [--json]   # one session's usage and last messages (default: this session)
 agent-sessions stats [--json]     # 5-hour/7-day usage windows per agent
 ```

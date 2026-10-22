@@ -34,7 +34,7 @@ For people who have agents write documents, often for several projects at once.
 
 The plugin shows this dialog before it installs anything.
 
-- No telemetry and no account. Apart from the Remote Control server and the welcome guide's pictures, both described under [Network](#network), the plugin makes no network connections.
+- No telemetry and no account. Apart from the Remote Control server, Claude Code's `/usage` and the welcome guide's pictures, all described under [Network](#network), the plugin makes no network connections.
 - The plugin writes four hooks and a status line to `~/.claude/settings.json`, after backing up the file. ([Files it writes](#files-it-writes))
 - To remove the program and its entries in the agents' settings: **Settings → agent-sessions program → Remove**. ([Uninstall](#uninstall))
 
@@ -96,7 +96,7 @@ Open tabs, running sessions without a tab, and recent ones, each with an icon fo
 - **[Stretch your usage limit](docs/usage.md#stretch-your-usage-limit)**: an agent looks through your recent work for wasted tokens in nine areas and says what to change. Statistics stay on this machine; see [What "Stretch your usage limit" sends](#what-stretch-your-usage-limit-sends).
 - **[Session analytics](docs/usage.md#session-analytics)**: one session's cost, tokens and turns, with each prompt's own cost.
 - **[Activity calendar](docs/usage.md#activity-calendar)**: when each agent was working, shown by 7-day usage window, by week or by day.
-- **[Welcome guide](docs/usage.md#welcome-guide)** and two [agent skills](docs/usage.md#agent-skills): the guide takes you through setup step by step, and the skills let an agent answer questions about your usage, your other sessions, or the plugin.
+- **[Welcome guide](docs/usage.md#welcome-guide)** and two [agent skills](docs/usage.md#agent-skills): the guide takes you through setup step by step, and the skills let an agent answer questions about your usage, your other sessions (ended ones too) or the plugin, resume an ended session, find where its session wasted tokens, or name a session.
 
 All features: [`docs/usage.md`](docs/usage.md).
 
@@ -148,14 +148,16 @@ No telemetry and no account. The agents have the same permissions as in your ter
 
 ### Network
 
-- Apart from the Remote Control server and the welcome guide's pictures, both described below, the plugin and its program make no network connections for their own work. The plugin talks to the program's background process on this machine: a Unix socket (mode 0600), or on Windows `127.0.0.1` on a random port with a secret token.
+- Apart from the Remote Control server, Claude Code's `/usage` and the welcome guide's pictures, all described below, the plugin and its program make no network connections for their own work. The plugin talks to the program's background process on this machine: a Unix socket (mode 0600), or on Windows `127.0.0.1` on a random port with a secret token.
 - Remote Control, when you switch it on with the **rc** toggle in the side panel, runs `claude remote-control --spawn=same-dir --permission-mode <mode>` in the vault folder. That Claude Code process stays connected to Anthropic's servers and starts a session in this vault for each connection made from claude.ai or the Claude app by anyone signed in to your Claude account. You choose the mode with **Remote Control permission mode** in the plugin's settings, under Claude Code. The default is auto, where Claude uses tools without asking; if Claude Code does not accept auto, the sessions run in its default mode. The first time you turn the toggle on, and again the first time after you change the mode to auto, a dialog says what the mode allows, and the server starts only if you confirm. It is off until you click the toggle, and it is never started by loading Obsidian or the plugin.
+- When Claude Code's status line can't tell your usage windows (you used Claude elsewhere, or a window has just reset), and when you click a usage display to refresh it, the program runs Claude Code's `/usage`, at most once every 5 minutes. Claude Code then asks Anthropic's servers for your account's current usage. It sends no prompt or file and calls no model.
 - While the welcome guide is open, it loads its pictures from `raw.githubusercontent.com`. No data of yours is sent; GitHub sees your IP address and which picture is requested. Turn this off with **Load the guide's pictures from GitHub** in the settings.
 
 ### Programs it starts
 
 - `agent-sessions`, with the Python found on your machine. It is written out from the plugin when you click Install; nothing is downloaded.
 - `claude remote-control`, only after you click the **rc** toggle.
+- `claude -p /usage --no-session-persistence`, while Claude Code is enabled, at most once every 5 minutes, in an empty temporary folder without MCP servers or your user settings. It saves no conversation; see [Network](#network).
 - The Claude Code, Codex and OpenCode CLIs you installed, when a session opens, or `ollama launch opencode` if you choose Ollama to launch OpenCode in the settings. The plugin's settings run `ollama list` to offer your Ollama models.
 - Your shell, as a login shell and as an interactive shell (which reads `.zshrc` or `.bashrc`), to get the same `PATH` as a terminal.
 - On Windows: `reg.exe` (to read `PATH`), `py.exe` (to find Python), and `winget.exe` only when you click an install button.
