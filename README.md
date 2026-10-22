@@ -34,7 +34,7 @@ For people who have agents write documents, often for several projects at once.
 
 The plugin shows this dialog before it installs anything.
 
-- No telemetry and no account. Apart from the Remote Control server, Claude Code's `/usage`, the welcome guide's pictures and, on Windows, the install buttons, all described under [Network](#network), the plugin makes no network connections.
+- No telemetry and no account. Apart from Remote Control, Claude Code's `/usage`, the welcome guide's pictures and, on Windows, the install buttons, all described under [Network](#network), the plugin makes no network connections.
 - The plugin writes four hooks and a status line to `~/.claude/settings.json`, after backing up the file. ([Files it writes](#files-it-writes))
 - To remove the program and its entries in the agents' settings: **Settings → agent-sessions program → Remove**. ([Uninstall](#uninstall))
 
@@ -93,10 +93,10 @@ Open tabs, running sessions without a tab, and recent ones, each with an icon fo
 - **[Rename and sort into categories](docs/usage.md#name-and-group-sessions)**: a name like `Docs: Release notes` puts a session in the Docs category.
 - **[Names and categories suggested by an agent](docs/usage.md#organize-names-and-categories)**: nothing is renamed until you press **Apply selected**. The agent that makes the suggestions receives session excerpts; see [What Organize sends](#what-organize-sends).
 - **[Compact, restart or change model](docs/usage.md#compact-restart-and-change-model)** from the session's ⋯ menu.
-- **[Stretch your usage limit](docs/usage.md#stretch-your-usage-limit)**: an agent looks through your recent work for wasted tokens in nine areas and says what to change. Statistics stay on this machine; see [What "Stretch your usage limit" sends](#what-stretch-your-usage-limit-sends).
+- **[Stretch your usage limit](docs/usage.md#stretch-your-usage-limit)**: an agent looks through your recent work for wasted tokens in nine areas and says what to change. The statistics are worked out on this machine and stay there; only the analysis you start sends anything. See [What "Stretch your usage limit" sends](#what-stretch-your-usage-limit-sends).
 - **[Session analytics](docs/usage.md#session-analytics)**: one session's cost, tokens and turns, with each prompt's own cost.
 - **[Activity calendar](docs/usage.md#activity-calendar)**: when each agent was working, shown by 7-day usage window, by week or by day.
-- **[Welcome guide](docs/usage.md#welcome-guide)** and two [agent skills](docs/usage.md#agent-skills): the guide takes you through setup step by step, and the skills let an agent answer questions about your usage, your other sessions (ended ones too) or the plugin, resume an ended session, find where its session wasted tokens, or name a session.
+- **[Welcome guide](docs/usage.md#welcome-guide)** and two [agent skills](docs/usage.md#agent-skills), which are added to the vault: the guide takes you through setup step by step, and the skills let an agent answer questions about your usage, your other sessions (ended ones too) or the plugin, resume an ended session, find where its session wasted tokens, or name a session.
 
 All features: [`docs/usage.md`](docs/usage.md).
 
@@ -131,28 +131,29 @@ Where the program goes, and installing from source: [`docs/installation.md`](doc
 
 ## Uninstall
 
-1. **Settings → agent-sessions program → Remove.** This ends running sessions, removes the program, its entries in the agents' settings, and the skills in the vault, and restores your previous OpenCode `tui.json` values.
+1. **Settings → agent-sessions program → Remove.** This ends running sessions, removes the program, its entries in the agents' settings, and the skills in the vault, and restores your previous OpenCode `tui.json` values. From `~/.claude/keybindings.json` it removes only the keys the plugin added (`enter`, `meta+enter`, `cmd+enter`, `ctrl+enter`, `shift+enter`, `alt+enter`, `ctrl+q`, `meta+g` and `ctrl+g: null`), and only where the value is still the one the plugin set. A key with another value stays, with a warning. An emptied `Chat` block is removed. It does not bring back a binding you had before, and it does not delete the file.
 2. Disable and remove **Agent Sessions** under Community plugins.
-3. If you want nothing left, delete `~/.agents/sessions/`, `<vault>/.agents/sessions/`, and the backups `~/.claude/settings.json.bak-*` and `~/.codex/config.toml.bak-*`.
+3. If you want nothing left, delete `~/.agents/sessions/`, `<vault>/.agents/sessions/`, and the backups `~/.claude/settings.json.bak-*` and `~/.codex/config.toml.bak-*`. Claude Code also leaves empty project folders in `~/.claude/projects/` for the plugin's own runs (see [Files it writes](#files-it-writes)); delete the ones whose names end in `-agents-sessions-organize` or `-agents-sessions-efficiency-run-current`, or contain `agent-sessions-usage-`.
 
 Source installs: [`docs/installation.md`](docs/installation.md#uninstall).
 
 ## What it does not do
 
 - It sends no conversation text anywhere, except when you press **Suggest** in Organize or **Analyze** in Stretch your usage limit.
-- OpenCode has no usage windows, and its sub-agent sessions and `opencode run` sessions are not listed.
+- OpenCode has no 5-hour or 7-day usage windows, so none are shown. Its sub-agent sessions and `opencode run` sessions are not listed.
 
 ## Disclosures
 
-No telemetry and no account. The agents have the same permissions as in your terminal and connect to their own services under your accounts.
+No telemetry and no account. The agents in your tabs have the same permissions as in your terminal and connect to their own services under your accounts. The agents that Organize and Stretch start have fewer (see below), and Remote Control sessions use the mode you choose.
 
 ### Network
 
-- Apart from the Remote Control server, Claude Code's `/usage`, the welcome guide's pictures and the Windows install buttons, all described below, the plugin and its program make no network connections for their own work. The plugin talks to the program's background process on this machine: a Unix socket (mode 0600), or on Windows `127.0.0.1` on a random port with a secret token.
-- Remote Control, when you switch it on with the **rc** toggle in the side panel, runs `claude remote-control --spawn=same-dir --permission-mode <mode>` in the vault folder. That Claude Code process stays connected to Anthropic's servers and starts a session in this vault for each connection made from claude.ai or the Claude app by anyone signed in to your Claude account. You choose the mode with **Remote Control permission mode** in the plugin's settings, under Claude Code. The default is auto, where Claude uses tools without asking; if Claude Code does not accept auto, the sessions run in its default mode. The first time you turn the toggle on, and again the first time after you change the mode to auto, a dialog says what the mode allows, and the server starts only if you confirm. It is off until you click the toggle, and it is never started by loading Obsidian or the plugin.
+- Apart from Remote Control, Claude Code's `/usage`, the welcome guide's pictures and the Windows install buttons, all described below, the plugin and its program make no network connections for their own work. The plugin talks to the program's background process on this machine: a Unix socket (mode 0600), or on Windows `127.0.0.1` on a random port with a secret token.
+- Remote Control, when you switch it on with the **rc** toggle in the side panel, runs `claude remote-control --spawn=same-dir --permission-mode <mode>` in the vault folder. That Claude Code process stays connected to Anthropic's servers and starts a session in this vault for each connection made from claude.ai or the Claude app by anyone signed in to your Claude account. You choose the mode with **Remote Control permission mode** in the plugin's settings, under Claude Code: default (asks for permission as Claude Code normally does), acceptEdits, plan or auto. The default is auto, where Claude uses tools without asking and Claude Code's classifier blocks risky actions; if Claude Code does not accept auto, the sessions run in its default mode. The first time you turn the toggle on, and again the first time after you change the mode to auto, a dialog names the mode, says who can start sessions and, for auto, that Claude uses tools without asking; the server starts only if you confirm. It is off until you click the toggle, and it is never started by loading Obsidian or the plugin. Quitting Obsidian does not stop it, because the program's background process runs the server; switch the toggle off, or use **Remove**, to stop it.
 - When Claude Code's status line can't tell your usage windows (you used Claude elsewhere, or a window has just reset), and when you click a usage display to refresh it, the program runs Claude Code's `/usage`, at most once every 5 minutes. Claude Code then asks Anthropic's servers for your account's current usage. It sends no prompt or file and calls no model.
 - While the welcome guide is open, it loads its pictures from `raw.githubusercontent.com`. No data of yours is sent; GitHub sees your IP address and which picture is requested. Turn this off with **Load the guide's pictures from GitHub** in the settings.
 - On Windows, an install button for Python or Claude Code runs `winget install` for your user only. WinGet downloads the package from its source on the internet. Nothing runs until you click the button.
+- A Claude Code session started with Remote Control (`agent-sessions new --remote-control`, run by an agent skill, or resuming a session that was in Remote Control) runs `claude --remote-control=<name>`. That process also stays connected to Anthropic's servers.
 
 ### Programs it starts
 
@@ -160,8 +161,11 @@ No telemetry and no account. The agents have the same permissions as in your ter
 - `claude remote-control`, only after you click the **rc** toggle.
 - `claude -p /usage --no-session-persistence`, while Claude Code is enabled, at most once every 5 minutes, in an empty temporary folder without MCP servers or your user settings. It saves no conversation; see [Network](#network).
 - The Claude Code, Codex and OpenCode CLIs you installed, when a session opens, or `ollama launch opencode` if you choose Ollama to launch OpenCode in the settings. The plugin's settings run `ollama list` to offer your Ollama models.
-- Your shell, as a login shell and as an interactive shell (which reads `.zshrc` or `.bashrc`), to get the same `PATH` as a terminal.
-- On Windows: `reg.exe` (to read `PATH`), `py.exe` (to find Python), and `winget.exe` only when you click an install button.
+- Your shell, as a login shell and as an interactive shell (which reads `.zshrc` or `.bashrc`), to get the same `PATH` as a terminal. Through the login shell it runs `command -v <agent>` and `npm config get prefix`, to find agents installed with npm.
+- `<agent> --version` for each agent, to show its version in the settings, and `codex --help`, to check whether Codex accepts `--no-daemon`.
+- `ps`, to see which processes belong to which session. On macOS, `lsof`, to find the files a Codex process has open.
+- `rg`, or `grep` if `rg` is missing, to find session names and goals in Claude Code's transcripts.
+- On Windows: `reg.exe` (to read `PATH`), `py.exe` (to find Python), `cmd.exe` (to run `.cmd` launcher files such as npm's, and to shorten folder names that contain spaces), and `winget.exe` only when you click an install button.
 
 ### Files it reads outside the vault
 
@@ -171,7 +175,9 @@ To list sessions and calculate usage:
 - `~/.codex/` (or `$CODEX_HOME`)
 - `~/.local/share/opencode/opencode.db`, opened read-only
 
-If `opencode.db` cannot be opened read-only, it is copied to a temporary folder, read there, and the copy deleted.
+If `opencode.db` cannot be opened read-only, it is copied, with its `-wal` and `-shm` files, to a temporary folder, read there, and the copy deleted when the program closes it.
+
+These are the default places. The plugin follows `$CLAUDE_CONFIG_DIR` in place of `~/.claude` for `settings.json` and `keybindings.json`, `$XDG_DATA_HOME` for OpenCode's database and `$XDG_CONFIG_HOME` for `~/.config/opencode/`.
 
 For Stretch your usage limit, it reads the Claude Code transcripts, Codex rollouts and OpenCode database listed above. Claude Code records the sizes of `CLAUDE.md`, `.claude/rules/` and auto memory `MEMORY.md` and the number of skills at each session's start, and Codex the `AGENTS.md` it loaded; for OpenCode it reads the size of `AGENTS.md` (or `CLAUDE.md`) in the session's folder and the folders above it up to the Git root, and of `~/.config/opencode/AGENTS.md`. It also reads the top-level `model` and `model_provider` of `$CODEX_HOME/config.toml` and the model list in `$CODEX_HOME/models_cache.json`, and the providers' `baseURL` in `~/.config/opencode/opencode.json` (to tell local models). To tell which instruction file covers a file that sessions keep reading, it looks in the folders above that file for a `.git`, a `CLAUDE.md` or (Codex and OpenCode) an `AGENTS.md`.
 
@@ -188,6 +194,7 @@ For Stretch your usage limit, it reads the Claude Code transcripts, Codex rollou
 | `~/.config/opencode/agent-sessions-tui.jsx` | status line | OpenCode enabled |
 | `~/.config/opencode/tui.json` | editor key, submit keys, status line entry | OpenCode enabled |
 | a temporary file | the prompt being edited | built-in editor open |
+| a temporary folder | a copy of `opencode.db` with its `-wal` and `-shm` files, only if it cannot be opened read-only | while it is read; removed when closed |
 | `~/.agents/sessions/efficiency/cache/` | statistics for Stretch your usage limit (numbers and relative paths, no conversation text) | Stretch your usage limit opened |
 | `~/.agents/sessions/efficiency/last-<tab>.json`, `prev-<tab>.json` | the last two analyses of each tab (`claude`, `codex-openai`, `opencode-ollama`, …), with masked quotes | after Analyze |
 | `~/.agents/sessions/efficiency-run/current/` | the analysis's empty working folder | during Analyze |
@@ -199,6 +206,7 @@ For Stretch your usage limit, it reads the Claude Code transcripts, Codex rollou
 - `~/.claude/settings.json` and `~/.codex/config.toml` are backed up before they are changed. The previous `tui.json` values are kept in `~/.agents/sessions/opencode-tui-backup.json`.
 - The plugin's entries in these files are marked (Codex, OpenCode, skill files) or recognized by their command (Claude Code); nothing else in them is changed. One exception: when the plugin writes `~/.claude/keybindings.json`, it adds `$schema` and `$docs` entries if they are missing and saves the whole file with two-space indentation.
 - `sessions.json` travels with the vault if you sync the vault.
+- Claude Code keeps an empty project folder under `~/.claude/projects/` (holding at most an empty `memory` folder) for each folder the plugin runs it in, even when no conversation is saved: one for Stretch's working folder, one for Organize's, and a new one for every `/usage` run. The plugin does not delete them; see [Uninstall](#uninstall).
 - Other folders the program may be installed in: [`docs/installation.md`](docs/installation.md#where-the-program-goes).
 
 ### What Organize sends
@@ -209,19 +217,21 @@ Nothing is sent until you press **Suggest** in **Organize names and categories**
 - Codex: `codex exec` in a read-only sandbox, without tools (shell, web search, MCP servers).
 - OpenCode: `opencode run` without tools, its stored session deleted afterwards.
 
-For up to 30 sessions, or the one you chose, it sends the current name, the folder, the first prompt, your last three prompts and a short excerpt of the last reply (the folder, prompts and reply masked in the same way as for Stretch your usage limit, below); your existing category names with their session counts and up to three example session names each; and, if you ask again, the previous suggestion and your comments. The request goes to the agent's service under your account and counts toward that account's usage limits.
+For up to 30 sessions, or the one you chose, it sends the current name, the folder, the first prompt, your last three prompts and a short excerpt of the last reply (the folder, prompts and reply masked in the same way as for Stretch your usage limit, below; the current name and the example session names are sent as they are); your existing category names with their session counts and up to three example session names each; and, if you ask again, the previous suggestion and your comments. The request goes to the agent's service under your account and counts toward that account's usage limits.
 
 ### What "Stretch your usage limit" sends
 
 Opening **Stretch your usage limit…** computes statistics on this machine and sends nothing. Only when you press **Analyze** in a tab does the plugin run that conversation's own agent: once, judging all nine areas, or, when the range is too large for one request, once per period, one after another, at most ten times. Codex and OpenCode are analysed for the provider their conversations used most; conversations held with another provider are left out.
 
+The range is chosen in this order: the 5-hour usage window, if it is used at least 80%; else the 7-day window, if it is; else the newest calls up to 10,000,000 weighted tokens, going back at least 24 hours and at most 7 days. The 80% (50 to 95%) and the 10,000,000 (1,000,000 to 100,000,000) are **Usage limit threshold** and **Budget** in the settings.
+
 - Claude Code: `claude -p` with Sonnet (or Opus, in the settings), without tools, nothing saved.
-- Codex: `codex exec` with a read-only sandbox, without tools and no rollout saved, on a model Codex lists for your account (`$CODEX_HOME/models_cache.json`): in the newest generation, the model named Sol, else Terra, else Luna. If Codex refuses the model, the plugin tries the next of those three, then the next older generation, then the model in `config.toml`. A local provider (Ollama, LM Studio) uses its most used model in the range.
+- Codex: `codex exec` with a read-only sandbox, without tools and no rollout saved, on a model Codex lists for your account (`$CODEX_HOME/models_cache.json`). Sol, Terra and Luna are Codex's three model tiers, named by the end of the model ID (`…-sol`, `…-terra`, `…-luna`): in the newest generation, the plugin takes the Sol model, else Terra, else Luna. If Codex refuses the model, the plugin tries the next of those three, then the next older generation, then the model in `config.toml` (the only one, if the list is missing). A local provider (Ollama, LM Studio) uses its most used model in the range.
 - OpenCode: `opencode run` without tools, with the provider and its most used model in the range; the run's session is deleted afterwards. A provider on this machine (Ollama, LM Studio, or a `baseURL` on this machine) is analysed by its local model, so nothing leaves the machine.
 
 A conversation is never sent to another agent or provider, and a tab's statistics name only that provider's sessions. Before you press **Analyze**, **Details** above it shows where the request goes, about how much is sent and in how many requests. **Show what is sent**, inside **Details**, shows the exact text of every request.
 
-What is sent is a digest of every task in the range, in numbers and short excerpts: the masked session names and folders, the range's totals, the sizes of the instruction files and the number of skills, what the statistics noticed, and for each turn your prompt (up to 600 characters), the start of the agent's reply (200 characters) and the turn's numbers (tokens, tool calls by kind, the paths read, searched or edited, interrupts, pauses, time taken, context size, cache rewrites, models). Tool output and file contents are not sent. Paths, URLs (with any user name and password in them), e-mail addresses and anything that looks like a key or token are masked, and your home folder and user name are replaced wherever they appear (in a path of any system, or as a folder name of their own). At most 60,000 characters per request; a larger digest is split into requests by period, at most ten, and beyond that the prompts are shortened and then the oldest tasks left out. How many tokens a fix could save is worked out by the plugin from the records, not by the agent. The run starts in an empty folder, `~/.agents/sessions/efficiency-run/current/`, made fresh for each run and removed when it ends; Claude Code keeps one empty project folder for it under `~/.claude/projects/`. The statistics cache holds no conversation text; the last two results, with their masked quotes, stay in `~/.agents/sessions/efficiency/` until you delete them. Unless a local model does the analysis, the request goes to the agent's service under your account and counts toward that account's usage limits.
+What is sent is a digest of every task in the range, in numbers and short excerpts: the masked session names and folders, the range's totals, the sizes of the instruction files and the number of skills, what the statistics noticed, and for each turn your prompt (up to 600 characters), the start of the agent's reply (200 characters) and the turn's numbers (tokens, tool calls by kind, the paths read, searched or edited, interrupts, pauses, time taken, context size, cache rewrites, models). Tool output and file contents are not sent. Paths, URLs (with any user name and password in them), e-mail addresses and anything that looks like a key or token are masked (a path keeps at most its last two parts, or is relative to the vault inside it; a URL keeps its host name), and your home folder and user name are replaced wherever they appear (in a path of any system, or as a folder name of their own). At most 60,000 characters per request; a larger digest is split into requests by period, at most ten, and beyond that the prompts are shortened and then the oldest tasks left out. How many tokens a fix could save is worked out by the plugin from the records, not by the agent. The run starts in an empty folder, `~/.agents/sessions/efficiency-run/current/`, made fresh for each run and removed when it ends; Claude Code keeps one empty project folder for it under `~/.claude/projects/`. The statistics cache holds no conversation text; the last two results, with their masked quotes, stay in `~/.agents/sessions/efficiency/` until you delete them. Unless a local model does the analysis, the request goes to the agent's service under your account and counts toward that account's usage limits.
 
 After an analysis, **Ask the agent to fix it** only starts a new session in the vault, with a request you can read and edit first: Claude Code in plan mode, Codex with a read-only sandbox that asks before writing, OpenCode with its `plan` agent. The plugin writes no file itself.
 
