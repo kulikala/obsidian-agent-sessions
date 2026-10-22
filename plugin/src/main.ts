@@ -111,7 +111,6 @@ import { AGENT_ICON_ID } from "./ui/icons";
 import { registerAgentIcons } from "./ui/register-icons";
 import { clearedName, sessionDisplayName } from "./sessions/name";
 import { dialogHeaderSpec, markDestructive } from "./ui/dialog-header";
-import type { SessionTarget } from "./ui/dialog-header-model";
 import { endSessionDialogModel, runEndSessionOptions } from "./sessions/end-session";
 import { restartDecision, type RestartDecision } from "./sessions/restart";
 import { resolveRowStatus } from "./sessions/terminal-status";
@@ -2829,11 +2828,11 @@ export default class AgentSessionsPlugin extends Plugin {
 
 	/** End session: confirm → `kill`, addressed by the daemon's own id (`daemonIdFor` — a linked
 	 * Codex session's row id isn't one the daemon knows). The confirmation can also archive the
-	 * session and, when a tab owns it, close that tab. */
-	endSession(id: string, target: SessionTarget | null = this.index.sessions.get(id) ?? null): void {
+	 * session (not for a tab-only row) and, when a tab owns it, close that tab. */
+	endSession(id: string, target: Row | null = this.index.sessions.get(id) ?? null): void {
 		const header = dialogHeaderSpec(this, "action.endSession", target);
 		const openAsTab = this.sessionTabLeaves(id).length > 0;
-		const dialog = endSessionDialogModel(openAsTab);
+		const dialog = endSessionDialogModel(openAsTab, target?.tabOnly === true);
 		new ConfirmModal(
 			this.app,
 			t("confirm.endSession.message"),
@@ -2842,15 +2841,18 @@ export default class AgentSessionsPlugin extends Plugin {
 				void (async () => {
 					let client: DaemonClient | null = null;
 					try {
-						client = await ensureDaemon(this.sockPath(), this.agentSessionsPath());
-						await client.hello("plugin");
-						const list = await client.list();
+						const daemon = await ensureDaemon(this.sockPath(), this.agentSessionsPath());
+						client = daemon;
+						await daemon.hello("plugin");
+						const list = await daemon.list();
 						const sessions = (list.sessions as DaemonSession[] | undefined) ?? [];
-						const res = await client.kill(this.daemonIdFor(id, sessions));
-						if (!res.ok) {
-							throw new Error(res.error ?? "unknown");
-						}
-						runEndSessionOptions(openAsTab, dialog.choices, {
+						await runEndSessionOptions(openAsTab, dialog.choices, {
+							end: async () => {
+								const res = await daemon.kill(this.daemonIdFor(id, sessions));
+								if (!res.ok) {
+									throw new Error(res.error ?? "unknown");
+								}
+							},
 							archive: () => {
 								const row = target ?? this.index.sessions.get(id);
 								if (row) {
@@ -2859,7 +2861,15 @@ export default class AgentSessionsPlugin extends Plugin {
 							},
 							closeTab: () => this.closeSessionTabs(id),
 						});
-						void this.refreshUntilExited(id);
+						const closedTab = openAsTab && dialog.choices.closeTab;
+						void this.refreshUntilExited(id).then(() => {
+							// The tab's detach also triggers this, but its 500 ms delay can fall inside the
+							// daemon's kill grace; run it once more now that the session has exited, as
+							// `TerminalView.closeTab(true)` does.
+							if (closedTab) {
+								this.scheduleCleanupExited();
+							}
+						});
 					} catch (err) {
 						new Notice(t("notice.endFailed", { error: messageOf(err) }));
 					} finally {

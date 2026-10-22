@@ -20,11 +20,15 @@ export interface EndSessionDialogModel {
 }
 
 /**
- * The End session dialog's optional actions. Archiving is always offered; closing the tab only
- * when a tab owns the session (`openAsTab`), since there is nothing to close otherwise.
+ * The End session dialog's optional actions. Archiving is offered unless the row is tab-only
+ * (`tabOnly`), since such a row has no recorded session to archive; closing the tab only when a
+ * tab owns the session (`openAsTab`), since there is nothing to close otherwise.
  */
-export function endSessionDialogModel(openAsTab: boolean): EndSessionDialogModel {
-	const options: EndSessionOption[] = [{ id: "archive", labelKey: "confirm.endSession.archive" }];
+export function endSessionDialogModel(openAsTab: boolean, tabOnly = false): EndSessionDialogModel {
+	const options: EndSessionOption[] = [];
+	if (!tabOnly) {
+		options.push({ id: "archive", labelKey: "confirm.endSession.archive" });
+	}
 	if (openAsTab) {
 		options.push({ id: "closeTab", labelKey: "confirm.endSession.closeTab" });
 	}
@@ -32,16 +36,20 @@ export function endSessionDialogModel(openAsTab: boolean): EndSessionDialogModel
 }
 
 export interface EndSessionActions {
+	/** Ends the session; a rejection means nothing else runs. */
+	end: () => Promise<void>;
 	archive: () => void;
 	closeTab: () => void;
 }
 
 /**
- * Runs the ticked actions after the session ended. Closing is only honoured when the dialog
- * offered it (`openAsTab`), keeping an unticked box — or a session without a tab — at today's
- * behaviour.
+ * Ends the session first, then runs the ticked actions in order: archive, then close tab. A
+ * failed end rejects before either, so a kill that did not reach the session leaves it untouched.
+ * Closing is only honoured when the dialog offered it (`openAsTab`), keeping an unticked box — or
+ * a session without a tab — at today's behaviour.
  */
-export function runEndSessionOptions(openAsTab: boolean, choices: EndSessionChoices, actions: EndSessionActions): void {
+export async function runEndSessionOptions(openAsTab: boolean, choices: EndSessionChoices, actions: EndSessionActions): Promise<void> {
+	await actions.end();
 	if (choices.archive) {
 		actions.archive();
 	}
