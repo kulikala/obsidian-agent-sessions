@@ -3,7 +3,7 @@
 	"name": "Agent Sessions",
 	"version": "0.6.5",
 	"minAppVersion": "1.8.7",
-	"description": "Run Claude Code, Codex and OpenCode in terminal tabs next to your notes. Sessions survive closing a tab or the app, and one list shows state, usage and cost.",
+	"description": "Run Claude Code, Codex and OpenCode in terminal tabs inside Obsidian, next to the notes in your vault. Sessions keep running after you close a tab, and you see each session's state and cost along with your Claude Code and Codex usage limits.",
 	"author": "Kaz Namba",
 	"authorUrl": "https://github.com/kulikala",
 	"isDesktopOnly": true

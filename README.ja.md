@@ -2,7 +2,7 @@
 
 # Agent Sessions
 
-**Obsidian のノートの隣で、ターミナルのエージェントに仕事を頼むための作業台です。**
+**Claude Code・Codex・OpenCode を、Obsidian の vault の中のターミナルタブで動かします。**
 
 [![Release](https://img.shields.io/github/v/release/kulikala/obsidian-agent-sessions?style=flat-square)](https://github.com/kulikala/obsidian-agent-sessions/releases)
 [![License](https://img.shields.io/github/license/kulikala/obsidian-agent-sessions?style=flat-square)](LICENSE)
@@ -10,7 +10,7 @@
 
 [インストール](#インストール) · [ドキュメント](docs/usage.md) · [English](README.md)
 
-[Claude Code](https://claude.com/claude-code)・[Codex](https://github.com/openai/codex)・[OpenCode](https://opencode.ai) を、[Obsidian](https://obsidian.md) のターミナルタブで動かすプラグインです。ノートを開いたまま、隣のタブでエージェントに作業を頼めます。
+[Claude Code](https://claude.com/claude-code)・[Codex](https://github.com/openai/codex)・[OpenCode](https://opencode.ai) を、[Obsidian](https://obsidian.md) の中のターミナルタブで動かすプラグインです。vault のノートを開いたまま、隣のタブでエージェントに作業を頼めます。
 
 ![ターミナルタブで動く Claude Code のセッションと、開いているタブ・起動中・最近のセッションを並べたサイドパネル](docs/onboarding/ja/overview.png)
 

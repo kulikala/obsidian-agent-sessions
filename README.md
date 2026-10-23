@@ -2,7 +2,7 @@
 
 # Agent Sessions
 
-**A workbench for terminal agents, next to your notes.**
+**Claude Code, Codex and OpenCode in terminal tabs inside your Obsidian vault.**
 
 [![Release](https://img.shields.io/github/v/release/kulikala/obsidian-agent-sessions?style=flat-square)](https://github.com/kulikala/obsidian-agent-sessions/releases)
 [![License](https://img.shields.io/github/license/kulikala/obsidian-agent-sessions?style=flat-square)](LICENSE)
@@ -10,7 +10,7 @@
 
 [Install](#install) · [Docs](docs/usage.md) · [日本語](README.ja.md)
 
-Run [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex) and [OpenCode](https://opencode.ai) in terminal tabs next to your notes in [Obsidian](https://obsidian.md), so an agent session can sit in a split beside your note.
+Run [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex) and [OpenCode](https://opencode.ai) in terminal tabs inside [Obsidian](https://obsidian.md), next to the notes in your vault.
 
 ![A Claude Code session in a terminal tab, with the side panel listing open, running, and recent Claude Code and Codex sessions](docs/images/overview.png)
 
