@@ -23,14 +23,11 @@ import os
 import sys
 from typing import Any, Dict, List, Optional
 
-from .. import config, transport
-from ..daemon import protocol
+from .. import config
 from ..sessions import naming, store
-from . import json_output, listing
+from . import json_output, listing, plugin_open
 
-SOCK_ENV = 'AGENT_SESSIONS_PLUGIN_SOCK'
-READ_SIZE = 65536
-TIMEOUT = 10.0
+SOCK_ENV = plugin_open.SOCK_ENV
 EVIDENCE_MAX = 300
 
 
@@ -90,26 +87,7 @@ def render_material(m: Dict[str, Any]) -> str:
 
 def ask_plugin(session: str, name: str, sock_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
     """Sends `rename` to the plugin and returns its reply, or None when no plugin answers."""
-    path = sock_path or os.environ.get(SOCK_ENV) or config.PLUGIN_SOCK_PATH
-    try:
-        sock = transport.connect(path)
-    except OSError:
-        return None
-    try:
-        sock.settimeout(TIMEOUT)
-        sock.sendall(protocol.encode_json({'op': 'rename', 'seq': 1, 'session': session, 'name': name}))
-        decoder = protocol.Decoder()
-        while True:
-            data = sock.recv(READ_SIZE)
-            if not data:
-                return None
-            frames = decoder.feed(data)
-            if frames:
-                return protocol.decode_json(frames[0][1])
-    except OSError:
-        return None
-    finally:
-        sock.close()
+    return plugin_open.request({'op': 'rename', 'seq': 1, 'session': session, 'name': name}, sock_path)
 
 
 def store_opencode_name(sid: str, cwd: str, name: str) -> None:

@@ -22,7 +22,7 @@ from agentsessions.cli import sessions as cmd_sessions
 from agentsessions.cli import suggest_name as cmd_suggest
 from agentsessions.daemon import protocol
 from agentsessions.sessions import naming, store
-from tests.cli.test_new import NewTestCase
+from tests.cli.test_new import FakePlugin as NewFakePlugin, NewTestCase
 from tests.cli.test_sessions_show import NOW, ListingTestCase, session
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -197,6 +197,27 @@ class TestResume(NewTestCase):
         self.assertEqual(rc, 2)
         self.assertIn('calling session itself', err)
         self.assertFalse(os.path.exists(self.rec + '.argv'))
+
+    def test_the_plugin_is_asked_to_open_a_tab(self):
+        self.rows = [row('aaaa1111-2222', cwd=self.work)]
+        plugin = NewFakePlugin(self.plugin_sock, {'ok': True})
+        self.addCleanup(plugin.close)
+        rc, out, _ = self.run_resume('aaaa1111-2222', '--json')
+        self.assertEqual(rc, 0)
+        self.assertTrue(json.loads(out)['opened'])
+        req = plugin.wait()
+        self.assertEqual((req['op'], req['session'], req['agent'], req['cwd']),
+                         ('open', 'aaaa1111-2222', 'claude', self.work))
+        self.assertNotIn('daemon', req)
+        self.assertNotIn('name', req)
+
+    def test_without_a_plugin_the_session_still_resumes_and_reports_no_tab(self):
+        self.rows = [row('aaaa1111-2222', cwd=self.work)]
+        rc, out, _ = self.run_resume('aaaa1111-2222', '--json')
+        self.assertEqual(rc, 0)
+        result = json.loads(out)
+        self.assertFalse(result['opened'])
+        self.assertTrue(any('Obsidian did not answer' in w for w in result['warnings']))
 
     def test_an_unknown_session_or_a_missing_folder_is_exit_2(self):
         self.rows = [row('aaaa1111-2222', cwd=os.path.join(self.tmp, 'gone'))]

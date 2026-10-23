@@ -29,10 +29,11 @@ delegate work, or because it looks useful.
 - Codex cannot be named at launch: `--name` is ignored for it (a warning is printed).
 {{endif}}
 - `--prompt` is the new session's first message. Use it only with text the user gave; never make one up.
+- The session opens as a tab in Obsidian right away when Obsidian is running. Without Obsidian it still runs in the daemon; open it with `attach`, or from the list after its first message.
 {{if late}}
-- With {{LATE}} the session is recorded only after its first message, so without `--prompt` the command exits 0 as soon as the process is up, and the session appears under its real id after that message (Obsidian links it).
+- With {{LATE}} the session is recorded only after its first message, so without `--prompt` the command exits 0 as soon as the process is up; the tab shows it at once and the list has it under its real id after that message (Obsidian links it).
 {{endif}}
-- Run it once. Exit 0: report what it printed (id, name, {{if claude}}Remote Control URL, {{endif}}how to open). Exit 1: it started but was not confirmed in time; report the id and how to open it, and do not run it again (that starts a second session). Exit 2: it could not start; report the error.
+- Run it once. Exit 0 means the session is running and registered: report what it printed (id, name, {{if claude}}Remote Control URL, {{endif}}whether the tab opened, how to open it). Exit 1: it started but was not confirmed in time; report the id and how to open it, and do not run it again (that starts a second session). Exit 2: it could not start; report the error.
 - Stop or remove a session only when the user asks.
 
 ## Usage statistics
@@ -73,9 +74,9 @@ Only when the user explicitly asks to wake up or resume a session. Never resume 
 "{{LAUNCHER}}" resume '<id, id prefix or name>' [--prompt '<message>']
 ```
 
-- It resumes a session whose status is `ended` in the background, with the settings Obsidian uses; it refuses any other status and this session itself. No tab opens: the session shows as running in Obsidian's list, which opens it.
+- It resumes a session whose status is `ended` with the settings Obsidian uses; it refuses any other status and this session itself. The session opens as a tab in Obsidian right away when Obsidian is running; without it the session still runs in the background and shows as running in Obsidian's list, which opens it.
 - `--prompt` is a message sent to it as it resumes. Use it only with text the user gave; never make one up.
-- Run it once. Exit 0: report what it printed. Exit 1: it started but was not confirmed; report that and do not run it again (that starts a second process). Exit 2: it could not start; report the error.
+- Run it once. Exit 0 means the session is running and registered: report what it printed, including whether the tab opened. Exit 1: it started but was not confirmed; report that and do not run it again (that starts a second process). Exit 2: it could not start; report the error.
 
 ## Waste in this session
 

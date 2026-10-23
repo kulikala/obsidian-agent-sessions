@@ -1,6 +1,8 @@
 // The plugin's own socket. Listens on `~/.agents/sessions/plugin.sock` and receives
-// `J {"op":"edit","seq","file","session","cwd"}` from `agent-sessions edit`, and
-// `J {"op":"rename","seq","session","name"}` from `agent-sessions suggest-name --apply`. Frames share
+// `J {"op":"edit","seq","file","session","cwd"}` from `agent-sessions edit`,
+// `J {"op":"rename","seq","session","name"}` from `agent-sessions suggest-name --apply`, and
+// `J {"op":"open","seq","session","agent","cwd","daemon"?,"name"?}` from
+// `agent-sessions new`/`resume` (a tab for a session already running in the daemon). Frames share
 // `daemon-client.ts`'s `encodeFrame`/`FrameDecoder` (using kind `J` only).
 //
 // One request per connection. Replies via `reply`, then closes the connection. If the other
@@ -79,6 +81,25 @@ export interface RenameReply {
 
 export type RenameHandler = (req: RenameRequest) => Promise<RenameReply>;
 
+/** An `open` request: a session already running in the daemon, which the plugin opens as a tab. */
+export interface OpenRequest {
+	session: string;
+	agent: string;
+	cwd: string;
+	/** The daemon id the session runs under, when it differs from `session` (a linked Codex or
+	 * OpenCode session: `session` is the real thread/session id, `daemon` the PTY's id). */
+	daemon?: string;
+	/** The name to show until the session's own is known (`pendingNames`). */
+	name?: string;
+}
+
+export interface OpenReply {
+	ok: boolean;
+	error?: string;
+}
+
+export type OpenHandler = (req: OpenRequest) => Promise<OpenReply>;
+
 interface Conn {
 	socket: net.Socket;
 	gate: TokenGate;
@@ -93,6 +114,7 @@ export class EditServer {
 	private sockPath = "";
 	private handler: EditHandler | null = null;
 	private renameHandler: RenameHandler | null = null;
+	private openHandler: OpenHandler | null = null;
 	private conns = new Set<Conn>();
 	private token: string | null = null;
 
@@ -102,6 +124,10 @@ export class EditServer {
 
 	onRename(handler: RenameHandler): void {
 		this.renameHandler = handler;
+	}
+
+	onOpen(handler: OpenHandler): void {
+		this.openHandler = handler;
 	}
 
 	/** Removes any stale socket, starts listening (a `0600` Unix socket, or loopback TCP plus a token on Windows — see `transport.ts`). */
@@ -208,6 +234,10 @@ export class EditServer {
 			this.handleRename(conn, seq, msg);
 			return;
 		}
+		if (msg.op === "open") {
+			this.handleOpen(conn, seq, msg);
+			return;
+		}
 		if (msg.op !== "edit") {
 			this.send(conn, { ok: false, error: "unknown-op", seq });
 			return;
@@ -250,6 +280,33 @@ export class EditServer {
 			return;
 		}
 		this.renameHandler({ session: msg.session, name: msg.name }).then(finish, (err: unknown) =>
+			finish({ ok: false, error: err instanceof Error ? err.message : String(err) })
+		);
+	}
+
+	/** An `open` request: answered once the tab is open (or the handler has found it can't be), then
+	 * the connection closes. */
+	private handleOpen(conn: Conn, seq: number, msg: Record<string, unknown>): void {
+		const finish = (body: OpenReply): void => {
+			conn.replied = true;
+			this.send(conn, { ...body, seq });
+			conn.socket.end();
+		};
+		if (typeof msg.session !== "string" || !msg.session || typeof msg.agent !== "string" || !msg.agent) {
+			finish({ ok: false, error: "bad-request" });
+			return;
+		}
+		if (!this.openHandler) {
+			finish({ ok: false, error: "unavailable" });
+			return;
+		}
+		this.openHandler({
+			session: msg.session,
+			agent: msg.agent,
+			cwd: typeof msg.cwd === "string" ? msg.cwd : "",
+			daemon: typeof msg.daemon === "string" && msg.daemon ? msg.daemon : undefined,
+			name: typeof msg.name === "string" && msg.name.trim() ? msg.name : undefined,
+		}).then(finish, (err: unknown) =>
 			finish({ ok: false, error: err instanceof Error ? err.message : String(err) })
 		);
 	}
