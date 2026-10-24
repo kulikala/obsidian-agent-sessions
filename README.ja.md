@@ -42,7 +42,7 @@
 ## 動作に必要なもの
 
 - デスクトップ版の Obsidian 1.8.7 以降（macOS、Linux、Windows）。
-- Python 3.9〜3.14。追加のパッケージは要りません。補助プログラムは Python で動きます。見つかった Python が 3.15 以降でも、プラグインはそのまま使います。ただし、これらの版はまだテストしていません。3.15 への対応は [Issue #2](https://github.com/kulikala/obsidian-agent-sessions/issues/2) で進めています。
+- Python 3.9〜3.14。追加のパッケージは要りません。補助プログラムは Python で動きます。
 - Claude Code、Codex、OpenCode のどれか 1 つ以上を、インストールしてログインしておきます。エージェントは、あなた自身の契約やキーで動きます。このプラグインのためのアカウントやキーは要りません。
 - どれもまだ使ったことがなければ、先に公式ページからインストールしてください（[Claude Code](https://claude.com/claude-code)、[Codex](https://github.com/openai/codex)、[OpenCode](https://opencode.ai)）。
 
