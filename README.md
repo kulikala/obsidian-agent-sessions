@@ -8,13 +8,13 @@
 [![License](https://img.shields.io/github/license/kulikala/obsidian-agent-sessions?style=flat-square)](LICENSE)
 ![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux%20%7C%20Windows-lightgrey?style=flat-square)
 
-[Install](#install) · [Docs](docs/usage.md) · [日本語](README.ja.md)
+[Install](#install) · [Docs](docs/usage.md) · [Troubleshooting](#troubleshooting) · [Disclosures](#disclosures) · [日本語](README.ja.md)
 
 Run [Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex) and [OpenCode](https://opencode.ai) in terminal tabs inside [Obsidian](https://obsidian.md), next to the notes in your vault.
 
 ![A Claude Code session in a terminal tab, with the side panel listing open, running, and recent Claude Code and Codex sessions](docs/images/overview.png)
 
-- **Sessions keep running when you close a tab or quit Obsidian.** A small helper program on your machine keeps them going. ([Programs it starts](#programs-it-starts))
+- **Sessions keep running when you close a tab or quit Obsidian.** A small helper program on your machine, `agent-sessions` (run by Python), keeps them going. ([Programs it starts](#programs-it-starts))
 - **An ended session picks up where it left off.** Click it in the side panel, and its conversation continues in a new tab. ([Switch between sessions](#switch-between-sessions-in-the-side-panel))
 - **One list shows every session's state, usage and cost.** You see which sessions are running, waiting for you or done. Usage and cost are worked out on your machine from the agents' own files. ([Network](#network))
 
@@ -26,7 +26,7 @@ For people who have agents write documents, often for several projects at once.
 - You keep several projects going at once and want to see which session needs you.
 - You keep your documents in Obsidian and want its editor next to the terminal.
 
-**Not for** people who want a chat panel or an agent that edits the open note in place (you get the agent's own terminal), people who work only on mobile, or people who want Obsidian on Windows to use agents inside WSL.
+**Not for** people who want a chat panel or an agent that edits the open note in place (you get the agent's own terminal), people who work only on mobile, or people who want Obsidian on Windows to use agents inside WSL (see [Supported environments](#supported-environments)).
 
 ## What Install does
 
@@ -34,30 +34,33 @@ For people who have agents write documents, often for several projects at once.
 
 The plugin shows this dialog before it installs anything.
 
-- No telemetry and no account. Apart from Remote Control, Claude Code's `/usage`, the welcome guide's pictures and, on Windows, the install buttons, all described under [Network](#network), the plugin makes no network connections.
-- The plugin writes four hooks and a status line to `~/.claude/settings.json`, after backing up the file. ([Files it writes](#files-it-writes))
-- To remove the program and its entries in the agents' settings: **Settings → agent-sessions program → Remove**. ([Uninstall](#uninstall))
+- No telemetry and no account. The plugin connects to the network only for the things listed under [Network](#network).
+- The plugin writes four hooks (commands Claude Code runs at set moments) and a status line to `~/.claude/settings.json`, after backing up the file. Through them, Claude Code tells the plugin each session's state and its usage. The hooks apply to all your Claude Code sessions, including ones started outside Obsidian. ([Files it writes](#files-it-writes))
+- The plugin adds two agent skills to the vault, so that an agent can answer questions about your sessions, your usage and the plugin. ([Files it writes](#files-it-writes))
+- To remove the program and its entries in the agents' settings, the hooks and status line included: **Settings → agent-sessions program → Remove**. ([Uninstall](#uninstall))
 
 ## Requirements
 
 - Obsidian 1.8.7 or later, on desktop: macOS, Linux or Windows.
 - Python 3.9 or later, with no extra packages. Python runs the helper program.
-- Claude Code, Codex or OpenCode, installed and signed in. Your own subscription is used; the plugin needs no account or key.
+- Claude Code, Codex or OpenCode, installed and signed in. The agents run on your own subscription or key; the plugin needs no account or key of its own.
 - If you have not used any of them, install one from its official page first ([Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex), [OpenCode](https://opencode.ai)), then come back.
 
-## Choose your agent
+## Supported agents
 
-All three open in tabs and appear in the lists. They differ in the usage figures they report.
+All three open in tabs and appear in the lists with their state. They differ mainly in the usage figures. Claude Code and Codex subscriptions limit how much you can use in each 5-hour and 7-day window, and the plugin shows how much of each you have used.
 
-| Agent | Opens in a tab | Listed with its state | Usage and cost |
+| Agent | Opens in a tab | Listed with its state | Usage limits and cost |
 |---|---|---|---|
 | Claude Code | ✅ Yes | ✅ Yes | ✅ Yes |
 | Codex | ✅ Yes | ✅ Yes | ✅ Yes |
 | OpenCode | ✅ Yes | ✅ Yes | Cost only |
 
+OpenCode has no 5-hour or 7-day usage limits, so only its cost is shown. Its sub-agent sessions and `opencode run` sessions are not listed.
+
 ## Why inside Obsidian
 
-- The prompt editor (Ctrl+G) is an Obsidian pane with `@` file completion, normal paste, undo and IME. [More](docs/usage.md#built-in-editor)
+- The agents' key for writing a prompt in an external editor (Ctrl+G by default in this plugin) opens an Obsidian pane instead, with `@` file completion, normal paste and undo, and input methods for languages such as Japanese and Chinese. [More](docs/usage.md#built-in-editor)
 - Vault paths in the agent's output open as links.
 - A session is an ordinary Obsidian tab, so it sits in a split beside a note.
 
@@ -65,7 +68,7 @@ All three open in tabs and appear in the lists. They differ in the usage figures
 
 ### Sessions by category, with usage and cost
 
-The **Session manager** groups sessions named `Category: Name` and shows their cost per 5-hour and 7-day window. Below, the usage windows of Claude Code and Codex show the time until they reset and whether you will reach the limit at your current pace. Costs are estimates. [More](docs/usage.md#session-manager)
+The **Session manager** groups sessions by category (a session named `Docs: Release notes` is in Docs) and shows their cost per 5-hour and 7-day window. Below the sessions, each window shows the time until it resets and whether you will reach the limit at your current pace. Costs are estimates. [More](docs/usage.md#session-manager)
 
 ![The Session manager: sessions grouped by category with model, effort and cost, and below, the 5-hour and 7-day windows and cost per category](docs/images/manager.png)
 
@@ -89,11 +92,11 @@ Open tabs, running sessions without a tab, and recent ones, each with an icon fo
 
 ### And more
 
-- **[Remote Control](docs/usage.md#remote-control-server)**: the **rc** toggle lets claude.ai and the Claude app start Claude Code sessions in this vault. What it connects to: [Network](#network).
+- **[Remote Control](docs/usage.md#remote-control-server)**: Claude Code's Remote Control, switched on with the **rc** toggle in the side panel, lets claude.ai and the Claude app start Claude Code sessions in this vault. What it connects to: [Network](#network).
 - **[Rename and sort into categories](docs/usage.md#name-and-group-sessions)**: a name like `Docs: Release notes` puts a session in the Docs category.
 - **[Names and categories suggested by an agent](docs/usage.md#organize-names-and-categories)**: nothing is renamed until you press **Apply selected**. The agent that makes the suggestions receives session excerpts; see [What Organize sends](#what-organize-sends).
-- **[Compact, restart or change model](docs/usage.md#compact-restart-and-change-model)** from the session's ⋯ menu.
-- **[Stretch your usage limit](docs/usage.md#stretch-your-usage-limit)**: an agent looks through your recent work for wasted tokens in nine areas and says what to change. The statistics are worked out on this machine and stay there; only the analysis you start sends anything. See [What "Stretch your usage limit" sends](#what-stretch-your-usage-limit-sends).
+- **[Compact, restart or change model](docs/usage.md#compact-restart-and-change-model)**: from the session's ⋯ menu, compact its conversation to free context, restart the agent, or switch to another model.
+- **[Stretch your usage limit](docs/usage.md#stretch-your-usage-limit)**: this does not raise the limit. An agent looks through your recent work for wasted tokens, such as large output left in a conversation or the same files read at the start of every session, and says what to change. Its token statistics are worked out on this machine and stay there; only the analysis you start sends anything. See [What "Stretch your usage limit" sends](#what-stretch-your-usage-limit-sends).
 - **[Session analytics](docs/usage.md#session-analytics)**: one session's cost, tokens and turns, with each prompt's own cost.
 - **[Activity calendar](docs/usage.md#activity-calendar)**: when each agent was working, shown by 7-day usage window, by week or by day.
 - **[Welcome guide](docs/usage.md#welcome-guide)** and two [agent skills](docs/usage.md#agent-skills), which are added to the vault: the guide takes you through setup step by step, and the skills let an agent answer questions about your usage, your other sessions (ended ones too) or the plugin, resume an ended session, find where its session wasted tokens, or name a session.
@@ -114,8 +117,8 @@ Obsidian and the agent must run in the same operating system, because the plugin
 
 ## Install
 
-1. In Obsidian, open **Settings → Community plugins → Browse**, search for **Agent Sessions**, install and enable it.
-2. Follow the welcome guide that opens. It installs the `agent-sessions` helper program and starts your first session. To come back to it later, run **Continue the welcome guide** from the command palette.
+1. In Obsidian, open **Settings → Community plugins**, turn community plugins on if they are off, then choose **Browse**, search for **Agent Sessions**, install and enable it.
+2. Follow the welcome guide that opens. It installs the `agent-sessions` helper program and starts your first session. During setup it shows whether Python and each agent were found; if one is missing, see [Requirements](#requirements). To come back to the guide later, run **Continue the welcome guide** from the command palette.
 
 Where the program goes, and installing from source: [`docs/installation.md`](docs/installation.md).
 
@@ -137,19 +140,14 @@ Where the program goes, and installing from source: [`docs/installation.md`](doc
 
 Source installs: [`docs/installation.md`](docs/installation.md#uninstall).
 
-## What it does not do
-
-- It sends no conversation text anywhere, except when you press **Suggest** in Organize or **Analyze** in Stretch your usage limit.
-- OpenCode has no 5-hour or 7-day usage windows, so none are shown. Its sub-agent sessions and `opencode run` sessions are not listed.
-
 ## Disclosures
 
-No telemetry and no account. The agents in your tabs have the same permissions as in your terminal and connect to their own services under your accounts. The agents that Organize and Stretch start have fewer (see below), and Remote Control sessions use the mode you choose.
+No telemetry and no account. The plugin itself sends no conversation text anywhere, except when you press **Suggest** in Organize names and categories or **Analyze** in Stretch your usage limit. Remote Control, when you turn it on, works as described under [Network](#network). The agents in your tabs have the same permissions as in your terminal and connect to their own services under your accounts. The agents that Organize and Stretch start have fewer permissions (see [What Organize sends](#what-organize-sends) and [What "Stretch your usage limit" sends](#what-stretch-your-usage-limit-sends)), and Remote Control sessions use the mode you choose.
 
 ### Network
 
-- Apart from Remote Control, Claude Code's `/usage`, the welcome guide's pictures and the Windows install buttons, all described below, the plugin and its program make no network connections for their own work. The plugin talks to the program's background process on this machine: a Unix socket (mode 0600), or on Windows `127.0.0.1` on a random port with a secret token.
-- Remote Control, when you switch it on with the **rc** toggle in the side panel, runs `claude remote-control --spawn=same-dir --permission-mode <mode>` in the vault folder. That Claude Code process stays connected to Anthropic's servers and starts a session in this vault for each connection made from claude.ai or the Claude app by anyone signed in to your Claude account. You choose the mode with **Remote Control permission mode** in the plugin's settings, under Claude Code: default (asks for permission as Claude Code normally does), acceptEdits, plan or auto. The default is auto, where Claude uses tools without asking and Claude Code's classifier blocks risky actions; if Claude Code does not accept auto, the sessions run in its default mode. The first time you turn the toggle on, and again the first time after you change the mode to auto, a dialog names the mode, says who can start sessions and, for auto, that Claude uses tools without asking; the server starts only if you confirm. It is off until you click the toggle, and it is never started by loading Obsidian or the plugin. Quitting Obsidian does not stop it, because the program's background process runs the server; switch the toggle off, or use **Remove**, to stop it.
+- Apart from Remote Control, Claude Code's `/usage`, the welcome guide's pictures and the Windows install buttons, all described below, the plugin and its program make no network connections for their own work. The plugin talks to the program's background process on this machine: a Unix socket (mode 0600, so only your user can open it), or on Windows `127.0.0.1` on a random port with a secret token.
+- Remote Control, when you switch it on with the **rc** toggle in the side panel, runs `claude remote-control --spawn=same-dir --permission-mode <mode>` in the vault folder (`same-dir` starts every session in that folder). That Claude Code process stays connected to Anthropic's servers and starts a session in this vault for each connection made from claude.ai or the Claude app by anyone signed in to your Claude account. You choose the mode with **Remote Control permission mode** in the plugin's settings, under Claude Code: default (asks for permission as Claude Code normally does), acceptEdits, plan or auto. The default is auto, where Claude uses tools without asking and Claude Code's classifier (which judges how risky an action is) blocks risky actions; if Claude Code does not accept auto, the sessions run in Claude Code's default mode, which asks for permission. The first time you turn the toggle on, and again the first time after you change the mode to auto, a dialog names the mode, says who can start sessions and, for auto, that Claude uses tools without asking; the server starts only after you confirm. It is off until you click the toggle, and it is never started by loading Obsidian or the plugin. Quitting Obsidian does not stop it, because the program's background process runs the server; switch the toggle off, or use **Remove**, to stop it.
 - When Claude Code's status line can't tell your usage windows (you used Claude elsewhere, or a window has just reset), and when you click a usage display to refresh it, the program runs Claude Code's `/usage`, at most once every 5 minutes. Claude Code then asks Anthropic's servers for your account's current usage. It sends no prompt or file and calls no model.
 - While the welcome guide is open, it loads its pictures from `raw.githubusercontent.com`. No data of yours is sent; GitHub sees your IP address and which picture is requested. Turn this off with **Load the guide's pictures from GitHub** in the settings.
 - On Windows, an install button for Python or Claude Code runs `winget install` for your user only. WinGet downloads the package from its source on the internet. Nothing runs until you click the button.
@@ -179,7 +177,13 @@ If `opencode.db` cannot be opened read-only, it is copied, with its `-wal` and `
 
 These are the default places. The plugin follows `$CLAUDE_CONFIG_DIR` in place of `~/.claude` for `settings.json` and `keybindings.json`, `$XDG_DATA_HOME` for OpenCode's database and `$XDG_CONFIG_HOME` for `~/.config/opencode/`.
 
-For Stretch your usage limit, it reads the Claude Code transcripts, Codex rollouts and OpenCode database listed above. Claude Code records the sizes of `CLAUDE.md`, `.claude/rules/` and auto memory `MEMORY.md` and the number of skills at each session's start, and Codex the `AGENTS.md` it loaded; for OpenCode it reads the size of `AGENTS.md` (or `CLAUDE.md`) in the session's folder and the folders above it up to the Git root, and of `~/.config/opencode/AGENTS.md`. It also reads the top-level `model` and `model_provider` of `$CODEX_HOME/config.toml` and the model list in `$CODEX_HOME/models_cache.json`, and the providers' `baseURL` in `~/.config/opencode/opencode.json` (to tell local models). To tell which instruction file covers a file that sessions keep reading, it looks in the folders above that file for a `.git`, a `CLAUDE.md` or (Codex and OpenCode) an `AGENTS.md`.
+For Stretch your usage limit, it also reads:
+
+- The records listed above: Claude Code's transcripts (the conversation files), Codex's rollouts (its session files) and OpenCode's database.
+- The sizes of the instruction files each conversation loads first. Claude Code's transcripts record the sizes of `CLAUDE.md`, `.claude/rules/` and auto memory `MEMORY.md` and the number of skills at each session's start, and Codex's rollouts the `AGENTS.md` it loaded. For OpenCode, it reads the size of `AGENTS.md` (or `CLAUDE.md`) in the session's folder and the folders above it up to the Git root, and of `~/.config/opencode/AGENTS.md`.
+- The top-level `model` and `model_provider` of `$CODEX_HOME/config.toml` and the model list in `$CODEX_HOME/models_cache.json`, to choose the model for the analysis.
+- The providers' `baseURL` in `~/.config/opencode/opencode.json`, to tell which models run on this machine.
+- For a file that sessions keep reading, the folders above it, looking for a `.git`, a `CLAUDE.md` or (Codex and OpenCode) an `AGENTS.md`, to tell which instruction file covers it.
 
 ### Files it writes
 
@@ -196,7 +200,7 @@ For Stretch your usage limit, it reads the Claude Code transcripts, Codex rollou
 | a temporary file | the prompt being edited | built-in editor open |
 | a temporary folder | a copy of `opencode.db` with its `-wal` and `-shm` files, only if it cannot be opened read-only | while it is read; removed when closed |
 | `~/.agents/sessions/efficiency/cache/` | statistics for Stretch your usage limit (numbers and relative paths, no conversation text) | Stretch your usage limit opened |
-| `~/.agents/sessions/efficiency/last-<tab>.json`, `prev-<tab>.json` | the last two analyses of each tab (`claude`, `codex-openai`, `opencode-ollama`, …), with masked quotes | after Analyze |
+| `~/.agents/sessions/efficiency/last-<tab>.json`, `prev-<tab>.json` | the last two analyses of each tab in the Stretch dialog (one tab per agent and provider: `claude`, `codex-openai`, `opencode-ollama`, …), with masked quotes | after Analyze |
 | `~/.agents/sessions/efficiency-run/current/` | the analysis's empty working folder | during Analyze |
 | `<vault>/.agents/sessions/sessions.json` | sessions started here (folder, agent), archive, category colors, folded groups | always |
 | `<vault>/.claude/skills/` | the `agent-sessions` and `agent-sessions-help` skills | Claude Code enabled |
@@ -217,13 +221,13 @@ Nothing is sent until you press **Suggest** in **Organize names and categories**
 - Codex: `codex exec` in a read-only sandbox, without tools (shell, web search, MCP servers).
 - OpenCode: `opencode run` without tools, its stored session deleted afterwards.
 
-For up to 30 sessions, or the one you chose, it sends the current name, the folder, the first prompt, your last three prompts and a short excerpt of the last reply (the folder, prompts and reply masked in the same way as for Stretch your usage limit, below; the current name and the example session names are sent as they are); your existing category names with their session counts and up to three example session names each; and, if you ask again, the previous suggestion and your comments. The request goes to the agent's service under your account and counts toward that account's usage limits.
+For up to 30 sessions, or for the one session you opened it from, it sends the current name, the folder, the first prompt, your last three prompts and a short excerpt of the last reply (the folder, prompts and reply masked in the same way as for Stretch your usage limit, below; the current name and the example session names are sent as they are); your existing category names with their session counts and up to three example session names each; and, if you ask again, the previous suggestion and your comments. The request goes to the agent's service under your account and counts toward that account's usage limits.
 
 ### What "Stretch your usage limit" sends
 
-Opening **Stretch your usage limit…** computes statistics on this machine and sends nothing. Only when you press **Analyze** in a tab does the plugin run that conversation's own agent: once, judging all nine areas, or, when the range is too large for one request, once per period, one after another, at most ten times. Codex and OpenCode are analysed for the provider their conversations used most; conversations held with another provider are left out.
+Opening **Stretch your usage limit…** computes statistics on this machine and sends nothing. Only when you press **Analyze** in a tab does the plugin run that conversation's own agent: once, judging all nine checks ([listed in the docs](docs/usage.md#stretch-your-usage-limit)), or, when the range is too large for one request, once per period, one after another, at most ten times. Codex and OpenCode are analysed for the provider their conversations used most; conversations held with another provider are left out.
 
-The range is chosen in this order: the 5-hour usage window, if it is used at least 80%; else the 7-day window, if it is; else the newest calls up to 10,000,000 weighted tokens, going back at least 24 hours and at most 7 days. The 80% (50 to 95%) and the 10,000,000 (1,000,000 to 100,000,000) are **Usage limit threshold** and **Budget** in the settings.
+The range is chosen in this order: the 5-hour usage window, if it is used at least 80%; else the 7-day window, if it is; else the newest calls up to 10,000,000 weighted tokens (input, output and cache tokens weighted to one scale), going back at least 24 hours and at most 7 days. The 80% (50 to 95%) and the 10,000,000 (1,000,000 to 100,000,000) are **Usage limit threshold** and **Budget** in the settings.
 
 - Claude Code: `claude -p` with Sonnet (or Opus, in the settings), without tools, nothing saved.
 - Codex: `codex exec` with a read-only sandbox, without tools and no rollout saved, on a model Codex lists for your account (`$CODEX_HOME/models_cache.json`). Sol, Terra and Luna are Codex's three model tiers, named by the end of the model ID (`…-sol`, `…-terra`, `…-luna`): in the newest generation, the plugin takes the Sol model, else Terra, else Luna. If Codex refuses the model, the plugin tries the next of those three, then the next older generation, then the model in `config.toml` (the only one, if the list is missing). A local provider (Ollama, LM Studio) uses its most used model in the range.
@@ -231,9 +235,18 @@ The range is chosen in this order: the 5-hour usage window, if it is used at lea
 
 A conversation is never sent to another agent or provider, and a tab's statistics name only that provider's sessions. Before you press **Analyze**, **Details** above it shows where the request goes, about how much is sent and in how many requests. **Show what is sent**, inside **Details**, shows the exact text of every request.
 
-What is sent is a digest of every task in the range, in numbers and short excerpts: the masked session names and folders, the range's totals, the sizes of the instruction files and the number of skills, what the statistics noticed, and for each turn your prompt (up to 600 characters), the start of the agent's reply (200 characters) and the turn's numbers (tokens, tool calls by kind, the paths read, searched or edited, interrupts, pauses, time taken, context size, cache rewrites, models). Tool output and file contents are not sent. Paths, URLs (with any user name and password in them), e-mail addresses and anything that looks like a key or token are masked (a path keeps at most its last two parts, or is relative to the vault inside it; a URL keeps its host name), and your home folder and user name are replaced wherever they appear (in a path of any system, or as a folder name of their own). At most 60,000 characters per request; a larger digest is split into requests by period, at most ten, and beyond that the prompts are shortened and then the oldest tasks left out. How many tokens a fix could save is worked out by the plugin from the records, not by the agent. The run starts in an empty folder, `~/.agents/sessions/efficiency-run/current/`, made fresh for each run and removed when it ends; Claude Code keeps one empty project folder for it under `~/.claude/projects/`. The statistics cache holds no conversation text; the last two results, with their masked quotes, stay in `~/.agents/sessions/efficiency/` until you delete them. Unless a local model does the analysis, the request goes to the agent's service under your account and counts toward that account's usage limits.
+What is sent is a digest of every task in the range, in numbers and short excerpts:
 
-After an analysis, **Ask the agent to fix it** only starts a new session in the vault, with a request you can read and edit first: Claude Code in plan mode, Codex with a read-only sandbox that asks before writing, OpenCode with its `plan` agent. The plugin writes no file itself.
+- **Sent**: the masked session names and folders, the range's totals, the sizes of the instruction files and the number of skills, and what the statistics noticed. For each turn (one prompt of yours and the agent's work on it): the prompt (up to 600 characters), the start of the agent's reply (200 characters) and the turn's numbers (tokens, tool calls by kind, the paths read, searched or edited, interrupts, pauses, time taken, context size, cache rewrites, models).
+- **Not sent**: tool output and file contents.
+- **Masked**: paths, URLs (with any user name and password in them), e-mail addresses and anything that looks like a key or token. A path keeps at most its last two parts, or is relative to the vault inside it; a URL keeps its host name. Your home folder and user name are replaced wherever they appear, in a path of any system or as a folder name of their own.
+- **Size**: at most 60,000 characters per request. A larger digest is split into requests by period, at most ten; beyond that the prompts are shortened, and then the oldest tasks left out.
+- **Savings**: how many tokens a fix could save is worked out by the plugin from the records, not by the agent.
+- **Where it runs**: in an empty folder, `~/.agents/sessions/efficiency-run/current/`, made fresh for each run and removed when it ends. Claude Code keeps one empty project folder for it under `~/.claude/projects/`.
+- **What stays**: the statistics cache holds no conversation text. The last two results, with their masked quotes, stay in `~/.agents/sessions/efficiency/` until you delete them.
+- **Whose account**: unless a local model does the analysis, the request goes to the agent's service under your account and counts toward that account's usage limits.
+
+After an analysis, an issue that a file or setting can fix has **Ask the agent to fix it**. It only starts a new session in the vault, with a request you can read and edit first, set to ask before it changes anything: Claude Code in plan mode (it proposes the change and waits for your approval), Codex with a read-only sandbox that asks before writing, OpenCode with its `plan` agent. The plugin writes no file itself.
 
 ### Other access
 
