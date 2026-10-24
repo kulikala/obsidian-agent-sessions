@@ -1,7 +1,7 @@
 {
 	"id": "agent-sessions",
 	"name": "Agent Sessions",
-	"version": "0.6.5",
+	"version": "0.6.6",
 	"minAppVersion": "1.8.7",
 	"description": "Run Claude Code, Codex and OpenCode in terminal tabs in your vault, next to your notes. Sessions keep running after you close a tab. See each session's state and cost, and your usage limits.",
 	"author": "Kaz Namba",
