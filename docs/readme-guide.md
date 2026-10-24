@@ -20,6 +20,10 @@ The README is read before someone has the plugin, while they install it, and whe
 
 **Be complete where the reader has to trust it.** The disclosures name every network connection, program started, file read and file written, with real paths and what is sent where. Obsidian's plugin guidelines require them in the README, and here completeness matters more than length.
 
+**Give the Python range the tests cover.** Requirements names the oldest and the newest Python the plugin is tested on. The oldest is `MIN_PYTHON` in `plugin/src/backend/bundle.ts`. A version counts as tested when CI runs the Python suite on it (`python-version` in `.github/workflows/test.yml`) or a smoke run for the release records it (the Environment block of the results, [testing.md](testing.md#reading-the-results)). Write "or later" only when the newest Python release is tested. If a version within the range behaves differently, or one outside it is known not to work, Requirements says so. The README gives the range; the evidence stays in CI and in the smoke results.
+
+When the range changes, search the repository for the old versions and change every place that states the supported range, including `README.ja.md`, `docs/installation.md`, `docs/requirements.md` (R-P1), `docs/principles.md`, `docs/testing.md` and `agentsessions/skills/agent-sessions-help/reference.md`.
+
 **State what is true now.** The README describes the current release. Dates, test runs, plans and the history of changes belong in commits.
 
 **Keep what other pages depend on.** `docs/` and the plugin's messages link to headings in the README, so those anchors stay. `README.md` and `README.ja.md` have the same sections, pictures and links, which `tools/audit` checks.
@@ -32,7 +36,7 @@ Then put the Japanese through [yomiyasu](https://github.com/nanaism/yomiyasu): i
 
 ## Writing and reviewing a change
 
-1. Write the English. Check every fact against the code.
+1. Write the English. Check every fact against the code, and the Python range in Requirements against CI's `python-version` and the Python the release's smoke runs recorded.
 2. Write the Japanese anew and put it through yomiyasu.
 3. Have each language reviewed by someone who did not write it and reads only the page. They read it from the top, once as each reader above, and report what does not make sense on its own, what is said twice, what a pointing word leaves unclear, and claims nothing backs. Fix what they report and have them read the change again until nothing is left.
 4. Run `node tools/audit/run.mjs`.

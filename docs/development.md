@@ -71,7 +71,7 @@ CI runs the static checks on every push and pull request (the `audit` job in `.g
 
 ## Release (maintainers)
 
-Run the audit first ([Before pushing or releasing](#before-pushing-or-releasing)) and the price check ([Updating the price table](#updating-the-price-table)), then:
+Run the audit first ([Before pushing or releasing](#before-pushing-or-releasing)) and the price check ([Updating the price table](#updating-the-price-table)). Then check the Python range in the README's Requirements as [`readme-guide.md`](readme-guide.md#aims) describes: compare it with `MIN_PYTHON`, the `python-version` in `.github/workflows/test.yml`, and the Python in the Environment block of every target's smoke result for this release ([Reading the results](testing.md#reading-the-results)). If an end of the range was not tested, run the suite or a smoke run on that Python, or narrow the range and update every place the guide lists. Then:
 
 ```sh
 cd plugin && npm version minor --no-git-tag-version   # or patch / major; updates plugin/package.json, plugin/manifest.json, the root manifest.json, and versions.json
