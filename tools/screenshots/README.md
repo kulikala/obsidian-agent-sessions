@@ -47,6 +47,12 @@ node tools/screenshots/shoot.mjs --plugin-js $SCRATCH/main.js   # add --keep to 
 node tools/screenshots/shoot.mjs --efficiency --out "$SCRATCH/shots" --plugin-js $SCRATCH/main.js
 ```
 
+`--readme-scene` shoots the README's hero image (`overview.png`) and recording (`see-it-work.gif`) in a sample vault: a design spec being written in a terminal tab, the spec open beside it, the side panel listing three sessions. The recording is encoded with `ffmpeg`, which must be on `PATH`. `--lang ja` writes the Japanese pair to `docs/images/ja/`.
+
+```sh
+node tools/screenshots/shoot.mjs --readme-scene --plugin-js $SCRATCH/main.js
+```
+
 `--plugin-js PATH` (or `AGENT_SESSIONS_PLUGIN_JS`) names the built `main.js`; without it the script
 loads `plugin/main.js`. `manifest.json` and `styles.css` come from `plugin/`.
 

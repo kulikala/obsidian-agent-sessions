@@ -1,58 +1,42 @@
 # How the README is written
 
-The README is the page people read before they have the plugin, while they install it, and when something goes wrong. This page says who reads it, what each of them needs from it, and what follows for the writing. Use it when you change the README.
+The README is read before someone has the plugin, while they install it, and when something goes wrong. This page sets out the aims the writing follows and how a change is written and reviewed. It is a set of aims, not a checklist: where it says nothing, decide by what helps the person reading.
 
-## Readers and what each needs
+## Who reads it
 
-| Reader | Arrives from | Needs to | Time |
-|---|---|---|---|
-| Browser | Obsidian's plugin list, GitHub | decide whether to try it | seconds |
-| Installer | the plugin list, the README | reach a first session | minutes |
-| Stuck user | a problem in use | find the symptom and the fix | a minute |
-| Cautious user | before or after installing | know what it touches and how to undo it | a few minutes |
-| Contributor | GitHub | find build, test and design docs | seconds |
+- **Someone deciding whether to try it**, from Obsidian's plugin list or GitHub, in a few seconds.
+- **Someone installing it**, who needs the requirements before the steps.
+- **Someone stuck**, who arrives with the words they saw on screen. A plugin message that says "see the README" has its answer there.
+- **Someone cautious**, who wants to know everything the plugin touches and how to undo it.
+- **A contributor**, who needs one link to the developer docs.
 
-- **Browser.** Learns what the plugin is, what they get from it, and whether it fits their setup: desktop, operating system, agent.
-- **Installer.** Finds the requirements before the steps, and the steps are few enough to follow without leaving the page.
-- **Stuck user.** Recognizes their problem in the words they saw on screen. Every message in the plugin that says "see the README" has its answer there.
-- **Cautious user.** Finds every network connection, program started, file read and file written, and the way to remove it all. Obsidian's plugin guidelines require these disclosures in the README.
-- **Contributor.** Gets one link to the developer docs.
+## Aims
 
-## What follows
+**Say plainly what the reader gets.** The opening says what the plugin is, who it is for and what it does for them, with a picture of it working. Every claim is one the reader can check. Nothing sells and nothing alarms.
 
-Each point names the reader it serves.
+**Write for someone reading it for the first time.** Each sentence makes sense to a reader who has not seen the code, the discussions or the earlier versions. Name the thing instead of pointing back at it. A sentence that needs the writer beside it to explain it gets rewritten.
 
-- **The value comes first.** The first lines say what the plugin is and what it does for you, with a screenshot. (Browser)
-- **Each feature is shown next to its picture.** A reader understands a feature faster by seeing it than by reading about it. Each feature gets a short heading, one or two sentences on what the reader gets, and the picture that shows it. The alt text says what the picture actually shows. A feature without a fitting picture keeps its heading and sentence; no picture is forced. `README.ja.md` uses the Japanese screenshots where they exist. (Browser)
-- **Features go from the reason to try it, through the order of use, to looking back.** First the Session manager, the piece a browsing reader decides on. Then the everyday flow in the order a user meets it: start a session, work in its tab, switch between sessions, write a prompt, name and categorize, let an agent suggest names, compact, restart or change model. Then setup with the welcome guide, and last the views for looking back once work has piled up: what a session cost, turn by turn, and when each agent was working. The browser sees the payoff first; a reader who keeps going learns the plugin in the order they will use it, and ends on the views that pay off after a few days of use. (Browser, Installer)
-- **Features are what the reader can do.** Not how they were built or tested. The full list lives in `docs/usage.md`. (Browser)
-- **Limits that would stop an install are on the first screen.** Platform and agent support, so someone who cannot use it finds out before installing. (Browser)
-- **Requirements, then supported setups, then install steps.** In that order, so nobody starts an install that cannot work. Details beyond the steps live in `docs/installation.md`. (Installer)
-- **Troubleshooting starts with the symptom.** The bold part is what the user sees; the fix follows. Rare cases live in `docs/usage.md`. (Stuck user)
-- **Disclosures are complete and concrete.** Real paths, real program names, what is sent where and when. Grouped by kind of access so a reader can check one kind at a time. (Cautious user)
-- **Tables hold short values that are compared across rows.** A cell is a word, a path or a short phrase. Anything that needs a sentence goes in prose or a list outside the table. (Everyone scanning)
-- **Facts are stated as they are now.** No test dates, machines, build numbers, task IDs, internal labels or history of changes; that belongs in commits. (Everyone: they need what is true today.)
-- **Plain tone.** Say what it does and what it does not do. No superlatives, selling, warnings meant to worry, or explanations of the obvious. (Browser and cautious user: plain statements are easier to trust and check.)
-- **Anchors other pages link to stay stable.** `docs/` and the plugin's messages point into the README. (Stuck user, Cautious user)
-- **Developer material is a link.** Build, test, release and design go in `docs/`. (Contributor, and a shorter page for everyone else.)
-- **Every sentence earns its place.** If removing it changes nothing a reader can decide or do, remove it. (Everyone)
+**Say each thing once, where the reader looks for it.** What gets installed and how to remove it are in `What Install does`, `Uninstall` and the disclosures. The opening does not repeat them. Every feature is in `docs/usage.md`, so the README shows the main ones and links to the rest.
 
-`README.ja.md` says the same as `README.md`, in Japanese.
+**Be complete where the reader has to trust it.** The disclosures name every network connection, program started, file read and file written, with real paths and what is sent where. Obsidian's plugin guidelines require them in the README, and here completeness matters more than length.
+
+**State what is true now.** The README describes the current release. Dates, test runs, plans and the history of changes belong in commits.
+
+**Keep what other pages depend on.** `docs/` and the plugin's messages link to headings in the README, so those anchors stay. `README.md` and `README.ja.md` have the same sections, pictures and links, which `tools/audit` checks.
+
+## Japanese
+
+`README.ja.md` is not a translation. Whenever a section changes, write its Japanese anew for a Japanese reader, from the same facts and in the same section, in sentences of its own. Use the plugin's Japanese UI names (`plugin/src/i18n/locales/ja.ts`) and the Japanese screenshots where they exist.
+
+Then put the Japanese through [yomiyasu](https://github.com/nanaism/yomiyasu): its rewrite steps, its lint and its diff check. One point differs from yomiyasu: put a half-width space between Japanese and Latin letters or digits, as the plugin's Japanese UI does. `tools/audit` checks the spacing.
+
+## Writing and reviewing a change
+
+1. Write the English. Check every fact against the code.
+2. Write the Japanese anew and put it through yomiyasu.
+3. Have each language reviewed by someone who did not write it and reads only the page. They read it from the top, once as each reader above, and report what does not make sense on its own, what is said twice, what a pointing word leaves unclear, and claims nothing backs. Fix what they report and have them read the change again until nothing is left.
+4. Run `node tools/audit/run.mjs`.
 
 ## docs/usage.md
 
-The README links here for every feature, so it is read by someone already using the plugin, who comes to:
-
-- **find how to do something**: a task-named heading, then numbered steps;
-- **understand what a screen shows**: what each part means, in the words the screen uses;
-- **fix a problem**: the symptom as seen, then the fix.
-
-Sections follow a new user's tasks: set up, start a session, switch, write a prompt, name and categorize, the session menu's operations and Session analytics, then the screens that look across sessions (Session manager, Activity calendar), and settings, the CLI and troubleshooting last. A new user can read it top to bottom, and someone looking something up scans the contents list, which matches the headings. Each README feature links to its section.
-
-What follows: headings name tasks or screens, not components. Procedures are numbered steps. UI names match `plugin/src/i18n/locales/en.ts`. Short tables only for comparable values (menu item → what it does). Pictures where they show a screen. Every fact the plugin's behavior depends on stays; how it was built goes to `design.md`.
-
-## Reviewing a README change
-
-Read the change once as each reader above and ask whether they can do what they came for. Ask the Cautious user's question literally: after the uninstall steps, what is still on disk, and does the README say so?
-
-Then check the whole page: tables with sentences in cells, history or work records, words that sell or alarm, and links whose anchors no longer exist.
+The README links here for every feature. Its readers already use the plugin and come to find how to do something, to understand what a screen shows, or to fix a problem. Its sections follow a new user's tasks in the order they meet them, and the headings name tasks and screens in the words the plugin's UI uses (`plugin/src/i18n/locales/en.ts`). It keeps every fact the plugin's behavior depends on. How the plugin was built belongs in `design.md`.

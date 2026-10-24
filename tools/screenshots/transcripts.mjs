@@ -248,7 +248,72 @@ const TRANSCRIPTS = {
 	"claude-infra": claudeInfra,
 	"codex-limiter": codexLimiter,
 	"codex-sync": codexSync,
+	"scene-hero": sceneHero,
+	"scene-ask": sceneAsk,
 };
+
+
+// ---- The README scene ----------------------------------------------------------------------
+
+/** The scene's first exchange: the request and the files read. */
+function sceneStart(ja, cols) {
+	return [
+		...claudeHeader("Opus 5.5", "~/Sample"),
+		...claudePrompt(
+			ja
+				? "メモ(docs/spec/)から、Q4 の決済フローの設計書を書いて。"
+				: "Draft the Q4 checkout design spec from the notes in docs/spec/."
+		),
+		`${green(dot)} ${bold(ja ? "2 ファイルを読み込み" : "Read 2 files")} ${dim("(ctrl+o to expand)")}`,
+		"",
+	];
+}
+
+/** The path the way the plugin makes it a link (underlined while the pointer is on it). */
+const SPEC_PATH = "docs/spec/checkout-q4.md";
+
+function sceneHero(cols, ja) {
+	return [
+		...sceneStart(ja, cols),
+		...tool("Write", SPEC_PATH, [ja ? `${SPEC_PATH} に 25 行を書き込み` : `Wrote 25 lines to ${SPEC_PATH}`]),
+		...say(
+			...(ja
+				? ["概要・決済手段・端数処理・エラー表示の4つの節を書きました。"]
+				: ["The spec has four sections: overview, payment methods,", "rounding and errors."])
+		),
+		...claudeInput(cols, "esc to interrupt"),
+	];
+}
+
+/** The scene's GIF opens here: the agent asks before changing the spec. */
+export function sceneAsk(cols, ja) {
+	return [
+		...sceneStart(ja, cols),
+		...say(
+			...(ja
+				? ["決済手段の表には、すでに 2 行あります。", "「コンビニ払い」の行を足してよいですか? (y/n)"]
+				: ["Payment methods already has a table with two rows.", "Add a Convenience store row? (y/n)"])
+		),
+		`${gray(">")} `,
+	];
+}
+
+/** What the terminal shows after the answer, in two steps (the sandbox daemon writes them as it goes). */
+export function sceneAnswer(step, ja, cols = 60) {
+	if (step === "echo") {
+		return "y\r\n\r\n";
+	}
+	if (step === "edit") {
+		return (
+			tool("Update", SPEC_PATH, [ja ? "1 行を追加" : "Added 1 line"]).join("\r\n") + "\r\n"
+		);
+	}
+	return (
+		say(...(ja ? ["「コンビニ払い」の行を足しました。"] : ["Added the Convenience store row."])).join("\r\n") +
+		"\r\n" +
+		`${dim("─".repeat(cols))}\r\n${gray(">")} `
+	);
+}
 
 /** The bytes a tab gets on attach: an optional OSC 0 title, then the transcript. */
 export function renderTranscript(key, cols, title, { lang = "en", light = false } = {}) {
