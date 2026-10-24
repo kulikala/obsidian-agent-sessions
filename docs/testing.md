@@ -21,7 +21,7 @@ Agent Sessions is tested at three levels: automated unit tests that run on every
 
 `-W error` turns every Python warning into a failure.
 
-To run the Python suite on another Python without installing it, use the official image. The suite needs `ps` and a user with a name of three letters or more, which the slim images lack:
+To run the Python suite on another Python without installing it, use the official image. The suite needs `ps` and a user with a name of three letters or more, which the slim images lack. Replace `3.10` with the version to test:
 
 ```sh
 docker run --rm -v "$PWD":/src:ro python:3.10-slim sh -c 'apt-get update -qq && apt-get install -y -qq procps && useradd -m tester && cp -r /src /home/tester/w && chown -R tester /home/tester/w && su tester -c "cd /home/tester/w && python3 -W error -m unittest discover -s tests -t ."'
@@ -150,7 +150,7 @@ The runner can also run on the machine under test (`--local`). This is the way t
 - Where the runner runs: on the machine that runs Obsidian. For Obsidian under WSLg that is inside WSL (the WSLg Obsidian is a Linux program).
 - Node.js 22 or newer. The runner uses Node's built-in WebSocket and `node --test`. A distribution's `apt` package is often Node 18; use the official binaries from nodejs.org or a version manager such as nvm. Check with `node --version`.
 - git.
-- Python 3.9 to 3.14, the distribution's `python3`.
+- A Python from 3.9 to 3.14, usually the distribution's `python3`.
 - Obsidian, with the Agent Sessions plugin to be installed in a new test vault (below).
 
 ### Steps
