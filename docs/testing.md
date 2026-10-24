@@ -21,6 +21,12 @@ Agent Sessions is tested at three levels: automated unit tests that run on every
 
 `-W error` turns every Python warning into a failure.
 
+To run the Python suite on another Python without installing it, use the official image. The suite needs `ps` and a user with a name of three letters or more, which the slim images lack:
+
+```sh
+docker run --rm -v "$PWD":/src:ro python:3.10-slim sh -c 'apt-get update -qq && apt-get install -y -qq procps && useradd -m tester && cp -r /src /home/tester/w && chown -R tester /home/tester/w && su tester -c "cd /home/tester/w && python3 -W error -m unittest discover -s tests -t ."'
+```
+
 CI (`.github/workflows/test.yml`) runs on every push and pull request:
 
 | Job | OS | What |
