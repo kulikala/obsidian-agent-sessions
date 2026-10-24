@@ -17,12 +17,12 @@ status=0
 
 # Compares agentsessions/usage/pricing.py with the pricing page. Returns 1 on a difference.
 check_prices() {
-	python3 "$root/tools/prices/check_prices.py"
+	node "$root/tools/audit/run-python.mjs" "$root/tools/prices/check_prices.py"
 	case $? in
 	0) return 0 ;;
 	1)
 		echo "prices: the price table differs from the pricing page; update agentsessions/usage/pricing.py" >&2
-		echo "prices: (python3 tools/prices/check_prices.py --suggest prints the rows), or push with --no-verify" >&2
+		echo "prices: (node tools/audit/run-python.mjs tools/prices/check_prices.py --suggest prints the rows), or push with --no-verify" >&2
 		return 1
 		;;
 	*)

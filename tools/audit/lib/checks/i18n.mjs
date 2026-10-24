@@ -3,6 +3,7 @@
 
 import { spawnSync } from "node:child_process";
 
+import { pythonCommand } from "../python.mjs";
 import { JAPANESE, JAPANESE_LETTER, lines } from "../text.mjs";
 
 /** The object literal a TypeScript locale exports, evaluated as plain JavaScript. */
@@ -22,8 +23,8 @@ for node in tree.body:
 `;
 
 /** A Python locale's MESSAGES dict, read by Python's own parser. */
-export function parsePyLocale(source) {
-	const r = spawnSync("python3", ["-I", "-c", PY_LOAD], { input: source, encoding: "utf8" });
+export function parsePyLocale(source, python = "python3") {
+	const r = spawnSync(python, ["-I", "-c", PY_LOAD], { input: source, encoding: "utf8" });
 	if (r.status !== 0 || !r.stdout.trim()) throw new Error(r.stderr.trim() || "no MESSAGES dict");
 	return JSON.parse(r.stdout);
 }
@@ -103,12 +104,13 @@ function compareLocales({ report, enFile, jaFile, en, ja, enSource, jaSource, co
 	}
 }
 
-export function checkI18n({ tree, config, report }) {
+export function checkI18n({ repo, tree, config, report }) {
 	const counters = config.spacing.counters;
 	const read = (p) => tree.read(p)?.toString("utf8");
+	const python = pythonCommand(repo);
 	const pairs = [
 		["plugin/src/i18n/locales/en.ts", "plugin/src/i18n/locales/ja.ts", parseTsLocale],
-		["agentsessions/i18n/locales/en.py", "agentsessions/i18n/locales/ja.py", parsePyLocale],
+		["agentsessions/i18n/locales/en.py", "agentsessions/i18n/locales/ja.py", (source) => parsePyLocale(source, python)],
 	];
 	for (const [enFile, jaFile, parse] of pairs) {
 		const enSource = read(enFile);

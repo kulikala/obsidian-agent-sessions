@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
@@ -9,6 +10,7 @@ import { headings, links, slug } from "../lib/checks/docs.mjs";
 import { parseTsLocale, placeholders, placeholdersMatch, spacingProblems } from "../lib/checks/i18n.mjs";
 import { languageViolation } from "../lib/checks/tree.mjs";
 import { privacyContext, scanLine } from "../lib/privacy.mjs";
+import { pythonCommand } from "../lib/python.mjs";
 import { commentStarts, globToRegExp, quotedSpans } from "../lib/text.mjs";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -139,4 +141,18 @@ test("docs: GitHub anchors, links and pictures", () => {
 			[true, "docs/x.png"],
 		],
 	);
+});
+
+test("python: the checkout's venv when present, else python3", () => {
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "agent-sessions-python-"));
+	try {
+		assert.equal(pythonCommand(dir), "python3");
+		const bin = path.join(dir, ".venv", process.platform === "win32" ? "Scripts" : "bin");
+		const exe = path.join(bin, process.platform === "win32" ? "python.exe" : "python3");
+		fs.mkdirSync(bin, { recursive: true });
+		fs.writeFileSync(exe, "");
+		assert.equal(pythonCommand(dir), exe);
+	} finally {
+		fs.rmSync(dir, { recursive: true, force: true });
+	}
 });

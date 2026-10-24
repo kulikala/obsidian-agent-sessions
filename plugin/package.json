@@ -9,7 +9,7 @@
     "dev": "node esbuild.config.mjs",
     "test": "vitest run",
     "typecheck": "tsc -noEmit -skipLibCheck",
-    "check-prices": "python3 ../tools/prices/check_prices.py",
+    "check-prices": "node ../tools/audit/run-python.mjs ../tools/prices/check_prices.py",
     "lint": "eslint --max-warnings 0 .",
     "version": "node version-bump.mjs && git add manifest.json ../manifest.json ../versions.json"
   },

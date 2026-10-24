@@ -1,6 +1,7 @@
 plugin/node_modules/
 plugin/main.js
 plugin/data.json
+.venv/
 __pycache__/
 *.pyc
 .superpowers/
