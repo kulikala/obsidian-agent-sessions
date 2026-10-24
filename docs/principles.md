@@ -24,7 +24,7 @@ Agent Sessions runs Claude Code, Codex and OpenCode sessions as terminal tabs in
 
 ## 2. Python standard library only, bundled in the plugin
 
-**Chosen.** The program (daemon, CLI, hooks, status line, editor shim) is Python 3.9+ using only the standard library. Its source ships as text inside the plugin's `main.js`; on request the plugin writes it to a per-user directory (the XDG data directory by default; `%LOCALAPPDATA%\agent-sessions` on Windows), together with a launcher whose shebang names the Python it found. The same package also runs from a source checkout. The user needs a Python on the machine; the plugin finds one and, on Windows, can install it with WinGet when the user clicks.
+**Chosen.** The program (daemon, CLI, hooks, status line, editor shim) is Python using only the standard library, on the versions CI tests (3.9 to 3.14). Its source ships as text inside the plugin's `main.js`; on request the plugin writes it to a per-user directory (the XDG data directory by default; `%LOCALAPPDATA%\agent-sessions` on Windows), together with a launcher whose shebang names the Python it found. The same package also runs from a source checkout. The user needs a Python on the machine; the plugin finds one and, on Windows, can install it with WinGet when the user clicks.
 
 **Given up.**
 - Node.js for the daemon. Obsidian's Electron runtime cannot be a long-lived daemon that outlives Obsidian, and relying on a separately installed Node adds the same prerequisite Python does.
