@@ -8,11 +8,14 @@ permissions:
   contents: read
 
 jobs:
+  # Every Python the README lists as supported: from MIN_PYTHON (plugin/src/backend/bundle.ts) to the
+  # newest tested. Change the README's Requirements together with this list (docs/readme-guide.md).
   python:
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -21,7 +24,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python }}
 
       - name: unittest
         run: python3 -W error -m unittest discover -s tests -t .
@@ -29,6 +32,10 @@ jobs:
   # Native Windows: the ConPTY daemon, the loopback transport, process checks, path matching and the parts of
   # setup that differ there. The rest of the suite drives Unix sockets and PTYs directly.
   python-windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
     runs-on: windows-latest
     env:
       PYTHONUTF8: "1"
@@ -39,7 +46,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python }}
 
       - name: unittest
         run: python -W error -m unittest discover -s tests/windows -t . && python -W error -m unittest tests.test_transport tests.test_paths tests.claude.test_setup

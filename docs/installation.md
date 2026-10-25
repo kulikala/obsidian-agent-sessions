@@ -6,7 +6,7 @@ Installing, installing from a clone, and uninstalling Agent Sessions in detail. 
 2. [From a clone](#from-a-clone)
 3. [Uninstall](#uninstall)
 
-The plugin drives a small Python program, `agent-sessions`, which holds the sessions and reads the agents' transcripts. It is bundled with the plugin as plain source and installed with one click; Python 3.9 or later has to be on the machine already.
+The plugin drives a small Python program, `agent-sessions`, which holds the sessions and reads the agents' transcripts. It is bundled with the plugin as plain source and installed with one click; Python 3.9 to 3.14 has to be on the machine already.
 
 ## Where the program goes
 

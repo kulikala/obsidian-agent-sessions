@@ -8,7 +8,7 @@ Contents: What it is - Where things are - Install, update, remove - Welcome guid
 
 ## What it is
 
-Agent Sessions runs Claude Code, Codex and OpenCode sessions as terminal tabs inside Obsidian (desktop only), with a session list, a usage dashboard and a small background program (the daemon) that keeps sessions alive. Closing a tab, reloading the plugin or quitting Obsidian does not end a session; reopening the tab reattaches and replays the last screen. The plugin drives a Python program called `agent-sessions` (Python 3.9+, standard library only) that ships inside the plugin and is written out when the user installs it.
+Agent Sessions runs Claude Code, Codex and OpenCode sessions as terminal tabs inside Obsidian (desktop only), with a session list, a usage dashboard and a small background program (the daemon) that keeps sessions alive. Closing a tab, reloading the plugin or quitting Obsidian does not end a session; reopening the tab reattaches and replays the last screen. The plugin drives a Python program called `agent-sessions` (Python 3.9 to 3.14, standard library only) that ships inside the plugin and is written out when the user installs it.
 
 ## Where things are
 
@@ -32,7 +32,7 @@ Install the plugin:
 1. Obsidian: Settings -> Community plugins -> Browse, search "Agent Sessions", install, enable.
 2. Open the side panel (ribbon icon) and press "Install agent-sessions / agent-sessions をインストール". The dialog shows, before anything is written, where the program goes, which Python runs it and what changes in Claude Code's settings (a hooks and status line entry in `~/.claude/settings.json`, backed up first), and, when OpenCode is enabled, the OpenCode files. It also lists the agent skills it adds to the vault ("Agent skills / エージェント用スキル"). Press "Install / インストール".
 
-Needs: Obsidian 1.8.7 or later on the desktop (macOS, Linux, Windows), Python 3.9 or later, and at least one of Claude Code, Codex or OpenCode (on the PATH or set in the plugin's Agents settings).
+Needs: Obsidian 1.8.7 or later on the desktop (macOS, Linux, Windows), Python 3.9 to 3.14, and at least one of Claude Code, Codex or OpenCode (on the PATH or set in the plugin's Agents settings).
 
 - No Python found: macOS - run `xcode-select --install` in Terminal, or install Python from python.org or Homebrew, then press "Check again / もう一度確認". Linux - install `python3` with the package manager. Windows - the dialog offers "Install Python with WinGet / WinGet で Python をインストール" (per user, no administrator rights), or install from python.org. If WinGet itself is missing, update "App Installer" from the Microsoft Store.
 - Claude Code missing on Windows: the dialog offers "Install Claude Code with WinGet / WinGet で Claude Code をインストール". For any other missing agent (and for Claude Code on macOS and Linux) the welcome guide shows its install command to copy and run in a terminal (the plugin never runs it for the user); on Windows that is `npm install -g @openai/codex` for Codex and `npm install -g opencode-ai` for OpenCode.
@@ -208,7 +208,7 @@ Settings -> Display -> "Language / 言語": Auto / 自動 (follows Obsidian), En
 
 - "agent-sessions was not found" / "agent-sessions が見つからない": the plugin is installed but the program is not. Press "Install agent-sessions" in the side panel, or set the program's path in Settings -> agent-sessions location.
 - The side panel says to install the program ("Sessions run through agent-sessions ..."): same fix.
-- "Can't connect to the daemon": Python may be missing, or the socket could not be created. Check Python 3.9+ and reinstall the program from Settings.
+- "Can't connect to the daemon": Python may be missing, or the socket could not be created. Check that Python is 3.9 to 3.14 and reinstall the program from Settings.
 - "<agent> was not found" / the side panel's "Couldn't find the executable for <agent>": the agent CLI is not on the PATH; set its path in Settings -> Agents -> Executable, or press "Find again".
 - Nothing happens, or "Agent Sessions runs on macOS, Linux and Windows desktops only": the device is unsupported (mobile).
 - A Claude Code hook fails with `node: not found` (often another plugin's hook): node is installed through a version manager (mise, nvm, asdf, volta) that loads only in an interactive shell. The plugin merges an interactive shell's PATH in, so it normally corrects itself on the next session; if not, check that `$SHELL -i -c 'echo $PATH'` in a normal terminal includes node's folder.

@@ -42,7 +42,7 @@ The plugin shows this dialog before it installs anything.
 ## Requirements
 
 - Obsidian 1.8.7 or later, on desktop: macOS, Linux or Windows.
-- Python 3.9 or later, with no extra packages. Python runs the helper program.
+- Python 3.9 to 3.14, with no extra packages. Python runs the helper program.
 - Claude Code, Codex or OpenCode, installed and signed in. The agents run on your own subscription or key; the plugin needs no account or key of its own.
 - If you have not used any of them, install one from its official page first ([Claude Code](https://claude.com/claude-code), [Codex](https://github.com/openai/codex), [OpenCode](https://opencode.ai)), then come back.
 
