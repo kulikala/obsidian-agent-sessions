@@ -6,6 +6,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
+import { pythonCommand } from "../python.mjs";
+
 function tail(text, n = 40) {
 	return text.split("\n").slice(-n).join("\n");
 }
@@ -22,7 +24,7 @@ export function checkBuild({ repo, report, log }) {
 		{ name: "esbuild", cwd: plugin, cmd: process.execPath, args: ["esbuild.config.mjs", "production"], env: { AGENT_SESSIONS_OUTFILE: path.join(scratch, "main.js") } },
 		{ name: "tsc", cwd: plugin, cmd: npx, args: ["tsc", "-noEmit", "-skipLibCheck"] },
 		{ name: "vitest", cwd: plugin, cmd: npx, args: ["vitest", "run"] },
-		{ name: "unittest", cwd: repo, cmd: "python3", args: ["-W", "error", "-m", "unittest", "discover", "-s", "tests", "-t", "."] },
+		{ name: "unittest", cwd: repo, cmd: pythonCommand(repo), args: ["-W", "error", "-m", "unittest", "discover", "-s", "tests", "-t", "."] },
 	];
 	try {
 		for (const step of steps) {
@@ -36,7 +38,8 @@ export function checkBuild({ repo, report, log }) {
 			});
 			const seconds = ((Date.now() - started) / 1000).toFixed(0);
 			if (r.status !== 0) {
-				report.fail("build", step.name, `failed after ${seconds} s:\n${tail(`${r.stdout ?? ""}\n${r.stderr ?? ""}`.trim())}`, `run it on its own: (cd ${path.relative(repo, step.cwd) || "."} && ${path.basename(step.cmd)} ${step.args.join(" ")})`);
+				const cmd = path.isAbsolute(step.cmd) ? path.relative(step.cwd, step.cmd) : step.cmd;
+				report.fail("build", step.name, `failed after ${seconds} s:\n${tail(`${r.stdout ?? ""}\n${r.stderr ?? ""}`.trim())}`, `run it on its own: (cd ${path.relative(repo, step.cwd) || "."} && ${cmd} ${step.args.join(" ")})`);
 			} else {
 				log(`audit: ${step.name} passed (${seconds} s)`);
 			}

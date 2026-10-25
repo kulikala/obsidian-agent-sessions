@@ -99,7 +99,7 @@ function main() {
 		}
 	}
 	if (want("i18n")) {
-		checkI18n({ tree, config, report });
+		checkI18n({ repo, tree, config, report });
 		report.ran("i18n");
 	}
 	if (want("versions")) {
